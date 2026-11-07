@@ -382,7 +382,6 @@ router.post("/restart", (req, res) => {
 
 // ── GET /token-sync — page ───────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -460,7 +459,7 @@ router.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('tokenSync', liveActive)}
+${buildSidebar('tokenSync', false)}
 <div class="main-content">
 
 <div class="top-bar">
@@ -519,7 +518,7 @@ ${buildSidebar('tokenSync', liveActive)}
         <div class="btn-row"><button class="btn btn-apply" onclick="applyToken('fyers')">✔ Apply Fyers token</button></div>
       </div>
       <div class="row">
-        <div class="row-head"><span class="broker zd">ZERODHA</span><span class="meta">only needed for EMA_RSI_ST live data / orders</span></div>
+        <div class="row-head"><span class="broker zd">ZERODHA</span><span class="meta">only needed for Zerodha data</span></div>
         <textarea id="zdPaste" placeholder="Paste the Zerodha token copied from LIVE…" spellcheck="false"></textarea>
         <div class="btn-row"><button class="btn btn-apply" onclick="applyToken('zerodha')">✔ Apply Zerodha token</button></div>
       </div>

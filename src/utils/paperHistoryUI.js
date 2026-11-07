@@ -1335,7 +1335,6 @@ function buildSessionCards(sessions, opts) {
  *   pageTitle     e.g. '🎯 ORB Paper Trade History'
  *   modalLabel    e.g. 'ORB Paper'
  *   pageDocTitle  e.g. 'ORB Paper — History'
- *   liveActive    boolean
  *   sessions      array of session objects
  *   capital       current capital (number)
  *   totalPnl      all-time net PnL (number)
@@ -1413,7 +1412,7 @@ function renderHistoryPage(cfg) {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
+${buildSidebar(cfg.sidebarKey, false)}
 <div class="main-content">
   <div class="top-bar">
     <div>

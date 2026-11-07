@@ -11,15 +11,11 @@
  *            a VWAP cross, then a later close beyond the cross candle's
  *            high/low within N candles, with SuperTrend agreeing. The fill is
  *            the first tick after that candle closes (the current option LTP).
- *   EXIT   : on every CLOSED candle while in a position — engine.exitCheck()
- *            with the stop in force BEFORE that bar; if it does not exit,
- *            engine.trailStop() tightens the stop. The SuperTrend stop is NOT
- *            checked tick-by-tick. On ticks: the common exits every strategy
- *            runs — profit lock, breakeven stop, option-premium stop
- *            (SAIL_VWAP_ST_OPT_STOP_PCT) — and the forced square-off at
- *            SAIL_VWAP_ST_EOD_EXIT_TIME.
- *   GUARDS : entry window (engine), 1 trade/day, daily loss cap, plus the
- *            repo-global ones: portfolio daily cap, bid-ask spread, capital
+ *   EXIT   : ONLY the repo-wide profit lock (tradeGuards.checkProfitLock, per
+ *            tick on the option premium) — plus manual exit, /stop and the
+ *            TRADE_STOP_TIME session teardown. No stop loss, option stop,
+ *            trail, target, signal exit, early square-off or daily limit.
+ *   GUARDS : entry window (engine), plus the repo-global ones: portfolio daily cap, bid-ask spread, capital
  *            pool, expiry-only toggle.
  *   SIZE   : SAIL_VWAP_ST_LOTS × SAIL_LOT_SIZE (4700). The NIFTY lot
  *            multiplier does not apply; the lot count is clamped by
@@ -42,8 +38,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-// The engine is the SINGLE source of truth for entry rules, indicator series,
-// the exit test and the SuperTrend trail.
+// The engine is the SINGLE source of truth for entry rules and indicator series.
 const engine = require("../strategies/sail_vwap_st");
 const ACTIVE = "SAIL_VWAP_ST";
 const instrumentConfig = require("../config/instrument");
@@ -196,11 +191,6 @@ let ptState = {
   _pendingEntry: null,
   // Display only — there is NO consecutive-loss breaker in this strategy.
   _consecutiveLosses: 0,
-  // Daily loss kill switch — latched true when today's loss >= MAX_DAILY_LOSS (₹).
-  // Blocks ALL new entries for the rest of the day. Resets only on session restart.
-  _dailyLossHit: false,
-  _priorRealizedToday: 0,   // today's realized P&L from EARLIER sessions (restart recovery)
-  _priorTradesToday:   0,   // today's trade count from EARLIER sessions (restart recovery)
   // Pre-fetched option symbols (populated after each candle close, used at entry)
   _cachedCE: null,
   _cachedPE: null,
@@ -356,7 +346,7 @@ function _pushCapped(arr, candle) {
 // TRADE_START_TIME : pre-market banner only (default "09:15")
 // TRADE_STOP_TIME  : session auto-stop (default "15:30")
 // Entries are governed by the ENGINE's own window (SAIL_VWAP_ST_ENTRY_START /
-// _ENTRY_END) and the square-off by SAIL_VWAP_ST_EOD_EXIT_TIME.
+// _ENTRY_END).
 function parseMins(envKey, defaultVal) {
   const raw = process.env[envKey] || defaultVal;
   const [h, m] = raw.split(":").map(Number);
@@ -412,26 +402,6 @@ function _lateStartStopMins() {
   const hhmm = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
   log(`⏰ [PAPER] Session started after its stop time — will stop at ${hhmm} IST`);
   return LATE_START_GRACE_MIN;
-}
-
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The SAIL_VWAP_ST-LIVE harness fires REAL orders on this engine's notify tag.
-// Every session-ending path releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "SAIL_VWAP_ST-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
 }
 
 // Schedule auto-stop at TRADE_STOP_TIME (default 15:30 IST).
@@ -599,7 +569,7 @@ function _publishOptionLtp(symbol, ltp, at) {
     ptState.position.optionEntryLtpTime = istNow();
     // Real premium known — replace the estimate blocked at entry.
     capitalPool.updateBlock("sail_vwap_st", (ptState.position.qty || 0) * ltp);
-    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
+    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry})`);
   }
 }
 
@@ -632,9 +602,6 @@ async function _optionPollTick(symbol, gen) {
       return;
     }
     _publishOptionLtp(symbol, ltp, ltpAt);
-
-    // No option-premium stop exists in this strategy — the SuperTrend stop is
-    // checked on candle close only (onCandleClose).
   } finally {
     if (gen === _optionPollGen) _optionPollBusy = false; // a stale tick must not clear a newer chain's flag
   }
@@ -729,12 +696,11 @@ function parseOptionDetails(symbol) {
 // ── Simulated order (NO real API call) ──────────────────────────────────────
 
 /**
- * Open a virtual position. `stopLoss` is the engine's SuperTrend value on the
- * signal candle (or, for a manual entry, the latest closed candle) — it seeds the
- * trail, which engine.trailStop() tightens at every later candle close.
- * `meta.entryLtp` — the option premium at the fill (first tick after the close).
+ * Open a virtual position. There is no stop: the only automatic exit is the
+ * profit lock (onTick). `meta.entryLtp` — the option premium at the fill
+ * (first tick after the close).
  */
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, meta = {}) {
+function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, meta = {}) {
   // Guard: never overwrite an existing position.
   if (ptState.position) {
     log(`⚠️ [PAPER] simulateBuy called while position already open — ignoring duplicate entry (${side} @ ₹${price})`);
@@ -747,20 +713,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
       ptState._reentryBlockLogged = ptState._reentryBlockUntil;
       log(`⏸️ [PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(ptState._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} @ ₹${price} rejected)`);
     }
-    return;
-  }
-  // Never open a position without a stop. The engine refuses a signal whose
-  // SuperTrend is not beyond the close; this only catches a broken caller.
-  if (!Number.isFinite(stopLoss)) {
-    log(`🚫 [PAPER] Entry aborted — no SuperTrend stop for ${side} (got ${stopLoss})`);
-    skipLogger.appendSkipLog("sail_vwap_st", {
-      gate: "strategy",
-      reason: "no SuperTrend stop available",
-      spot: price,
-      side,
-      signal: side === "CE" ? "BUY_CE" : "BUY_PE",
-      path: "stop",
-    });
     return;
   }
   const optDetails = parseOptionDetails(symbol);
@@ -795,8 +747,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
     entryTime:         istNow(),
     entryUnixSec:      Math.floor(Date.now() / 1000),
     reason,
-    stopLoss:          stopLoss,       // the trail — tightened by engine.trailStop() at each close
-    initialStopLoss:   stopLoss,
     entryBarTime:      meta.entryBarTime != null ? meta.entryBarTime : (ptState.currentBar ? ptState.currentBar.time : null),
     signalBarTime:     meta.signalBarTime != null ? meta.signalBarTime : null,
     bestPrice:         null,
@@ -832,8 +782,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
     underlying:        UNDERLYING,
   };
 
-  // Crash-recovery snapshot: written on entry, refreshed on every trail move,
-  // cleared on exit. app.js reconciles it against the broker book on boot.
+  // Crash-recovery snapshot: written on entry, cleared on exit. app.js reconciles it against the broker book on boot.
   try { require("../utils/positionPersist").saveSailVwapStPosition(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
 
   // Set option symbol and start polling (no socket changes). Futures: no premium to track.
@@ -849,17 +798,16 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
     log(`📊 [PAPER] Futures mode — skipping option LTP polling`);
   }
 
-  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price} | SL (SuperTrend, candle-close): ₹${stopLoss} | Opt: ${_entryLtp != null ? "₹" + _entryLtp : "capturing…"} | Reason: ${reason}`);
+  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price} | Opt: ${_entryLtp != null ? "₹" + _entryLtp : "capturing…"} | Reason: ${reason}`);
   // ── Telegram notification ─────────────────────────────────────────────────
   notifyEntry({
-    mode:           'SAIL_VWAP_ST-PAPER',   // unique — the live harness filters on this exact tag
+    mode:           'SAIL_VWAP_ST-PAPER',
     side,
     symbol,
     strike:         ptState.position.optionStrike,
     expiry:         ptState.position.optionExpiry,
     spotAtEntry:    price,
     optionEntryLtp: _entryLtp,
-    stopLoss:       stopLoss,
     qty,
     reason,
   });
@@ -869,7 +817,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
  * Close the virtual position. `exitBarTime` — the bar the exit FILLED in (for the
  * chart marker); defaults to the forming bar.
  */
-function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {}) {
+function simulateSell(exitPrice, reason, spotAtExit, exitBarTime) {
   if (!ptState.position) return;
 
   const { side, symbol, qty, entryPrice, entryTime, spotAtEntry,
@@ -925,8 +873,6 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
     pnlMode,
     exitReason:       reason,
     entryReason:      pos.reason,
-    stopLoss:         pos.stopLoss,          // final SL at exit (trailed)
-    initialStopLoss:  pos.initialStopLoss != null ? pos.initialStopLoss : null,
     optionExpiry:     pos.optionExpiry || null,
     optionStrike:     pos.optionStrike || null,
     optionType:       pos.optionType   || side,
@@ -945,8 +891,6 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
     crossLevel:       pos.crossLevel,
     tradeRes:         pos.tradeRes,
     underlying:       UNDERLYING,
-    supertrendAtExit: exitMeta.supertrend != null ? exitMeta.supertrend : null,
-    stTrendAtExit:    exitMeta.stTrend != null ? exitMeta.stTrend : null,
     // Full-detail capture for JSONL
     bestPrice:        pos.bestPrice     || null,   // peak favorable spot during trade
     bestOptionLtp:    pos.bestOptionLtp || null,   // peak option premium during trade
@@ -972,17 +916,6 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
   // Display-only streak — this strategy has NO consecutive-loss breaker.
   ptState._consecutiveLosses = netPnl < 0 ? (ptState._consecutiveLosses || 0) + 1 : 0;
 
-  // ── Daily loss kill switch ────────────────────────────────────────────────────
-  // Today's loss (this session + earlier sessions today, see the restart recovery
-  // in /start) at or beyond SAIL_VWAP_ST_MAX_DAILY_LOSS latches _dailyLossHit and
-  // blocks ALL new entries for the rest of the day. 0 = no cap.
-  const _maxLoss = engine.getConfig().MAX_DAILY_LOSS;
-  const _dayPnl  = ptState.sessionPnl + (ptState._priorRealizedToday || 0);
-  if (!ptState._dailyLossHit && _maxLoss > 0 && _dayPnl <= -Math.abs(_maxLoss)) {
-    ptState._dailyLossHit = true;
-    log(`🛑 [PAPER] DAILY LOSS LIMIT HIT — today's P&L ₹${_dayPnl.toFixed(2)} ≤ -₹${_maxLoss}. NO MORE ENTRIES TODAY.`);
-  }
-
   stopOptionPolling();
   ptState.optionSymbol = null;
   ptState.optionLtp    = null;
@@ -994,7 +927,7 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
 
   // ── Telegram notification ─────────────────────────────────────────────────
   notifyExit({
-    mode:           'SAIL_VWAP_ST-PAPER',   // unique — the live harness filters on this exact tag
+    mode:           'SAIL_VWAP_ST-PAPER',
     side,
     symbol,
     strike:         trade.optionStrike,
@@ -1023,9 +956,9 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
 }
 
 // ── Entry guards — ALL synchronous, evaluated before the first await ────────
-// The only session guards this strategy has are the entry window (inside the
-// engine), max trades/day and the daily loss cap. The repo-global portfolio cap
-// and the expiry-only toggle also apply, as on every strategy.
+// The only session guard this strategy has is the entry window (inside the
+// engine). The repo-global portfolio cap and the expiry-only toggle also apply,
+// as on every strategy.
 function _entryBlockReason(cfg) {
   if (!ptState.running) return "session not running";
   if (ptState.position) return "position already open";
@@ -1033,18 +966,8 @@ function _entryBlockReason(cfg) {
   if (ptState._expiryDayBlocked) return "expiry-only mode — today is not an expiry day";
   const tf = _tfNote(cfg);
   if (tf) return tf;
-  if (ptState._dailyLossHit) return `daily loss limit hit (₹${cfg.MAX_DAILY_LOSS}) — no more entries today`;
-  // The cap is read live: lowering it in Settings mid-session blocks at once.
-  const _dayPnl = (ptState.sessionPnl || 0) + (ptState._priorRealizedToday || 0);
-  if (cfg.MAX_DAILY_LOSS > 0 && _dayPnl <= -cfg.MAX_DAILY_LOSS) {
-    ptState._dailyLossHit = true;   // latch, so the status card shows it too
-    return `daily loss limit hit (₹${_dayPnl.toFixed(0)} ≤ -₹${cfg.MAX_DAILY_LOSS}) — no more entries today`;
-  }
-  const _taken = ptState.sessionTrades.length + (ptState._priorTradesToday || 0);
-  if (_taken >= cfg.MAX_DAILY_TRADES) return `daily max trades (${cfg.MAX_DAILY_TRADES}) reached`;
   const pf = require("../utils/portfolioRisk").checkPortfolioCap();
   if (pf.blocked) return pf.reason;
-  if (engine.isEodExit(Math.floor(Date.now() / 1000), cfg)) return `past the ${_fmtMins(cfg.EOD_EXIT)} square-off`;
   return null;
 }
 
@@ -1119,7 +1042,7 @@ async function _fillEntry(sig, signalCandle, fillSpot, side, sid, attempt) {
   }
 
   const _tag = attempt > 0 ? ` | filled on retry #${attempt}` : "";
-  simulateBuy(symbol, side, sailLotQty(), fillSpot, sig.reason + _tag, sig.stopLoss, fillSpot, {
+  simulateBuy(symbol, side, sailLotQty(), fillSpot, sig.reason + _tag, fillSpot, {
     entryLtp,
     signal:        sig,
     signalBarTime: signalCandle.time,
@@ -1200,9 +1123,9 @@ function _retryPendingEntry(ltp) {
 }
 
 // ── On each completed candle ─────────────────────────────────────────────────
-// Synchronous: the exit test, the trail and the entry decision all run on the
-// tick that closed the candle. `fillSpot` is that tick's price (the first tick
-// after the close) — the fill for both an exit and an entry.
+// Synchronous: the entry decision runs on the tick that closed the candle.
+// `fillSpot` is that tick's price (the first tick after the close) — the fill.
+// There is NO candle-close exit: the only automatic exit is the profit lock (onTick).
 function onCandleClose(candle, fillSpot) {
   // A new close supersedes any setup still waiting on a failed fill.
   ptState._pendingEntry = null;
@@ -1210,7 +1133,6 @@ function onCandleClose(candle, fillSpot) {
   ptState.prevCandleHigh = candle.high;
   ptState.prevCandleLow  = candle.low;
 
-  const cfg     = engine.getConfig();
   const fill    = Number.isFinite(fillSpot) && fillSpot > 0 ? fillSpot : candle.close;
   const closeAt = _hhmm(candle.time + TRADE_RES * 60);
   const tag     = `${TRADE_RES}m`;
@@ -1241,36 +1163,11 @@ function onCandleClose(candle, fillSpot) {
   log(`   VWAP=${sig.vwap != null ? sig.vwap : "?"} | ST=${sig.supertrend != null ? sig.supertrend : "?"}(${sig.stTrend || "?"})`);
   log(`   Signal: ${sig.signal} | ${sig.reason}`);
 
-  // ── EXIT — candle close only: exitCheck with the stop in force BEFORE this bar ──
-  let exitedThisBar = false;
+  // ── Open position: candle count + status line only — no candle-close exit ──
   if (ptState.position) {
     const pos = ptState.position;
     pos.candlesHeld = (pos.candlesHeld || 0) + 1;
-    const series = engine.computeSeries(ptState.candles, cfg);
-    const stBar  = series.supertrend[ptState.candles.length - 1] || null;
-    const stopBefore = pos.stopLoss;
-    const ex = engine.exitCheck(pos.side, candle, stBar, stopBefore);
-    const _gap = Number.isFinite(stopBefore)
-      ? parseFloat((pos.side === "CE" ? candle.close - stopBefore : stopBefore - candle.close).toFixed(2))
-      : null;
-    log(`   Open ${pos.side} @ ₹${pos.spotAtEntry} | SL=₹${stopBefore} (gap=${_gap != null ? _gap : "—"}) | option entry=${pos.optionEntryLtp ? "₹" + pos.optionEntryLtp : "—"} now=${ptState.optionLtp ? "₹" + ptState.optionLtp : "—"}`);
-    if (ex.exit) {
-      log(`🛑 [PAPER] EXIT ${pos.side} on the ${closeAt} close — ${ex.reason} (stop in force ₹${stopBefore}) | fill spot ₹${fill}`);
-      simulateSell(fill, ex.reason, fill, candle.time + TRADE_RES * 60, {
-        supertrend: stBar && Number.isFinite(stBar.value) ? stBar.value : null,
-        stTrend:    stBar ? stBar.trend : null,
-      });
-      exitedThisBar = true;
-    } else {
-      // ── Trail — engine.trailStop() is tighten-only (a CE stop may only rise).
-      const _trail = engine.trailStop(ptState.candles, pos.side, pos.stopLoss, cfg);
-      if (_trail && _trail.changed && Number.isFinite(_trail.stop)) {
-        const _o = pos.stopLoss;
-        pos.stopLoss = _trail.stop;
-        log(`📐 [PAPER] SL trail ${pos.side}: ₹${_o} → ₹${pos.stopLoss} (${_trail.tag || "SuperTrend"})`);
-        try { require("../utils/positionPersist").saveSailVwapStPosition(pos, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
-      }
-    }
+    log(`   Open ${pos.side} @ ₹${pos.spotAtEntry} | option entry=${pos.optionEntryLtp ? "₹" + pos.optionEntryLtp : "—"} now=${ptState.optionLtp ? "₹" + ptState.optionLtp : "—"}`);
   }
 
   // ── Session end at TRADE_STOP_TIME (the timer also does this) ──
@@ -1287,7 +1184,6 @@ function onCandleClose(candle, fillSpot) {
       log(`════════════════════════════════════════════════════════════════════\n`);
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
-      _releaseLiveHarness("EOD auto-stop");   // after the square-off above
       saveSession();
       // Clear THIS slot first, then stop the shared socket only if no other
       // strategy is still subscribed.
@@ -1304,7 +1200,7 @@ function onCandleClose(candle, fillSpot) {
   }
 
   if (sig.signal !== "BUY_CE" && sig.signal !== "BUY_PE") {
-    if (!ptState.position && !exitedThisBar) {
+    if (!ptState.position) {
       skipLogger.appendSkipLog("sail_vwap_st", {
         gate: "strategy",
         reason: sig.reason || null,
@@ -1322,13 +1218,6 @@ function onCandleClose(candle, fillSpot) {
     return;
   }
 
-  // A signal on the very candle that closed a trade is not taken (and with
-  // 1 trade/day the cap refuses it anyway).
-  if (exitedThisBar) {
-    log(`⏭️ [PAPER] ${sig.signal} on the exit candle — not re-entered on the same close`);
-    skipLogger.appendSkipLog("sail_vwap_st", { gate: "strategy", reason: "signal on the exit candle — re-entry waits for a later candle", spot: fill, signal: sig.signal, tf: tag });
-    return;
-  }
   if (ptState.position) return;
 
   log(`📋 [PAPER] ${sig.signal} — entering on the ${closeAt} close, fill @ spot ₹${fill}`);
@@ -1337,9 +1226,9 @@ function onCandleClose(candle, fillSpot) {
 
 // ── Tick → candle builder (SAIL SPOT ONLY) ───────────────────────────────────
 // This handler receives ONLY NSE:SAIL-EQ ticks (the callback is bound to that
-// symbol). It builds the candles, applies the EOD square-off and the common
-// tick-level exits, and retries a failed fill. It makes NO entry decision and
-// runs NO SuperTrend stop check — both happen on candle close.
+// symbol). It builds the candles, runs the ONLY automatic exit (the profit
+// lock, on the option premium), and retries a failed fill. It makes NO entry
+// decision — that happens on candle close.
 function onTick(tick) {
   if (!tick || !tick.ltp) return;
   if (!ptState.running) return;  // ← guard: ignore ticks after stop (Fyers SDK may still fire)
@@ -1398,39 +1287,15 @@ function onTick(tick) {
     else                   { if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp; }
     if (ptState.optionLtp && ptState.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));
 
-    // ── Forced square-off at SAIL_VWAP_ST_EOD_EXIT_TIME (tick-driven) ──
-    const cfg = engine.getConfig();
-    if (engine.isEodExit(Math.floor(now / 1000), cfg)) {
-      const _lbl = _fmtMins(cfg.EOD_EXIT);
-      log(`⏰ [PAPER] ${_lbl} square-off — closing open ${pos.side} @ spot ₹${ltp}`);
-      simulateSell(ltp, `EOD square-off ${_lbl}`, ltp);
-      return;
-    }
-
-    // ── Common exits (shared across every strategy — see tradeGuards) ──
-    // Profit lock first: once armed its floor sits above entry, so it must win
-    // over the breakeven stop and over any wider stop below entry.
+    // ── The ONLY automatic exit: the repo-wide profit lock (see tradeGuards) ──
     if (pos.optionEntryLtp && ptState.optionLtp) {
       const _plMsg = tradeGuards.checkProfitLock(
-        pos.optionEntryLtp, ptState.optionLtp, pos.bestOptionLtp,
-      ) || tradeGuards.checkBreakevenStop(
         pos.optionEntryLtp, ptState.optionLtp, pos.bestOptionLtp,
       );
       if (_plMsg) {
         log(`🔒 [PAPER] ${_plMsg}`);
         simulateSell(ltp, _plMsg, ltp);
         return;
-      }
-      // ── Option-premium stop: premium SAIL_VWAP_ST_OPT_STOP_PCT below entry ──
-      // A safety net under the candle-close SuperTrend stop (0 = off).
-      if (cfg.OPT_STOP_PCT > 0) {
-        const _stopLtp = parseFloat((pos.optionEntryLtp * (1 - cfg.OPT_STOP_PCT)).toFixed(2));
-        if (ptState.optionLtp <= _stopLtp) {
-          const _msg = `Option stop ${(cfg.OPT_STOP_PCT * 100).toFixed(0)}% @ opt ₹${ptState.optionLtp}`;
-          log(`🛑 [PAPER] OPTION STOP ${(cfg.OPT_STOP_PCT * 100).toFixed(0)}% — opt ₹${ptState.optionLtp} <= ₹${_stopLtp} (entry ₹${pos.optionEntryLtp})`);
-          simulateSell(ltp, _msg, ltp);
-          return;
-        }
       }
     }
     return;
@@ -1446,7 +1311,7 @@ function saveSession() {
   const data = loadPaperData();
 
   const session = {
-    // IST, not UTC — the daily-loss restart recovery matches on this field.
+    // IST, not UTC.
     date:        new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     strategy:    ACTIVE,
     instrument:  "SAIL_OPTIONS",
@@ -1481,12 +1346,7 @@ function saveSession() {
 /** Bucket an exit reason for the day report. Order matters: specific first. */
 function _exitGroup(reason) {
   const r = String(reason || "");
-  if (/SuperTrend flipped/i.test(r))            return "ST Flip";
-  if (/SuperTrend stop/i.test(r))               return "ST Stop (close)";
   if (/Profit lock/i.test(r))                   return "Profit Lock";
-  if (/Breakeven stop/i.test(r))                return "Breakeven";
-  if (/Option stop/i.test(r))                   return "Option Stop";
-  if (/EOD square-off/i.test(r))                return "EOD Square-off";
   if (/Manual/i.test(r))                        return "Manual Exit";
   if (/Session end|Auto-stop|Shutdown|stop/i.test(r)) return "Session Stop";
   return "Other";
@@ -1613,19 +1473,8 @@ async function _preloadSeries(resMin, days, todayStr) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
-  // Already running: refuse BEFORE touching the harness — an attached harness
-  // belongs to that running session, and detaching it would let the open
-  // position's exit skip the broker.
   if (ptState.running) {
     return res.status(400).json({ success: false, error: "Paper trading already running." });
-  }
-
-  // Live-harness safety net — before every other early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
   }
 
   // Re-read env into module-level config so Settings UI changes and replay
@@ -1711,56 +1560,8 @@ router.get("/start", async (req, res) => {
   ptState.optionSymbol   = null;
   ptState.optionChart    = null;
   ptState._consecutiveLosses   = 0;
-  ptState._dailyLossHit        = false; // reset daily kill switch on new session
   ptState._reentryBlockUntil   = 0;
-  ptState._priorRealizedToday  = 0;     // re-seeded from disk just below
-  ptState._priorTradesToday    = 0;
   _chartSeriesCache = { key: null, value: null };
-  // ── Daily-loss / trade-cap RESTART RECOVERY ───────────────────────────────
-  // A stop→start (or crash + PM2 restart) mid-day must not hand the day a fresh
-  // loss budget or a fresh trade allowance. Earlier sessions' realized P&L and
-  // trade count are kept in SEPARATE fields (saveSession persists sessionPnl
-  // verbatim, so seeding it would double-count on the next restart).
-  try {
-    // NOT during replay. Replay patches Date.now() to the recorded session's
-    // clock and loadPaperData() is the REAL session store — reading it would
-    // react to the replayed day's actual result and destroy determinism.
-    let _inReplay = false;
-    try { _inReplay = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
-    if (_inReplay) throw { __skip: true };
-
-    let _realized = 0, _taken = 0;
-    const _keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
-    const _savedKeys = new Set();
-    for (const s of (data.sessions || [])) {
-      for (const t of (s.trades || [])) _savedKeys.add(_keyOf(t));
-      if (String(s.date || "").slice(0, 10) === todayStr) {
-        _realized += Number(s.sessionPnl) || 0;
-        _taken    += Array.isArray(s.trades) ? s.trades.length : (Number(s.totalTrades) || 0);
-      }
-    }
-    // A crash (kill -9, OOM) never runs saveSession(): its trades exist ONLY in
-    // today's day file. Count them too, or the restart gets a fresh allowance.
-    for (const t of tradeLogger.readDailyTrades("sail_vwap_st", todayStr)) {
-      if (!t || t.type || !(t.side || t.entryTime || t.entryBarTime || t.symbol)) continue;
-      if (_savedKeys.has(_keyOf(t))) continue;
-      _realized += Number(t.pnl) || 0;
-      _taken++;
-    }
-    ptState._priorTradesToday = _taken;
-    if (_realized !== 0 || _taken > 0) {
-      ptState._priorRealizedToday = parseFloat(_realized.toFixed(2));
-      if (cfg.MAX_DAILY_LOSS > 0 && ptState._priorRealizedToday <= -Math.abs(cfg.MAX_DAILY_LOSS)) {
-        ptState._dailyLossHit = true;
-        log(`♻️ [PAPER] Restart recovery — today's realized ₹${ptState._priorRealizedToday} ≤ -₹${cfg.MAX_DAILY_LOSS}: daily kill-switch RE-ARMED (no new entries)`);
-      } else {
-        log(`♻️ [PAPER] Restart recovery — today's earlier sessions: ${_taken} trade(s), realized ₹${ptState._priorRealizedToday} (caps count session + earlier)`);
-      }
-    }
-  } catch (e) {
-    if (e && e.__skip) log(`♻️ [PAPER] Replay run — daily-loss restart recovery skipped (must not read the real session store)`);
-    else log(`⚠️ [PAPER] daily-loss restart recovery failed: ${e.message}`);
-  }
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
   ptState._blockLoggedCandle   = null;
@@ -1778,7 +1579,6 @@ router.get("/start", async (req, res) => {
     log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
-  const _eodLabel = _fmtMins(cfg.EOD_EXIT);
   const _tfLabel  = `SAIL ${cfg.TRADE_RES}-min`;
   const _qty      = sailLotQty();
 
@@ -1792,9 +1592,8 @@ router.get("/start", async (req, res) => {
   // never drift from the rules that actually run.
   log(`   Entry      : close crosses session VWAP (hlc3), then within ${cfg.BREAKOUT_BARS} candles a close beyond the cross candle's high (CE) / low (PE); SuperTrend(${cfg.ST_PERIOD},${cfg.ST_MULT}) must agree`);
   log(`   Contract   : SAIL ATM monthly ${_U().strikeStep}-grid options · ${cfg.LOTS} lot(s) × ${_U().lotSize} = qty ${_qty}`);
-  log(`   Window     : ${_fmtMins(cfg.ENTRY_START)} → ${_fmtMins(cfg.ENTRY_END)} IST (signal candle close) | square-off ${_eodLabel} | session end ${_fmtMins(_STOP_MINS)}`);
-  log(`   Exit       : SuperTrend flip / close beyond the trailed SuperTrend stop (candle close) + profit lock, breakeven, option stop ${(cfg.OPT_STOP_PCT * 100).toFixed(0)}% (ticks)`);
-  log(`   Risk guards: MaxDailyLoss=₹${cfg.MAX_DAILY_LOSS}${cfg.MAX_DAILY_LOSS > 0 ? "" : " (off)"} | MaxTrades=${cfg.MAX_DAILY_TRADES}`);
+  log(`   Window     : ${_fmtMins(cfg.ENTRY_START)} → ${_fmtMins(cfg.ENTRY_END)} IST (signal candle close) | session end ${_fmtMins(_STOP_MINS)}`);
+  log(`   Exit       : profit lock only (premium, per tick) — no stop loss, trail, target or signal exit`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
   // Telegram: session started + checklist
@@ -1837,9 +1636,9 @@ router.get("/start", async (req, res) => {
       `Timeframe : ${_tfLabel}`,
       `Instrument: ${"SAIL_OPTIONS"}`,
       `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
-      `Window    : ${_fmtMins(cfg.ENTRY_START)} → ${_fmtMins(cfg.ENTRY_END)} IST (entries) · square-off ${_eodLabel}`,
+      `Window    : ${_fmtMins(cfg.ENTRY_START)} → ${_fmtMins(cfg.ENTRY_END)} IST (entries)`,
       `Size      : ${cfg.LOTS} lot(s) × ${_U().lotSize} = qty ${_qty}`,
-      `Max Loss  : ₹${cfg.MAX_DAILY_LOSS} | Max Trades: ${cfg.MAX_DAILY_TRADES}`,
+      `Exit      : profit lock only`,
       ``,
       `Pre-Market Checklist:`,
       `${_ptChecks.fyers.ok  ? "✅" : "❌"} Fyers   : ${_ptChecks.fyers.msg}`,
@@ -1922,7 +1721,6 @@ router.get("/start", async (req, res) => {
       simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
     }
     ptState.running = false;
-    _releaseLiveHarness("scheduled auto-stop");   // after the square-off above
     // Square-off above needs lastTickPrice; never let a reservation outlive the session.
     capitalPool.clear("sail_vwap_st");
     stopOptionPolling();
@@ -1974,7 +1772,6 @@ router.get("/start", async (req, res) => {
  */
 router.get("/stop", async (req, res) => {
   if (!ptState.running) {
-    _releaseLiveHarness("paper /stop — engine not running");   // a stale harness must still be removable
     return res.status(400).json({ success: false, error: "Paper trading is not running." });
   }
 
@@ -1983,8 +1780,6 @@ router.get("/stop", async (req, res) => {
     const _px = ptState.lastTickPrice || ptState.currentBar.close;
     simulateSell(_px, "Manual stop", _px);
   }
-  // Released AFTER the virtual square-off, so the harness still closes the real position.
-  _releaseLiveHarness("paper /stop");
 
   stopOptionPolling();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -2047,9 +1842,8 @@ router.get("/exit", (req, res) => {
 /**
  * POST /sail_vwap_st-paper/manualEntry
  * Manually enter a CE or PE trade at the current spot price.
- * SL = the SuperTrend value on the latest CLOSED trade-TF candle (engine.computeSeries).
- * Refused when that level is on the wrong side of spot. The candle-close exit and
- * the SuperTrend trail then apply exactly as for an automatic entry.
+ * No stop: the profit lock is the only automatic exit, exactly as for an
+ * automatic entry. The latest closed candle's indicators are recorded on the trade.
  */
 router.post("/manualEntry", async (req, res) => {
   if (!ptState.running) {
@@ -2070,25 +1864,13 @@ router.post("/manualEntry", async (req, res) => {
     return res.status(400).json({ success: false, error: "No market data yet." });
   }
 
-  // Stop = the CURRENT SuperTrend value, from the engine's own series.
+  // Indicator snapshot for the trade record only (display) — never a gate.
   const cfg = engine.getConfig();
   const candles = ptState.candles || [];
-  if (candles.length < engine.warmupBars(cfg)) {
-    return res.status(409).json({ success: false, error: `Warming up — ${candles.length}/${engine.warmupBars(cfg)} closed ${TRADE_RES}-min candles; no SuperTrend stop yet.` });
-  }
   const series = engine.computeSeries(candles, cfg);
-  const st = series.supertrend[candles.length - 1];
-  if (!st || !Number.isFinite(st.value)) {
-    return res.status(409).json({ success: false, error: "No SuperTrend value on the last closed candle — cannot set a stop." });
-  }
-  const stop = parseFloat(st.value.toFixed(2));
-  if ((side === "CE" && !(stop < spot)) || (side === "PE" && !(stop > spot))) {
-    const why = side === "CE"
-      ? `SuperTrend ₹${stop} is not below spot ₹${spot} — no protective CE stop. Manual CE refused.`
-      : `SuperTrend ₹${stop} is not above spot ₹${spot} — no protective PE stop. Manual PE refused.`;
-    log(`❌ [PAPER] Manual entry refused — ${why}`);
-    return res.status(409).json({ success: false, error: why });
-  }
+  const _li = candles.length - 1;
+  const st = _li >= 0 ? series.supertrend[_li] : null;
+  const _stv = st && Number.isFinite(st.value) ? parseFloat(st.value.toFixed(2)) : null;
 
   const _sidManual = _entrySessionGen;
   ptState._entryPending = true;   // synchronous — an automatic entry cannot race this one
@@ -2121,15 +1903,15 @@ router.post("/manualEntry", async (req, res) => {
     }
     const qty = sailLotQty();   // SAIL lots × lot size, clamped by MAX_LOT_MULTIPLIER
 
-    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL (SuperTrend): ₹${stop} | Symbol: ${symbol}`);
-    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user | SL=ST ${stop}`, stop, spot, {
+    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | Symbol: ${symbol}`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user`, spot, {
       entryLtp,
       manual:       true,
       entryBarTime: ptState.currentBar ? ptState.currentBar.time : null,
       signal: {
-        supertrend: stop,
-        stTrend:    st.trend === 1 ? "BULLISH" : st.trend === -1 ? "BEARISH" : null,
-        vwap:       Number.isFinite(series.vwap[candles.length - 1]) ? parseFloat(series.vwap[candles.length - 1].toFixed(2)) : null,
+        supertrend: _stv,
+        stTrend:    st && st.trend === 1 ? "BULLISH" : st && st.trend === -1 ? "BEARISH" : null,
+        vwap:       _li >= 0 && Number.isFinite(series.vwap[_li]) ? parseFloat(series.vwap[_li].toFixed(2)) : null,
       },
     });
     if (!ptState.position || !/^Manual/.test(String(ptState.position.reason || ""))) {
@@ -2137,7 +1919,7 @@ router.post("/manualEntry", async (req, res) => {
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
 
-    return res.json({ success: true, spot: spot, side: side, sl: stop, symbol: symbol });
+    return res.json({ success: true, spot: spot, side: side, symbol: symbol });
   } catch (e) {
     log(`❌ [PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -2327,7 +2109,6 @@ router.get("/status/chart-data", async (req, res) => {
       ? { side: ls.setup.side, level: ls.setup.level } : null;
     return res.json({
       candles, markers,
-      stopLoss:   ptState.position && Number.isFinite(ptState.position.stopLoss) ? ptState.position.stopLoss : null,
       entryPrice: ptState.position && ptState.position.entryPrice ? ptState.position.entryPrice : null,
       optionChart: optionChart.buildPayload({ store: ptState.optionChart, position: ptState.position, trades: ptState.sessionTrades }),
       supertrend: ind.supertrend, trendSource: "SUPERTREND",
@@ -2426,10 +2207,6 @@ router.get("/status/data", (req, res) => {
       prevCandleHigh:    ptState.prevCandleHigh,
       prevCandleLow:     ptState.prevCandleLow,
       consecutiveLosses: ptState._consecutiveLosses || 0,   // display only — no breaker
-      dailyLossHit:      ptState._dailyLossHit || false,
-      maxDailyLoss:      cfg.MAX_DAILY_LOSS,
-      maxDailyTrades:    cfg.MAX_DAILY_TRADES,
-      priorTradesToday:  ptState._priorTradesToday || 0,
       sessionStart:      ptState.sessionStart,
       staleSession:      ptState._staleSession || false,
       tradeCount:        ptState.sessionTrades.length,
@@ -2445,8 +2222,6 @@ router.get("/status/data", (req, res) => {
         qty:               pos.qty,
         entryPrice:        pos.entryPrice,
         entryTime:         pos.entryTime,
-        stopLoss:          pos.stopLoss,
-        initialStopLoss:   pos.initialStopLoss,
         optionStrike:      pos.optionStrike,
         optionExpiry:      pos.optionExpiry,
         optionType:        pos.optionType,
@@ -2520,15 +2295,6 @@ router.get("/status", (req, res) => {
   const pointsMoved = pos && liveClose
     ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2))
     : 0;
-  const trailActive = pos && pos.bestPrice !== undefined && pos.bestPrice !== null;
-  const trailProfit = pos && pos.bestPrice
-    ? parseFloat(((pos.side === "CE"
-        ? pos.bestPrice - pos.entryPrice
-        : pos.entryPrice - pos.bestPrice)).toFixed(2))
-    : 0;
-  // Trailing-stop label — one trail source, tightened (and tested) on candle close only.
-  const _stCfg    = _cfgPg;
-  const _trailLbl = `SuperTrend(${_stCfg.ST_PERIOD},${_stCfg.ST_MULT}) · close-only`;
 
   // ATM/ITM badge
   const atmStrike = pos ? instrumentConfig.calcATMStrike(pos.entryPrice, null, UNDERLYING) : null;
@@ -2650,7 +2416,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
 
-      <!-- Secondary grid: SAIL spot + SuperTrend SL + Trail -->
+      <!-- Secondary grid: spot @ entry + spot LTP -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SAIL Spot @ Entry</div>
@@ -2661,17 +2427,6 @@ router.get("/status", (req, res) => {
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SAIL LTP</div>
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ₹${Math.abs(pointsMoved).toFixed(2)}</div>
-        </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (SuperTrend)</div>
-          <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
-          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
-        </div>
-        <div id="ajax-trail-card" data-trail="${_trailLbl}" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
-          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#f59e0b"};">${_trailLbl}</div>
-          <div id="ajax-trail-best" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (₹${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(2)})</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Trail source: ${_trailLbl}</div>
         </div>
       </div>
 
@@ -2769,7 +2524,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('sailVwapStPaper', sharedSocketState.getSailVwapStMode()==='SAIL_VWAP_ST_LIVE', ptState.running, {
+${buildSidebar('sailVwapStPaper', false, ptState.running, {
   showExitBtn:  !!ptState.position,
   showStopBtn:  ptState.running,
   showStartBtn: !ptState.running,
@@ -2820,18 +2575,13 @@ ${buildSidebar('sailVwapStPaper', sharedSocketState.getSailVwapStMode()==='SAIL_
     </div>
     <div class="sc" style="border-top:1.5px solid #6a5090;">
       <div class="sc-label">${ptState._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
-      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_cfgPg.MAX_DAILY_TRADES}</span>${ptState._priorTradesToday ? ` <span style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);">+${ptState._priorTradesToday} earlier</span>` : ''}</div>
+      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span></div>
       <div id="ajax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
     </div>
     <div class="sc" style="border-top:2px solid #4a6080;" id="ajax-sc-cl">
       <div class="sc-label">Loss Streak</div>
       <div class="sc-val" id="ajax-consec-losses" style="color:#fff">${ptState._consecutiveLosses || 0}</div>
       <div id="ajax-cl-status" style="font-size:0.7rem;margin-top:4px;color:#8ba1c2">info only — no breaker</div>
-    </div>
-    <div class="sc" style="border-top:2px solid ${ptState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-sc-dloss">
-      <div class="sc-label">Daily Loss Limit</div>
-      <div class="sc-val" id="ajax-daily-loss-val" style="color:${ptState._dailyLossHit ? '#ef4444' : '#fff'}">${_cfgPg.MAX_DAILY_LOSS > 0 ? inr(-Math.abs(_cfgPg.MAX_DAILY_LOSS)) : 'off'}</div>
-      <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._dailyLossHit ? '#ef4444' : '#10b981'}">${ptState._dailyLossHit ? '🛑 KILLED — no entries' : '✅ Active'}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #a07010;">
       <div class="sc-label">Candles Loaded</div>
@@ -2941,8 +2691,7 @@ ${buildSidebar('sailVwapStPaper', sharedSocketState.getSailVwapStMode()==='SAIL_
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
         <span style="color:#38bdf8;">── VWAP</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
-        <span style="color:#a78bfa;">── Breakout level</span> &nbsp;
-        <span style="color:#f59e0b;">── SL</span>
+        <span style="color:#a78bfa;">── Breakout level</span>
       </div>
     </div>
     ${optionChart.optionChartHtml('svst-opt-chart')}
@@ -3315,8 +3064,6 @@ ${modalJS()}
   // Colour each SuperTrend point by its trend (1=up→green, -1=down→red). Falls back to green if trend missing.
   const _stColor = function(p){ return { time:p.time, value:p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') }; };
 
-  // SL line
-  let slLine = null;
   // Entry price line
   let entryLine = null;
   // The waiting setup's breakout level (cross candle high for CE / low for PE)
@@ -3376,16 +3123,6 @@ ${modalJS()}
         }));
       } else {
         candleSeries.setMarkers([]);
-      }
-
-      // SL line
-      if (slLine) { candleSeries.removePriceLine(slLine); slLine = null; }
-      if (d.stopLoss) {
-        slLine = candleSeries.createPriceLine({
-          price: d.stopLoss, color: '#f59e0b', lineWidth: 1,
-          lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: true, title: 'SL',
-        });
       }
 
       // Entry price line
@@ -3501,15 +3238,6 @@ ${optionChart.optionChartScript({ dataUrl: '/sail_vwap_st-paper/status/chart-dat
       const clEl = document.getElementById('ajax-consec-losses');
       if (clEl) clEl.textContent = String(d.consecutiveLosses || 0);
 
-      // Daily loss kill switch card
-      const dlCard = document.getElementById('ajax-sc-dloss');
-      const dlStatus = document.getElementById('ajax-daily-loss-status');
-      if (dlCard) dlCard.style.borderTopColor = d.dailyLossHit ? '#ef4444' : '#10b981';
-      if (dlStatus) {
-        dlStatus.textContent = d.dailyLossHit ? '\uD83D\uDED1 KILLED \u2014 no entries' : '\u2705 Active';
-        dlStatus.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-      }
-
       const candleEl = document.getElementById('ajax-candle-count');
       if (candleEl) {
         const need  = d.warmupNeed || 25;
@@ -3588,7 +3316,6 @@ ${optionChart.optionChartScript({ dataUrl: '/sail_vwap_st-paper/status/chart-dat
             pctEl.textContent = '\u2014';
           }
         }
-        // No Option-SL card \u2014 the SuperTrend stop (tested on candle close) is the only stop.
         const optPnlEl = document.getElementById('ajax-opt-pnl');
         if (optPnlEl && p.optPremiumPnl !== null) {
           optPnlEl.textContent = (p.optPremiumPnl >= 0 ? '+' : '') + INR(p.optPremiumPnl);
@@ -3609,27 +3336,6 @@ ${optionChart.optionChartScript({ dataUrl: '/sail_vwap_st-paper/status/chart-dat
             sub.textContent = (moved >= 0 ? '\u25b2' : '\u25bc') + ' \u20b9' + Math.abs(moved).toFixed(2);
             sub.style.color = moved >= 0 ? '#10b981' : '#ef4444';
           }
-        }
-        // SL
-        const slEl = document.getElementById('ajax-stop-loss');
-        if (slEl) slEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\u2014';
-        // Trail status card
-        const trailCard  = document.getElementById('ajax-trail-card');
-        const trailStat  = document.getElementById('ajax-trail-status');
-        const trailBest  = document.getElementById('ajax-trail-best');
-        const trailAct   = document.getElementById('ajax-trail-activate');
-        if (trailCard && trailStat && trailBest) {
-          const tActive     = p.bestPrice !== null && p.bestPrice !== undefined;
-          const tProfit     = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
-          const tProfDir    = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
-          const trailLbl    = trailCard.dataset.trail || 'SuperTrend';
-          const inProfit    = tProfDir > 0;
-          trailCard.style.borderColor = inProfit ? '#8b5cf6' : '#134e35';
-          trailStat.textContent  = trailLbl;
-          trailStat.style.color  = inProfit ? '#8b5cf6' : '#f59e0b';
-          const pts = tProfDir >= 0 ? '+' + tProfit.toFixed(2) : tProfit.toFixed(2);
-          trailBest.textContent  = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (\u20b9' + pts + ')' : 'Best: \u2014 (+\u20b90.00)';
-          if (trailAct) trailAct.textContent = 'Trail source: ' + trailLbl;
         }
       }
 
@@ -3705,7 +3411,6 @@ ${optionChart.optionChartScript({ dataUrl: '/sail_vwap_st-paper/status/chart-dat
  */
 router.get("/history", (req, res) => {
   const data = loadPaperData();
-  const liveActive = sharedSocketState.getSailVwapStMode() === "SAIL_VWAP_ST_LIVE";
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
     routePrefix: "/sail_vwap_st-paper",
@@ -3713,7 +3418,6 @@ router.get("/history", (req, res) => {
     pageTitle: "📉 SAIL_VWAP_ST Paper Trade History",
     pageDocTitle: "SAIL_VWAP_ST Paper — History",
     modalLabel: "SAIL_VWAP_ST Paper",
-    liveActive,
     sessions: data.sessions || [],
     capital: data.capital,
     totalPnl: data.totalPnl,
@@ -3962,7 +3666,7 @@ router.get("/debug", (req, res) => {
     lastSignal:           ls ? { time: ls.time, signal: ls.signal, reason: ls.reason } : null,
     pendingEntry:         ptState._pendingEntry ? { signal: ptState._pendingEntry.sig.signal, attempts: ptState._pendingEntry.attempts || 0 } : null,
     tfNote:               _tfNote(),
-    position:             ptState.position ? { side: ptState.position.side, entryPrice: ptState.position.entryPrice, stopLoss: ptState.position.stopLoss } : null,
+    position:             ptState.position ? { side: ptState.position.side, entryPrice: ptState.position.entryPrice } : null,
     capital:              loadPaperData().capital,
     sessionPnl:           ptState.sessionPnl,
     isMarketHours:        isMarketHours(),
@@ -4116,19 +3820,17 @@ async function manualEntry(side) {
 
 /**
  * stopSession() — square off + stop the session, callable by app.js
- * gracefulShutdown on SIGTERM / auto-deploy, so a harness-live Zerodha position
+ * gracefulShutdown on SIGTERM / auto-deploy, so an open paper position
  * is squared off on a deploy/restart. Idempotent: no-op if not running.
  */
 function stopSession(reason = "Shutdown square-off") {
-  if (!ptState.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!ptState.running) return;
   try {
     if (ptState.position && (ptState.lastTickPrice || ptState.currentBar)) {
       const _px = ptState.lastTickPrice || ptState.currentBar.close;
       simulateSell(_px, reason, _px);
     }
   } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
-  // Released AFTER the virtual square-off above (shutdown / SIGTERM path).
-  _releaseLiveHarness("stopSession/shutdown");
   // The square-off above can throw, so a position may survive it. Free its
   // capital reservation either way — a leaked block would keep shrinking the
   // broker pool for the rest of the process.

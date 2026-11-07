@@ -1,11 +1,11 @@
 /**
  * sharedNav.js — Unified navigation component
  * ─────────────────────────────────────────────────────────────────────────────
- * Renders the sidebar nav (same design as Live Trade page) for ALL pages.
- * Used by: Dashboard, Backtest, Paper Trade, Live Trade, Logs
+ * Renders the sidebar nav for ALL pages.
+ * Used by: Dashboard, Backtest, Paper Trade, Logs
  *
- * @param {string}  activePage  - 'dashboard' | 'emaRsiStBacktest' | 'emaRsiStPaper' | 'emaRsiStLive' | 'logs'
- * @param {boolean} liveActive  - true when EMA_RSI_ST_LIVE socket is running
+ * @param {string}  activePage  - 'dashboard' | 'emaRsiStBacktest' | 'emaRsiStPaper' | 'logs'
+ * @param {boolean} _unused     - legacy positional slot (was the live-trading flag); ignored
  * @param {boolean} isRunning   - true when THIS page's trade/session is running
  * @param {object}  opts        - { showStopBtn, showStartBtn, showExitBtn, stopLabel, startLabel }
  */
@@ -48,7 +48,7 @@ const STRATEGY_MODES = [
   { mode: 'BN_PIVOT_EMA_ST', label: 'BN PIVOT_EMA_ST', envKey: 'BN_PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
   { mode: 'SAIL_PIVOT_EMA_ST', label: 'SAIL PIVOT_EMA_ST', envKey: 'SAIL_PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
   // GAP_RUNAWAY (GAP_runAway__Kirubakaran) ships ON — the user wants Start All (Paper) to start it,
-  // and its stock scanner beside it (paper only, no live route).
+  // and its stock scanner beside it (paper only).
   { mode: 'GAP_RUNAWAY', label: 'GAP_runAway__Kirubakaran', envKey: 'GAP_RUNAWAY_MODE_ENABLED', envDefault: 'true' },
   { mode: 'GAP_RUNAWAY_STK', label: 'GAP_runAway Stocks', envKey: 'GAP_RUNAWAY_STK_MODE_ENABLED', envDefault: 'true' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
@@ -64,7 +64,7 @@ function enabledStrategies() {
     s => (process.env[s.envKey] || s.envDefault || 'true').toLowerCase() === 'true');
 }
 
-function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
+function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   // Read-only demo session? Read from the request context rather than a caller
   // argument — every page in the app calls buildSidebar, and none of them would
   // have been updated to pass a flag they know nothing about.
@@ -116,8 +116,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
-  // Hide Replay while any paper/live trade is running — Replay cannot run with a
-  // live session anyway (it blocks on running modes), so keep the menu clean.
+  // Hide Replay while any paper trade is running — Replay cannot run with a
+  // running session anyway (it blocks on running modes), so keep the menu clean.
   const _hideReplayLive = _anyTradeActive;
 
   // The footer pill is global chrome, not per-page state: while any strategy
@@ -183,7 +183,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'false').toLowerCase()  === 'true';
   const showReplay      = (process.env.UI_SHOW_REPLAY        || 'false').toLowerCase()  === 'true' && !_hideReplayLive;
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
-  const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
   const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
   const showLossesAnalyzer = (process.env.UI_SHOW_LOSSES_ANALYZER || 'true').toLowerCase() === 'true';
   const showAdvisor       = (process.env.UI_SHOW_ADVISOR || 'true').toLowerCase() === 'true';
@@ -198,107 +197,82 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // ── Per-strategy submenu toggles ──
   const showEmaRsiStBacktest = (process.env.UI_SHOW_EMA_RSI_ST_BACKTEST || 'false').toLowerCase() === 'true';
   const showEmaRsiStPaper    = (process.env.UI_SHOW_EMA_RSI_ST_PAPER    || 'true').toLowerCase() === 'true';
-  const showEmaRsiStLive     = (process.env.UI_SHOW_EMA_RSI_ST_LIVE     || 'true').toLowerCase() === 'true';
-  const showEmaRsiStLiveHarness = (process.env.UI_SHOW_EMA_RSI_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showBbRsiBacktest = (process.env.UI_SHOW_BB_RSI_BACKTEST || 'false').toLowerCase() === 'true';
   const showBbRsiPaper    = (process.env.UI_SHOW_BB_RSI_PAPER    || 'true').toLowerCase() === 'true';
-  const showBbRsiLive     = (process.env.UI_SHOW_BB_RSI_LIVE     || 'true').toLowerCase() === 'true';
-  const showBbRsiLiveHarness = (process.env.UI_SHOW_BB_RSI_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showPaBacktest        = (process.env.UI_SHOW_PA_BACKTEST         || 'false').toLowerCase() === 'true';
   const showPaPatternBacktest = (process.env.UI_SHOW_PA_PATTERN_BACKTEST || 'false').toLowerCase() === 'true';
   const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
-  const showPaLive            = (process.env.UI_SHOW_PA_LIVE             || 'true').toLowerCase() === 'true';
-  const showPaLiveHarness     = (process.env.UI_SHOW_PA_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
   const showOrbBacktest       = (process.env.UI_SHOW_ORB_BACKTEST         || 'false').toLowerCase() === 'true';
   const showOrbPaper          = (process.env.UI_SHOW_ORB_PAPER            || 'true').toLowerCase() === 'true';
-  const showOrbLive           = (process.env.UI_SHOW_ORB_LIVE             || 'true').toLowerCase() === 'true';
-  const showOrbLiveHarness    = (process.env.UI_SHOW_ORB_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
   const showOrbHistory        = (process.env.UI_SHOW_ORB_HISTORY          || 'true').toLowerCase() === 'true';
   const showEma9vwapBacktest  = (process.env.UI_SHOW_EMA9VWAP_BACKTEST    || 'false').toLowerCase() === 'true';
   const showEma9vwapPaper     = (process.env.UI_SHOW_EMA9VWAP_PAPER       || 'true').toLowerCase() === 'true';
-  const showEma9vwapLive      = (process.env.UI_SHOW_EMA9VWAP_LIVE        || 'true').toLowerCase() === 'true';
   const showEma9vwapHistory   = (process.env.UI_SHOW_EMA9VWAP_HISTORY     || 'true').toLowerCase() === 'true';
-  // Trend Pullback — Paper + History + Backtest live now; Live default hidden until Phase C.
+  // Trend Pullback — Paper + History + Backtest.
   const showTrendPbBacktest    = (process.env.UI_SHOW_TREND_PB_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showTrendPbPaper       = (process.env.UI_SHOW_TREND_PB_PAPER        || 'true').toLowerCase()  === 'true';
-  const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'true').toLowerCase()  === 'true';
   const showTrendPbHistory     = (process.env.UI_SHOW_TREND_PB_HISTORY      || 'true').toLowerCase()  === 'true';
-  // Trend Day Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
+  // Trend Day Scalp.
   const showTdsBacktest       = (process.env.UI_SHOW_TDS_BACKTEST          || 'false').toLowerCase()  === 'true';
   const showTdsPaper          = (process.env.UI_SHOW_TDS_PAPER             || 'true').toLowerCase()  === 'true';
-  const showTdsLive           = (process.env.UI_SHOW_TDS_LIVE              || 'true').toLowerCase()  === 'true';
   const showTdsHistory        = (process.env.UI_SHOW_TDS_HISTORY           || 'true').toLowerCase()  === 'true';
-  // HA Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
+  // HA Scalp.
   const showHaScalpBacktest   = (process.env.UI_SHOW_HA_SCALP_BACKTEST      || 'false').toLowerCase()  === 'true';
   const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
-  const showHaScalpLive       = (process.env.UI_SHOW_HA_SCALP_LIVE          || 'true').toLowerCase()  === 'true';
   const showHaScalpHistory    = (process.env.UI_SHOW_HA_SCALP_HISTORY       || 'true').toLowerCase()  === 'true';
-  // PREV ORB Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
+  // PREV ORB Scalp.
   const showPrevOrbScalpBacktest = (process.env.UI_SHOW_PREV_ORB_SCALP_BACKTEST || 'false').toLowerCase() === 'true';
   const showPrevOrbScalpPaper    = (process.env.UI_SHOW_PREV_ORB_SCALP_PAPER    || 'true').toLowerCase() === 'true';
-  const showPrevOrbScalpLive     = (process.env.UI_SHOW_PREV_ORB_SCALP_LIVE     || 'true').toLowerCase() === 'true';
   const showPrevOrbScalpHistory  = (process.env.UI_SHOW_PREV_ORB_SCALP_HISTORY  || 'true').toLowerCase() === 'true';
   const showEarlyBirdBacktest = (process.env.UI_SHOW_EARLYBIRD_BACKTEST      || 'false').toLowerCase()  === 'true';
   const showEarlyBirdPaper    = (process.env.UI_SHOW_EARLYBIRD_PAPER         || 'true').toLowerCase()  === 'true';
-  const showEarlyBirdLive     = (process.env.UI_SHOW_EARLYBIRD_LIVE          || 'true').toLowerCase()  === 'true';
   const showEarlyBirdHistory  = (process.env.UI_SHOW_EARLYBIRD_HISTORY       || 'true').toLowerCase()  === 'true';
-  // RSI Pivot ST — never traded; ships visible but its Live page is triple-gated to dry-run.
+  // RSI Pivot ST.
   const showRsiPivotStBacktest = (process.env.UI_SHOW_RSI_PIVOT_ST_BACKTEST || 'false').toLowerCase()  === 'true';
   const showRsiPivotStPaper    = (process.env.UI_SHOW_RSI_PIVOT_ST_PAPER    || 'true').toLowerCase()  === 'true';
-  const showRsiPivotStLive     = (process.env.UI_SHOW_RSI_PIVOT_ST_LIVE     || 'true').toLowerCase()  === 'true';
   const showRsiPivotStHistory  = (process.env.UI_SHOW_RSI_PIVOT_ST_HISTORY  || 'true').toLowerCase()  === 'true';
   // BN Pivot RSI ST (NIFTY BANK) — same engine as RSI Pivot ST on a different
-  // underlying; never traded, so its Live page is triple-gated to dry-run too.
+  // underlying.
   const showBnPivotRsiStBacktest = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST || 'false').toLowerCase()  === 'true';
   const showBnPivotRsiStPaper    = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_PAPER    || 'true').toLowerCase()  === 'true';
-  const showBnPivotRsiStLive     = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_LIVE     || 'true').toLowerCase()  === 'true';
   const showBnPivotRsiStHistory  = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_HISTORY  || 'true').toLowerCase()  === 'true';
   // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop. Whole
   // group is gated by EMA_RSI_ST_V2_MODE_ENABLED (default off) above; these
   // only pick which of its pages show once the group is on.
   const showEmaRsiStV2Backtest    = (process.env.UI_SHOW_EMA_RSI_ST_V2_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showEmaRsiStV2Paper       = (process.env.UI_SHOW_EMA_RSI_ST_V2_PAPER        || 'true').toLowerCase()  === 'true';
-  const showEmaRsiStV2LiveHarness = (process.env.UI_SHOW_EMA_RSI_ST_V2_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showEmaRsiStV2History     = (process.env.UI_SHOW_EMA_RSI_ST_V2_HISTORY      || 'true').toLowerCase()  === 'true';
   // BN_EMA_RSI_ST_V2 (NIFTY BANK) — whole group is gated by
   // BN_EMA_RSI_ST_V2_MODE_ENABLED (default off) above; these only pick which of
   // its pages show once the group is on.
   const showBnEmaRsiStV2Backtest    = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showBnEmaRsiStV2Paper       = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_PAPER        || 'true').toLowerCase()  === 'true';
-  const showBnEmaRsiStV2LiveHarness = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showBnEmaRsiStV2History     = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_HISTORY      || 'true').toLowerCase()  === 'true';
   // ST_RSI_PIV_BB — whole group gated by ST_RSI_PIV_BB_MODE_ENABLED (default
   // off) above; these only pick which of its pages show once the group is on.
   const showStRsiPivBbPaper       = (process.env.UI_SHOW_ST_RSI_PIV_BB_PAPER        || 'true').toLowerCase()  === 'true';
-  const showStRsiPivBbLiveHarness = (process.env.UI_SHOW_ST_RSI_PIV_BB_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showStRsiPivBbHistory     = (process.env.UI_SHOW_ST_RSI_PIV_BB_HISTORY      || 'true').toLowerCase()  === 'true';
   // SAIL_VWAP_ST — whole group gated by SAIL_VWAP_ST_MODE_ENABLED (default off)
   // above; these only pick which of its pages show once the group is on.
   const showSailVwapStBacktest    = (process.env.UI_SHOW_SAIL_VWAP_ST_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showSailVwapStPaper       = (process.env.UI_SHOW_SAIL_VWAP_ST_PAPER        || 'true').toLowerCase()  === 'true';
-  const showSailVwapStLiveHarness = (process.env.UI_SHOW_SAIL_VWAP_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showSailVwapStHistory     = (process.env.UI_SHOW_SAIL_VWAP_ST_HISTORY      || 'true').toLowerCase()  === 'true';
   // PIVOT_EMA_ST family — each group gated by its *_MODE_ENABLED above; no
-  // Backtest page exists, so only Paper / Live (Harness) / History.
+  // Backtest page exists, so only Paper / History.
   const showPivotEmaStPaper           = (process.env.UI_SHOW_PIVOT_EMA_ST_PAPER             || 'true').toLowerCase()  === 'true';
-  const showPivotEmaStLiveHarness     = (process.env.UI_SHOW_PIVOT_EMA_ST_LIVE_HARNESS      || 'false').toLowerCase() === 'true';
   const showPivotEmaStHistory         = (process.env.UI_SHOW_PIVOT_EMA_ST_HISTORY           || 'true').toLowerCase()  === 'true';
   const showBnPivotEmaStPaper         = (process.env.UI_SHOW_BN_PIVOT_EMA_ST_PAPER          || 'true').toLowerCase()  === 'true';
-  const showBnPivotEmaStLiveHarness   = (process.env.UI_SHOW_BN_PIVOT_EMA_ST_LIVE_HARNESS   || 'false').toLowerCase() === 'true';
   const showBnPivotEmaStHistory       = (process.env.UI_SHOW_BN_PIVOT_EMA_ST_HISTORY        || 'true').toLowerCase()  === 'true';
   const showSailPivotEmaStPaper       = (process.env.UI_SHOW_SAIL_PIVOT_EMA_ST_PAPER        || 'true').toLowerCase()  === 'true';
-  const showSailPivotEmaStLiveHarness = (process.env.UI_SHOW_SAIL_PIVOT_EMA_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showSailPivotEmaStHistory     = (process.env.UI_SHOW_SAIL_PIVOT_EMA_ST_HISTORY      || 'true').toLowerCase()  === 'true';
-  // GAP_RUNAWAY — no Backtest page; the stock scanner has no Live page either.
+  // GAP_RUNAWAY — no Backtest page.
   const showGapRunawayPaper        = (process.env.UI_SHOW_GAP_RUNAWAY_PAPER         || 'true').toLowerCase()  === 'true';
-  const showGapRunawayLiveHarness  = (process.env.UI_SHOW_GAP_RUNAWAY_LIVE_HARNESS  || 'false').toLowerCase() === 'true';
   const showGapRunawayHistory      = (process.env.UI_SHOW_GAP_RUNAWAY_HISTORY       || 'true').toLowerCase()  === 'true';
   const showGapRunawayStkPaper     = (process.env.UI_SHOW_GAP_RUNAWAY_STK_PAPER     || 'true').toLowerCase()  === 'true';
   const showGapRunawayStkHistory   = (process.env.UI_SHOW_GAP_RUNAWAY_STK_HISTORY   || 'true').toLowerCase()  === 'true';
-  // SIMPLE_9:30 — never traded; ships visible but its Live page is triple-gated to dry-run.
+  // SIMPLE_9:30.
   const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'false').toLowerCase()  === 'true';
   const showSimple930Paper    = (process.env.UI_SHOW_SIMPLE930_PAPER       || 'true').toLowerCase()  === 'true';
-  const showSimple930Live     = (process.env.UI_SHOW_SIMPLE930_LIVE        || 'true').toLowerCase()  === 'true';
   const showSimple930History  = (process.env.UI_SHOW_SIMPLE930_HISTORY     || 'true').toLowerCase()  === 'true';
 
   // ── Top-level underlying groups (NIFTY is implicit — it holds the strategies
@@ -316,31 +290,31 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showBrokers    = (process.env.UI_SHOW_BROKERS     || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
-  const tradingKeys = ['emaRsiStBacktest', 'emaRsiStPaper', 'emaRsiStSim', 'emaRsiStHistory', 'emaRsiStCompare', 'emaRsiStTracker', 'emaRsiStLive', 'emaRsiStLiveHarness'];
-  const bbRsiKeys   = ['bbRsiBacktest', 'bbRsiPaper', 'bbRsiSim', 'bbRsiHistory', 'bbRsiCompare', 'bbRsiLive', 'bbRsiLiveHarness'];
-  const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
-  const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
-  const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapLive', 'ema9vwapHistory'];
-  const trendPbKeys = ['trendPbBacktest', 'trendPbPaper', 'trendPbLive', 'trendPbLiveHarness', 'trendPbHistory'];
-  const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpLive', 'trendDayScalpHistory'];
-  const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpLive', 'haScalpHistory'];
-  const prevOrbScalpKeys = ['prevOrbScalpBacktest', 'prevOrbScalpPaper', 'prevOrbScalpLive', 'prevOrbScalpHistory'];
-  const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
-  const bnPivotRsiStKeys = ['bnPivotRsiStBacktest', 'bnPivotRsiStPaper', 'bnPivotRsiStLive', 'bnPivotRsiStHistory'];
-  const emaRsiStV2Keys = ['emaRsiStV2Backtest', 'emaRsiStV2Paper', 'emaRsiStV2LiveHarness', 'emaRsiStV2History'];
-  const bnEmaRsiStV2Keys = ['bnEmaRsiStV2Backtest', 'bnEmaRsiStV2Paper', 'bnEmaRsiStV2LiveHarness', 'bnEmaRsiStV2History'];
-  const stRsiPivBbKeys = ['stRsiPivBbPaper', 'stRsiPivBbLiveHarness', 'stRsiPivBbHistory'];
-  const sailVwapStKeys = ['sailVwapStBacktest', 'sailVwapStPaper', 'sailVwapStLiveHarness', 'sailVwapStHistory'];
-  const pivotEmaStKeys = ['pivotEmaStPaper', 'pivotEmaStLiveHarness', 'pivotEmaStHistory'];
-  const bnPivotEmaStKeys = ['bnPivotEmaStPaper', 'bnPivotEmaStLiveHarness', 'bnPivotEmaStHistory'];
-  const sailPivotEmaStKeys = ['sailPivotEmaStPaper', 'sailPivotEmaStLiveHarness', 'sailPivotEmaStHistory'];
-  const gapRunawayKeys = ['gapRunawayPaper', 'gapRunawayLiveHarness', 'gapRunawayHistory'];
+  const tradingKeys = ['emaRsiStBacktest', 'emaRsiStPaper', 'emaRsiStSim', 'emaRsiStHistory', 'emaRsiStCompare', 'emaRsiStTracker'];
+  const bbRsiKeys   = ['bbRsiBacktest', 'bbRsiPaper', 'bbRsiSim', 'bbRsiHistory', 'bbRsiCompare'];
+  const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare'];
+  const orbKeys     = ['orbBacktest', 'orbPaper', 'orbHistory'];
+  const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapHistory'];
+  const trendPbKeys = ['trendPbBacktest', 'trendPbPaper', 'trendPbHistory'];
+  const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpHistory'];
+  const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpHistory'];
+  const prevOrbScalpKeys = ['prevOrbScalpBacktest', 'prevOrbScalpPaper', 'prevOrbScalpHistory'];
+  const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStHistory'];
+  const bnPivotRsiStKeys = ['bnPivotRsiStBacktest', 'bnPivotRsiStPaper', 'bnPivotRsiStHistory'];
+  const emaRsiStV2Keys = ['emaRsiStV2Backtest', 'emaRsiStV2Paper', 'emaRsiStV2History'];
+  const bnEmaRsiStV2Keys = ['bnEmaRsiStV2Backtest', 'bnEmaRsiStV2Paper', 'bnEmaRsiStV2History'];
+  const stRsiPivBbKeys = ['stRsiPivBbPaper', 'stRsiPivBbHistory'];
+  const sailVwapStKeys = ['sailVwapStBacktest', 'sailVwapStPaper', 'sailVwapStHistory'];
+  const pivotEmaStKeys = ['pivotEmaStPaper', 'pivotEmaStHistory'];
+  const bnPivotEmaStKeys = ['bnPivotEmaStPaper', 'bnPivotEmaStHistory'];
+  const sailPivotEmaStKeys = ['sailPivotEmaStPaper', 'sailPivotEmaStHistory'];
+  const gapRunawayKeys = ['gapRunawayPaper', 'gapRunawayHistory'];
   const gapRunawayStkKeys = ['gapRunawayStkPaper', 'gapRunawayStkHistory'];
-  const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
-  const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdLive', 'earlyBirdHistory'];
+  const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930History'];
+  const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
   // sidebar behaves the same way — one accordion, no ungrouped stragglers.
-  const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'liveConsolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
+  const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
   const systemKeys    = ['tradeLogs', 'tokenSync', 'brokers', 'settings'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
@@ -388,31 +362,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     || commodityKeys.includes(activePage);
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
 
-  // When a strategy's PAPER session is running, hide its Live / Live (Harness)
-  // entries — paper and live are mutually exclusive per strategy, so the live
-  // menu items are dead links during a paper session.
-  const emaRsiStPaperRunning    = _primaryMode  === 'EMA_RSI_ST_PAPER';
-  const bbRsiPaperRunning    = _bbRsiMode    === 'BB_RSI_PAPER';
-  const paPaperRunning       = _paMode       === 'PA_PAPER';
-  const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
-  const ema9vwapPaperRunning = _ema9vwapMode === 'EMA9VWAP_PAPER';
-  const trendPbPaperRunning  = _trendPbMode  === 'TREND_PB_PAPER';
-  const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
-  const haScalpPaperRunning  = _haScalpMode === 'HA_SCALP_PAPER';
-  const prevOrbScalpPaperRunning = _prevOrbScalpMode === 'PREV_ORB_SCALP_PAPER';
-  const earlyBirdPaperRunning = _earlyBirdMode === 'EARLY_BIRD_PAPER';
-  const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
-  const bnPivotRsiStPaperRunning = _bnPivotRsiStMode === 'BN_PIVOT_RSI_ST_PAPER';
-  const emaRsiStV2PaperRunning = _emaRsiStV2Mode === 'EMA_RSI_ST_V2_PAPER';
-  const bnEmaRsiStV2PaperRunning = _bnEmaRsiStV2Mode === 'BN_EMA_RSI_ST_V2_PAPER';
-  const stRsiPivBbPaperRunning = _stRsiPivBbMode === 'ST_RSI_PIV_BB_PAPER';
-  const sailVwapStPaperRunning = _sailVwapStMode === 'SAIL_VWAP_ST_PAPER';
-  const pivotEmaStPaperRunning = _pivotEmaStMode === 'PIVOT_EMA_ST_PAPER';
-  const bnPivotEmaStPaperRunning = _bnPivotEmaStMode === 'BN_PIVOT_EMA_ST_PAPER';
-  const sailPivotEmaStPaperRunning = _sailPivotEmaStMode === 'SAIL_PIVOT_EMA_ST_PAPER';
-  const gapRunawayPaperRunning = _gapRunawayMode === 'GAP_RUNAWAY_PAPER';
-  const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
-
   // Build a ema_rsi_st items list with per-feature toggle
   const emaRsiStItems = [
     ...(showEmaRsiStBacktest ? [{ key: 'emaRsiStBacktest', href: '/ema_rsi_st-backtest',       icon: '🔍', label: 'Backtest' }] : []),
@@ -420,8 +369,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showSim      ? [{ key: 'emaRsiStSim',     href: '/ema_rsi_st-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare  ? [{ key: 'emaRsiStCompare', href: '/compare/trading',      icon: '⚖️',  label: 'Compare'  }] : []),
     ...(showTracker  ? [{ key: 'emaRsiStTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
-    ...(showEmaRsiStLive && !emaRsiStPaperRunning ? [{ key: 'emaRsiStLive',     href: '/ema_rsi_st-live/status',    icon: '📡',  label: 'Live'     }] : []),
-    ...(showEmaRsiStLiveHarness && !emaRsiStPaperRunning ? [{ key: 'emaRsiStLiveHarness', href: '/ema_rsi_st-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const bbRsiItems = [
@@ -429,8 +376,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showBbRsiPaper    ? [{ key: 'bbRsiPaper',    href: '/bb_rsi-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'bbRsiSim',     href: '/bb_rsi-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'bbRsiCompare', href: '/compare/bb_rsi',     icon: '⚖️',  label: 'Compare'  }] : []),
-    ...(showBbRsiLive && !bbRsiPaperRunning ? [{ key: 'bbRsiLive',     href: '/bb_rsi-live/status',  icon: '📡', label: 'Live'     }] : []),
-    ...(showBbRsiLiveHarness && !bbRsiPaperRunning ? [{ key: 'bbRsiLiveHarness', href: '/bb_rsi-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const paItems = [
@@ -441,15 +386,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     // No PA Compare entry: compare.js only implements /trading (EMA_RSI_ST) and
     // /bb_rsi. The old '/compare/priceaction' link had no route behind it, so with
     // UI_SHOW_COMPARE=true it was a dead menu item.
-    ...(showPaLive && !paPaperRunning ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📡', label: 'Live'     }] : []),
-    ...(showPaLiveHarness && !paPaperRunning ? [{ key: 'paLiveHarness',     href: '/pa-live-harness',     icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const orbItems = [
     ...(showOrbBacktest ? [{ key: 'orbBacktest', href: '/orb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
     ...(showOrbPaper    ? [{ key: 'orbPaper',    href: '/orb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
-    ...(showOrbLive && !orbPaperRunning ? [{ key: 'orbLive',     href: '/orb-live/status',   icon: '📡', label: 'Live'    }] : []),
-    ...(showOrbLiveHarness && !orbPaperRunning ? [{ key: 'orbLiveHarness', href: '/orb-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showOrbHistory  ? [{ key: 'orbHistory',  href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
@@ -457,42 +398,36 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showEma9vwapBacktest ? [{ key: 'ema9vwapBacktest', href: '/ema9vwap-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showEma9vwapPaper    ? [{ key: 'ema9vwapPaper',    href: '/ema9vwap-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showSim         ? [{ key: 'ema9vwapSim',     href: '/ema9vwap-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-    ...(showEma9vwapLive && !ema9vwapPaperRunning ? [{ key: 'ema9vwapLive', href: '/ema9vwap-live', icon: '📡', label: 'Live' }] : []),
     ...(showEma9vwapHistory  ? [{ key: 'ema9vwapHistory',  href: '/ema9vwap-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const trendPbItems = [
     ...(showTrendPbBacktest ? [{ key: 'trendPbBacktest', href: '/trend-pb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
     ...(showTrendPbPaper    ? [{ key: 'trendPbPaper',    href: '/trend-pb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
-    ...(showTrendPbLive && !trendPbPaperRunning ? [{ key: 'trendPbLive', href: '/trend-pb-live', icon: '📡', label: 'Live' }] : []),
     ...(showTrendPbHistory  ? [{ key: 'trendPbHistory',  href: '/trend-pb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const tdsItems = [
     ...(showTdsBacktest ? [{ key: 'trendDayScalpBacktest', href: '/trend-day-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showTdsPaper    ? [{ key: 'trendDayScalpPaper',    href: '/trend-day-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showTdsLive && !tdsPaperRunning ? [{ key: 'trendDayScalpLive', href: '/trend-day-scalp-live', icon: '📡', label: 'Live' }] : []),
     ...(showTdsHistory  ? [{ key: 'trendDayScalpHistory',  href: '/trend-day-scalp-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const haScalpItems = [
     ...(showHaScalpBacktest ? [{ key: 'haScalpBacktest', href: '/ha-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showHaScalpPaper    ? [{ key: 'haScalpPaper',    href: '/ha-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showHaScalpLive && !haScalpPaperRunning ? [{ key: 'haScalpLive', href: '/ha-scalp-live', icon: '📡', label: 'Live' }] : []),
     ...(showHaScalpHistory  ? [{ key: 'haScalpHistory',  href: '/ha-scalp-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const prevOrbScalpItems = [
     ...(showPrevOrbScalpBacktest ? [{ key: 'prevOrbScalpBacktest', href: '/prev-orb-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showPrevOrbScalpPaper    ? [{ key: 'prevOrbScalpPaper',    href: '/prev-orb-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showPrevOrbScalpLive && !prevOrbScalpPaperRunning ? [{ key: 'prevOrbScalpLive', href: '/prev-orb-scalp-live', icon: '📡', label: 'Live' }] : []),
     ...(showPrevOrbScalpHistory  ? [{ key: 'prevOrbScalpHistory',  href: '/prev-orb-scalp-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const earlyBirdItems = [
     ...(showEarlyBirdBacktest ? [{ key: 'earlyBirdBacktest', href: '/early-bird-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showEarlyBirdPaper    ? [{ key: 'earlyBirdPaper',    href: '/early-bird-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showEarlyBirdLive && !earlyBirdPaperRunning ? [{ key: 'earlyBirdLive', href: '/early-bird-live', icon: '📡', label: 'Live' }] : []),
     ...(showEarlyBirdHistory  ? [{ key: 'earlyBirdHistory',  href: '/early-bird-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
@@ -502,78 +437,55 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const rsiPivotStItems = [
     ...(showRsiPivotStBacktest ? [{ key: 'rsiPivotStBacktest', href: '/rsi-pivot-st-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showRsiPivotStPaper    ? [{ key: 'rsiPivotStPaper',    href: '/rsi-pivot-st-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showRsiPivotStLive && !rsiPivotStPaperRunning ? [{ key: 'rsiPivotStLive', href: '/rsi-pivot-st-live', icon: '📡', label: 'Live' }] : []),
     ...(showRsiPivotStHistory  ? [{ key: 'rsiPivotStHistory',  href: '/rsi-pivot-st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const bnPivotRsiStItems = [
     ...(showBnPivotRsiStBacktest ? [{ key: 'bnPivotRsiStBacktest', href: '/bn-pivot-rsi-st-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showBnPivotRsiStPaper    ? [{ key: 'bnPivotRsiStPaper',    href: '/bn-pivot-rsi-st-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showBnPivotRsiStLive && !bnPivotRsiStPaperRunning ? [{ key: 'bnPivotRsiStLive', href: '/bn-pivot-rsi-st-live', icon: '📡', label: 'Live' }] : []),
     ...(showBnPivotRsiStHistory  ? [{ key: 'bnPivotRsiStHistory',  href: '/bn-pivot-rsi-st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const emaRsiStV2Items = [
     ...(showEmaRsiStV2Backtest ? [{ key: 'emaRsiStV2Backtest', href: '/ema_rsi_st_v2-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showEmaRsiStV2Paper    ? [{ key: 'emaRsiStV2Paper',    href: '/ema_rsi_st_v2-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    // V2 has no native Live route — live runs through the paper-wrapping harness
-    // only, exactly as TREND_PB does. Hidden while Paper is running, since the
-    // two are mutually exclusive in sharedSocketState.
-    ...(showEmaRsiStV2LiveHarness && !emaRsiStV2PaperRunning ? [{ key: 'emaRsiStV2LiveHarness', href: '/ema_rsi_st_v2-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showEmaRsiStV2History  ? [{ key: 'emaRsiStV2History',  href: '/ema_rsi_st_v2-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const bnEmaRsiStV2Items = [
     ...(showBnEmaRsiStV2Backtest ? [{ key: 'bnEmaRsiStV2Backtest', href: '/bn_ema_rsi_st_v2-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showBnEmaRsiStV2Paper    ? [{ key: 'bnEmaRsiStV2Paper',    href: '/bn_ema_rsi_st_v2-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    // No native Live route, exactly as the NIFTY sibling — live runs through the
-    // paper-wrapping harness only. Hidden while Paper is running, since the two
-    // are mutually exclusive in sharedSocketState.
-    ...(showBnEmaRsiStV2LiveHarness && !bnEmaRsiStV2PaperRunning ? [{ key: 'bnEmaRsiStV2LiveHarness', href: '/bn_ema_rsi_st_v2-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showBnEmaRsiStV2History  ? [{ key: 'bnEmaRsiStV2History',  href: '/bn_ema_rsi_st_v2-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const stRsiPivBbItems = [
     ...(showStRsiPivBbPaper    ? [{ key: 'stRsiPivBbPaper',    href: '/st_rsi_piv_bb-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    // No native Live engine — /st_rsi_piv_bb-live IS the paper-wrapping harness.
-    // Hidden while Paper is running: the harness runs AS paper, so a running
-    // paper session (plain or harness-wrapped) owns the slot.
-    ...(showStRsiPivBbLiveHarness && !stRsiPivBbPaperRunning ? [{ key: 'stRsiPivBbLiveHarness', href: '/st_rsi_piv_bb-live', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showStRsiPivBbHistory  ? [{ key: 'stRsiPivBbHistory',  href: '/st_rsi_piv_bb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const sailVwapStItems = [
     ...(showSailVwapStBacktest ? [{ key: 'sailVwapStBacktest', href: '/sail_vwap_st-backtest',      icon: '🔍', label: 'Backtest' }] : []),
     ...(showSailVwapStPaper    ? [{ key: 'sailVwapStPaper',    href: '/sail_vwap_st-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    // No native Live engine — /sail_vwap_st-live IS the paper-wrapping harness.
-    // Hidden while Paper is running (mutually exclusive in sharedSocketState).
-    ...(showSailVwapStLiveHarness && !sailVwapStPaperRunning ? [{ key: 'sailVwapStLiveHarness', href: '/sail_vwap_st-live', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showSailVwapStHistory  ? [{ key: 'sailVwapStHistory',  href: '/sail_vwap_st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
-  // PIVOT_EMA_ST family — no Backtest; /{slug}-live IS the paper-wrapping
-  // harness, hidden while that mode's Paper runs (mutually exclusive).
+  // PIVOT_EMA_ST family — no Backtest.
   const pivotEmaStItems = [
     ...(showPivotEmaStPaper    ? [{ key: 'pivotEmaStPaper',    href: '/pivot_ema_st-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showPivotEmaStLiveHarness && !pivotEmaStPaperRunning ? [{ key: 'pivotEmaStLiveHarness', href: '/pivot_ema_st-live', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showPivotEmaStHistory  ? [{ key: 'pivotEmaStHistory',  href: '/pivot_ema_st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
   const bnPivotEmaStItems = [
     ...(showBnPivotEmaStPaper    ? [{ key: 'bnPivotEmaStPaper',    href: '/bn_pivot_ema_st-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showBnPivotEmaStLiveHarness && !bnPivotEmaStPaperRunning ? [{ key: 'bnPivotEmaStLiveHarness', href: '/bn_pivot_ema_st-live', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showBnPivotEmaStHistory  ? [{ key: 'bnPivotEmaStHistory',  href: '/bn_pivot_ema_st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
   const sailPivotEmaStItems = [
     ...(showSailPivotEmaStPaper    ? [{ key: 'sailPivotEmaStPaper',    href: '/sail_pivot_ema_st-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showSailPivotEmaStLiveHarness && !sailPivotEmaStPaperRunning ? [{ key: 'sailPivotEmaStLiveHarness', href: '/sail_pivot_ema_st-live', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showSailPivotEmaStHistory  ? [{ key: 'sailPivotEmaStHistory',  href: '/sail_pivot_ema_st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
-  // GAP_RUNAWAY — no Backtest; /gap_runaway-live IS the paper-wrapping harness,
-  // hidden while its Paper runs. The stock scanner is Paper + History only.
+  // GAP_RUNAWAY — no Backtest. The stock scanner is Paper + History only.
   const gapRunawayItems = [
     ...(showGapRunawayPaper    ? [{ key: 'gapRunawayPaper',    href: '/gap_runaway-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showGapRunawayLiveHarness && !gapRunawayPaperRunning ? [{ key: 'gapRunawayLiveHarness', href: '/gap_runaway-live', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showGapRunawayHistory  ? [{ key: 'gapRunawayHistory',  href: '/gap_runaway-paper/history', icon: '📜', label: 'History' }] : []),
   ];
   const gapRunawayStkItems = [
@@ -584,7 +496,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const simple930Items = [
     ...(showSimple930Backtest ? [{ key: 'simple930Backtest', href: '/simple930-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showSimple930Paper    ? [{ key: 'simple930Paper',    href: '/simple930-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showSimple930Live && !simple930PaperRunning ? [{ key: 'simple930Live', href: '/simple930-live', icon: '📡', label: 'Live' }] : []),
     ...(showSimple930History  ? [{ key: 'simple930History',  href: '/simple930-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
@@ -594,7 +505,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '🧪',  label: 'Backtest' }] : []),
     ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '⏪', label: 'Replay' }] : []),
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '📒', label: 'Paper Traded History' }] : []),
-    ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '📕', label: 'Live Traded History' }] : []),
     ...(showEdgeAnalytics ? [{ key: 'consolidationReport', href: '/consolidation-report', icon: '📑', label: 'Consolidation Report' }] : []),
     ...(showLossesAnalyzer ? [{ key: 'lossesAnalyzer', href: '/losses-analyzer', icon: '🔍', label: 'Losses Analyzer' }] : []),
     ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧠', label: 'Settings Advisor' }] : []),
@@ -806,74 +716,31 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     },
   ];
 
-  // Block all backtest & paper (trading + bb_rsi + PA) when ANY live mode is active
-  const anyLiveActive = liveActive || _bbRsiMode === 'BB_RSI_LIVE' || _paMode === 'PA_LIVE';
-  const blocked = anyLiveActive ? ['allBacktest', 'emaRsiStBacktest', 'emaRsiStPaper', 'bbRsiBacktest', 'bbRsiPaper', 'paBacktest', 'paPatternBacktest', 'paPaper'] : [];
-
   function renderItem(p) {
     const isActive   = p.key === activePage;
-    const isDisabled = blocked.includes(p.key);
-
-    if (isDisabled) {
-      return `<span class="sb-nav-item disabled" title="Disabled — Live trading is active">
-        <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-        <span class="sb-nav-badge" style="margin-left:auto;font-size:0.5rem;">🔒</span>
-      </span>`;
-    }
-
-    const liveBadge = p.key === 'emaRsiStLive' && liveActive
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
 
     const runningBadge = p.key === 'emaRsiStPaper' && (_primaryMode === 'EMA_RSI_ST_PAPER' || isRunning)
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
-    const bbRsiLiveBadge = p.key === 'bbRsiLive' && _bbRsiMode === 'BB_RSI_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
     const bbRsiPaperBadge = p.key === 'bbRsiPaper' && _bbRsiMode === 'BB_RSI_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const paLiveBadge = p.key === 'paLive' && _paMode === 'PA_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
     const paPaperBadge = p.key === 'paPaper' && _paMode === 'PA_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
-    // ORB has a NATIVE live route (/orb-live sets ORB_LIVE in sharedSocketState),
-    // so it needs the same LIVE badge bb_rsi and PA get — without it an ORB live
-    // session placing real Fyers orders was the only one invisible in the sidebar.
-    const orbLiveBadge = p.key === 'orbLive' && _orbMode === 'ORB_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
     const orbPaperBadge = p.key === 'orbPaper' && _orbMode === 'ORB_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const tdsLiveBadge = p.key === 'trendDayScalpLive' && _trendDayScalpMode === 'TREND_DAY_SCALP_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
     const tdsPaperBadge = p.key === 'trendDayScalpPaper' && _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const haScalpLiveBadge = p.key === 'haScalpLive' && _haScalpMode === 'HA_SCALP_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
     const haScalpPaperBadge = p.key === 'haScalpPaper' && _haScalpMode === 'HA_SCALP_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
-    const prevOrbScalpLiveBadge = p.key === 'prevOrbScalpLive' && _prevOrbScalpMode === 'PREV_ORB_SCALP_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
     const prevOrbScalpPaperBadge = p.key === 'prevOrbScalpPaper' && _prevOrbScalpMode === 'PREV_ORB_SCALP_PAPER'
@@ -881,72 +748,40 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       : '';
 
 
-    const rsiPivotStLiveBadge = p.key === 'rsiPivotStLive' && _rsiPivotStMode === 'RSI_PIVOT_ST_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
     const rsiPivotStPaperBadge = p.key === 'rsiPivotStPaper' && _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
-    const bnPivotRsiStLiveBadge = p.key === 'bnPivotRsiStLive' && _bnPivotRsiStMode === 'BN_PIVOT_RSI_ST_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
     const bnPivotRsiStPaperBadge = p.key === 'bnPivotRsiStPaper' && _bnPivotRsiStMode === 'BN_PIVOT_RSI_ST_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const emaRsiStV2LiveBadge = p.key === 'emaRsiStV2LiveHarness' && _emaRsiStV2Mode === 'EMA_RSI_ST_V2_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
     const emaRsiStV2PaperBadge = p.key === 'emaRsiStV2Paper' && _emaRsiStV2Mode === 'EMA_RSI_ST_V2_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
-    const bnEmaRsiStV2LiveBadge = p.key === 'bnEmaRsiStV2LiveHarness' && _bnEmaRsiStV2Mode === 'BN_EMA_RSI_ST_V2_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
     const bnEmaRsiStV2PaperBadge = p.key === 'bnEmaRsiStV2Paper' && _bnEmaRsiStV2Mode === 'BN_EMA_RSI_ST_V2_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const stRsiPivBbLiveBadge = p.key === 'stRsiPivBbLiveHarness' && _stRsiPivBbMode === 'ST_RSI_PIV_BB_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
     const stRsiPivBbPaperBadge = p.key === 'stRsiPivBbPaper' && _stRsiPivBbMode === 'ST_RSI_PIV_BB_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
-    const sailVwapStLiveBadge = p.key === 'sailVwapStLiveHarness' && _sailVwapStMode === 'SAIL_VWAP_ST_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
     const sailVwapStPaperBadge = p.key === 'sailVwapStPaper' && _sailVwapStMode === 'SAIL_VWAP_ST_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    // PIVOT_EMA_ST family — LIVE on the harness item, ON on the Paper item.
+    // PIVOT_EMA_ST family — ON on the Paper item.
     const _pesOnBadge = `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`;
     const pivotEmaStBadges =
-      (p.key === 'pivotEmaStLiveHarness' && _pivotEmaStMode === 'PIVOT_EMA_ST_LIVE' ? `<span class="sb-nav-badge live">LIVE</span>` : '') +
       (p.key === 'pivotEmaStPaper' && _pivotEmaStMode === 'PIVOT_EMA_ST_PAPER' ? _pesOnBadge : '') +
-      (p.key === 'bnPivotEmaStLiveHarness' && _bnPivotEmaStMode === 'BN_PIVOT_EMA_ST_LIVE' ? `<span class="sb-nav-badge live">LIVE</span>` : '') +
       (p.key === 'bnPivotEmaStPaper' && _bnPivotEmaStMode === 'BN_PIVOT_EMA_ST_PAPER' ? _pesOnBadge : '') +
-      (p.key === 'sailPivotEmaStLiveHarness' && _sailPivotEmaStMode === 'SAIL_PIVOT_EMA_ST_LIVE' ? `<span class="sb-nav-badge live">LIVE</span>` : '') +
       (p.key === 'sailPivotEmaStPaper' && _sailPivotEmaStMode === 'SAIL_PIVOT_EMA_ST_PAPER' ? _pesOnBadge : '');
-    // GAP_RUNAWAY — LIVE on the harness item, ON on the Paper items.
+    // GAP_RUNAWAY — ON on the Paper items.
     const gapRunawayBadges =
-      (p.key === 'gapRunawayLiveHarness' && _gapRunawayMode === 'GAP_RUNAWAY_LIVE' ? `<span class="sb-nav-badge live">LIVE</span>` : '') +
       (p.key === 'gapRunawayPaper' && _gapRunawayMode === 'GAP_RUNAWAY_PAPER' ? _pesOnBadge : '') +
       (p.key === 'gapRunawayStkPaper' && _gapRunawayStkMode === 'GAP_RUNAWAY_STK_PAPER' ? _pesOnBadge : '');
-
-    const simple930LiveBadge = p.key === 'simple930Live' && _simple930Mode === 'SIMPLE930_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
 
     const simple930PaperBadge = p.key === 'simple930Paper' && _simple930Mode === 'SIMPLE930_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
@@ -954,9 +789,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${prevOrbScalpLiveBadge}${prevOrbScalpPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${bnPivotRsiStLiveBadge}${bnPivotRsiStPaperBadge}${emaRsiStV2LiveBadge}${emaRsiStV2PaperBadge}${simple930LiveBadge}${simple930PaperBadge}
-      ${stRsiPivBbLiveBadge}${stRsiPivBbPaperBadge}
-      ${sailVwapStLiveBadge}${sailVwapStPaperBadge}
+      ${runningBadge}${bbRsiPaperBadge}${paPaperBadge}${orbPaperBadge}${tdsPaperBadge}${haScalpPaperBadge}${prevOrbScalpPaperBadge}${rsiPivotStPaperBadge}${bnPivotRsiStPaperBadge}${emaRsiStV2PaperBadge}${simple930PaperBadge}
+      ${stRsiPivBbPaperBadge}
+      ${sailVwapStPaperBadge}
       ${pivotEmaStBadges}
       ${gapRunawayBadges}
     </a>`;
@@ -1765,7 +1600,6 @@ function sidebarCSS() {
       color:#fbbf24;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.34);}
     .sb-nav-icon{font-size:13px;width:16px;flex-shrink:0;}
     .sb-nav-badge{margin-left:auto;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3);white-space:nowrap;}
-    .sb-nav-badge.live{background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);animation:pulse 1.2s infinite;}
     .sb-divider{height:0.5px;background:#0e1e36;margin:6px 16px;}
     .sb-bottom{padding:14px 16px;border-top:1px solid #0e1e36;flex-shrink:0;}
     /* Clears the iOS home-indicator bar so the last row is not half-covered.
@@ -1819,7 +1653,6 @@ function sidebarCSS() {
     .top-bar-btn:hover:not(:disabled){filter:brightness(1.25);}
     .top-bar-btn:disabled{opacity:0.5;cursor:not-allowed;}
     .top-bar-btn.run-paper{border-color:rgba(16,185,129,0.35);background:rgba(16,185,129,0.10);color:#10b981;}
-    .top-bar-btn.run-live{border-color:rgba(239,68,68,0.35);background:rgba(239,68,68,0.10);color:#ef4444;}
     .broker-badges{display:flex;gap:6px;padding:8px 24px;background:#040c18;border-bottom:1px solid #0e1e36;flex-wrap:wrap;}
     .broker-badge{font-size:0.65rem;font-weight:600;padding:3px 10px;border-radius:5px;}
     .broker-badge.ok{background:#060e20;border:0.5px solid #0e2850;color:#60a5fa;}
@@ -2030,7 +1863,7 @@ function sidebarCSS() {
 }
 
 /**
- * Common JS snippet for toast notifications (used on Paper+Live pages).
+ * Common JS snippet for toast notifications (used on Paper pages).
  */
 function toastJS() {
   return `
@@ -2149,7 +1982,7 @@ window.downloadAiMarkdown = function(list, meta, baseName){
 }
 
 /**
- * Shared log viewer HTML + JS (reused by Paper Trade and Live Trade status pages).
+ * Shared log viewer HTML + JS (reused by Paper Trade status pages).
  * @param {string} logsJSON    - JSON string of log array (newest first)
  * @param {string} prefix      - Unique prefix for element IDs ('log' | 'ptlog')
  */
@@ -3492,7 +3325,7 @@ function showExpHolTab(tab) {
  * @param {string} message — error description
  * @param {string} linkHref — back-link URL
  * @param {string} linkText — back-link label
- * @param {string} sidebarKey — active sidebar page key (e.g. 'bbRsiLive')
+ * @param {string} sidebarKey — active sidebar page key (e.g. 'bbRsiPaper')
  */
 function errorPage(title, message, linkHref, linkText, sidebarKey) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>

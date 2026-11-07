@@ -12,8 +12,7 @@
  *           close>R1 (previous-day traditional pivot), close>BB(20,2) upper.
  *           PE mirror: red, RSI<30, close<S1, close<BB lower. No confirm candle.
  *   tf    : ENTRY_TF 3 | 5 | BOTH (BOTH = 3-min AND latest closed 5-min both 4/4)
- *   exit  : candle close only — SuperTrend flips, or close beyond the trailed stop.
- *           Trail tighten-only. Square-off 15:15.
+ *   exit  : none in the engine — the paper route exits only through the profit lock.
  */
 
 process.env.TZ = "Asia/Calcutta";
@@ -85,8 +84,9 @@ test("defaults are the user's rules", () => {
   assert.strictEqual(c.CONFIRM_RES, 5);
   assert.deepStrictEqual([c.RSI_PERIOD, c.RSI_CE_MIN, c.RSI_PE_MAX], [14, 70, 30]);
   assert.deepStrictEqual([c.ST_PERIOD, c.ST_MULT, c.BB_PERIOD, c.BB_STDDEV], [10, 2, 20, 2]);
-  assert.deepStrictEqual([c.ENTRY_START, c.ENTRY_END, c.EOD_EXIT], [570, 900, 915]);
-  assert.deepStrictEqual([c.MAX_DAILY_TRADES, c.MAX_DAILY_LOSS], [3, 5000]);
+  assert.deepStrictEqual([c.ENTRY_START, c.ENTRY_END], [570, 900]);
+  for (const k of ["EOD_EXIT", "MAX_DAILY_TRADES", "MAX_DAILY_LOSS"]) assert.ok(!(k in c), k);
+  for (const f of ["isEodExit", "exitCheck", "trailStop"]) assert.strictEqual(E[f], undefined, f);
   assert.strictEqual(E.warmupBars(c), 25);
 });
 test("ENTRY_TF 3 / 5 / junk", () => {
@@ -186,19 +186,19 @@ test("checkBar: missing inputs → not ready", () => {
 
 // ── getSignal ────────────────────────────────────────────────────────────────
 const TF3 = { ST_RSI_PIV_BB_ENTRY_TF: "3" };
-test("3-min: the ramp's last bar is BUY_CE with SL = SuperTrend below the close", () => withEnv(TF3, () => {
+test("3-min: the ramp's last bar is BUY_CE with SuperTrend below the close", () => withEnv(TF3, () => {
   const r = E.getSignal(UP3, { pivots: PIV, silent: true });
   assert.strictEqual(r.signal, "BUY_CE", r.reason);
   const st = E.computeSeries(UP3).supertrend[UP3.length - 1];
-  assert.strictEqual(r.stopLoss, st.value);
-  assert.ok(r.stopLoss < UP3[UP3.length - 1].close);
+  assert.ok(st.value < UP3[UP3.length - 1].close);
+  assert.strictEqual(r.stopLoss, undefined);
   assert.strictEqual(r.checks.CE.count, 4);
   assert.strictEqual(r.r1, 101);
 }));
-test("3-min: the mirror path is BUY_PE with SL above the close", () => withEnv(TF3, () => {
+test("3-min: the mirror path is BUY_PE with SuperTrend above the close", () => withEnv(TF3, () => {
   const r = E.getSignal(DN3, { pivots: PIV, silent: true });
   assert.strictEqual(r.signal, "BUY_PE", r.reason);
-  assert.ok(r.stopLoss > DN3[DN3.length - 1].close);
+  assert.ok(r.supertrend > DN3[DN3.length - 1].close);
 }));
 test("3-min: flat bars give no signal", () => withEnv(TF3, () => {
   const r = E.getSignal(UP3.slice(0, 50), { pivots: PIV, silent: true });
@@ -306,83 +306,15 @@ test("ENTRY_TF 5: trades the 5-min chart alone", () => withEnv({ ST_RSI_PIV_BB_E
   assert.strictEqual(r.tradeRes, 5); assert.strictEqual(r.confirmChecks, null);
 }));
 
-// ── exit + trail ─────────────────────────────────────────────────────────────
-const B = (close) => ({ time: ist(DAY, 11, 0), open: close, high: close + 1, low: close - 1, close });
-test("exitCheck CE: close below the stop exits; equal does not", () => {
-  assert.strictEqual(E.exitCheck("CE", B(99.5), { value: 99, trend: 1 }, 100).exit, true);
-  assert.strictEqual(E.exitCheck("CE", B(100), { value: 99, trend: 1 }, 100).exit, false);
-  assert.strictEqual(E.exitCheck("CE", B(101), { value: 99, trend: 1 }, 100).exit, false);
-});
-test("exitCheck CE: a SuperTrend flip to red exits even above the stop", () => {
-  const r = E.exitCheck("CE", B(101), { value: 103, trend: -1 }, 100);
-  assert.strictEqual(r.exit, true); assert.ok(/flipped red/.test(r.reason));
-});
-test("exitCheck PE mirror", () => {
-  assert.strictEqual(E.exitCheck("PE", B(100.5), { value: 101, trend: -1 }, 100).exit, true);
-  assert.strictEqual(E.exitCheck("PE", B(100), { value: 101, trend: -1 }, 100).exit, false);
-  assert.strictEqual(E.exitCheck("PE", B(99), { value: 97, trend: 1 }, 100).exit, true);
-});
-test("exitCheck: null stop / bad bar never invents an exit (spot >= null)", () => {
-  assert.strictEqual(E.exitCheck("CE", B(50), { value: 40, trend: 1 }, null).exit, false);
-  assert.strictEqual(E.exitCheck("PE", B(500), { value: 600, trend: -1 }, undefined).exit, false);
-  assert.strictEqual(E.exitCheck("CE", { time: 1, open: 1, high: 1, low: 1, close: null }, { value: 1, trend: -1 }, 5).exit, false);
-  assert.strictEqual(E.exitCheck("XX", B(1), { value: 9, trend: -1 }, 5).exit, false);
-});
-test("exit uses the CLOSE, not the wick", () => {
-  const wick = { time: 1, open: 101, high: 102, low: 95, close: 101 };
-  assert.strictEqual(E.exitCheck("CE", wick, { value: 99, trend: 1 }, 100).exit, false);
-});
-test("trailStop: CE tightens up, never loosens", () => withEnv(TF3, () => {
-  const cfg = E.getConfig();
-  const st = E.computeSeries(UP3, cfg).supertrend;
-  const lvl = st[UP3.length - 1].value;
-  const t1 = E.trailStop(UP3, "CE", lvl - 5, cfg);
-  assert.strictEqual(t1.changed, true); assert.strictEqual(t1.stop, lvl);
-  const t2 = E.trailStop(UP3, "CE", lvl + 1, cfg);
-  assert.strictEqual(t2.changed, false); assert.strictEqual(t2.stop, lvl + 1);
-}));
-test("trailStop: PE tightens down, never loosens", () => withEnv(TF3, () => {
-  const cfg = E.getConfig();
-  const lvl = E.computeSeries(DN3, cfg).supertrend[DN3.length - 1].value;
-  const t1 = E.trailStop(DN3, "PE", lvl + 5, cfg);
-  assert.strictEqual(t1.changed, true); assert.strictEqual(t1.stop, lvl);
-  const t2 = E.trailStop(DN3, "PE", lvl - 1, cfg);
-  assert.strictEqual(t2.changed, false); assert.strictEqual(t2.stop, lvl - 1);
-}));
-test("trailStop: an opposite-trend SuperTrend never moves the stop", () => withEnv(TF3, () => {
-  const cfg = E.getConfig();
-  assert.strictEqual(E.trailStop(UP3, "PE", 1000, cfg).changed, false);   // ST green → PE stop untouched
-  assert.strictEqual(E.trailStop(DN3, "CE", 1, cfg).changed, false);      // ST red → CE stop untouched
-}));
-test("trailStop: precomputed equals plain", () => withEnv(TF3, () => {
-  const cfg = E.getConfig();
-  const st = E.computeSeries(UP3, cfg).supertrend;
-  for (const end of [40, 55, UP3.length - 1]) {
-    assert.deepStrictEqual(E.trailStop(UP3, "CE", 50, cfg, { supertrend: st, endIdx: end }), E.trailStop(UP3.slice(0, end + 1), "CE", 50, cfg));
-  }
-}));
-test("EOD square-off at 15:15", () => {
-  assert.strictEqual(E.isEodExit(ist(DAY, 15, 14)), false);
-  assert.strictEqual(E.isEodExit(ist(DAY, 15, 15)), true);
-});
-test("walk the ramp bar by bar: entry once 4/4, stop always below the close", () => withEnv(TF3, () => {
-  const cfg = E.getConfig();
-  let pos = null;
+// ── a bar-by-bar walk ────────────────────────────────────────────────────────
+test("walk the ramp bar by bar: one CE entry once 4/4, never a PE", () => withEnv(TF3, () => {
+  let entered = 0;
   for (let i = 25; i < UP3.length; i++) {
-    const c = UP3.slice(0, i + 1);
-    if (!pos) {
-      const s = E.getSignal(c, { pivots: PIV, silent: true });
-      assert.notStrictEqual(s.signal, "BUY_PE");
-      if (s.signal === "BUY_CE") { pos = { side: "CE", stop: s.stopLoss }; assert.ok(s.stopLoss < c[i].close); }
-    } else {
-      const st = E.computeSeries(c, cfg).supertrend[i];
-      assert.strictEqual(E.exitCheck("CE", c[i], st, pos.stop).exit, false);
-      const t = E.trailStop(c, "CE", pos.stop, cfg);
-      assert.ok(t.stop >= pos.stop); pos.stop = t.stop;
-      assert.ok(pos.stop < c[i].close);
-    }
+    const s = E.getSignal(UP3.slice(0, i + 1), { pivots: PIV, silent: true });
+    assert.notStrictEqual(s.signal, "BUY_PE");
+    if (s.signal === "BUY_CE") entered++;
   }
-  assert.ok(pos, "the ramp must produce an entry");
+  assert.ok(entered > 0, "the ramp must produce an entry");
 }));
 
 console.log(`\nST_RSI_PIV_BB: ${passed} passed, ${failed} failed`);

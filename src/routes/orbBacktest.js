@@ -17,9 +17,6 @@
 const express = require("express");
 const router  = express.Router();
 const orbStrategy = require("../strategies/orb_breakout");
-const orbExits    = require("../strategies/orbExits");
-const orbStopRisk = require("../utils/orbStopRisk");
-const orbRiskState = require("../utils/orbRiskState");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const vixFilter = require("../services/vixFilter");
 const { faviconLink } = require("../utils/sharedNav");
@@ -110,47 +107,35 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   // Use the same lot-qty helper as paper/live so LOT_MULTIPLIER and
   // NIFTY_LOT_SIZE flow through end-to-end (lot qty = NIFTY_LOT_SIZE × LOT_MULTIPLIER).
   const LOT_SIZE   = instrumentConfig.getLotQty();
-  // Trend-following exit (mirrors paper/live): initial hard SL = breakout candle
-  // low/high, breakeven after +N pts, EMA close-trail, strong-opposite-candle
-  // exit, per-trade rupee loss cap, 15:15 EOD. (Replaced the old 2-candle swing
-  // trail that exited winners on the first pullback.)
-  // Breakeven / EMA-trail / opposite-candle thresholds are NOT read here any more —
-  // they belong to the shared exit engine (src/strategies/orbExits.js), which reads
-  // them fresh per call so a Settings change takes effect without a restart.
-  // FUTURES MODE (2026-08-13). The option simulation below charges every trade a
-  // 0.55 delta, theta decay and a premium-wide bid-ask. Across 821 backtested trades
-  // that friction is ~₹420 per round trip on a strategy whose average trade is
-  // −₹300, so "is the breakout itself worthless, or is it the option wrapper?" was
-  // unanswerable. INSTRUMENT=NIFTY_FUTURES prices the SAME trades in spot points:
-  // no delta, no theta, futures charges, slippage in index points.
+  // EXIT (mirrors paper/live, 2026-11-07): the global profit lock is the ONLY
+  // automatic exit. It is defined on option premium, so it is simulated on the
+  // δ-modelled premium below; a position it never closes is closed at the day's
+  // last candle (paper's TRADE_STOP_TIME session teardown).
   //
-  // Every exit rule in ORB is spot-based (hard SL, EMA trail, opposite candle, EOD)
-  // EXCEPT the premium disaster stop, which has no meaning without a premium and is
-  // therefore skipped here. So the two runs are directly comparable trade-for-trade.
+  // FUTURES MODE (2026-08-13). INSTRUMENT=NIFTY_FUTURES prices the SAME trades in
+  // spot points: no delta, no theta, futures charges, slippage in index points.
+  // Paper/live never apply the premium profit lock to a futures leg, so here too a
+  // futures trade is held to the end of the session.
   const IS_FUT = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-  const MAX_TRADE_LOSS = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "0");
-  const PREM_STOP_PCT  = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");     // premium disaster backstop
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "120");           // widened for slightly-ITM
   const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
   // Signal engine (orb_breakout.getSignal) needs prior-day history to seed its
-  // volatility yardsticks — ATR(5m) and ATR(15m) — and the shared exit engine
-  // needs it to seed the EMA trend-trail. We feed both a trailing MULTI-DAY
+  // volatility yardsticks — ATR(5m) and ATR(15m). We feed it a trailing MULTI-DAY
   // window ending at the current candle (OR + VWAP are day-scoped internally, so
   // the prior days do not pollute today's range). ~260 5-min bars ≈ 3.5 trading
-  // days, which covers a 14-period ATR on 15-min bars and a 20-EMA on 5-min from
-  // the first candle of every day except day 1 of the range — that day is skipped
-  // outright (see the _hasPriorDay parity guard below).
+  // days, which covers a 14-period ATR on 15-min bars from the first candle of
+  // every day except day 1 of the range — that day is skipped outright (see the
+  // _hasPriorDay parity guard below).
   // Not exposed in Settings, matching TREND_PB_SIG_WINDOW: it is harness plumbing
   // sized to the indicators, not a tuning dial.
   const SIG_WINDOW      = parseInt(process.env.ORB_SIG_WINDOW || "260", 10);
-  const FORCED_EXIT_MIN = _parseMin("ORB_FORCED_EXIT", "15:15");
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "11:30");
   const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");   // slightly-ITM ≈ ATM + one strike intrinsic
   const SLIPPAGE_PREM   = parseFloat(process.env.ORB_BT_SLIPPAGE_PTS || "1.5");   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
-  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
-  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  // Paper measures it from the exit's clock time: a tick exit inside the bar is
+  // stamped at the bar open here, one given back by the close at the bar's CLOSE.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(5) / 1000;
   // Confirmation and the retest/resume fallback both live INSIDE the engine, so the
   // backtest has no entry logic of its own — it polls getSignal each candle. The old
@@ -166,35 +151,16 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
 
   const trades = [];
 
-  // ── Session + cross-day risk state, mirroring orbPaper's entry gates ──────────
-  // Paper runs, in order: max trades → daily-loss kill → portfolio cap → risk
-  // throttle (consecutive losing DAYS / weekly loss, ON by default via
-  // ORB_RISK_THROTTLE_ENABLED) → expiry filter → signal → VIX. The backtest only
-  // modelled max trades and the expiry filter, so it kept trading through streaks
-  // and weeks that paper had already shut down. The portfolio cap is the one gate
-  // still unmodelled — it is cross-strategy live state with no backtest meaning.
-  const MAX_DAILY_LOSS = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
-  const _pnlByIso = new Map();     // 'YYYY-MM-DD' → realised ₹ booked that day
-  let _dayIso = null;              // IST date of the day currently being walked
-  let _dayPnl = 0;                 // that day's running realised ₹ (paper: sessionPnl)
-
-  /**
-   * Paper's risk breaker, replayed off the backtest's own day ledger instead of
-   * the ~/trading-data state file. Same pure `evaluate` the live path calls, so
-   * the streak / weekly-stop rules cannot drift between the two.
-   */
-  function _riskThrottled() {
-    if ((process.env.ORB_RISK_THROTTLE_ENABLED || "true").toLowerCase() !== "true") return false;
-    return orbRiskState.evaluate(
-      Array.from(_pnlByIso, ([date, pnl]) => ({ date, pnl })),
-      _dayIso,
-      _dayPnl,
-      {
-        streakSkip: parseInt(process.env.ORB_LOSS_STREAK_SKIP || "4", 10),
-        weeklyLoss: parseFloat(process.env.ORB_MAX_WEEKLY_LOSS || "9000"),
-      },
-    ).block;
-  }
+  /** Simulated option premium at a spot price (δ model; theta is charged at the fill). */
+  const _premAt = (pos, spot) => {
+    const move = pos.side === "CE" ? (spot - pos.entrySpot) : (pos.entrySpot - spot);
+    return Math.max(0.05, pos.optionEntryLtp + move * DELTA);
+  };
+  /** The spot level at which the simulated premium equals `prem`. */
+  const _spotForPrem = (pos, prem) => {
+    const move = DELTA > 0 ? (prem - pos.optionEntryLtp) / DELTA : 0;
+    return pos.side === "CE" ? pos.entrySpot + move : pos.entrySpot - move;
+  };
 
   // Global index of the first candle of the current day within `allCandles`.
   // Advanced by dayCandles.length on EVERY outer iteration (including skipped
@@ -205,33 +171,13 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     // starved while a long backtest runs.
     await new Promise(resolve => setImmediate(resolve));
     const _dayLen = dayCandles.length;
-    // New session — paper's state resets every morning on /start. Seeded BEFORE
-    // the skip guards below because orbPaper records a day even when it never
-    // traded: `recordDay(..., sessionPnl)` runs on every /stop, so a no-trade or
-    // gated-out day lands in the ledger as 0. `evaluate` breaks its losing streak
-    // on the first non-negative day, so omitting quiet days here would let a
-    // streak run across them and sit the backtest out far longer than paper —
-    // exactly the deadlock orbPaper's own comment says the 0 is there to prevent.
-    _dayIso = _dateStr;
-    _dayPnl = 0;
-    if (!_pnlByIso.has(_dateStr)) _pnlByIso.set(_dateStr, 0);
     if (dayCandles.length < 5) { globalBase += _dayLen; continue; }
     if (EXPIRY_ONLY && expirySet && !expirySet.has(_dateStr)) { globalBase += _dayLen; continue; }
     let position = null;
-    let tradesTaken = 0;
     let _reentryBlockUntilTs = 0;   // wait-after-any-exit cooldown, reset per day like paper's /start
-    const baseMaxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
-    // Today's exits, oldest first, feeding orbStrategy.reentryPlan() — the same
-    // helper paper and live call, so a re-entry fires here on exactly the days it
-    // would fire there. Empty until the first exit, so the plan is a no-op by default.
-    const dayExits = [];
-    // Book a closed position: record the trade AND the exit the re-entry rule reads.
-    // Every exit path in this day loop goes through here so none can be forgotten —
-    // closePos() itself lives outside the loop and cannot see `dayExits`.
-    // `exitClockTs` = when paper's clock sees the exit (bar open for a tick exit,
-    // bar close for a candle-close rule) — the start of the wait-after-exit cooldown.
+    // Book a closed position. `exitClockTs` = when paper's clock sees the exit —
+    // the start of the wait-after-exit cooldown.
     const _book = (pos, exitClockTs) => {
-      dayExits.push({ reason: pos.exitReason, atUnixSec: pos.exitTime });
       trades.push(buildTradeRecord(pos));
       if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitClockTs + _REENTRY_COOLDOWN_SECS;
     };
@@ -239,127 +185,66 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
       const istMin = _utcSecToIstMins(c.time);
-      // This candle's index in the flat multi-day array. Both the signal engine and
-      // the shared EMA trail need the multi-day window, not just today's bars.
+      // This candle's index in the flat multi-day array. The signal engine needs
+      // the multi-day window, not just today's bars.
       const gIdx = globalBase + i;
 
-      // EOD forced exit. Paper checks the clock on every TICK, so it squares off at
-      // the first tick at/after ORB_FORCED_EXIT — i.e. this candle's OPEN, not its
-      // close. Booking c.close handed the backtest an extra 5 minutes of drift the
-      // live engine never gets.
-      if (position && istMin >= FORCED_EXIT_MIN) {
-        closePos(position, c.open, c.time, `EOD square-off (${process.env.ORB_FORCED_EXIT || "15:15"})`);
-        _book(position, c.time); position = null; continue;
-      }
-
-      // ── In-position management ────────────────────────────────────────────
-      // ORDER MATTERS, AND IT MIRRORS PAPER'S REAL TIMELINE:
-      //   paper runs _checkExits on EVERY TICK   → rupee cap, premium stop, hard SL
-      //   paper runs _managePositionOnClose once → opposite candle, breakeven, EMA
-      // So inside a single candle the intrabar exits always get first refusal, and a
-      // close-based rule can only fire on a candle that never touched the stop.
-      //
-      // This file used to evaluate them the other way round (opposite/EMA first),
-      // which let a close-based rule book the candle's CLOSE on bars where paper had
-      // already been stopped out minutes earlier — the backtest silently reported a
-      // different trade from the one the live engine would have taken.
-      if (position) {
-        // ── 1. INTRABAR: per-trade loss cap + premium disaster stop ───────────
-        //    Evaluated against the candle's adverse extreme to decide IF they trip,
-        //    but the FILL is the spot level where the threshold is actually reached —
-        //    not the bar extreme. Paper/live check per tick and fill at that tick, so
-        //    booking the bar's worst price systematically overshot the very budget the
-        //    cap exists to enforce (observed: a −₹2,052 fill on a ₹1,500 cap, 37%
-        //    over). Gap-through stays honest: if the bar OPENED past the level, fill
-        //    at the open.
-        if (!IS_FUT && (MAX_TRADE_LOSS > 0 || PREM_STOP_PCT > 0)) {
-          const _adverse  = position.side === "CE" ? c.low : c.high;
-          const _spotMove = position.side === "CE" ? (_adverse - position.entrySpot) : (position.entrySpot - _adverse);
-          const _curPrem  = Math.max(0.05, position.optionEntryLtp + _spotMove * DELTA);
-          // Thresholds come from the shared exit engine — the backtest only decides
-          // the FILL price (below), never the rule.
-          const _hitLoss  = orbExits.isMaxTradeLossHit((_curPrem - position.optionEntryLtp) * LOT_SIZE);
-          const _hitPrem  = orbExits.isPremiumStopHit(_curPrem, position.optionEntryLtp);
-          if (_hitLoss || _hitPrem) {
-            // premium drop that trips the binding threshold → the spot level it implies
-            const _dropPrem = _hitLoss
-              ? MAX_TRADE_LOSS / LOT_SIZE
-              : position.optionEntryLtp * (PREM_STOP_PCT / 100);
-            const _dropSpot = DELTA > 0 ? _dropPrem / DELTA : Math.abs(_spotMove);
-            let _fill = position.side === "CE" ? position.entrySpot - _dropSpot : position.entrySpot + _dropSpot;
-            // never better than the bar could actually offer
-            if (position.side === "CE") _fill = Math.min(_fill, c.open <= _fill ? c.open : _fill);
-            else                        _fill = Math.max(_fill, c.open >= _fill ? c.open : _fill);
-            closePos(position, _fill, c.time, (_hitPrem && !_hitLoss) ? `Premium disaster stop (−${PREM_STOP_PCT}%)` : `Max trade loss (₹${MAX_TRADE_LOSS})`);
-            _book(position, c.time); position = null; continue;
-          }
-        }
-        // ── 2. INTRABAR: hard SL breach against this candle's extreme ─────────
-        //    The DECISION is delegated to the shared exit engine's predicate (so a
-        //    future change to isHardSlHit propagates here automatically); only the
-        //    FILL is local. Gap-through: fill at the open if the bar gapped past it.
-        const _slExtreme = position.side === "CE" ? c.low : c.high;
-        if (orbExits.isHardSlHit(position.side, _slExtreme, position.slSpot)) {
-          const _fill = position.side === "CE"
-            ? (c.open < position.slSpot ? c.open : position.slSpot)
-            : (c.open > position.slSpot ? c.open : position.slSpot);
-          closePos(position, _fill, c.time, `Hard SL hit (${position.slSpot})`);
+      // ── In-position: the global profit lock, simulated on the δ-modelled premium ──
+      //    Paper checks it on every tick; a bar is replayed as open → adverse
+      //    extreme → favourable extreme → close (the conservative path). A lock
+      //    tripped on the way down fills at the spot level of its floor (never
+      //    better than the open); one armed and given back inside the bar fills at
+      //    the close. Futures legs never carry the premium lock (paper/live skip it).
+      if (position && !IS_FUT) {
+        const isCE = position.side === "CE";
+        const _lock = (prem) => tradeGuards.checkProfitLock(position.optionEntryLtp, prem, position.peakPremium);
+        // a) the open
+        const pOpen = _premAt(position, c.open);
+        if (pOpen > position.peakPremium) position.peakPremium = pOpen;
+        let hit = _lock(pOpen);
+        if (hit) {
+          closePos(position, c.open, c.time, hit);
           _book(position, c.time); position = null; continue;
         }
-        // ── 3–5. CANDLE CLOSE: opposite candle → breakeven → EMA trend-trail ──
-        //    One call into the SHARED exit engine (src/strategies/orbExits.js), the
-        //    same function paper and live run. These three rules used to be copied
-        //    out by hand here, which is how this file once evaluated them in the
-        //    wrong order and silently reported trades paper would never have taken.
-        //
-        //    The EMA window is the MULTI-DAY slice, not `dayCandles`. Paper computes
-        //    its trail over state.candles — a ~7-day preload — so its EMA20 is live
-        //    from the first candle of the session. This file used to pass today's
-        //    bars only, so a 20-period EMA stayed null until ~11:05 IST and the
-        //    trend-trail was effectively DEAD for the entire ORB entry window. Same
-        //    rule, different data, different trades: a real backtest/paper mismatch.
-        const _emaSeen = allCandles.slice(Math.max(0, gIdx - SIG_WINDOW), gIdx + 1);
-        const _d = orbExits.evaluateCloseExits(position, c, _emaSeen);
-        if (_d.exit) {
-          closePos(position, c.close, c.time, _d.reason);
+        // b) open → adverse extreme
+        hit = _lock(_premAt(position, isCE ? c.low : c.high));
+        if (hit) {
+          const floor = tradeGuards.profitLockFloorLtp(position.optionEntryLtp, position.peakPremium,
+            tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+          const raw = _spotForPrem(position, floor);
+          const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
+          closePos(position, fill, c.time, hit);
+          _book(position, c.time); position = null; continue;
+        }
+        // c) adverse → favourable extreme: the peak rises, nothing exits
+        const pFav = _premAt(position, isCE ? c.high : c.low);
+        if (pFav > position.peakPremium) position.peakPremium = pFav;
+        // d) favourable → close: a lock armed by THIS peak and given back
+        hit = _lock(_premAt(position, c.close));
+        if (hit) {
+          closePos(position, c.close, c.time, hit);
           _book(position, c.time + 5 * 60); position = null; continue;
         }
       }
 
-      // Flat → eval ORB signal. The re-entry plan is recomputed per candle because
-      // `dayExits` grows as the day goes on; it is a no-op (budget unchanged, no
-      // re-arm) until a stop-out has actually happened and ORB_REENTRY_AFTER_SL > 0.
-      const plan = orbStrategy.reentryPlan(dayExits, baseMaxTrades);
-      const maxTrades = plan.maxTrades;
-      if (!position && tradesTaken < maxTrades && istMin < ENTRY_END_MIN
-          && _dayPnl > -MAX_DAILY_LOSS && !_riskThrottled()) {
-        // Open the position at candle `oc` from signal `s`. Initial hard SL comes
-        // from the STRATEGY (s.slSpot = wider of the candle extreme and
-        // ORB_SL_ATR_MULT × ATR5) so the backtest matches paper/live exactly.
-        // Closes over `position` / `tradesTaken` from the day loop.
+      // Flat → eval ORB signal.
+      if (!position && istMin < ENTRY_END_MIN) {
+        // Open the position at candle `oc` from signal `s`. Closes over `position`
+        // from the day loop.
         const _open = (s, oc, suffix) => {
-          // Same reconciliation paper/live apply: the strategy's stop is clamped to
-          // whatever ORB_MAX_TRADE_LOSS actually allows, so all three modes place
-          // the stop at the same level. Without this the backtest used a 50–83pt
-          // stop while paper/live were really exiting at ~38pt on the rupee cap.
-          const initSl = orbStopRisk.resolveInitialStop({
-            side: s.side, entrySpot: oc.close, strategyStop: s.slSpot, qty: LOT_SIZE,
-            fallbackStop: s.side === "CE" ? oc.low : oc.high,
-          }).slSpot;
           position = {
             date: istDateOf(oc.time),
             side: s.side,
             entryTime: oc.time,
             entrySpot: oc.close,
             optionEntryLtp: SEED_PREMIUM,
+            peakPremium: SEED_PREMIUM,
             orh: s.orh, orl: s.orl, rangePts: s.rangePts,
-            slSpot: initSl, targetSpot: s.targetSpot,
-            breakevenArmed: false, emaArmed: false,
+            targetSpot: s.targetSpot,
             signalStrength: s.signalStrength,
             vwap: s.vwap, volRatio: s.volRatio, wickRatio: s.wickRatio,
             entryReason: s.reason + (suffix || ""),
           };
-          tradesTaken++;
         };
         // Premium-range gate — backtest uses SEED_PREMIUM as the entry-premium
         // proxy, so this gate is effectively a config sanity check (will skip
@@ -383,7 +268,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
 
         // The engine owns confirmation AND the retest/resume fallback internally,
         // so the backtest just polls it each candle and buys whatever it returns.
-        const sig = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false, rearmAfterTime: plan.rearmAfterTime });
+        const sig = orbStrategy.getSignal(seen, { silent: true });
         // VIX gate — paper runs it only AFTER a signal exists, so keep that order.
         const _vixOk = sig.signal === "NONE" || !sig.side
           || vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength, { mode: "orb" }).allowed;
@@ -392,9 +277,11 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
         if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk && _vixOk && !_reentryBlocked) _open(sig, c);
       }
     }
+    // Session teardown: paper's TRADE_STOP_TIME auto-stop closes whatever is still
+    // open, so the day's last candle close is where an unclosed trade ends here.
     if (position) {
       const last = dayCandles[dayCandles.length - 1];
-      closePos(position, last.close, last.time, "EOD (end of day candles)");
+      closePos(position, last.close, last.time, "Session stopped (end of day candles)");
       trades.push(buildTradeRecord(position));
     }
     globalBase += _dayLen;
@@ -417,8 +304,6 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
       pos.exitReason = reason;
       pos.pnl = fpnl;
       pos.heldCandles = Math.round(candlesHeld);
-      _dayPnl = parseFloat((_dayPnl + fpnl).toFixed(2));
-      if (_dayIso) _pnlByIso.set(_dayIso, parseFloat(((_pnlByIso.get(_dayIso) || 0) + fpnl).toFixed(2)));
       return;
     }
 
@@ -433,9 +318,6 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     pos.exitReason = reason;
     pos.pnl = pnl;
     pos.heldCandles = Math.round(candlesHeld);
-    // Feed the session + cross-day risk gates (paper: sessionPnl + orbRiskState).
-    _dayPnl = parseFloat((_dayPnl + pnl).toFixed(2));
-    if (_dayIso) _pnlByIso.set(_dayIso, parseFloat(((_pnlByIso.get(_dayIso) || 0) + pnl).toFixed(2)));
   }
 
   function buildTradeRecord(p) {
@@ -444,7 +326,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
       entry: entryTsStr(p.entryTime),
       exit:  entryTsStr(p.exitTime),
       entryTs: p.entryTime, exitTs: p.exitTime,
-      ePrice: p.entrySpot, xPrice: p.exitSpot, sl: p.slSpot,
+      ePrice: p.entrySpot, xPrice: p.exitSpot, sl: null,   // no stop exists — profit lock only
       pnl: p.pnl,
       reason: p.exitReason,
       entryReason: p.entryReason,
@@ -496,7 +378,7 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium disaster stop is skipped; it has no meaning without a premium). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); one trade/day, cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exits: initial SL = wider of the entry-candle extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR5 → breakeven at +${process.env.ORB_BREAKEVEN_PTS || "20"}pt → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → ${process.env.ORB_FORCED_EXIT || "15:15"} EOD. ${_paperOnlyGatesNote()}`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
   });
   res.send(html);
 }

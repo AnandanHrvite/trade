@@ -5,7 +5,7 @@
  * card names the exact Settings key(s) involved and leaves the save to you, so
  * an acted-on suggestion still goes through the normal Settings audit trail.
  *
- * GET /advisor        → page shell (analysis is fetched, so Book/Window changes
+ * GET /advisor        → page shell (analysis is fetched, so Window changes
  *                       do not need a reload)
  * GET /advisor/data   → JSON report for the current filters
  *
@@ -20,7 +20,6 @@ const { resolveTheme } = require("../utils/theme");
 router.get("/data", (req, res) => {
   try {
     const report = advisor.analyze({
-      book: req.query.book,
       lookbackDays: req.query.days,
     });
     const saved = advisor.readReport();
@@ -173,8 +172,6 @@ router.get("/", (req, res) => {
     <p class="page-sub">Reads your own recorded trades and says which setting to look at. Runs offline — nothing is sent anywhere, and nothing is changed for you.</p>
 
     <div class="tbar">
-      <label>Book</label>
-      <select id="fBook"><option value="paper">Paper</option><option value="live">Live</option></select>
       <label>Window</label>
       <select id="fDays">
         <option value="30">30 days</option>
@@ -198,13 +195,12 @@ function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).to
 function pc(n){ return n>=0?'#10b981':'#ef4444'; }
 
 async function load(){
-  const book = document.getElementById('fBook').value;
   const days = document.getElementById('fDays').value;
   const C = document.getElementById('content');
   C.innerHTML = '<div class="empty">Analysing…</div>';
   let j;
   try {
-    const r = await fetch('/advisor/data?book='+encodeURIComponent(book)+'&days='+encodeURIComponent(days));
+    const r = await fetch('/advisor/data?days='+encodeURIComponent(days));
     j = await r.json();
   } catch(e){
     C.innerHTML = '<div class="empty">Could not load the report: '+esc(e.message)+'</div>';
@@ -232,7 +228,7 @@ function render(r){
     + '</div>';
 
   if(!t.trades){
-    h += '<div class="panel"><div class="empty">No '+esc(r.book)+' trades in this window. Widen the window, or switch book.</div></div>';
+    h += '<div class="panel"><div class="empty">No '+esc(r.book)+' trades in this window. Widen the window.</div></div>';
     document.getElementById('content').innerHTML = h;
     return;
   }
@@ -301,7 +297,6 @@ function finding(f){
   return h + '</div>';
 }
 
-document.getElementById('fBook').addEventListener('change', load);
 document.getElementById('fDays').addEventListener('change', load);
 document.getElementById('btnRun').addEventListener('click', load);
 load();

@@ -27,7 +27,6 @@ const path    = require("path");
 const crypto  = require("crypto");
 
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
-const sharedSocketState = require("../utils/sharedSocketState");
 
 const DATA_DIR     = path.join(os.homedir(), "trading-data");
 const BROKERS_FILE = path.join(DATA_DIR, "brokers.json");
@@ -175,7 +174,6 @@ function esc(s) {
 }
 
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
   const builtinHtml = BUILTIN.map(b => `
     <div class="row" data-broker="${b.id}">
@@ -277,7 +275,7 @@ router.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('brokers', liveActive)}
+${buildSidebar('brokers', false)}
 <div class="main-content">
 
 <div class="top-bar">

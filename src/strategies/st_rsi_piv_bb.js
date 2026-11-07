@@ -30,24 +30,16 @@
  *         candle's close) must ALSO show 4/4 for the SAME side. Both charts are
  *         built from the same spot feed. A 3-min close at 09:48 reads the 5-min
  *         candle that closed at 09:45; 09:51 reads 09:50.
- *   The exit always runs on the trade timeframe (3 for 3/BOTH, 5 for 5).
+ *   The trade timeframe is 3 for 3/BOTH, 5 for 5.
  *
- * ── EXIT — SuperTrend trailing stop, on CANDLE CLOSE only ───────────────────
- *   Initial stop = the SuperTrend value on the entry candle.
- *   At every later closed candle of the trade timeframe:
- *     CE exits when the SuperTrend flips RED on that candle, or the close is
- *        below the trailed stop.   PE: flips GREEN, or close above the stop.
- *     Otherwise the stop trails to that candle's SuperTrend value, tighten-only.
- *   The stop is NOT checked tick-by-tick (the user's choice, 2026-10-19): a
- *   candle that wicks through the line but closes back above it does not exit.
- *   Forced square-off at ST_RSI_PIV_BB_EOD_EXIT_TIME (15:15).
+ * ── EXIT — none here. The paper route exits ONLY through the repo-wide profit
+ *   lock (tradeGuards.checkProfitLock, per tick on the option premium), plus
+ *   manual exit and the global session teardown.
  *
  * ── DELIBERATELY NOT HERE (do not "helpfully" add these) ────────────────────
  *   No confirmation candle, no VIX gate, no OI filter, no ADX, no volume, no
- *   EMA, no VWAP, no ATR sizing, no fixed target, no profit booking, no
- *   breakeven jump, no premium stop, no tick-level stop, no cooldowns, no
- *   consecutive-loss breaker, no fresh-cross requirement on R1/S1. The only
- *   session guards are the entry window, max trades/day and the daily loss cap.
+ *   EMA, no VWAP, no ATR sizing, no fresh-cross requirement on R1/S1. The only
+ *   session guard here is the entry window.
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
  *   Every decision reads closed-candle OHLC and the previous day's daily bar.
@@ -64,9 +56,7 @@
  *   computePivots(daily, { forDayKey })  -> { pp, r1, s1, r2, s2, forDayKey, ... }
  *   computeSeries(candles, cfg)          -> { rsi, bbUpper, bbMiddle, bbLower, supertrend } 1:1
  *   checkBar(bar, idx, series, pivots, cfg) -> the 4-box checklist for CE and PE
- *   getSignal(candles, opts)             -> { signal, reason, stopLoss, checks, ... }
- *   exitCheck(side, bar, stBar, stop)    -> { exit, reason } — the ONLY exit test
- *   trailStop(candles, side, stop, cfg, pre) -> { stop, changed, tag } tighten-only
+ *   getSignal(candles, opts)             -> { signal, reason, checks, ... }
  */
 
 const { RSI, BollingerBands } = require("technicalindicators");
@@ -76,7 +66,7 @@ const NAME   = "ST_RSI_PIV_BB";
 const PREFIX = "ST_RSI_PIV_BB";
 const DESCRIPTION =
   "ST_RSI_PIV_BB — SuperTrend(10,2) + RSI(14) + previous-day pivot R1/S1 + Bollinger(20,2) breakout, " +
-  "all four on one closed candle (3-min, 5-min or both) · SuperTrend trailing stop on candle close · NIFTY, Zerodha";
+  "all four on one closed candle (3-min, 5-min or both) · profit-lock exit · NIFTY, Zerodha";
 
 const ENTRY_TFS = ["3", "5", "BOTH"];
 
@@ -132,7 +122,7 @@ function getConfig() {
   return {
     PREFIX,
     ENTRY_TF:     entryTf,
-    // The trade timeframe: entries are evaluated and the trail/exit runs here.
+    // The trade timeframe: entries are evaluated here.
     TRADE_RES:    entryTf === "5" ? 5 : 3,
     // BOTH only: the second chart that must agree. null = no second chart.
     CONFIRM_RES:  entryTf === "BOTH" ? 5 : null,
@@ -147,11 +137,6 @@ function getConfig() {
 
     ENTRY_START:  _parseHHMM(process.env[PREFIX + "_ENTRY_START"], 9 * 60 + 30),
     ENTRY_END:    _parseHHMM(process.env[PREFIX + "_ENTRY_END"], 15 * 60),
-    EOD_EXIT:     _parseHHMM(process.env[PREFIX + "_EOD_EXIT_TIME"], 15 * 60 + 15),
-
-    // Session guards. Route-level, but read here so one config describes the mode.
-    MAX_DAILY_TRADES: _intEnv(PREFIX + "_MAX_DAILY_TRADES", 3, 1, 50),
-    MAX_DAILY_LOSS: _numEnv(PREFIX + "_MAX_DAILY_LOSS", 5000, 0),
   };
 }
 
@@ -316,7 +301,7 @@ function _confirmIndex(confirmCandles, tradeCloseSec, confirmRes) {
   return -1;
 }
 
-const _NO = { stopLoss: null, slSpot: null, entrySpot: null, prevCandleHigh: null, prevCandleLow: null };
+const _NO = { entrySpot: null, prevCandleHigh: null, prevCandleLow: null };
 
 /**
  * getSignal(candles, opts)
@@ -329,7 +314,7 @@ const _NO = { stopLoss: null, slSpot: null, entrySpot: null, prevCandleHigh: nul
  *                          recomputing on candles.slice(0, endIdx+1).
  *   opts.confirmSeries   — OFFLINE ANALYSIS / TESTS ONLY: computeSeries(confirmCandles) over the whole array.
  *   opts.skipTimeCheck   — exit-time indicator snapshots only, never the entry path.
- * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup, stopLoss, slSpot,
+ * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup,
  *           entrySpot, checks, confirmChecks, rsi, bbUpper, bbMiddle, bbLower,
  *           supertrend, stTrend, r1, s1, pp, ... }.
  */
@@ -371,7 +356,7 @@ function getSignal(candles, opts) {
     checks: chk, confirmChecks: null, confirmTime: null,
     entryTf: cfg.ENTRY_TF, tradeRes: cfg.TRADE_RES,
     prevCandleHigh: prev.high, prevCandleLow: prev.low,
-    entrySpot: bar.close, stopLoss: null, slSpot: null,
+    entrySpot: bar.close,
     signalStrength: "STRONG",
   };
   if (!chk.ready) {
@@ -421,69 +406,17 @@ function getSignal(candles, opts) {
   }
 
   // A green SuperTrend sits below the close by construction; refuse anyway if it
-  // does not, rather than open a trade whose stop is already through the entry.
+  // does not (a SuperTrend on the wrong side of the close is not "agreeing").
   const stv = chk.supertrend;
   if ((side === "CE" && !(stv < bar.close)) || (side === "PE" && !(stv > bar.close))) {
-    return Object.assign({}, base, { signal: "NONE", skipReason: "st_wrong_side", reason: `${side} 4/4 but SuperTrend ${stv} is not beyond the close ${bar.close} — no stop, no trade` });
+    return Object.assign({}, base, { signal: "NONE", skipReason: "st_wrong_side", reason: `${side} 4/4 but SuperTrend ${stv} is not beyond the close ${bar.close} — no trade` });
   }
-  const sl = _r2(stv);
   const conf = cfg.CONFIRM_RES ? ` + ${cfg.CONFIRM_RES}m 4/4` : "";
   const reason = side === "CE"
-    ? `CE ${tag} 4/4${conf}: ST green | RSI ${chk.rsi}>${cfg.RSI_CE_MIN} | C ${bar.close}>R1 ${pivots.r1} | C>BB up ${chk.bbUpper} | SL=ST ${sl}`
-    : `PE ${tag} 4/4${conf}: ST red | RSI ${chk.rsi}<${cfg.RSI_PE_MAX} | C ${bar.close}<S1 ${pivots.s1} | C<BB low ${chk.bbLower} | SL=ST ${sl}`;
+    ? `CE ${tag} 4/4${conf}: ST green ${_r2(stv)} | RSI ${chk.rsi}>${cfg.RSI_CE_MIN} | C ${bar.close}>R1 ${pivots.r1} | C>BB up ${chk.bbUpper}`
+    : `PE ${tag} 4/4${conf}: ST red ${_r2(stv)} | RSI ${chk.rsi}<${cfg.RSI_PE_MAX} | C ${bar.close}<S1 ${pivots.s1} | C<BB low ${chk.bbLower}`;
   if (!o.silent) console.log(`[${NAME}] 🟢 ${side === "CE" ? "BUY_CE" : "BUY_PE"} — ${reason}`);
-  return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", stopLoss: sl, slSpot: sl, reason });
-}
-
-/**
- * The ONLY exit test, run on each CLOSED trade-timeframe candle while a
- * position is open. `stBar` is that candle's SuperTrend { value, trend }, `stop`
- * the trail in force BEFORE this candle.
- */
-function exitCheck(side, bar, stBar, stop) {
-  if (!_okBar(bar)) return { exit: false, reason: null };
-  const c = bar.close;
-  const trend = stBar && (stBar.trend === 1 || stBar.trend === -1) ? stBar.trend : null;
-  if (side === "CE") {
-    if (trend === -1) return { exit: true, reason: `SuperTrend flipped red — close ${c}` };
-    if (_num(stop) && c < stop) return { exit: true, reason: `Close ${c} below SuperTrend stop ${stop}` };
-  } else if (side === "PE") {
-    if (trend === 1) return { exit: true, reason: `SuperTrend flipped green — close ${c}` };
-    if (_num(stop) && c > stop) return { exit: true, reason: `Close ${c} above SuperTrend stop ${stop}` };
-  }
-  return { exit: false, reason: null };
-}
-
-/**
- * Trail the stop to the last closed candle's SuperTrend, tighten-only. A
- * SuperTrend on the wrong side of the close, or in the opposite trend, leaves
- * the stop where it was (exitCheck handles the flip).
- * `precomputed` — OFFLINE ANALYSIS / TESTS ONLY: { supertrend, endIdx } over the whole array.
- */
-function trailStop(candles, side, currentStop, cfg, precomputed) {
-  cfg = cfg || getConfig();
-  const unchanged = { stop: currentStop, changed: false, tag: null };
-  const pre = precomputed || null;
-  const nBars = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
-  if (nBars < cfg.ST_PERIOD + 2) return unchanged;
-  const bar = candles[nBars - 1];
-  const st = pre ? pre.supertrend : computeSuperTrend(candles, cfg.ST_PERIOD, cfg.ST_MULT);
-  const cur = st[nBars - 1];
-  if (!_okBar(bar) || !cur || !_num(cur.value)) return unchanged;
-  const lvl = _r2(cur.value);
-  if (side === "CE" && cur.trend === 1 && lvl < bar.close && (!_num(currentStop) || lvl > currentStop)) {
-    return { stop: lvl, changed: true, tag: "SuperTrend" };
-  }
-  if (side === "PE" && cur.trend === -1 && lvl > bar.close && (!_num(currentStop) || lvl < currentStop)) {
-    return { stop: lvl, changed: true, tag: "SuperTrend" };
-  }
-  return unchanged;
-}
-
-/** True when the given IST minute is at/after the forced square-off. */
-function isEodExit(unixSec, cfg) {
-  cfg = cfg || getConfig();
-  return _istMins(unixSec) >= cfg.EOD_EXIT;
+  return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", reason });
 }
 
 module.exports = {
@@ -496,13 +429,10 @@ module.exports = {
   warmupBars,
   warmupDays,
   isInTradingWindow,
-  isEodExit,
   computePivots,
   computeSeries,
   checkBar,
   getSignal,
-  exitCheck,
-  trailStop,
   _istDayOf,
   _istMins,
   _confirmIndex,

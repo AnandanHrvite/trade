@@ -19,7 +19,9 @@
  *
  * STOP   : beyond the block by PA_SL_BUFFER_PTS, floored at PA_MIN_SL_PTS.
  * SKIPS  : stop wider than PA_MAX_SL_PTS, or reward:risk under PA_SMC_MIN_RR.
- * EXIT   : stop, target, plus the common rules applied by the route engines.
+ *          The stop and target are setup geometry for these two entry filters
+ *          only — no engine exits on them.
+ * EXIT   : the common profit lock, applied by the route engines.
  * WINDOW : PA_ENTRY_START – PA_ENTRY_END IST.
  *
  * Single timeframe by design: the course maps structure on a higher chart, but this
@@ -49,7 +51,7 @@ function int(key, fb, min, max) { return Math.floor(num(key, fb, min, max)); }
 // most 45, so its break always has history behind it for finding the swing.
 var TAIL_BARS = 90;
 
-// Stop limits, shared with the routes that place a stop of their own (manual entries).
+// Stop-distance limits for the entry filters below.
 function stopLimits() {
   return { min: num("PA_MIN_SL_PTS", "8", 0, Infinity), max: num("PA_MAX_SL_PTS", "25", 0, Infinity) };
 }
@@ -77,7 +79,7 @@ function isInTradingWindow(unixSec) {
   return { ok: true, reason: null };
 }
 
-// ── Swing high/low detection (structure trail + status display) ──────────────
+// ── Swing high/low detection (status display) ────────────────────────────────
 // A swing high: candle[i].high > candle[i-1].high AND candle[i].high > candle[i+1].high
 // A swing low:  candle[i].low  < candle[i-1].low  AND candle[i].low  < candle[i+1].low
 function findSwingPoints(candles, lookback) {
@@ -379,35 +381,6 @@ function getSignal(candles, opts) {
   });
 }
 
-// ── Trailing SL: Swing structure based ───────────────────────────────────────
-// Off by default: the setup's own exit is stop and target. When on:
-// For CE: trail SL to the most recent swing low (only tighten)
-// For PE: trail SL to the most recent swing high (only tighten)
-function updateTrailingSL(candles, currentSL, side, opts) {
-  if (cfg("PA_SMC_TRAIL_ENABLED", "false") !== "true") return { sl: currentSL, source: null };
-  var SR_LOOKBACK = int("PA_SR_LOOKBACK", "30", 3, 200);
-  var swings = findSwingPoints(candles, SR_LOOKBACK);
-
-  if (side === "CE" && swings.swingLows.length > 0) {
-    var lastSwingLow = swings.swingLows[swings.swingLows.length - 1].price;
-    var close = candles[candles.length - 1].close;
-    // Only tighten (move up), must be below current price
-    if (lastSwingLow > currentSL && lastSwingLow < close) {
-      return { sl: parseFloat(lastSwingLow.toFixed(2)), source: "Swing Low" };
-    }
-  }
-  if (side === "PE" && swings.swingHighs.length > 0) {
-    var lastSwingHigh = swings.swingHighs[swings.swingHighs.length - 1].price;
-    var close = candles[candles.length - 1].close;
-    // Only tighten (move down), must be above current price
-    if (lastSwingHigh < currentSL && lastSwingHigh > close) {
-      return { sl: parseFloat(lastSwingHigh.toFixed(2)), source: "Swing High" };
-    }
-  }
-
-  return { sl: currentSL, source: null };
-}
-
 // getSignal holds no state; kept because the routes call it at session start.
 function reset() {}
 
@@ -415,9 +388,7 @@ module.exports = {
   NAME,
   DESCRIPTION,
   getSignal,
-  updateTrailingSL,
   reset,
-  stopLimits,
   TAIL_BARS,
   // Expose helpers for backtest
   findSwingPoints,

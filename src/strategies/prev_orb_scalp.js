@@ -4,7 +4,7 @@
  * Single-leg NIFTY option buying (ITM), intraday, Zerodha orders, Fyers data.
  * One trade per day at most.
  *
- * ── THE DAY, IN FIVE RULES (the user's own, confirmed 2026-09-27) ───────────
+ * ── THE DAY, IN THREE RULES (the user's own, confirmed 2026-09-27) ──────────
  *
  *  1. LEVELS — yesterday's HIGH and LOW (the previous trading session's
  *     highest high / lowest low of NIFTY 50 spot). Drawn on the chart.
@@ -27,24 +27,13 @@
  *     level is not a second chance. That keeps Paper, Backtest and Replay
  *     agreeing on the one bar that can trade.
  *
- *  4. STOP + TARGET — both read off that 3-min break candle:
- *         stop   = its HIGH (PE) / LOW (CE)                      — a LEVEL
- *         size   = its high − low
- *         target = entry − size (PE) / entry + size (CE)
- *     "Entry" for the target is the break candle's close — the price the user
- *     enters at — so the target is a level fixed at the signal, not re-anchored
- *     to a fill that slipped a tick.
- *
- *  5. AFTER THE TARGET (PREV_ORB_SCALP_TRAIL_AFTER_TARGET, default ON) — the
- *     trade is NOT closed at the target. The stop jumps to the target level
- *     (profit locked), then on every closed 3-min candle it trails to that
- *     candle's HIGH (PE) / LOW (CE). It only ever tightens. With the toggle OFF
- *     the trade simply exits at the target.
- *
  *  Plus: no new entries after 14:30 (PREV_ORB_SCALP_ENTRY_END, judged on the
- *  break candle's CLOSE time), forced square-off 15:15 (route), max 1 trade a
- *  day, and the GLOBAL premium profit lock from utils/tradeGuards.js
- *  (checkProfitLock) in the per-tick exit path, as the user asked.
+ *  break candle's CLOSE time) and max 1 trade a day.
+ *
+ * ── EXITS — none here ───────────────────────────────────────────────────────
+ * This engine decides ENTRIES only. The routes exit through the global profit
+ * lock (tradeGuards.checkProfitLock), the manual exit and the session teardown.
+ * There is no stop loss, target, trail or early square-off in this file.
  *
  * ── TIMEFRAMES ──────────────────────────────────────────────────────────────
  * The engine is fed ONE series: closed 3-minute NIFTY spot bars. The 15-minute
@@ -61,13 +50,11 @@
  * ── DELIBERATELY NOT HERE (do not "helpfully" add these) ────────────────────
  * No VIX, OI, ADX, RSI, volume, ATR, VWAP, EMA/MA, SuperTrend, gap filter,
  * retest, second confirmation candle, minimum/maximum candle size, stop
- * buffer, breakeven jump before target, re-entry, or second trade. The user
- * specified none of them.
+ * buffer, re-entry, or second trade. The user specified none of them.
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
  * Every value a decision reads comes from CLOSED 3-minute OHLC off the history
- * endpoint. The live spot is used only to test already-frozen levels (stop,
- * target) per tick.
+ * endpoint.
  *
  * ── NOT MARKET-VALIDATED ────────────────────────────────────────────────────
  * Zero paper and zero live trades as of 2026-09-27.
@@ -75,8 +62,7 @@
  * Contract:
  *   getConfig()                         -> live env read (never cached)
  *   dayLevels(candles, opts)            -> { prevDay, or } for the last bar's day
- *   getSignal(candles, opts)            -> { signal, side, entrySpot, slSpot, targetSpot, ... }
- *   stopHit / targetHit / trailStop     -> the ONLY exit tests (plus route EOD + profit lock)
+ *   getSignal(candles, opts)            -> { signal, side, entrySpot, candleSize, ... }
  */
 
 const commonTradeWindow = require("../utils/commonTradeWindow");
@@ -84,7 +70,7 @@ const commonTradeWindow = require("../utils/commonTradeWindow");
 const NAME = "PREV_ORB_SCALP";
 const DESCRIPTION =
   "Prev ORB Scalp — the 09:15 15-min candle closes beyond yesterday's high/low, the first 3-min close beyond " +
-  "that candle is entered, stop at the 3-min candle's other end, target = its size, then trailed";
+  "that candle is entered; the global profit lock is its only automatic exit";
 
 // ── primitives ───────────────────────────────────────────────────────────────
 function _r2(x) { return Math.round(x * 100) / 100; }
@@ -125,14 +111,6 @@ function _intEnv(key, def, min, max) {
   return v;
 }
 
-function _boolEnv(key, def) {
-  const raw = process.env[key];
-  if (raw == null || raw === "") return def;
-  const s = String(raw).trim().toLowerCase();
-  if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
-  if (s === "false" || s === "0" || s === "no" || s === "off") return false;
-  return def;
-}
 
 function _okBar(c) {
   return !!c && _num(c.time) && _num(c.open) && _num(c.high) && _num(c.low) && _num(c.close);
@@ -160,8 +138,6 @@ function getConfig() {
     // Entries can only start once the analysis candle has closed.
     entryStartMin:    sessionStartMin + orMins,
     entryEndMin:      _parseHHMM(process.env.PREV_ORB_SCALP_ENTRY_END, 14 * 60 + 30),
-    forcedExitMin:    _parseHHMM(process.env.PREV_ORB_SCALP_FORCED_EXIT, 15 * 60 + 15),
-    trailAfterTarget: _boolEnv("PREV_ORB_SCALP_TRAIL_AFTER_TARGET", true),
   };
 }
 
@@ -272,7 +248,7 @@ function _baseSignal(cfg) {
   return {
     signal: "NONE", side: null, reason: "", skipReason: "", warmup: false,
     setupSide: null, spent: false, dayDead: false,
-    entrySpot: null, slSpot: null, slPts: null, targetSpot: null, candleSize: null,
+    entrySpot: null, candleSize: null,
     prevHigh: null, prevLow: null, prevDate: null,
     orOpen: null, orHigh: null, orLow: null, orClose: null,
     breakLevel: null, signalBarTime: null, firstBreakTime: null,
@@ -288,7 +264,7 @@ function _baseSignal(cfg) {
  * @param {Array}  candles ascending CLOSED bars at cfg.resolutionMins (3-min),
  *                 covering at least the previous session and today so far. The
  *                 LAST element is the just-closed candidate break candle.
- * @param {object} opts { cfg, silent, alreadyTraded }
+ * @param {object} opts { cfg, silent }
  */
 function getSignal(candles, opts) {
   const o = opts || {};
@@ -391,96 +367,24 @@ function getSignal(candles, opts) {
       `${setupTxt} · break candle closed ${_fmtMins(closeMin)}, past the ${_fmtMins(cfg.entryEndMin)} entry cut-off`;
     return base;
   }
-  if (o.alreadyTraded) {
-    base.skipReason = base.reason = "Daily trade budget spent — no new entries";
-    return base;
-  }
-
-  // ── 4. LEVELS off the break candle ────────────────────────────────────────
+  // ── The break candle's close is the entry; its range is recorded as context.
   const entry = _r2(sig.close);
-  const slSpot = _r2(isPE ? sig.high : sig.low);
   const size = _r2(sig.high - sig.low);
-  const target = _r2(isPE ? entry - size : entry + size);
   base.candleSize = size;
-
-  if (!(size > 0)) {
-    base.spent = true;
-    base.skipReason = base.reason = `Break candle has zero range (${size}pt) — no stop or target, refusing`;
-    return base;
-  }
-  const slPts = _r2(Math.abs(entry - slSpot));
-  if (!(slPts > 0)) {
-    base.spent = true;
-    base.skipReason = base.reason =
-      `Break candle closed at its own ${isPE ? "high" : "low"} (${entry}) — zero-risk stop, refusing`;
-    return base;
-  }
 
   base.signal = isPE ? "BUY_PE" : "BUY_CE";
   base.side = side;
   base.signalStrength = "STRONG";
   base.entrySpot = entry;
-  base.slSpot = slSpot;
-  base.slPts = slPts;
-  base.targetSpot = target;
   base.reason =
     `PREV ORB ${side}: ${setupTxt} · ${_fmtMins(startMin)} ${cfg.resolutionMins}-min candle closed ${entry} ` +
-    `${isPE ? "below" : "above"} ${level} | SL ${slSpot} (candle ${isPE ? "high" : "low"}, ${slPts}pt) | ` +
-    `target ${target} (candle size ${size}pt)${cfg.trailAfterTarget ? ", then trail" : ""}`;
+    `${isPE ? "below" : "above"} ${level} (candle size ${size}pt)`;
 
   if (!o.silent) {
     const ist = new Date(sig.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-    console.log(`[PREV_ORB_SCALP ${ist}] ENTER ${side} @ ${entry} | SL ${slSpot} | target ${target}`);
+    console.log(`[PREV_ORB_SCALP ${ist}] ENTER ${side} @ ${entry}`);
   }
   return base;
-}
-
-// ── Exit rules (ONE place, so paper / backtest / live / replay cannot drift) ──
-/** Stop taken out? `price >= null` is `price >= 0`, so both are checked finite. */
-function stopHit(side, price, stop) {
-  if (!_num(price) || !_num(stop)) return false;
-  return side === "CE" ? price <= stop : price >= stop;
-}
-
-/** Target reached? Same finite-guard contract as stopHit. */
-function targetHit(side, price, target) {
-  if (!_num(price) || !_num(target)) return false;
-  return side === "CE" ? price >= target : price <= target;
-}
-
-/**
- * What happens when the target is reached.
- *   trail ON  → { action: "LOCK", stop: target } — stop jumps to the target.
- *   trail OFF → { action: "EXIT" }
- * The returned stop is only ever TIGHTER than the current one (the target is
- * beyond the entry, the initial stop behind it), so this can never loosen it.
- */
-function onTarget(pos, opts) {
-  const o = opts || {};
-  const cfg = o.cfg || getConfig();
-  if (!pos || !_num(pos.targetSpot)) return null;
-  if (!cfg.trailAfterTarget) return { action: "EXIT" };
-  const dir = pos.side === "CE" ? 1 : -1;
-  if (_num(pos.slSpot) && (pos.targetSpot - pos.slSpot) * dir <= 0) return { action: "LOCK", stop: pos.slSpot };
-  return { action: "LOCK", stop: _r2(pos.targetSpot) };
-}
-
-/**
- * Candle-close trail, active only after the target was reached: the stop
- * follows each CLOSED bar's LOW (CE) / HIGH (PE). Ratchet only.
- *
- * @param {object} pos { side, slSpot, targetReached }
- * @param {object} bar a closed candle
- * @returns {{ stop:number } | null}
- */
-function trailStop(pos, bar) {
-  if (!pos || !pos.targetReached) return null;
-  if (pos.side !== "CE" && pos.side !== "PE") return null;
-  if (!_okBar(bar) || !_num(pos.slSpot)) return null;
-  const dir = pos.side === "CE" ? 1 : -1;
-  const cand = pos.side === "CE" ? bar.low : bar.high;
-  if ((cand - pos.slSpot) * dir <= 0) return null;
-  return { stop: _r2(cand) };
 }
 
 module.exports = {
@@ -490,10 +394,6 @@ module.exports = {
   dayLevels,
   setupSide,
   getSignal,
-  stopHit,
-  targetHit,
-  onTarget,
-  trailStop,
   // shared time helpers (routes must not re-derive IST arithmetic)
   _istDayOf,
   _istDateStr,

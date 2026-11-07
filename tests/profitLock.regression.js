@@ -15,8 +15,9 @@
  *
  *   1. The RULE — a one-way ratchet on option premium. Once premium has touched
  *      entry × (1 + arm%), the position may never again be sold below
- *      entry × (1 + floor%). It never widens a stop, never fires before the arm
- *      threshold, and never caps a runner that keeps climbing.
+ *      entry × (1 + floor%). It never fires before the arm threshold and never
+ *      caps a runner that keeps climbing. Since 2026-11-07 it is the ONLY
+ *      automatic exit in every strategy.
  *
  *   2. The REACH — that every engine which can hold an option position actually
  *      calls it. This is the half that rots: a new strategy added next month
@@ -56,11 +57,6 @@ function check(name, fn) {
   try { fn(); console.log(`  ✅ ${name}`); pass++; }
   catch (e) { console.log(`  ❌ ${name}\n       ${e.message}`); fail++; }
 }
-/** Same, for the breakeven keys. */
-function freshEnvBE(over) {
-  for (const k of Object.keys(process.env)) if (k.startsWith("BREAKEVEN_")) delete process.env[k];
-  Object.assign(process.env, over || {});
-}
 /** Wipe every PROFIT_LOCK_ key so one case cannot leak into the next. */
 function freshEnv(over) {
   for (const k of Object.keys(process.env)) if (k.startsWith("PROFIT_LOCK_")) delete process.env[k];
@@ -89,7 +85,7 @@ section("The ratchet — arms once, never loosens, never caps a runner");
 check("does not fire before the arm threshold is reached", () => {
   freshEnv();
   // Peaked +5%, never touched +8%: the lock was never armed, so a fall to entry
-  // is the strategy's own business.
+  // does not exit.
   assert.strictEqual(guards.checkProfitLock(100, 100, 105), null);
   assert.strictEqual(guards.checkProfitLock(100, 90,  105), null);
 });
@@ -126,7 +122,7 @@ check("never caps a runner — a trade still climbing is left alone", () => {
 check("trail 0 = fixed floor at entry+floor%, it does not follow the peak", () => {
   freshEnv({ PROFIT_LOCK_TRAIL_PCT: "0" });
   // Peak 200 (+100%) but price back to 106: still above the +5% floor, so the
-  // global lock holds its tongue and the strategy's own trail owns the exit.
+  // lock holds its tongue.
   assert.strictEqual(guards.checkProfitLock(100, 106, 200), null);
   assert.ok(guards.checkProfitLock(100, 104, 200));
 });
@@ -241,105 +237,9 @@ check("null / NaN / zero / missing premiums are refused", () => {
 
 check("a peak below entry cannot arm the lock", () => {
   freshEnv();
-  // An underwater trade has no profit to lock; this is the case where firing
-  // would turn the guard into an unintended stop-loss.
+  // An underwater trade has no profit to lock; firing here would turn the guard
+  // into a stop-loss, which no strategy has.
   assert.strictEqual(guards.checkProfitLock(100, 90, 95), null);
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-section("Breakeven stop — the lock's fallback");
-
-check("ships armed at +5%, enabled", () => {
-  freshEnvBE();
-  assert.strictEqual(guards.BREAKEVEN_ARM_PCT, 5);
-  assert.strictEqual(guards.BREAKEVEN_STOP_ENABLED, true);
-});
-
-check("does not fire before the arm threshold", () => {
-  freshEnvBE();
-  assert.strictEqual(guards.checkBreakevenStop(100, 100, 103), null);
-});
-
-check("fires once armed and premium returns to entry", () => {
-  freshEnvBE();
-  assert.ok(guards.checkBreakevenStop(100, 100, 105));
-  assert.ok(guards.checkBreakevenStop(100,  90, 105));  // gapped through
-});
-
-check("never caps a runner", () => {
-  freshEnvBE();
-  assert.strictEqual(guards.checkBreakevenStop(100, 150, 150), null);
-});
-
-check("a peak below entry cannot arm it", () => {
-  freshEnvBE();
-  assert.strictEqual(guards.checkBreakevenStop(100, 90, 95), null);
-});
-
-check("disabled, zero or garbage arm is inert — never a free stop at entry", () => {
-  // The dangerous failure: a bad value silently becoming "exit at entry always".
-  freshEnvBE({ BREAKEVEN_STOP_ENABLED: "false" });
-  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
-  freshEnvBE({ BREAKEVEN_ARM_PCT: "0" });
-  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
-  freshEnvBE({ BREAKEVEN_ARM_PCT: "abc" });
-  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
-  freshEnvBE({ BREAKEVEN_ARM_PCT: "-5" });
-  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
-});
-
-check("the lock wins when both are armed (it is the tighter floor)", () => {
-  freshEnvBE();
-  // Peak +10% arms both. At 105 the lock's floor fires; breakeven would not,
-  // since price is still above entry. Callers check the lock FIRST.
-  assert.ok(guards.checkProfitLock(100, 105, 110), "lock should fire at its floor");
-  assert.strictEqual(guards.checkBreakevenStop(100, 105, 110), null,
-    "breakeven must stay silent while price is above entry");
-});
-
-check("V2 engines keep their documented no-breakeven design", () => {
-  // emaRsiStV2Paper's own header says the breakeven floor is "DELETED, not
-  // behind a toggle". Adding the global one there would be a rule change, not a
-  // gap being filled — so it must stay out unless the user asks for it.
-  for (const f of ["emaRsiStV2Paper.js", "bnEmaRsiStV2Paper.js"]) {
-    const src = decomment(read(`routes/${f}`));
-    assert.ok(!/checkBreakevenStop/.test(src),
-      `${f} gained a breakeven stop, but its header documents that it has none by design`);
-  }
-});
-
-check("a breakeven exit is never treated as a stop-out", () => {
-  // It exits AT entry, not at a loss. Classifying it as an SL would start the
-  // same-side pause and feed the consecutive-loss breaker.
-  const bt = read("services/backtestEngine.js");
-  const cls = bt.split("\n").find(l => /isSLExit\s*=/.test(l));
-  assert.ok(cls && !/breakeven/i.test(cls), "backtest classifies a breakeven as an SL exit");
-  assert.ok(!"Breakeven stop (armed at +5%)".toLowerCase().includes("sl hit"),
-    "the breakeven reason string would match the SL classifier");
-  const blk = bt.split("\n").find(l => /_blockEntryAfterExit = true/.test(l));
-  assert.ok(blk && !/breakeven/i.test(blk), "shared engine blocks re-entry after a breakeven");
-});
-
-check("BACKTEST applies the breakeven, with the same previous-bar arming", () => {
-  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
-    const src = decomment(read(`services/${f}`));
-    assert.ok(/BREAKEVEN_ARM_PCT/.test(src), `${f} does not read the breakeven arm %`);
-    const i = src.search(/>=\s*(_BE_ARM_SPOT_PTS|_beArmSpotPts)/);
-    assert.ok(i > 0, `${f}: no breakeven arm comparison`);
-    const guard = src.split("\n").find(l => /(_BE_VALID|_beValid)/.test(l) && /bestPricePrevBar/.test(l));
-    assert.ok(guard, `${f}: breakeven not gated on the previous-bar snapshot (look-ahead)`);
-  }
-});
-
-check("Settings exposes every BREAKEVEN_ key the code reads", () => {
-  const settings = read("routes/settings.js");
-  const sources  = ["utils/tradeGuards.js", "services/backtestEngine.js"].map(read).join("\n");
-  // Only the GLOBAL keys. Per-strategy ones (EMA_RSI_ST_BREAKEVEN_*, ORB_BREAKEVEN_*)
-  // are that strategy's own older spot breakeven, checked by its own suite.
-  const keys = new Set(["BREAKEVEN_STOP_ENABLED", "BREAKEVEN_ARM_PCT"]);
-  for (const k of keys) assert.ok(sources.includes(k), `the code no longer reads ${k}`);
-  const missing = [...keys].filter(k => !settings.includes(`"${k}"`));
-  assert.deepStrictEqual(missing, [], `keys read by the code but absent from Settings: ${missing.join(", ")}`);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -349,17 +249,10 @@ section("Reach — every engine that can hold an option honours the lock");
 // claiming "I cannot hold an option position"; if that stops being true, the
 // entry must be removed and the engine wired instead.
 const ENGINES_WITHOUT_OPTION_POSITIONS = new Set([
-  "trendPbPaper.js", "trendDayScalpPaper.js", // harness-run, disabled
   "earlyBirdPaper.js",                        // stock mode, not options
-  "bbRsiLive.js", "emaRsiStLive.js", "orbLive.js", // live engines — see note below
+  // GAP_RUNAWAY's stock scanner holds shares — checked in tests/gapRunaway.regression.js.
+  "gapRunawayStkPaper.js",
 ]);
-
-// GAP_RUNAWAY (NIFTY options): the user's rule is that NO common rule applies to
-// it — the lock included. Asserted absent below, so the exemption cannot hide a
-// half-wired lock. Its stock scanner DOES run them (user, 2026-10-28) — it holds
-// shares, so it is checked in tests/gapRunaway.regression.js instead.
-const COMMON_RULES_EXEMPT = new Set(["gapRunawayPaper.js"]);
-ENGINES_WITHOUT_OPTION_POSITIONS.add("gapRunawayStkPaper.js");
 
 check("every enabled paper engine calls checkProfitLock", () => {
   const dir = path.join(SRC, "routes");
@@ -367,7 +260,6 @@ check("every enabled paper engine calls checkProfitLock", () => {
   const missing = [];
   for (const f of engines) {
     if (ENGINES_WITHOUT_OPTION_POSITIONS.has(f)) continue;
-    if (COMMON_RULES_EXEMPT.has(f)) continue;
     const src = decomment(read(`routes/${f}`));
     // ORB delegates its tick exits to the shared orbExits module.
     if (/orbExits\.evaluateTickExits/.test(src)) continue;
@@ -382,11 +274,11 @@ check("every enabled paper engine calls checkProfitLock", () => {
     `paper engines that can hold an option but never call checkProfitLock: ${missing.join(", ")}`);
 });
 
-check("GAP_RUNAWAY (NIFTY) never applies the profit lock or breakeven (no common rules, by the user's rule)", () => {
-  for (const f of COMMON_RULES_EXEMPT) {
-    const src = decomment(read(`routes/${f}`));
-    assert.ok(!/checkProfitLock|checkBreakevenStop|tradeGuards/.test(src), `${f} must not apply the common premium exits`);
-  }
+check("GAP_RUNAWAY (NIFTY) applies the profit lock like every other strategy", () => {
+  // It used to be exempt from every common rule. The user's 2026-11-07 order puts
+  // the lock on ALL strategies, so the exemption is gone.
+  const src = decomment(read("routes/gapRunawayPaper.js"));
+  assert.ok(/tradeGuards\.checkProfitLock\(/.test(src), "gapRunawayPaper.js must call checkProfitLock");
 });
 
 check("ORB honours it through the shared orbExits module", () => {
@@ -408,111 +300,77 @@ check("futures legs are excluded wherever an engine can trade them", () => {
   }
 });
 
-check("the lock is checked BEFORE the engine's own stop, not after", () => {
-  // Once armed the locked floor sits ABOVE entry, so a stop below entry must not
-  // get first refusal — otherwise the lock can only ever fire on trades that
-  // were already going to exit anyway.
-  for (const [f, stopMarker] of [
-    ["emaRsiStPaper.js",   "Option-premium stop"],
-    ["ema9vwapPaper.js",   "Option-premium stop"],
-    ["emaRsiStV2Paper.js", "SuperTrend trailing SL hit"],
-  ]) {
-    const src = read(`routes/${f}`);
-    const lock = src.indexOf("checkProfitLock");
-    const stop = src.indexOf(stopMarker, Math.max(0, lock - 2000));
-    assert.ok(lock > 0 && stop > 0, `${f}: could not locate both the lock and "${stopMarker}"`);
-    assert.ok(lock < stop, `${f}: the profit lock runs AFTER "${stopMarker}" — it must run before it`);
-  }
-});
-
-check("the native LIVE engines honour it too", () => {
-  // Most live trading runs through the harness, which literally runs the paper
-  // engine — so it inherits the lock for free. These four have their own tick
-  // loops and do not, which is exactly why they can silently drift from paper.
-  for (const f of ["emaRsiStLive.js", "bbRsiLive.js"]) {
-    const src = decomment(read(`routes/${f}`));
-    assert.ok(/checkProfitLock/.test(src), `${f} never calls checkProfitLock — live would drift from paper`);
-  }
-  // PA runs the lock in both paper and live (user, 2026-11-03). Parity is the invariant.
-  {
-    const paperHas = /checkProfitLock/.test(decomment(read("routes/paPaper.js")));
-    const liveHas  = /checkProfitLock/.test(decomment(read("routes/paLive.js")));
-    assert.ok(paperHas, "paPaper.js must apply the common profit lock");
-    assert.strictEqual(liveHas, paperHas, `paLive.js ${liveHas ? "calls" : "skips"} checkProfitLock but paPaper.js ${paperHas ? "calls" : "skips"} it — live would drift from paper`);
-  }
-  // ORB live goes through the shared orbExits module.
-  assert.ok(/checkProfitLock/.test(decomment(read("strategies/orbExits.js"))));
-});
-
-check("the live harness inherits the lock by running paper", () => {
-  // If a harness ever stops wrapping its paper route, it stops inheriting every
-  // paper rule — the lock included — without any test here failing otherwise.
-  const dir = path.join(SRC, "routes");
-  const missing = [];
-  for (const f of fs.readdirSync(dir).filter(x => /LiveHarness\.js$/.test(x))) {
-    if (!/require\("\.\/[a-zA-Z0-9]*Paper"\)/.test(read(`routes/${f}`))) missing.push(f);
-  }
-  assert.deepStrictEqual(missing, [],
-    `harness routes that no longer wrap their paper engine: ${missing.join(", ")}`);
-});
-
 check("BACKTEST applies the lock, in spot-equivalent terms", () => {
-  // The backtest engines have no option chain, so they convert the premium
-  // thresholds to spot points the same way they already convert the option stop.
-  // Without this the backtest reports exits paper would never take, which breaks
-  // the repo's rule that backtest must match paper.
-  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
-    const src = decomment(read(`services/${f}`));
-    assert.ok(/PROFIT_LOCK_ARM_PCT/.test(src),  `${f} does not read the profit-lock arm %`);
-    assert.ok(/PROFIT_LOCK_FLOOR_PCT/.test(src), `${f} does not read the profit-lock floor %`);
-    assert.ok(/DELTA/.test(src), `${f} must convert the premium thresholds via DELTA`);
-  }
+  // The backtest engines have no option chain, so they model the premium from
+  // the spot move via DELTA. Without this the backtest reports exits paper would
+  // never take, which breaks the repo's rule that backtest must match paper.
+  const bt = decomment(read("services/backtestEngine.js"));
+  assert.ok(/PROFIT_LOCK_ARM_PCT/.test(bt),  "backtestEngine.js does not read the profit-lock arm %");
+  assert.ok(/PROFIT_LOCK_FLOOR_PCT/.test(bt), "backtestEngine.js does not read the profit-lock floor %");
+  assert.ok(/DELTA/.test(bt), "backtestEngine.js must convert the premium thresholds via DELTA");
+  // EMA9+VWAP runs the real checkProfitLock on a δ-modelled premium.
+  const ev = decomment(read("services/ema9vwapBacktestEngine.js"));
+  assert.ok(/_tradeGuards\.checkProfitLock\(/.test(ev), "ema9vwapBacktestEngine.js does not call checkProfitLock");
+  assert.ok(/profitLockFloorLtp\(/.test(ev), "ema9vwapBacktestEngine.js does not price the fill at the lock floor");
+  assert.ok(/DELTA/.test(ev), "ema9vwapBacktestEngine.js must model the premium via DELTA");
 });
 
 check("a backtest cannot arm and fire the lock on the SAME bar (look-ahead)", () => {
   // The dangerous bug: arming on this bar's HIGH and exiting on this bar's LOW.
   // A bar gives us both extremes but not their order, so that silently assumes
   // the move went up-then-down and manufactures profitable exits paper could
-  // never take — inflating every backtest. Both engines must arm off a peak
-  // snapshotted BEFORE the current bar is folded in.
-  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
-    const src = decomment(read(`services/${f}`));
+  // never take — inflating every backtest.
+  //
+  // Shared engine: arms off a peak snapshotted BEFORE the current bar is folded in.
+  {
+    const src = decomment(read("services/backtestEngine.js"));
     assert.ok(/bestPricePrevBar/.test(src),
-      `${f} does not snapshot a previous-bar peak — the lock can arm on the same bar it exits`);
-    // The arming comparison must read the SNAPSHOT, never the live peak.
-    const armLine = src.split("\n").find(l => /(>=)\s*(_PL_ARM_SPOT_PTS|_plArmSpotPts)/.test(l));
-    assert.ok(armLine, `${f}: could not find the arm comparison`);
-    const guard = src.split("\n").find(l => /_PL_VALID|_plValid/.test(l) && /bestPricePrevBar/.test(l));
-    assert.ok(guard, `${f}: the lock is not gated on the previous-bar snapshot`);
-    // And the snapshot must be taken BEFORE this bar updates the running peak.
+      "backtestEngine.js does not snapshot a previous-bar peak — the lock can arm on the same bar it exits");
+    const armLine = src.split("\n").find(l => />=\s*_PL_ARM_SPOT_PTS/.test(l));
+    assert.ok(armLine, "backtestEngine.js: could not find the arm comparison");
+    const guard = src.split("\n").find(l => /_PL_VALID/.test(l) && /bestPricePrevBar/.test(l));
+    assert.ok(guard, "backtestEngine.js: the lock is not gated on the previous-bar snapshot");
     const snap = src.indexOf("bestPricePrevBar = position.bestPrice");
     const upd  = src.search(/bestPrice = candle\.(high|low)/);
     assert.ok(snap > 0 && upd > 0 && snap < upd,
-      `${f}: the previous-bar snapshot must be taken before this bar's peak update`);
+      "backtestEngine.js: the previous-bar snapshot must be taken before this bar's peak update");
+  }
+  // EMA9+VWAP: path model open → adverse extreme → favourable extreme. The
+  // adverse leg is checked against the peak BEFORE this bar's favourable extreme
+  // can raise it, so a bar can never arm and give back on its own high/low pair.
+  {
+    const src = decomment(read("services/ema9vwapBacktestEngine.js"));
+    const adv = src.search(/checkProfitLock\(_priceBase\(\),\s*pAdv/);
+    const fav = src.search(/if \(pFav > position\.peak\) position\.peak = pFav/);
+    assert.ok(adv > 0 && fav > 0, "ema9vwapBacktestEngine.js: could not find the adverse check and the favourable peak update");
+    assert.ok(adv < fav, "ema9vwapBacktestEngine.js raises the peak on the favourable extreme before checking the adverse leg");
   }
 });
 
 check("a backtest cannot arm the lock without tracking the peak", () => {
   // The lock must arm on the running favourable extreme, not just the current
   // bar — otherwise a trade that peaked on an earlier candle never arms.
-  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
-    const src = decomment(read(`services/${f}`));
-    assert.ok(/bestPrice/.test(src), `${f} has no favourable-extreme tracking for the lock to arm on`);
+  {
+    const src = decomment(read("services/backtestEngine.js"));
     const upd = src.search(/bestPrice\s*=\s*candle\.(high|low)/);
-    assert.ok(upd > 0, `${f} never updates bestPrice from the bar`);
+    assert.ok(upd > 0, "backtestEngine.js never updates bestPrice from the bar");
     // Compare against where the arm threshold is USED (the >= comparison), not
-    // where the constant is declared — the declaration sits at the top of the
-    // run, long before any bar is seen, so matching it would always "fail".
-    const use = src.search(/>=\s*(_PL_ARM_SPOT_PTS|_plArmSpotPts)/);
-    assert.ok(use > 0, `${f} never compares against the arm distance`);
-    assert.ok(upd < use, `${f} reads the peak before updating it`);
+    // where the constant is declared.
+    const use = src.search(/>=\s*_PL_ARM_SPOT_PTS/);
+    assert.ok(use > 0, "backtestEngine.js never compares against the arm distance");
+    assert.ok(upd < use, "backtestEngine.js reads the peak before updating it");
+  }
+  {
+    const src = decomment(read("services/ema9vwapBacktestEngine.js"));
+    assert.ok(/position\.peak = _priceBase\(\)/.test(src), "ema9vwapBacktestEngine.js does not seed the lock peak at entry");
+    assert.ok(/if \(pOpen > position\.peak\) position\.peak = pOpen/.test(src), "ema9vwapBacktestEngine.js does not raise the peak at the bar open");
+    assert.ok(/checkProfitLock\(_priceBase\(\),\s*pOpen,\s*position\.peak\)/.test(src), "ema9vwapBacktestEngine.js does not pass the carried peak to the lock");
   }
 });
 
 check("a profit-lock exit is never treated as a stop-out", () => {
-  // It exits in PROFIT. If any mode classified it as an SL it would start the
-  // same-side SL pause and feed the consecutive-loss breaker, so a run of
-  // successful locks would progressively shut the strategy down.
+  // It exits in PROFIT. If any mode classified it as an SL it would start an SL
+  // pause, so a run of successful locks would progressively shut the strategy down.
   for (const f of ["emaRsiStPaper.js", "ema9vwapPaper.js", "bbRsiPaper.js",
                    "emaRsiStV2Paper.js", "bnEmaRsiStV2Paper.js"]) {
     const src = decomment(read(`routes/${f}`));
@@ -523,29 +381,23 @@ check("a profit-lock exit is never treated as a stop-out", () => {
     assert.ok(!/_setSlPause/.test(branch),
       `${f}: the profit lock arms the SL pause — it exits in profit and must not`);
   }
-  // Backtest classifies by reason string; "Profit lock" must not read as an SL.
-  const bt = read("services/backtestEngine.js");
-  const cls = bt.split("\n").find(l => /isSLExit\s*=/.test(l));
-  assert.ok(cls, "could not find the backtest SL classification");
-  assert.ok(!/profit lock/i.test(cls), "backtest classifies a profit lock as an SL exit");
-  assert.ok(!"Profit lock +5% (=18pt spot, armed at +8%)".toLowerCase().includes("sl hit"),
-    "the profit-lock reason string would match the SL classifier");
 });
 
 check("a profit-lock exit does not block a same-bar re-entry", () => {
   // Paper fires the lock inside onTick, which returns from the TICK handler only
   // — the bar still closes and the entry section runs. A backtest that blocked
   // the bar would take fewer trades than paper on exactly the bars the lock works.
-  const src = decomment(read("services/ema9vwapBacktestEngine.js"));
-  const i = src.indexOf("Profit lock +${_plFloorPct}%");
-  assert.ok(i > 0, "could not find the ema9vwap profit-lock exit");
-  assert.ok(/blocksReentry = false/.test(src.slice(i, i + 500)),
+  // Only the global wait-after-exit cooldown may delay the next entry.
+  const ev = decomment(read("services/ema9vwapBacktestEngine.js"));
+  const i = ev.indexOf("if (exitReason) {");
+  const j = ev.indexOf("} else if (isSessionEnd)", i);
+  assert.ok(i > 0 && j > i, "could not find the ema9vwap profit-lock exit branch");
+  assert.ok(!/blockEntryThisCandle = true/.test(ev.slice(i, j)),
     "ema9vwap backtest blocks re-entry after a profit lock — paper does not");
-  // The shared engine whitelists which reasons block; "Profit lock" must not match.
+  // The shared engine adds no extra bar after a tick (lock) exit — only the cooldown.
   const bt = read("services/backtestEngine.js");
-  const blk = bt.split("\n").find(l => /_blockEntryAfterExit = true/.test(l));
-  assert.ok(blk, "could not find the shared engine's entry-block rule");
-  assert.ok(!/profit lock/i.test(blk), "shared engine blocks re-entry after a profit lock");
+  assert.ok(/_reentryBlockUntilTs = candle\.time \+ \(_exitedOnTick \? 0 :/.test(bt),
+    "shared engine blocks the rest of the bar after a profit lock — paper does not");
 });
 
 check("Settings exposes every PROFIT_LOCK_ key the code reads", () => {

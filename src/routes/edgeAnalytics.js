@@ -1,9 +1,9 @@
 /**
  * Edge Analytics — turns the trade JSONL/JSON you already collect into edge metrics.
  *
- * Read-only. Loads the same per-strategy session files that /consolidation (paper) and
- * /live-consolidation (live) use, flattens them to one trade array, embeds it in the page,
- * and computes everything client-side so the Book / Strategy / Date filters recompute
+ * Read-only. Loads the same per-strategy paper session files that /consolidation uses,
+ * flattens them to one trade array, embeds it in the page,
+ * and computes everything client-side so the Market / Strategy / Date filters recompute
  * instantly without a server round-trip.
  *
  * Metrics: win rate, expectancy, profit factor, payoff, avg win/loss, max drawdown,
@@ -42,8 +42,7 @@ const { istDayFromAny } = require("../utils/tradeUtils");
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
-// Mirror the source maps used by consolidation.js (paper) + liveConsolidation.js (live).
-// ORB live files are included defensively — safeRead() no-ops if absent.
+// Mirror the source map used by consolidation.js (paper).
 const PAPER_SOURCES = [
   { mode: "EMA_RSI_ST",    file: "ema_rsi_st_paper_trades.json" },
   // EMA_RSI_ST_V2 — different rules, so a separate edge; never merged with V1.
@@ -76,33 +75,9 @@ const PAPER_SOURCES = [
   // EarlyBird: cash equity, sides are LONG/SHORT rather than CE/PE.
   { mode: "EARLYBIRD", file: "early_bird_paper_trades.json" },
 ];
-const LIVE_SOURCES = [
-  { mode: "EMA_RSI_ST",    file: "ema_rsi_st_live_trades.json" },
-  { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_live_trades.json" },
-  { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_live_trades.json" },
-  { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_live_trades.json" },
-  { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_live_trades.json" },
-  { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_live_trades.json" },
-  { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_live_trades.json" },
-  { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_live_trades.json" },
-  { mode: "GAP_RUNAWAY", file: "gap_runaway_live_trades.json" },
-  { mode: "BB_RSI",    file: "bb_rsi_live_trades.json" },
-  { mode: "PA",       file: "pa_live_trades.json" },
-  { mode: "ORB",      file: "orb_live_trades.json" },
-  { mode: "EMA9VWAP", file: "ema9vwap_live_trades.json" },
-  { mode: "TREND_PB", file: "trend_pb_live_trades.json" },
-  { mode: "TDS",      file: "trend_day_scalp_live_trades.json" },
-  { mode: "HA_SCALP", file: "ha_scalp_live_trades.json" },
-  { mode: "PREV_ORB_SCALP", file: "prev_orb_scalp_live_trades.json" },
-  { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_live_trades.json" },
-  { mode: "BN_PIVOT_RSI_ST", file: "bn_pivot_rsi_st_live_trades.json" },
-  { mode: "SIMPLE930", file: "simple930_live_trades.json" },
-  { mode: "EARLYBIRD", file: "early_bird_live_trades.json" },
-];
 
 // COMMODITY (MCX) paper engines keep their own book under ~/trading-data/cmx as
 // { days: { YYYY-MM-DD: { trades } } } — same list consolidationReport.js reads.
-// Paper only: there is no MCX live book yet.
 const CMX_SOURCES = [];
 for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
   for (const st of ["EMA_RSI_ST", "EMA_RSI_ST_V2"]) {
@@ -248,7 +223,7 @@ let _edgeCache = null;
 let _edgeSig   = null;
 function _sourcesSig() {
   let sig = "";
-  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES, ...CMX_SOURCES]) {
+  for (const src of [...PAPER_SOURCES, ...CMX_SOURCES]) {
     try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
     catch (_) { sig += `${src.mode}:0|`; }
   }
@@ -257,7 +232,7 @@ function _sourcesSig() {
 function loadAllTrades() {
   const sig = _sourcesSig();
   if (_edgeCache && sig === _edgeSig) return _edgeCache;
-  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"), loadCmxBook());
+  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadCmxBook());
   // oldest → newest so the equity curve reads left-to-right
   trades.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   _edgeCache = trades;
@@ -480,11 +455,6 @@ ${multiSelectCSS()}
     <p class="page-sub">Win rate · expectancy · profit factor · Sharpe · drawdown · day patterns · MFE/MAE · Monte Carlo — computed from your recorded trades. <a href="/consolidation-report">← Consolidation Report</a></p>
 
     <div class="tbar">
-      <label>Book</label>
-      <div class="seg" id="segBook">
-        <button data-book="paper" class="on">Paper</button>
-        <button data-book="live">Live</button>
-      </div>
       <label>Market</label>
       <div class="seg" id="segMkt">
         <button data-mkt="all" class="on">All</button>
@@ -566,7 +536,7 @@ function msAll(id){
   return true;
 }
 function currentFilter(){
-  const book = document.querySelector('#segBook button.on').dataset.book;
+  const book = 'paper';
   const mkt  = currentMarket();
   // ticked strategies ([] = none ticked), narrowed to the chosen market
   const modes = msValues('fMode').filter(m => mkt==='all' || MARKET_OF[m]===mkt);
@@ -578,11 +548,10 @@ function currentFilter(){
   const hours   = msAll('fHour')   ? null : msValues('fHour');
   return {book,mkt,modes,from:r.from,to:r.to,outcome,side,reasons,hours};
 }
-// Book / market / strategy / date only — the population a day's trade sequence is
+// Market / strategy / date only — the population a day's trade sequence is
 // read from, and the trades the Exit and Hour pickers offer options for.
 function applyScope(f){
   return ALL.filter(t=>{
-    if(t.book!==f.book) return false;
     if(f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
@@ -622,7 +591,7 @@ function msRebuild(id, items, onChange){
   const allLabel=root.getAttribute('data-all-label')||'All';
   let h='<label class="ms-opt"><input type="checkbox" class="ms-all" checked/>'+esc(allLabel)+'</label><div class="ms-sep"></div>';
   // After an explicit "None" (every remembered box unticked) a newly listed value
-  // arrives unticked too, so switching book or market cannot quietly undo it.
+  // arrives unticked too, so switching market cannot quietly undo it.
   const vals=Object.keys(mem), noneSel=vals.length>0 && vals.every(v=>!mem[v]);
   for(const it of items){
     const on=(it.value in mem)?mem[it.value]:!noneSel;
@@ -853,7 +822,7 @@ function render(){
   // Outcome / Side / Exit / Hour leave nothing for the cards below.
   const dpHTML=dayPatternsHTML(applyScope(f));
   if(!arr.length){
-    C.innerHTML='<div class="empty">No '+f.book+' trades'+(f.mkt==='all'?'':' in '+esc(f.mkt))+' for this filter. Try widening the date range or switching book/market/strategy.</div>'
+    C.innerHTML='<div class="empty">No '+f.book+' trades'+(f.mkt==='all'?'':' in '+esc(f.mkt))+' for this filter. Try widening the date range or switching market/strategy.</div>'
       +(applyScope(f).length?dpHTML:'');
     paintTable('dpCount'); paintTable('dpCap'); paintTable('dpShape');
     return;
@@ -1315,7 +1284,7 @@ function dayPatternsHTML(scope){
     +'<div class="dp-bar"><div class="seg" id="segDayp">'
     +'<button data-dayp="mode"'+(DAYP_SPLIT==='mode'?' class="on"':'')+' title="Each strategy\\'s day on its own — a trade cap is set per strategy">Per strategy</button>'
     +'<button data-dayp="all"'+(DAYP_SPLIT==='all'?' class="on"':'')+' title="Every ticked strategy\\'s trades on a date, in entry-time order">All combined</button></div>'
-    +'<span class="cap">Reads every trade in the book / market / strategy / range — Outcome, Side, Exit and Hour are ignored here, because a day\\'s sequence needs all of its trades. W = win, L = loss, B = break-even, in entry order.</span></div>';
+    +'<span class="cap">Reads every trade in the market / strategy / range — Outcome, Side, Exit and Hour are ignored here, because a day\\'s sequence needs all of its trades. W = win, L = loss, B = break-even, in entry order.</span></div>';
   if(!days.length) return head+'<div class="panel"><div class="cap">No dated trades in scope.</div></div>';
   const actual=days.reduce((a,d)=>a+d.net,0);
 
@@ -1634,10 +1603,6 @@ function drawMC(){
 }
 
 // wire controls
-document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('click',()=>{
-  document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); onScope();
-}));
 // Market narrows the Strategy list to that market's strategies, then re-lists
 // Exit / Hour from what is left — the same split the Consolidation Report uses.
 document.querySelectorAll('#segMkt button').forEach(b=>b.addEventListener('click',()=>{
@@ -1648,15 +1613,15 @@ msInit('fMode', onScope);
 msInit('fReason', render);
 msInit('fHour', render);
 // Outcome + Side are single-choice segmented controls: same paint-and-render
-// pattern as the Book toggle above.
+// pattern as the Market toggle above.
 [['#segOutcome','outcome'],['#segSide','side']].forEach(([sel])=>{
   document.querySelectorAll(sel+' button').forEach(b=>b.addEventListener('click',()=>{
     document.querySelectorAll(sel+' button').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); render();
   }));
 });
-// Reset clears only the cuts this page added — Book, Strategy and Range are left
-// exactly as the user set them, so Reset never silently changes which book you
+// Reset clears only the cuts this page added — Market, Strategy and Range are left
+// exactly as the user set them, so Reset never silently changes which trades you
 // are looking at. Re-ticking the boxes locally (rather than adding a setter to
 // sharedNav) keeps the shared multi-select untouched for every other page.
 function _msTickAll(id){

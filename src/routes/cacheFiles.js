@@ -30,7 +30,6 @@ const fs      = require("fs");
 const path    = require("path");
 const os      = require("os");
 const { spawn } = require("child_process");
-const sharedSocketState = require("../utils/sharedSocketState");
 const backtestCache = require("../utils/backtestCache");
 const candleCache   = require("../utils/candleCache");
 const backtestJobs  = require("../utils/backtestJobManager");
@@ -511,7 +510,6 @@ router.post("/clear-candles", (_req, res) => {
 
 // ── GET /cache-files — UI page ──────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   // Embedded mode: rendered inside an <iframe> on the Logs (/trade-logs) page as a tab.
   const embed = req.query.embed === "1" || req.query.embed === "true";
   res.setHeader("Content-Type", "text/html");
@@ -646,7 +644,7 @@ router.get("/", (req, res) => {
 <body>
 ${embed ? '<style>.main-content{margin-left:0 !important;} .top-bar{display:none !important;}</style>' : ''}
 <div class="app-shell">
-${embed ? '' : buildSidebar('tradeLogs', liveActive)}
+${embed ? '' : buildSidebar('tradeLogs', false)}
 <div class="main-content">
 
 <div class="top-bar">

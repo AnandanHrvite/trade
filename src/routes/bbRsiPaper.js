@@ -41,7 +41,6 @@ const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
-const commonTradeWindow = require("../utils/commonTradeWindow");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
@@ -57,19 +56,11 @@ const CALLBACK_ID = "BB_RSI_PAPER";
 // replay engine's _applySettingsOverride() and the Settings UI's mid-session
 // process.env mutations would never reach the running strategy code.
 let BB_RSI_RES;
-let _BB_RSI_MAX_TRADES;
-let _BB_RSI_MAX_LOSS;
-let _BB_RSI_PAUSE_CANDLES;
-let _BB_RSI_PER_SIDE_PAUSE;
 let _STOP_MINS;
 let _ENTRY_STOP_MINS;
 let _BB_RSI_START_MINS;
 function _refreshConfig() {
   BB_RSI_RES                    = bbRsiStrategy.resolutionMin();
-  _BB_RSI_MAX_TRADES            = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
-  _BB_RSI_MAX_LOSS              = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
-  _BB_RSI_PAUSE_CANDLES         = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
-  _BB_RSI_PER_SIDE_PAUSE        = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
   _STOP_MINS                   = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
   _ENTRY_STOP_MINS             = parseTimeToMinutes(process.env.BB_RSI_ENTRY_END, "14:30");
   _BB_RSI_START_MINS            = parseTimeToMinutes(process.env.BB_RSI_ENTRY_START, "09:21");
@@ -149,11 +140,6 @@ let state = {
   optionLtpUpdatedAt: null,
   optionSymbol:   null,
   optionChart:    null,
-  _slPauseUntil:  null,
-  _slPauseUntilBySide: { CE: 0, PE: 0 },
-  _consecSLsBySide:    { CE: 0, PE: 0 },
-  _lastSLSpotBySide:   { CE: 0, PE: 0 },
-  _dailyLossHit:  false,
   // Confirmation candle (cross & close): armed signal awaiting next-candle cross.
   // { side, triggerLevel, armedBarTime, result } | null.
   _armedSignal:   null,
@@ -222,20 +208,6 @@ function rehydrateSessionFromJsonl() {
 }
 rehydrateSessionFromJsonl();
 
-// ── Daily limits survive a Stop → Start ──────────────────────────────────────
-// /start resets sessionPnl / the trade list, so a mid-day restart used to hand the
-// engine a fresh daily-loss budget and trade count. Seed both from today's
-// already-logged trades (the day JSONL — the same source the boot rehydrate reads;
-// rows tagged _live are live-engine records, not this paper's). Never during a
-// replay, whose day file is not today's real session.
-function _priorTodayTotals(key) {
-  try { if (require("../services/tickReplay").isReplayInProgress()) return { pnl: 0, count: 0 }; } catch (_) {}
-  try {
-    const rows = tradeLogger.readDailyTrades(key, tradeLogger.istDateString(Date.now()))
-      .filter(t => t && !t.type && !t._live && (t.side || t.entryTime || t.entryBarTime || t.symbol));
-    return { pnl: parseFloat(rows.reduce((s, t) => s + (Number(t.pnl) || 0), 0).toFixed(2)), count: rows.length };
-  } catch (_) { return { pnl: 0, count: 0 }; }
-}
 // Capital pool: realized P&L = file totalPnl + this session's closed trades not yet
 // saved there (rehydrated above after a restart). Sim sessions never reach the file.
 capitalPool.trackSession("bb_rsi", () =>
@@ -305,7 +277,7 @@ async function fetchOptionLtp(symbol) {
     const msg = err.message || "";
     if (/limit|throttle|429/i.test(msg)) {
       if (_rateLimitBackoff === 0) {
-        log(`⚠️ [BB_RSI-PAPER] Rate limit hit — backing off to 2s polls; trail falls back to spot-proxy if stale`);
+        log(`⚠️ [BB_RSI-PAPER] Rate limit hit — backing off to 2s polls; P&L falls back to spot-proxy if stale`);
       }
       _rateLimitBackoff = Math.min(_rateLimitBackoff + 1, 10);
     } else {
@@ -403,7 +375,7 @@ function stopOptionPolling() {
 // not usable for this — /start assigns it only after its history pre-load await.
 let _entryGen = 0;
 
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource, entryMeta = {}) {
+function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, entryMeta = {}) {
   if (state.position) return;
 
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
@@ -441,13 +413,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   const _oiRegime       = oiFilter.getCachedRegime();
   const _signalStrength = entryMeta.signalStrength || null;
 
-  // Initial rupee risk (used by break-even snap + trail price-stop math).
-  // Approximate as: |entry-SL| × DELTA × qty (charges ignored — they shrink the
-  // realised loss but the BE trigger should fire before charges matter).
-  const _DELTA_INIT = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-  const _slPtsAbs   = stopLoss != null ? Math.abs(price - stopLoss) : 0;
-  const _initialRiskRupees = _slPtsAbs * _DELTA_INIT * qty;
-
   state.position = {
     side,
     symbol,
@@ -457,15 +422,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     entryTime:        istNow(),
     entryTimeMs:      simNow(),
     reason,
-    stopLoss,
-    initialStopLoss:  stopLoss,
-    slSource:         slSource || "Signal candle",
-    target,
     bestPrice:        null,
     bestOptionLtp:    null,   // peak (highest) option premium reached during trade — observer-only
     candlesHeld:      0,
     peakPnl:          0,
-    initialRiskRupees: _initialRiskRupees,
 
     entryBarTime:     state.currentBar ? state.currentBar.time : null,
     optionEntryLtp:   null,
@@ -492,7 +452,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     rsiRangeAtEntry:  entryMeta.rsiRangeAtEntry != null ? entryMeta.rsiRangeAtEntry : null,
     divergenceAtEntry:entryMeta.divergenceAtEntry || null,
     // MFE/MAE tracking — updated per-tick. Captures best favourable and worst
-    // adverse excursion before exit (sizes break-even trigger / drawdown analysis).
+    // adverse excursion before exit (drawdown analysis).
     mfeSpotPts:       0,
     mfePnl:           0,
     maeSpotPts:       0,
@@ -509,7 +469,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     startOptionPolling(symbol);
   }
 
-  log(`📝 [BB_RSI-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | SL: ₹${stopLoss} | ${reason}`);
+  log(`📝 [BB_RSI-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | ${reason}`);
 
   if (state._simMode) return; // skip Telegram in sim mode
 
@@ -517,7 +477,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     mode: "BB_RSI-PAPER",
     side, symbol, spotAtEntry: price,
     optionEntryLtp: null,
-    stopLoss, qty, reason,
+    stopLoss: null, qty, reason,
   });
 }
 
@@ -575,7 +535,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     optionStrike: state.position.optionStrike || null,
     optionExpiry: state.position.optionExpiry || null,
     optionType: state.position.optionType || side,
-    stopLoss: state.position.initialStopLoss || null,
     entryReason: state.position.reason || "",
     entryTime, exitTime: istNow(),
     pnl: netPnl, pnlMode, exitReason: reason,
@@ -589,9 +548,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     entryHourIST:   entryHourIST   != null ? entryHourIST   : null,
     entryMinuteIST: entryMinuteIST != null ? entryMinuteIST : null,
     // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
-    initialStopLoss: state.position.initialStopLoss || null,
-    slSource:        state.position.slSource        || null,
-    target:          state.position.target          || null,
     bestPrice:       state.position.bestPrice       || null,
     bestOptionLtp:   state.position.bestOptionLtp   || null,   // peak option premium during trade
     candlesHeld:     state.position.candlesHeld     || 0,
@@ -643,55 +599,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   state.optionSymbol = null;
   state.optionLtp    = null;
   state.optionLtpUpdatedAt = null;
-
-  // SL pause — escalate after consecutive SLs (per-side when BB_RSI_PER_SIDE_PAUSE=true)
-  state._consecSLsBySide = state._consecSLsBySide || { CE: 0, PE: 0 };
-  state._slPauseUntilBySide = state._slPauseUntilBySide || { CE: 0, PE: 0 };
-  state._lastSLSpotBySide   = state._lastSLSpotBySide   || { CE: 0, PE: 0 };
-  if (reason.includes("SL")) {
-    if (_BB_RSI_PER_SIDE_PAUSE) {
-      state._consecSLsBySide[side] += 1;
-    } else {
-      state._consecSLsBySide.CE += 1;
-      state._consecSLsBySide.PE += 1;
-    }
-    const _streak = _BB_RSI_PER_SIDE_PAUSE ? state._consecSLsBySide[side] : Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-    const extraPause = parseInt(process.env.BB_RSI_CONSEC_SL_EXTRA_PAUSE || "2", 10);
-    const pauseCandles = _streak >= 2
-      ? _BB_RSI_PAUSE_CANDLES + extraPause * (_streak - 1)
-      : _BB_RSI_PAUSE_CANDLES;
-    const _until = simNow() + (pauseCandles * BB_RSI_RES * 60 * 1000);
-    if (_BB_RSI_PER_SIDE_PAUSE) {
-      state._slPauseUntilBySide[side] = _until;
-    } else {
-      state._slPauseUntilBySide.CE = _until;
-      state._slPauseUntilBySide.PE = _until;
-    }
-    // Remember the spot at which this side just failed — used by pause-override
-    // to detect "retest-and-resume" patterns where price returns to original direction.
-    state._lastSLSpotBySide[side] = spotAtEntry || entryPrice;
-    // Mirror combined value for legacy UI fields
-    state._slPauseUntil = Math.max(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE);
-    state._consecSLs    = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-    const sideLabel = _BB_RSI_PER_SIDE_PAUSE ? `${side} ` : "";
-    const escalateNote = _streak >= 2 ? ` (${_streak} consecutive SLs → ${pauseCandles} candles)` : "";
-    log(`⏸️ [BB_RSI-PAPER] ${sideLabel}SL pause — no entries for ${pauseCandles} candles${escalateNote}`);
-  } else if (netPnl > 0) {
-    // Reset only the winning side's streak (or both if not per-side)
-    if (_BB_RSI_PER_SIDE_PAUSE) {
-      state._consecSLsBySide[side] = 0;
-    } else {
-      state._consecSLsBySide.CE = 0;
-      state._consecSLsBySide.PE = 0;
-    }
-    state._consecSLs = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-  }
-
-  // Daily loss kill
-  if ((state.sessionPnl + (state._dayPnlBase || 0)) <= -_BB_RSI_MAX_LOSS) {
-    state._dailyLossHit = true;
-    log(`🚨 [BB_RSI-PAPER] Daily loss limit hit (₹${state.sessionPnl} <= -₹${_BB_RSI_MAX_LOSS}) — no more entries today`);
-  }
 
   state.position = null;
   capitalPool.release("bb_rsi", netPnl, { sim: (state._simMode || state._simSession) });
@@ -779,7 +686,7 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
     const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    // Running PNL helper (₹) — must match simulateSell logic for consistent trailing
+    // Running PNL helper (₹) — must match simulateSell logic
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
       const _staleMs = parseInt(process.env.LTP_STALE_FALLBACK_SEC || "5", 10) * 1000;
@@ -788,7 +695,7 @@ function onTick(tick) {
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      // Sim mode OR stale option LTP: delta-based spot-proxy keeps trail responsive
+      // Sim mode OR stale option LTP: delta-based spot-proxy keeps P&L responsive
       if (state._simMode || (!isFut && pos.optionEntryLtp)) {
         const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
         const spotMove = (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
@@ -821,82 +728,15 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
-    // 0. MIDDLE-BAND TARGET — the objective of a mean-reversion trade. Price stretched
-    //    away from the mean and we are paid when it returns to it, so the middle band
-    //    IS the take-profit. Runs per-tick (not candle-close) so the touch is banked at
-    //    the line instead of giving back to the bar close. Band is from completed
-    //    candles (fixed during the forming bar), recomputed only when a new candle closes.
-    if (state.candles.length >= 15) {
-      // Invalidate on the last CLOSED candle's time, NOT candles.length: once the
-      // array hits its 200 cap (push+shift), length is pinned at 200 forever, so a
-      // length-keyed cache would freeze the band from ~14:20 IST to session end. The
-      // band only changes when a new candle closes, so key on that candle's time
-      // (stable within a forming bar, changes on each close — the intended behaviour).
-      const _bbKey = state.candles.length ? state.candles[state.candles.length - 1].time : 0;
-      if (!state._bbTickCache || state._bbTickCache.key !== _bbKey) {
-        const _lv = bbRsiStrategy.bbLevels(state.candles);
-        state._bbTickCache = { key: _bbKey, upper: _lv ? _lv.upper : null, middle: _lv ? _lv.middle : null, lower: _lv ? _lv.lower : null };
-      }
-      const _tgt = bbRsiStrategy.middleBandTarget(state._bbTickCache.middle, pos.side, price);
-      if (_tgt.hit) {
-        // Fill at the observed tick, not at the band line: this is a market exit the
-        // instant the mean is reached, not a resting limit order at it.
-        pos.slSource = "BB middle target";
-        simulateSell(price, `BB middle target (${_tgt.level})`, price);
-        return;
-      }
-    }
-
-    // 0b. GLOBAL PROFIT LOCK (shared across every strategy — see tradeGuards).
-    //     Placed AFTER the middle-band target so this mean-reversion strategy's own
-    //     take-profit still wins when both would fire on the same tick, and BEFORE
-    //     every stop below: once armed, the locked floor sits above entry.
+    // GLOBAL PROFIT LOCK (shared across every strategy — see tradeGuards) — the
+    // ONLY automatic exit. Manual exit, /stop and the session auto-stop close the rest.
     if (pos.optionEntryLtp && state.optionLtp) {
       const _plMsg = tradeGuards.checkProfitLock(
-        pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
-      ) || tradeGuards.checkBreakevenStop(
-        // Fallback for a trade that never reached the lock's arm level.
         pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
       );
       if (_plMsg) {
         log(`🔒 [BB_RSI-PAPER] ${_plMsg}`);
-        pos.slSource = "Profit lock";
         simulateSell(price, _plMsg, price);
-        return;
-      }
-    }
-
-    // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
-    //    BB_RSI_STOP_LOSS_PTS against entry. Backstop under the two-opposite-candle
-    //    stop, which can only fire on a candle close — a single violent bar against a
-    //    fade travels a long way before that close arrives. Arms SL cooldown.
-    {
-      const _hs = bbRsiStrategy.hardStop(_favPts);
-      if (_hs.hit) {
-        pos.slSource = "Stop Loss";
-        simulateSell(price, `SL (${_hs.stop}pts)`, price);
-        return;
-      }
-    }
-
-    // 2. PROFIT LOCK — optional per-tick upside cap. Once peak favourable spot move ≥
-    //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below BB_RSI_PROFIT_LOCK_PCT%
-    //    of peak (ratchets). Off by default in V8 — the middle-band target and the
-    //    two-candle trail are the intended upside exits.
-    {
-      const _lock = bbRsiStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
-      if (_lock.hit) {
-        pos.slSource = "Profit Lock";
-        simulateSell(price, `Profit lock (${_lock.floor.toFixed(0)}pts)`, price);
-        return;
-      }
-    }
-
-    // EOD check — skip in simulation mode
-    if (!state._simMode) {
-      const nowMin = getISTMinutes();
-      if (nowMin >= commonTradeWindow.exitCap(_STOP_MINS - 10)) {
-        simulateSell(price, "EOD square-off", price);
         return;
       }
     }
@@ -963,25 +803,9 @@ async function onCandleClose(bar) {
   // so the buildup series stays filled even on no-signal / in-position candles.
   if (!state._simMode) await oiFilter.recordOiSample(bar.close);
 
-  // Count candles held + the candle-close exit check
+  // Count candles held (no candle-close exit — the profit lock is per-tick)
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
-
-    // Use only completed candles (matches backtest logic)
-    const window = [...state.candles];
-
-    // Two-opposite-candle stop / trail — the only candle-close exit. Before the trade
-    // has run BB_RSI_TRAIL_ARM_PTS in favour this is the initial stop; after, the trail
-    // takes over with its own count. Each is independently toggleable in Settings.
-    {
-      const _opp = bbRsiStrategy.oppositeCandleExit(window, state.position.side, state.position.mfeSpotPts || 0, state.position.candlesHeld || 0);
-      if (_opp.hit) {
-        state.position.slSource = _opp.armed ? "Opposite-candle trail" : "Opposite-candle SL";
-        simulateSell(bar.close, _opp.reason, bar.close);
-        return;
-      }
-    }
-
     return; // In position — don't look for new entry
   }
 
@@ -991,19 +815,7 @@ async function onCandleClose(bar) {
     return;
   }
   state._omhLogged = false;
-  if (state._dailyLossHit) { log(`⏭️ [BB_RSI-PAPER] SKIP: daily loss limit hit`); return; }
   { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [BB_RSI-PAPER] SKIP: ${_pf.reason}`); return; } }
-  if (state.sessionTrades.length + (state._dayTradesBase || 0) >= _BB_RSI_MAX_TRADES) { log(`⏭️ [BB_RSI-PAPER] SKIP: max trades (${_BB_RSI_MAX_TRADES}) reached`); return; }
-  // Per-side SL cooldown is checked AFTER the strategy returns a side (further below).
-  // Keep the legacy global check as a fast-path when both sides are paused (only true
-  // when BB_RSI_PER_SIDE_PAUSE=false or both sides happen to be paused simultaneously).
-  const _pauseCE = state._slPauseUntilBySide && state._slPauseUntilBySide.CE > simNow();
-  const _pausePE = state._slPauseUntilBySide && state._slPauseUntilBySide.PE > simNow();
-  if (_pauseCE && _pausePE) {
-    const secsLeft = Math.ceil((Math.min(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE) - simNow()) / 1000);
-    log(`⏭️ [BB_RSI-PAPER] SKIP: SL cooldown both sides (${secsLeft}s left)`);
-    return;
-  }
   if (state._expiryDayBlocked) { log(`⏭️ [BB_RSI-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
 
   const window = [...state.candles];
@@ -1043,13 +855,7 @@ async function onCandleClose(bar) {
     return;
   }
 
-  // Per-side SL cooldown — block only if THIS side has an active pause
   const _signalSide = result.signal === "BUY_CE" ? "CE" : "PE";
-  if (state._slPauseUntilBySide && state._slPauseUntilBySide[_signalSide] > simNow()) {
-    const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - simNow()) / 1000);
-    log(`⏭️ [BB_RSI-PAPER] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
-    return;
-  }
 
   // VIX — post-strategy check with derived strength (skip in sim mode)
   if (!state._simMode && process.env.BB_RSI_VIX_ENABLED === "true") {
@@ -1132,9 +938,6 @@ async function resolveAndEnter(side, spot, result, sid = _entryGen) {
       symbol = optionInfo.symbol;
     }
     const qty = getLotQty();
-    // Initial SL line = the signal candle's own extreme (from the strategy). Recorded
-    // and displayed for sizing; the live stop is the two-opposite-candle rule.
-    const clampedSL = result.stopLoss;
 
     // ── Bid-ask spread guard (fail-open if broker snapshot lacks depth) ──
     if (!state._simMode) {
@@ -1170,7 +973,7 @@ async function resolveAndEnter(side, spot, result, sid = _entryGen) {
       _ptsFromBB = parseFloat((spot - result.bbUpper).toFixed(2));
     }
 
-    simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource, {
+    simulateBuy(symbol, side, qty, spot, result.reason, spot, {
       signalStrength: deriveBbRsiStrength(result),
       bbUpperAtEntry: result.bbUpper != null ? result.bbUpper : null,
       bbLowerAtEntry: result.bbLower != null ? result.bbLower : null,
@@ -1258,28 +1061,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The BB_RSI-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "BB_RSI-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   const nowMins = getISTMinutes();
@@ -1301,14 +1082,6 @@ function _errorPage(title, message, linkHref, linkText) {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/bb_rsi-paper/status");
 
   // Re-read env into module-level config so Settings UI changes and replay
@@ -1348,20 +1121,13 @@ router.get("/start", async (req, res) => {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-    optionLtp: null, optionSymbol: null, optionChart: null, _slPauseUntil: null,
-    _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
-    _lastSLSpotBySide: { CE: 0, PE: 0 }, _reentryBlockUntil: 0,
-    _dailyLossHit: false, _expiryDayBlocked: _expiryBlocked,
+    optionLtp: null, optionSymbol: null, optionChart: null,
+    _reentryBlockUntil: 0,
+    _expiryDayBlocked: _expiryBlocked,
     _armedSignal: null, _entryInFlight: false,
     _simSession: false,   // a real session — persistence is live again
     _pnlSaved: false,
   };
-  {
-    const _prior = _priorTodayTotals("bb_rsi");
-    state._dayPnlBase = _prior.pnl; state._dayTradesBase = _prior.count;
-    if (_prior.count) log(`📒 [BB_RSI-PAPER] ${_prior.count} trade(s) already taken today (₹${_prior.pnl}) — counted toward today's limits`);
-    if (_prior.pnl <= -_BB_RSI_MAX_LOSS) state._dailyLossHit = true;
-  }
   _entryGen++;
   // Safety net: a block stranded by a previous session (position never exited)
   // would otherwise shrink the shared pool for the rest of the process.
@@ -1438,15 +1204,13 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
 
   // Exit any open position
   if (state.position) {
     simulateSell(state.lastTickPrice || state.position.entryPrice, "Session stopped", state.lastTickPrice);
   }
 
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopOptionPolling();
 
@@ -1538,18 +1302,6 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL line = the last closed candle's extreme — matches the strategy, which seeds the
-  // stop from the signal candle's own low (CE) / high (PE).
-  const candles = state.candles || [];
-  let slSrcLbl = "Signal candle";
-  let sl = null;
-  const lastClosed = candles.length ? candles[candles.length - 1] : null;
-  if (lastClosed) sl = parseFloat((side === "CE" ? lastClosed.low : lastClosed.high).toFixed(2));
-  if (sl == null) {
-    sl = side === "CE" ? spot - 10 : spot + 10;
-    slSrcLbl = "Fallback";
-  }
-
   const _sid = _entryGen;
   try {
     const optResult = (instrumentConfig.INSTRUMENT === "NIFTY_FUTURES")
@@ -1561,13 +1313,13 @@ router.post("/manualEntry", async (req, res) => {
     }
     const symbol = optResult.symbol;
     const qty = getLotQty();
-    log(`🖐️ [BB_RSI-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
-    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot, slSrcLbl);
+    log(`🖐️ [BB_RSI-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot}`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, spot);
     if (!state.position || !/^Manual/.test(String(state.position.reason || ""))) {
       // simulateBuy refused (capital gate or a guard) — it has already logged why.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
-    return res.json({ success: true, spot, side, sl, symbol });
+    return res.json({ success: true, spot, side, sl: null, symbol });
   } catch (e) {
     log(`❌ [BB_RSI-PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -1651,11 +1403,10 @@ router.get("/status/chart-data", async (req, res) => {
       }
       if (t.exitPrice && t.exitBarTime) { const w = t.pnl > 0; markers.push({ time: t.exitBarTime, position: 'aboveBar', color: w ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (w ? '+' : '') + (t.pnl ? t.pnl.toFixed(0) : '') }); }
     }
-    const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
     const armedTrigger = state._armedSignal ? state._armedSignal.triggerLevel : null;
     const armedSide    = state._armedSignal ? state._armedSignal.side : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower,
+    return res.json({ candles, markers, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower,
       optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       adx: adxSeries,
       adxMax: parseFloat(process.env.BB_RSI_ADX_MAX || "30"),
@@ -1724,11 +1475,8 @@ router.get("/status/data", (req, res) => {
       qty:               pos.qty,
       entryPrice:        pos.entryPrice,
       entryTime:         pos.entryTime,
-      stopLoss:          pos.stopLoss,
-      target:            pos.target,
       bestPrice:         pos.bestPrice,
       peakPnl:           pos.peakPnl || 0,
-      initialStopLoss:   pos.initialStopLoss,
       candlesHeld:       pos.candlesHeld,
       optionStrike:      pos.optionStrike,
       optionExpiry:      pos.optionExpiry,
@@ -1747,8 +1495,6 @@ router.get("/status/data", (req, res) => {
     tradeCount:    state.sessionTrades.length,
     wins:          state._wins || 0,
     losses:        state._losses || 0,
-    dailyLossHit:  state._dailyLossHit,
-    slPauseUntil:  state._slPauseUntil || null,
     simMode:       state._simMode || false,
     simScenario:   state._simScenario || null,
     logTotal:      state.log.length,
@@ -1782,7 +1528,7 @@ router.get("/status/data", (req, res) => {
 // ── Status page ─────────────────────────────────────────────────────────────
 
 router.get("/status", (req, res) => {
-  const liveActive  = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive  = false;
   const pos         = state.position;
   const data        = loadBbRsiData();
 
@@ -1929,7 +1675,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
 
-      <!-- Secondary grid: NIFTY spot + SL + Target + Trail -->
+      <!-- Secondary grid: NIFTY spot + peak P&L + candles held -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
@@ -1940,26 +1686,9 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss${pos.slSource ? " (" + pos.slSource + ")" : ""}</div>
-          <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
-        </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
           <div id="ajax-peak-pnl" style="font-size:1.05rem;font-weight:700;color:${(pos.peakPnl || 0) >= 0 ? "#10b981" : "#ef4444"};">${(pos.peakPnl || 0) >= 0 ? "+" : ""}${inr(pos.peakPnl || 0)}</div>
-        </div>
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
-          <div id="ajax-sl-trail" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss && pos.initialStopLoss ? (pos.side === "CE" ? "+" : "+") + Math.abs(pos.stopLoss - pos.initialStopLoss).toFixed(2) + " pts" : "0 pts"}</div>
-          <div style="font-size:0.58rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
-        </div>
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
-          <div id="ajax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span></div>
-        </div>
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
-          <div id="ajax-rr" style="font-size:0.9rem;font-weight:700;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};">${(() => { const risk = pos.initialStopLoss ? Math.abs(pos.entryPrice - pos.initialStopLoss) : 0; return risk > 0 ? (pointsMoved / risk).toFixed(1) + "x" : "\u2014"; })()}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
           <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
@@ -2077,7 +1806,7 @@ ${buildSidebar('bbRsiPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">BB_RSI Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 ${bbRsiStrategy.direction() === "breakout" ? "Break entry \u00b7 No fixed target" : "Fade entry \u00b7 Target: BB middle"} \u00b7 SL: 2 opposite candles \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 ${bbRsiStrategy.direction() === "breakout" ? "Break entry" : "Fade entry"} \u00b7 Exit: profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
@@ -2117,18 +1846,8 @@ ${buildSidebar('bbRsiPaper', liveActive, state.running)}
   </div>
   <div class="sc" style="border-top:1.5px solid #6a5090;">
     <div class="sc-label">${state._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
-    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_BB_RSI_MAX_TRADES}</span></div>
+    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span></div>
     <div id="ajax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
-  </div>
-  <div class="sc" style="border-top:2px solid ${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#4a6080'};">
-    <div class="sc-label">SL Pause</div>
-    <div class="sc-val" id="ajax-sl-pause" style="color:${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#10b981'}">${state._slPauseUntil && Date.now() < state._slPauseUntil ? 'PAUSED' : 'OK'}</div>
-    <div id="ajax-sl-pause-sub" style="font-size:0.7rem;margin-top:4px;color:var(--muted-1,#8ba1c2);">${_BB_RSI_PAUSE_CANDLES} candle cooldown after SL</div>
-  </div>
-  <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};">
-    <div class="sc-label">Daily Loss Limit</div>
-    <div class="sc-val" id="ajax-daily-loss-val" style="color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? 'HIT' : 'OK'} <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);">/ -\u20b9${_BB_RSI_MAX_LOSS.toLocaleString("en-IN")}</span></div>
-    <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${state._dailyLossHit ? '#ef4444' : '#10b981'}">${state._dailyLossHit ? 'KILLED \u2014 no entries' : 'Active'}</div>
   </div>
   <div class="sc" style="border-top:1.5px solid #a07010;">
     <div class="sc-label">Candles Loaded</div>
@@ -2706,7 +2425,6 @@ function doCopy(text,btn,label){
       }
       if (markers.length) { var s = markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
       if (slLine) { cs.removePriceLine(slLine); slLine = null; }
-      if (d.stopLoss && !selEt) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (d.entryPrice && !selEt) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
       // Confirmation candle — dashed line at the armed signal candle's close (the level the next candle must cross)
@@ -2791,23 +2509,6 @@ ${optionChart.optionChartScript({ dataUrl: '/bb_rsi-paper/status/chart-data', id
       if (tcEl) tcEl.textContent = d.tradeCount;
       var wlEl = document.getElementById('ajax-wl');
       if (wlEl) wlEl.textContent = d.wins + 'W \\u00b7 ' + d.losses + 'L';
-
-      // SL Pause
-      var slEl = document.getElementById('ajax-sl-pause');
-      if (slEl) {
-        var paused = d.slPauseUntil && Date.now() < d.slPauseUntil;
-        slEl.textContent = paused ? 'PAUSED' : 'OK';
-        slEl.style.color = paused ? '#ef4444' : '#10b981';
-      }
-
-      // Daily loss
-      var dlEl = document.getElementById('ajax-daily-loss-val');
-      if (dlEl) dlEl.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-      var dlStatus = document.getElementById('ajax-daily-loss-status');
-      if (dlStatus) {
-        dlStatus.textContent = d.dailyLossHit ? 'KILLED \\u2014 no entries' : 'Active';
-        dlStatus.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-      }
 
       // Candles
       var candleEl = document.getElementById('ajax-candle-count');
@@ -2896,38 +2597,12 @@ ${optionChart.optionChartScript({ dataUrl: '/bb_rsi-paper/status/chart-data', id
             sub.style.color = moved >= 0 ? '#10b981' : '#ef4444';
           }
         }
-        // SL
-        var slPosEl = document.getElementById('ajax-stop-loss');
-        if (slPosEl) slPosEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\\u2014';
         // Peak P&L
         var peakEl = document.getElementById('ajax-peak-pnl');
         if (peakEl) {
           var peak = p.peakPnl || 0;
           peakEl.textContent = (peak >= 0 ? '+' : '') + INR(peak);
           peakEl.style.color = peak >= 0 ? '#10b981' : '#ef4444';
-        }
-        // SL Trailed
-        var slTrailEl = document.getElementById('ajax-sl-trail');
-        if (slTrailEl && p.stopLoss && p.initialStopLoss) {
-          slTrailEl.textContent = Math.abs(p.stopLoss - p.initialStopLoss).toFixed(2) + ' pts';
-        }
-        // SL Distance
-        var slDistEl = document.getElementById('ajax-sl-dist');
-        if (slDistEl && p.stopLoss && ltpNow) {
-          var dist = Math.abs(ltpNow - p.stopLoss);
-          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span>';
-          slDistEl.style.color = dist < 20 ? '#ef4444' : dist < 40 ? '#f59e0b' : '#10b981';
-        }
-        // R:R
-        var rrEl = document.getElementById('ajax-rr');
-        if (rrEl && p.initialStopLoss) {
-          var risk = Math.abs(p.entryPrice - p.initialStopLoss);
-          var moved = (ltpNow - p.entryPrice) * (p.side === 'CE' ? 1 : -1);
-          if (risk > 0) {
-            var rr = (moved / risk).toFixed(1);
-            rrEl.textContent = rr + 'x';
-            rrEl.style.color = moved >= 0 ? '#10b981' : '#ef4444';
-          }
         }
         // Candles held
         var candPosEl = document.getElementById('ajax-pos-candles');
@@ -3001,7 +2676,7 @@ function getBbRsiCapitalFromEnv() {
 
 router.get("/history", (req, res) => {
   const data = loadBbRsiData();
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive = false;
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
     routePrefix: "/bb_rsi-paper",
@@ -3364,9 +3039,6 @@ function _post(url, body, btn, resetLabel) {
 
 router.post("/simulate/start", async (req, res) => {
   if (state.running) return res.json({ success: false, error: "Session already running. Stop it first." });
-  // The simulator bypasses /start; sim mode never notifies, but release anyway so
-  // "paper can never place a real order" does not rest on one flag.
-  _releaseLiveHarness("simulate/start");
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
@@ -3376,7 +3048,7 @@ router.post("/simulate/start", async (req, res) => {
       running: true, position: null, candles: [], currentBar: null, barStartTime: null,
       log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
       sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-      optionLtp: null, optionSymbol: null, optionChart: null, _slPauseUntil: null, _dailyLossHit: false,
+      optionLtp: null, optionSymbol: null, optionChart: null,
       _reentryBlockUntil: 0,
       _expiryDayBlocked: false,
       _armedSignal: null, _entryInFlight: false,

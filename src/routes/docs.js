@@ -2,7 +2,6 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { resolveTheme } = require("../utils/theme");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, enabledStrategies } = require("../utils/sharedNav");
 const { renderMarkdown, escapeHtml } = require("../utils/markdown");
@@ -215,7 +214,6 @@ router.get("/", (req, res) => {
          <div class="empty-sub">Drop files into the <code class="md-code">documents/</code> folder on the server and they appear here.</div>
        </div>`;
 
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const isLight    = resolveTheme() === "light";
 
   res.setHeader("Content-Type", "text/html");
@@ -494,7 +492,7 @@ router.get("/", (req, res) => {
   </style>
 </head>
 <body>
-${buildSidebar("docs", liveActive)}
+${buildSidebar("docs", false)}
 <div class="main-content">
  <div class="wrap">
   <nav class="breadcrumb" aria-label="Breadcrumb">
@@ -719,7 +717,7 @@ async function syncToLocal(){
   btn.disabled=false; btn.textContent=orig;
 
   if(!info.exists){
-    showAlert({icon:'📭',title:'Nothing to sync',message:'~/trading-data/ does not exist on the server yet.\\nRun a paper or live session first.',btnClass:'modal-btn-primary'});
+    showAlert({icon:'📭',title:'Nothing to sync',message:'~/trading-data/ does not exist on the server yet.\\nRun a paper session first.',btnClass:'modal-btn-primary'});
     return;
   }
 
@@ -794,21 +792,12 @@ function statusBadge(text, kind) {
   const c = {
     on:   { bg: "#0d2e1a", fg: "#3fb950", bd: "#238636" },
     off:  { bg: "#21262d", fg: "#8b949e", bd: "#30363d" },
-    dry:  { bg: "#33270a", fg: "#d29922", bd: "#9e6a03" },
     live: { bg: "#3a1216", fg: "#f85149", bd: "#b62324" },
   }[kind] || { bg: "#21262d", fg: "#8b949e", bd: "#30363d" };
   return `<span style="display:inline-block;padding:2px 10px;border-radius:11px;font-size:0.72rem;font-weight:700;letter-spacing:0.4px;background:${c.bg};color:${c.fg};border:1px solid ${c.bd};white-space:nowrap;font-family:'SF Mono','JetBrains Mono',Consolas,monospace;">${text}</span>`;
 }
 
-// Live order state is a tri-state: DISABLED → DRY-RUN (logged, no order) → LIVE.
-function liveOrdersBadge(enableKey, dryKey) {
-  if (!envIsOn(enableKey, "false")) return statusBadge("DISABLED", "off");
-  const dry = envIsOn("LIVE_HARNESS_DRY_RUN", "true") || (dryKey && envIsOn(dryKey, "false"));
-  return dry ? statusBadge("DRY-RUN", "dry") : statusBadge("LIVE · REAL ORDERS", "live");
-}
-
 function rowBadge(row) {
-  if (row.type === "live")     return liveOrdersBadge(row.enableKey, row.dryKey);
   // A multi-choice setting: show the CHOICE, not an on/off. `warnOn` lists the
   // values that deserve a red badge rather than a neutral one.
   if (row.type === "value") {
@@ -816,14 +805,10 @@ function rowBadge(row) {
     const warn = (row.warnOn || []).map(x => String(x).toUpperCase()).includes(v);
     return statusBadge(v, warn ? "live" : "on");
   }
-  if (row.type === "globaldry") return envIsOn(row.key, "true")
-    ? statusBadge("DRY-RUN (safe)", "dry")
-    : statusBadge("LIVE ARMED", "live");
   return envIsOn(row.key, row.def) ? statusBadge("ENABLED", "on") : statusBadge("DISABLED", "off");
 }
 
 function rowEnvKeys(row) {
-  if (row.type === "live") return [row.enableKey, row.dryKey].filter(Boolean);
   return [row.key];
 }
 
@@ -831,19 +816,14 @@ function rowEnvKeys(row) {
 const GUIDE_STATUS = {
   "ORB_Strategy_Guide.html": { title: "ORB — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "ORB Mode (sidebar + Settings section)", key: "ORB_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers)", enableKey: "ORB_LIVE_ENABLED", dryKey: "ORB_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Regime Filter", key: "ORB_VIX_ENABLED", def: "false" },
-    { type: "bool", label: "Risk Throttle (streak / weekly stop)", key: "ORB_RISK_THROTTLE_ENABLED", def: "true" },
     { type: "bool", label: "Debug — Per-Candle Gate Trace", key: "ORB_DEBUG_TRACE", def: "false" },
     { type: "bool", label: "Premium-Range Gate", key: "ORB_PREMIUM_GATE_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "ORB_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
   "EMA_RSI_ST_Strategy_Guide.html": { title: "EMA_RSI_ST — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EMA_RSI_ST Mode (sidebar + Settings section)", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Zerodha)", enableKey: "EMA_RSI_ST_LIVE_ENABLED", dryKey: "EMA_RSI_ST_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter", key: "VIX_FILTER_ENABLED", def: "true" },
-    { type: "bool", label: "Candle Trail", key: "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", def: "false" },
-    { type: "value", label: "EMA21 Exit Rule (touch / cross &amp; close)", key: "EMA_RSI_ST_EMA_EXIT_MODE", def: "touch" },
     { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "TRADE_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
@@ -852,7 +832,6 @@ const GUIDE_STATUS = {
   // until it is switched on in Settings.
   "EMA_RSI_ST_V2_Strategy_Guide.html": { title: "EMA_RSI_ST_V2 — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
-    { type: "live", label: "Live Orders (Zerodha)", enableKey: "EMA_RSI_ST_V2_LIVE_ENABLED", dryKey: "EMA_RSI_ST_V2_LIVE_DRY_RUN" },
     { type: "bool", label: "Confirmation Candle", key: "EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
     { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "value", label: "SuperTrend Period", key: "EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
@@ -862,7 +841,6 @@ const GUIDE_STATUS = {
   // guide reads the NIFTY BANK settings, not the NIFTY ones.
   "BN_EMA_RSI_ST_V2_Strategy_Guide.html": { title: "BN EMA_RSI_ST_V2 (NIFTY BANK) — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
-    { type: "live", label: "Live Orders (Zerodha)", enableKey: "BN_EMA_RSI_ST_V2_LIVE_ENABLED", dryKey: "BN_EMA_RSI_ST_V2_LIVE_DRY_RUN" },
     { type: "bool", label: "Confirmation Candle", key: "BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
     { type: "bool", label: "Opposite-Side Cooldown", key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "value", label: "SuperTrend Period", key: "BN_EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
@@ -872,7 +850,6 @@ const GUIDE_STATUS = {
   // (like V2), so the guide stays hidden until it is switched on in Settings.
   "ST_RSI_PIV_BB_Strategy_Guide.html": { title: "ST_RSI_PIV_BB — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "ST_RSI_PIV_BB Mode (sidebar + Settings section)", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
-    { type: "live", label: "Live Orders (Zerodha)", enableKey: "ST_RSI_PIV_BB_LIVE_ENABLED", dryKey: "ST_RSI_PIV_BB_LIVE_DRY_RUN" },
     { type: "value", label: "Entry Timeframe (3 / 5 / BOTH)", key: "ST_RSI_PIV_BB_ENTRY_TF", def: "BOTH" },
     { type: "value", label: "SuperTrend Period", key: "ST_RSI_PIV_BB_ST_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "ST_RSI_PIV_BB_ST_MULT", def: "2" },
@@ -882,7 +859,6 @@ const GUIDE_STATUS = {
   "SAIL_VWAP_ST_Strategy_Guide.html": { title: "SAIL_VWAP_ST — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "SAIL_VWAP_ST Mode (sidebar + Settings section)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
     { type: "bool", label: "Paper Trading", key: "SAIL_VWAP_ST_PAPER_ENABLED", def: "false" },
-    { type: "live", label: "Live Orders (Zerodha)", enableKey: "SAIL_VWAP_ST_LIVE_ENABLED", dryKey: "SAIL_VWAP_ST_LIVE_DRY_RUN" },
     { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "SAIL_VWAP_ST_TF", def: "5" },
     { type: "value", label: "SuperTrend Period", key: "SAIL_VWAP_ST_ST_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "SAIL_VWAP_ST_ST_MULT", def: "2" },
@@ -894,19 +870,16 @@ const GUIDE_STATUS = {
   "PIVOT_EMA_ST_Strategy_Guide.html": { title: "PIVOT_EMA_ST — Live Configuration", groups: [
     { heading: "NIFTY", rows: [
       { type: "bool", label: "PIVOT_EMA_ST Mode (sidebar + Settings section)", key: "PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
-      { type: "live", label: "Live Orders (Zerodha)", enableKey: "PIVOT_EMA_ST_LIVE_ENABLED", dryKey: "PIVOT_EMA_ST_LIVE_DRY_RUN" },
       { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "PIVOT_EMA_ST_TF", def: "3" },
       { type: "value", label: "SuperTrend Period", key: "PIVOT_EMA_ST_ST_PERIOD", def: "10" },
       { type: "value", label: "SuperTrend Multiplier", key: "PIVOT_EMA_ST_ST_MULT", def: "3" },
     ] },
     { heading: "BANK NIFTY", rows: [
       { type: "bool", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
-      { type: "live", label: "Live Orders (Zerodha)", enableKey: "BN_PIVOT_EMA_ST_LIVE_ENABLED", dryKey: "BN_PIVOT_EMA_ST_LIVE_DRY_RUN" },
       { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "BN_PIVOT_EMA_ST_TF", def: "3" },
     ] },
     { heading: "SAIL", rows: [
       { type: "bool", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
-      { type: "live", label: "Live Orders (Zerodha)", enableKey: "SAIL_PIVOT_EMA_ST_LIVE_ENABLED", dryKey: "SAIL_PIVOT_EMA_ST_LIVE_DRY_RUN" },
       { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "SAIL_PIVOT_EMA_ST_TF", def: "3" },
       { type: "value", label: "Lots (× SAIL_LOT_SIZE)", key: "SAIL_PIVOT_EMA_ST_LOTS", def: "1" },
     ] },
@@ -917,11 +890,10 @@ const GUIDE_STATUS = {
       { type: "value", label: "Candle Size (min)", key: "CMX_PIVOT_EMA_ST_RESOLUTION", def: "3" },
     ] },
   ] },
-  // GAP_RUNAWAY — NIFTY options (paper + live harness) and its stock scanner (paper only).
+  // GAP_RUNAWAY — NIFTY options and its stock scanner (paper only).
   "GAP_RUNAWAY_Strategy_Guide.html": { title: "GAP_runAway__Kirubakaran — Live Configuration", groups: [
     { heading: "NIFTY", rows: [
       { type: "bool", label: "GAP_RUNAWAY Mode (sidebar + Settings section)", key: "GAP_RUNAWAY_MODE_ENABLED", def: "true" },
-      { type: "live", label: "Live Orders (Zerodha)", enableKey: "GAP_RUNAWAY_LIVE_ENABLED", dryKey: "GAP_RUNAWAY_LIVE_DRY_RUN" },
       { type: "value", label: "Daily RSI Length (on EMA)", key: "GAP_RUNAWAY_RSI_LENGTH", def: "10" },
       { type: "value", label: "Daily EMA Length (RSI source)", key: "GAP_RUNAWAY_EMA_LENGTH", def: "21" },
       { type: "value", label: "Overbought (RSI above)", key: "GAP_RUNAWAY_RSI_UPPER", def: "90" },
@@ -938,51 +910,41 @@ const GUIDE_STATUS = {
   ] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_LIVE_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter", key: "BB_RSI_VIX_ENABLED", def: "false" },
     { type: "bool", label: "ADX Trend Filter", key: "BB_RSI_ADX_ENABLED", def: "false" },
     { type: "bool", label: "Expiry-Day-Only", key: "BB_RSI_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
   "Price_Action_Strategy_Guide.html": { title: "Price Action — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "PA Mode (sidebar + Settings section)", key: "PA_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers)", enableKey: "PA_LIVE_ENABLED", dryKey: "PA_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter", key: "PA_VIX_ENABLED", def: "false" },
     { type: "bool", label: "Expiry-Day-Only", key: "PA_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
   "EMA9_VWAP_Strategy_Guide.html": { title: "EMA9 + VWAP — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EMA9+VWAP Mode (sidebar + Settings section)", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Zerodha)", enableKey: "EMA9VWAP_LIVE_ENABLED", dryKey: "EMA9VWAP_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter (global keys)", key: "VIX_FILTER_ENABLED", def: "true" },
-    { type: "bool", label: "2-Candle Reversal Exit", key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", def: "true" },
     { type: "bool", label: "Opposite-Side Cooldown", key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
   ] }] },
   "Trend_Pullback_Strategy_Guide.html": { title: "Trend Pullback — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "Trend Pullback Mode (sidebar + Settings section)", key: "TREND_PB_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "TREND_PB_LIVE_ENABLED", dryKey: "TREND_PB_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Regime Filter", key: "TREND_PB_VIX_ENABLED", def: "false" },
     { type: "bool", label: "OI Buildup Gate", key: "TREND_PB_OI_ENABLED", def: "false" },
   ] }] },
   "TREND_DAY_SCALP_Strategy_Guide.html": { title: "Trend Day Scalp — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "Trend Day Scalp Mode (sidebar + Settings section)", key: "TDS_MODE_ENABLED", def: "true" },
     { type: "bool", label: "Trend Day Scalp Paper Trading", key: "TDS_PAPER_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "TDS_LIVE_ENABLED", dryKey: "TDS_LIVE_DRY_RUN" },
   ] }] },
   "HA_SCALP_Strategy_Guide.html": { title: "HA Scalp — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "HA Scalp Mode (sidebar + Settings section)", key: "HA_SCALP_MODE_ENABLED", def: "true" },
     { type: "bool", label: "HA Scalp Paper Trading", key: "HA_SCALP_PAPER_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "HA_SCALP_LIVE_ENABLED", dryKey: "HA_SCALP_LIVE_DRY_RUN" },
   ] }] },
   "PREV_ORB_SCALP_Strategy_Guide.html": { title: "Prev ORB Scalp — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "Prev ORB Scalp Mode (sidebar + Settings section)", key: "PREV_ORB_SCALP_MODE_ENABLED", def: "true" },
     { type: "bool", label: "Prev ORB Scalp Paper Trading", key: "PREV_ORB_SCALP_PAPER_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "PREV_ORB_SCALP_LIVE_ENABLED", dryKey: "PREV_ORB_SCALP_LIVE_DRY_RUN" },
   ] }] },
   "RSI_PIVOT_ST_Strategy_Guide.html": { title: "RSI Pivot ST — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "RSI Pivot ST Mode (sidebar + Settings section)", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "RSI Pivot ST Paper Trading", key: "RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "RSI_PIVOT_ST_LIVE_ENABLED", dryKey: "RSI_PIVOT_ST_LIVE_DRY_RUN" },
-    { type: "value", label: "SuperTrend Stop applies to", key: "RSI_PIVOT_ST_ST_SIDES", def: "CE", warnOn: ["NONE"] },
-    { type: "value", label: "Premium Stop applies to (CE-only / NONE leaves PE with NO stop)", key: "RSI_PIVOT_ST_PREMIUM_SL_SIDES", def: "BOTH", warnOn: ["CE", "NONE"] },
+    { type: "value", label: "SuperTrend entry filter applies to", key: "RSI_PIVOT_ST_ST_SIDES", def: "CE" },
   ] }] },
   // The NIFTY BANK replica of the row above. The extra group carries the
   // INDEX-level keys, because on this strategy they are not incidental: the
@@ -992,9 +954,7 @@ const GUIDE_STATUS = {
     { rows: [
       { type: "bool", label: "BN Pivot RSI ST Mode (sidebar + Settings section)", key: "BN_PIVOT_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BN Pivot RSI ST Paper Trading", key: "BN_PIVOT_RSI_ST_PAPER_ENABLED", def: "true" },
-      { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "BN_PIVOT_RSI_ST_LIVE_ENABLED", dryKey: "BN_PIVOT_RSI_ST_LIVE_DRY_RUN" },
-      { type: "value", label: "SuperTrend Stop applies to", key: "BN_PIVOT_RSI_ST_ST_SIDES", def: "CE", warnOn: ["NONE"] },
-      { type: "value", label: "Premium Stop applies to (CE-only / NONE leaves PE with NO stop)", key: "BN_PIVOT_RSI_ST_PREMIUM_SL_SIDES", def: "BOTH", warnOn: ["CE", "NONE"] },
+      { type: "value", label: "SuperTrend entry filter applies to", key: "BN_PIVOT_RSI_ST_ST_SIDES", def: "CE" },
     ] },
     { heading: "NIFTY BANK instrument (shared by every NIFTY BANK strategy)", rows: [
       { type: "value", label: "Strike step — the grid strikes are listed on", key: "BANKNIFTY_STRIKE_STEP", def: "100" },
@@ -1011,20 +971,15 @@ const GUIDE_STATUS = {
   "SIMPLE930_Strategy_Guide.html": { title: "SIMPLE_9:30 — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "SIMPLE_9:30 Mode (sidebar + Settings section)", key: "SIMPLE930_MODE_ENABLED", def: "true" },
     { type: "bool", label: "SIMPLE_9:30 Paper Trading", key: "SIMPLE930_PAPER_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "SIMPLE930_LIVE_ENABLED", dryKey: "SIMPLE930_LIVE_DRY_RUN" },
     { type: "value", label: "Breakout premium (also the strike the 09:25 search aims at)", key: "SIMPLE930_TRIGGER_PREMIUM", def: "180" },
-    { type: "bool", label: "Trailing Stop", key: "SIMPLE930_TRAIL_ENABLED", def: "true" },
-    { type: "value", label: "Stop distance off the fill (points)", key: "SIMPLE930_SL_PTS", def: "20" },
   ] }] },
   "EarlyBird_Strategy_Guide.html": { title: "EarlyBird — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EarlyBird Mode (sidebar + Settings section)", key: "EARLYBIRD_MODE_ENABLED", def: "true" },
     { type: "bool", label: "EarlyBird Paper Trading", key: "EARLYBIRD_PAPER_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers, CASH EQUITY, via paper harness)", enableKey: "EARLYBIRD_LIVE_ENABLED", dryKey: "EARLYBIRD_LIVE_DRY_RUN" },
     { type: "value", label: "Quantity per stock (SHARES, not lots)", key: "EARLYBIRD_QTY", def: "100" },
     { type: "value", label: "Max positions held at once", key: "EARLYBIRD_MAX_CONCURRENT", def: "5" },
-    { type: "value", label: "Forced square-off (IST)", key: "EARLYBIRD_FORCED_EXIT", def: "13:00" },
   ] }] },
-  // Paper only — there is no commodity live engine, so no Live Orders row.
+  // Paper only.
   "CMX_Commodity_Strategy_Guide.html": { title: "Commodity (MCX) — Live Configuration", groups: [
     { heading: "Crude Oil", rows: [
       { type: "bool", label: "Crude Oil EMA_RSI_ST Paper page", key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", def: "false" },
@@ -1044,7 +999,6 @@ const GUIDE_STATUS = {
   ] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
-      { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
       { type: "bool", label: "Tick Recorder (for Replay)", key: "TICK_RECORDER_ENABLED", def: "true" },
       { type: "bool", label: "Telegram Alerts (master)", key: "TG_ENABLED", def: "true" },
       { type: "bool", label: "Daily Data Backup", key: "BACKUP_ENABLED", def: "true" },

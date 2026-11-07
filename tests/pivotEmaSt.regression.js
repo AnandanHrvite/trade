@@ -12,9 +12,8 @@
  *             CE: PP < close < R1, EMA20 crosses ABOVE EMA50 on THIS candle with the cross
  *                 level ((EMA20+EMA50)/2) inside PP–R1, SuperTrend(10,3) green
  *             PE: S1 < close < PP, EMA20 crosses BELOW EMA50 on THIS candle inside S1–PP, ST red
- *           Close above R1 / below S1 never enters. Initial stop = SuperTrend.
- *   exit  : candle close only — SuperTrend flips, or close beyond the trailed stop.
- *           Trail tighten-only.
+ *           Close above R1 / below S1 never enters.
+ *   exit  : none in the engine — the routes exit only through the profit lock.
  */
 
 process.env.TZ = "Asia/Calcutta";
@@ -85,25 +84,28 @@ const BULL_CROSS = { pf: 22870, ps: 22872, f: 22881, s: 22879 };
 const BEAR_CROSS = { pf: 22790, ps: 22788, f: 22770, s: 22775 };
 
 // ── config ──────────────────────────────────────────────────────────────────
-test("defaults: TF 3, EMA 20/50, ST 10/3, window 10:00–14:00, EOD 15:00, 3 trades, ₹5000", () => {
+test("defaults: TF 3, EMA 20/50, ST 10/3, window 10:00–14:00", () => {
   const c = E.getConfig();
   assert.strictEqual(c.PREFIX, "PIVOT_EMA_ST");
   assert.strictEqual(c.TF, 3);
   assert.strictEqual(c.EMA_FAST, 20); assert.strictEqual(c.EMA_SLOW, 50);
   assert.strictEqual(c.ST_PERIOD, 10); assert.strictEqual(c.ST_MULT, 3);
-  assert.strictEqual(c.ENTRY_START, 600); assert.strictEqual(c.ENTRY_END, 840); assert.strictEqual(c.EOD_EXIT, 900);
-  assert.strictEqual(c.MAX_DAILY_TRADES, 3); assert.strictEqual(c.MAX_DAILY_LOSS, 5000);
+  assert.strictEqual(c.ENTRY_START, 600); assert.strictEqual(c.ENTRY_END, 840);
+});
+test("no exit / day-limit config or helpers remain (profit lock is the only exit, owned by the routes)", () => {
+  const c = E.getConfig();
+  for (const k of ["EOD_EXIT", "MAX_DAILY_TRADES", "MAX_DAILY_LOSS"]) assert.ok(!(k in c), k);
+  for (const f of ["isEodExit", "exitCheck", "trailStop"]) assert.strictEqual(E[f], undefined, f);
+  assert.strictEqual(sig(22900, series(N, { ...BULL_CROSS, st: 22840, trend: 1 })).stopLoss, undefined);
 });
 test("every threshold is configurable through its prefix", () => withEnv({
   PIVOT_EMA_ST_TF: "5", PIVOT_EMA_ST_EMA_FAST: "9", PIVOT_EMA_ST_EMA_SLOW: "21",
   PIVOT_EMA_ST_ST_PERIOD: "7", PIVOT_EMA_ST_ST_MULT: "2.5", PIVOT_EMA_ST_ENTRY_START: "09:30",
-  PIVOT_EMA_ST_ENTRY_END: "15:00", PIVOT_EMA_ST_EOD_EXIT_TIME: "15:15",
-  PIVOT_EMA_ST_MAX_DAILY_TRADES: "5", PIVOT_EMA_ST_MAX_DAILY_LOSS: "2000", PIVOT_EMA_ST_WARMUP_DAYS: "5",
+  PIVOT_EMA_ST_ENTRY_END: "15:00", PIVOT_EMA_ST_WARMUP_DAYS: "5",
 }, () => {
   const c = E.getConfig("PIVOT_EMA_ST");
   assert.deepStrictEqual([c.TF, c.EMA_FAST, c.EMA_SLOW, c.ST_PERIOD, c.ST_MULT], [5, 9, 21, 7, 2.5]);
-  assert.deepStrictEqual([c.ENTRY_START, c.ENTRY_END, c.EOD_EXIT], [570, 900, 915]);
-  assert.deepStrictEqual([c.MAX_DAILY_TRADES, c.MAX_DAILY_LOSS], [5, 2000]);
+  assert.deepStrictEqual([c.ENTRY_START, c.ENTRY_END], [570, 900]);
   assert.strictEqual(E.warmupDays("PIVOT_EMA_ST"), 5);
 }));
 test("prefixes are independent: a BN / SAIL key never moves NIFTY", () => withEnv({
@@ -164,10 +166,10 @@ test("computeSeries is 1:1 with candles and matches technicalindicators EMA alig
 });
 
 // ── entry: CE ───────────────────────────────────────────────────────────────
-test("CE: close in PP–R1 + EMA20 crosses above EMA50 on this candle + ST green → BUY_CE, stop = ST", () => {
+test("CE: close in PP–R1 + EMA20 crosses above EMA50 on this candle + ST green → BUY_CE", () => {
   const r = sig(22900, series(N, { ...BULL_CROSS, st: 22840, trend: 1 }));
   assert.strictEqual(r.signal, "BUY_CE", r.reason);
-  assert.strictEqual(r.stopLoss, 22840); assert.strictEqual(r.slSpot, 22840); assert.strictEqual(r.entrySpot, 22900);
+  assert.strictEqual(r.entrySpot, 22900);
   assert.strictEqual(r.zone, "PP_R1");
   assert.deepStrictEqual([r.checks.CE.zone, r.checks.CE.cross, r.checks.CE.st, r.checks.CE.count], [true, true, true, 3]);
   assert.ok(/3\/3/.test(r.reason));
@@ -223,10 +225,10 @@ test("bearish cross + red ST inside PP–R1 is NOT a PE (PE needs S1–PP)", () 
 });
 
 // ── entry: PE ───────────────────────────────────────────────────────────────
-test("PE: close in S1–PP + EMA20 crosses below EMA50 on this candle + ST red → BUY_PE, stop = ST", () => {
+test("PE: close in S1–PP + EMA20 crosses below EMA50 on this candle + ST red → BUY_PE", () => {
   const r = sig(22760, series(N, { ...BEAR_CROSS, st: 22820, trend: -1 }));
   assert.strictEqual(r.signal, "BUY_PE", r.reason);
-  assert.strictEqual(r.stopLoss, 22820); assert.strictEqual(r.zone, "S1_PP");
+  assert.strictEqual(r.zone, "S1_PP");
 });
 test("PE: no fresh bearish cross → no entry", () => {
   const r = sig(22760, series(N, { pf: 22770, ps: 22775, f: 22765, s: 22772, st: 22820, trend: -1 }));
@@ -246,7 +248,7 @@ test("bullish cross + green ST inside S1–PP is NOT a CE", () => {
 });
 
 // ── refusals ────────────────────────────────────────────────────────────────
-test("SuperTrend on the wrong side of the close → refuse (no stop, no trade)", () => {
+test("SuperTrend on the wrong side of the close → refuse", () => {
   const r = sig(22900, series(N, { ...BULL_CROSS, st: 22910, trend: 1 }));
   assert.strictEqual(r.signal, "NONE"); assert.strictEqual(r.skipReason, "st_wrong_side");
 });
@@ -316,61 +318,8 @@ test("after 14:00 close → refused; skipTimeCheck bypasses (commodity owns its 
   assert.strictEqual(late.signal, "NONE"); assert.ok(/After 14:00/.test(late.reason));
   assert.strictEqual(sig(22900, ser, { hh: 13, mm: 58, extra: { skipTimeCheck: true } }).signal, "BUY_CE");
 });
-test("square-off at 15:00", () => {
-  assert.strictEqual(E.isEodExit(ist(DAY, 14, 59)), false);
-  assert.strictEqual(E.isEodExit(ist(DAY, 15, 0)), true);
-});
-
-// ── exits ───────────────────────────────────────────────────────────────────
-const B = (close) => ({ time: ist(DAY, 11, 0), open: close, high: close + 5, low: close - 5, close });
-test("CE exit: SuperTrend flips red on the close", () => {
-  const r = E.exitCheck("CE", B(22900), { value: 22950, trend: -1 }, 22840);
-  assert.strictEqual(r.exit, true); assert.ok(/flipped red/.test(r.reason));
-});
-test("CE exit: close below the trailed stop", () => {
-  const r = E.exitCheck("CE", B(22830), { value: 22800, trend: 1 }, 22840);
-  assert.strictEqual(r.exit, true); assert.ok(/below SuperTrend stop/.test(r.reason));
-});
-test("CE hold: wick through the stop that closes above it does not exit", () => {
-  const bar = { time: ist(DAY, 11, 0), open: 22860, high: 22870, low: 22800, close: 22850 };
-  assert.strictEqual(E.exitCheck("CE", bar, { value: 22840, trend: 1 }, 22840).exit, false);
-});
-test("PE exits: flip green, close above stop; PE hold otherwise", () => {
-  assert.strictEqual(E.exitCheck("PE", B(22760), { value: 22700, trend: 1 }, 22820).exit, true);
-  assert.strictEqual(E.exitCheck("PE", B(22830), { value: 22850, trend: -1 }, 22820).exit, true);
-  assert.strictEqual(E.exitCheck("PE", B(22760), { value: 22810, trend: -1 }, 22820).exit, false);
-});
-test("exit guards: null stop never exits on its own, bad bar never exits", () => {
-  assert.strictEqual(E.exitCheck("CE", B(1), { value: 22840, trend: 1 }, null).exit, false);
-  assert.strictEqual(E.exitCheck("PE", B(99999), { value: 22840, trend: -1 }, null).exit, false);
-  assert.strictEqual(E.exitCheck("CE", { time: 1, open: 1, high: 1, low: 1, close: NaN }, { trend: -1 }, 22840).exit, false);
-  assert.strictEqual(E.exitCheck("CE", B(22900), null, 22840).exit, false);
-});
-
-// ── trail ───────────────────────────────────────────────────────────────────
-function trailCase(side, stop, st, close) {
-  const c = bars(30, close);
-  const sup = new Array(30).fill(null).map(() => st);
-  return E.trailStop(c, side, stop, E.getConfig(), { supertrend: sup, endIdx: 29 });
-}
-test("trail: CE moves up to the new SuperTrend, never down", () => {
-  assert.deepStrictEqual(trailCase("CE", 22840, { value: 22860, trend: 1 }, 22900), { stop: 22860, changed: true, tag: "SuperTrend" });
-  assert.strictEqual(trailCase("CE", 22840, { value: 22820, trend: 1 }, 22900).changed, false);
-  assert.strictEqual(trailCase("CE", 22840, { value: 22950, trend: -1 }, 22900).changed, false);
-  assert.strictEqual(trailCase("CE", 22840, { value: 22910, trend: 1 }, 22900).changed, false);
-});
-test("trail: PE moves down to the new SuperTrend, never up", () => {
-  assert.strictEqual(trailCase("PE", 22820, { value: 22800, trend: -1 }, 22760).stop, 22800);
-  assert.strictEqual(trailCase("PE", 22820, { value: 22830, trend: -1 }, 22760).changed, false);
-  assert.strictEqual(trailCase("PE", 22820, { value: 22700, trend: 1 }, 22760).changed, false);
-});
-test("trail: too few bars or null ST leaves the stop alone", () => {
-  assert.strictEqual(E.trailStop(bars(5, 22900), "CE", 22840, E.getConfig()).changed, false);
-  assert.strictEqual(trailCase("CE", 22840, { value: null, trend: 1 }, 22900).changed, false);
-});
-
 // ── a natural session through the real indicators ──────────────────────────
-test("real indicators: a dip-then-rally inside PP–R1 produces exactly the 3-condition CE, stop below entry", () => {
+test("real indicators: a dip-then-rally inside PP–R1 produces exactly the 3-condition CE", () => {
   // Two prior days around 22,820, then today drifts down and rallies inside 22,860–23,020.
   const c = [];
   let t = ist("2026-10-20", 9, 15);
@@ -390,13 +339,13 @@ test("real indicators: a dip-then-rally inside PP–R1 produces exactly the 3-co
     assert.ok(c[i].close > PIV.pp && c[i].close < PIV.r1);
     assert.ok(ser.emaFast[i - 1] <= ser.emaSlow[i - 1] && ser.emaFast[i] > ser.emaSlow[i]);
     assert.strictEqual(ser.supertrend[i].trend, 1);
-    assert.ok(r.stopLoss < c[i].close);
+    assert.ok(ser.supertrend[i].value < c[i].close);
   }
   assert.strictEqual(entries, 1, `expected one fresh cross, got ${entries}`);
 });
 
 // ── real cached candles (skipped when the cache is absent) ──────────────────
-test("real NIFTY 5-min cache: every signal obeys all three rules; every stop is protective", () => {
+test("real NIFTY 5-min cache: every signal obeys all three rules; SuperTrend on the right side", () => {
   const dir = path.join(REAL_HOME, "trading-data", "backtest_cache");
   let files = [];
   try { files = fs.readdirSync(dir).filter((n) => /NIFTY50-INDEX_5_/.test(n)).sort().slice(-6); } catch (_) {}
@@ -433,7 +382,7 @@ test("real NIFTY 5-min cache: every signal obeys all three rules; every stop is 
       assert.ok(ce ? (lvl > piv.pp && lvl < piv.r1) : (lvl < piv.pp && lvl > piv.s1), "cross level in zone");
       signals++;
       assert.strictEqual(ser.supertrend[i].trend, ce ? 1 : -1, "ST colour");
-      assert.ok(ce ? r.stopLoss < c[i].close : r.stopLoss > c[i].close, "stop side");
+      assert.ok(ce ? r.supertrend < c[i].close : r.supertrend > c[i].close, "ST side");
     }
     assert.ok(signals > 0, "six months of real candles produced no signal at all");
   });

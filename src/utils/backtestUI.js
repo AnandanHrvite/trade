@@ -25,7 +25,6 @@
  */
 
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("./sharedNav");
-const sharedSocketState = require("./sharedSocketState");
 const { resolveTheme } = require("./theme");
 const { aiExportButton, aiExportScriptTag } = require("./backtestAiExport");
 
@@ -109,7 +108,6 @@ function renderBacktestResults(opts) {
     notes = "",
   } = opts;
 
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   // Embed trades safely
   const tradesJSON = JSON.stringify(trades).replace(/<\/script>/gi, "<\\/script>");
 
@@ -235,7 +233,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar(activePage, liveActive)}
+${buildSidebar(activePage, false)}
 <div class="main-content">
 <div class="page">
 

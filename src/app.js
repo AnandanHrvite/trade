@@ -23,11 +23,11 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS,
         dateRangeOptionsHTML, dateRangeJS, STRATEGY_MODES } = require("./utils/sharedNav");
 const { resolveTheme } = require("./utils/theme");
 
-// Start-All roster. The dashboard's Start All (Paper / Live / Harness) buttons
-// no longer read a hand-written route table: startAllRoster.js discovers every
+// Start-All roster. The dashboard's Start All (Paper) button
+// no longer reads a hand-written route table: startAllRoster.js discovers every
 // mounted router that exposes a /start route and joins it to the enabled
 // strategies from sharedNav's STRATEGY_MODES. Mount a new strategy's routes the
-// usual way (/{slug}-paper, /{slug}-live[, /{slug}-live-harness]) and it joins
+// usual way (/{slug}-paper) and it joins
 // Start All with no further wiring — see the module header for the contract.
 const { trackMounts, startAllRoster, discoverStartRoutes } = require("./utils/startAllRoster");
 // Pure page routers (backtests, analysis tools) mount lazily — their module is only
@@ -38,15 +38,9 @@ const sharedSocketState = require("./utils/sharedSocketState");
 const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
 const demoMode      = require("./utils/demoMode");   // read-only stakeholder login
-const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth, isConfigured: telegramConfigured } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const manualTradesSyncJob = require("./utils/manualTradesSyncJob");
-const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadHaScalpPosition, clearHaScalpPosition, loadPrevOrbScalpPosition, clearPrevOrbScalpPosition, loadRsiPivotStPosition, clearRsiPivotStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition, loadEmaRsiStV2Position, clearEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position, loadSimple930Position, clearSimple930Position, loadEarlyBirdPositions, clearEarlyBirdPositions } = require("./utils/positionPersist");
-const { loadStRsiPivBbPosition, clearStRsiPivBbPosition } = require("./utils/positionPersist"); // ST_RSI_PIV_BB crash recovery
-const { loadSailVwapStPosition, clearSailVwapStPosition } = require("./utils/positionPersist"); // SAIL_VWAP_ST crash recovery
-const { loadPivotEmaStPosition, clearPivotEmaStPosition, loadBnPivotEmaStPosition, clearBnPivotEmaStPosition, loadSailPivotEmaStPosition, clearSailPivotEmaStPosition } = require("./utils/positionPersist"); // PIVOT_EMA_ST family crash recovery
-const { loadGapRunawayPosition, clearGapRunawayPosition } = require("./utils/positionPersist"); // GAP_RUNAWAY crash recovery (the stock scanner is paper-only)
 const app = express();
 trackMounts(app);   // record every app.use(path, router) so Start All can discover the strategy routes
 app.use(compression());
@@ -780,8 +774,6 @@ const OPEN_PATHS = [
   "/logs/day",          // one archived day, paginated — read-only
   "/logs/export",       // export txt
   "/logs/export-json",  // export json
-  "/ema_rsi_st-live/status",          // read-only status page
-  "/ema_rsi_st-live/status/data",     // dashboard AJAX poll — must be open or 403 when API_SECRET is set
   "/ema_rsi_st-paper/status",     // read-only status page
   "/ema_rsi_st-paper/status/data",// dashboard AJAX poll — must be open or 403 when API_SECRET is set
   "/ema_rsi_st-paper/history",    // read-only history
@@ -905,12 +897,10 @@ const OPEN_PATHS = [
   "/ema9vwap-paper/status/data", // dashboard AJAX poll
   "/ema9vwap-paper/history",     // read-only history
   "/ema9vwap-paper/client.js",   // static asset
-  "/ema9vwap-live/status/data",  // harness status poll (read-only)
   "/trend-pb-paper/status",      // read-only status page
   "/trend-pb-paper/status/data", // dashboard AJAX poll
   "/trend-pb-paper/status/chart-data", // chart AJAX poll (read-only)
   "/trend-pb-paper/history",     // read-only history
-  "/trend-pb-live/status/data",  // harness status poll (read-only, Phase C)
   // Trend Day Scalp — read-only surfaces. These MUST be open: the dashboard's
   // per-strategy tile polls status/data with a plain fetch (no secret), so a
   // protected path makes the tile silently render empty.
@@ -918,42 +908,35 @@ const OPEN_PATHS = [
   "/trend-day-scalp-paper/status/data",
   "/trend-day-scalp-paper/status/chart-data",
   "/trend-day-scalp-paper/history",
-  "/trend-day-scalp-live/status/data",
   // HA Scalp — same reason: the dashboard tile polls status/data unsecured.
   "/ha-scalp-paper/status",
   "/ha-scalp-paper/status/data",
   "/ha-scalp-paper/status/chart-data",
   "/ha-scalp-paper/history",
-  "/ha-scalp-live/status/data",
   // PREV ORB Scalp — same reason: the dashboard tile polls status/data unsecured.
   "/prev-orb-scalp-paper/status",
   "/prev-orb-scalp-paper/status/data",
   "/prev-orb-scalp-paper/status/chart-data",
   "/prev-orb-scalp-paper/history",
-  "/prev-orb-scalp-live/status/data",
   "/early-bird-paper/status",
   "/early-bird-paper/status/data",
   "/early-bird-paper/status/chart-data",
   "/early-bird-paper/history",
-  "/early-bird-live/status/data",
   // SIMPLE_9:30 — same reason: the dashboard tile polls status/data unsecured.
   "/simple930-paper/status",
   "/simple930-paper/status/data",
   "/simple930-paper/status/chart-data",
   "/simple930-paper/history",
-  "/simple930-live/status/data",
   // RSI Pivot ST — same reason: the dashboard tile polls status/data unsecured.
   "/rsi-pivot-st-paper/status",
   "/rsi-pivot-st-paper/status/data",
   "/rsi-pivot-st-paper/status/chart-data",
   "/rsi-pivot-st-paper/history",
-  "/rsi-pivot-st-live/status/data",
   // BN Pivot RSI ST (NIFTY BANK) — same reason: the dashboard tile polls status/data unsecured.
   "/bn-pivot-rsi-st-paper/status",
   "/bn-pivot-rsi-st-paper/status/data",
   "/bn-pivot-rsi-st-paper/status/chart-data",
   "/bn-pivot-rsi-st-paper/history",
-  "/bn-pivot-rsi-st-live/status/data",
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
@@ -1014,21 +997,16 @@ const OPEN_PATHS = [
   // NOTE: POST /cache-files/delete, /delete-all and /clear-candles (the backtest
   // pages' Clear Cache button) are intentionally protected (write ops)
   // BB_RSI mode (read-only status/data)
-  "/bb_rsi-live/status",
-  "/bb_rsi-live/status/data",
   "/bb_rsi-paper/status",
   "/bb_rsi-paper/status/data",
   "/bb_rsi-backtest",
   // Price Action mode (read-only status/data)
-  "/pa-live/status",
-  "/pa-live/status/data",
   "/pa-paper/status",
   "/pa-paper/status/data",
   "/pa-backtest",
   "/pa-paper/history",
   "/pa-paper/simulate",
   "/pa-paper/status/chart-data",
-  "/pa-live/status/chart-data",
   "/pa-pattern-backtest",         // per-pattern attribution dashboard
   "/pa-pattern-backtest/idle",
   "/pa-pattern-backtest/stats",
@@ -1040,9 +1018,6 @@ const OPEN_PATHS = [
   "/orb-paper/status/data",
   "/orb-paper/status/chart-data",
   "/orb-paper/history",
-  "/orb-live/status",
-  "/orb-live/status/data",
-  "/orb-live/status/chart-data",
   "/orb-backtest",
   "/orb-backtest/status",
   "/orb-backtest/idle",
@@ -1050,14 +1025,12 @@ const OPEN_PATHS = [
   // links to that were never added alongside their /status entries above.
   "/ema_rsi_st-paper/simulate",
   "/ema_rsi_st-paper/status/chart-data",
-  "/ema_rsi_st-live/status/chart-data",
   "/ema_rsi_st-backtest",
   "/ema_rsi_st-backtest/status",
   "/ema_rsi_st-backtest/idle",
   "/bb_rsi-paper/history",
   "/bb_rsi-paper/simulate",
   "/bb_rsi-paper/status/chart-data",
-  "/bb_rsi-live/status/chart-data",
   "/ema9vwap-paper/simulate",
   "/ema9vwap-paper/status/chart-data",
   "/ema9vwap-backtest",
@@ -1100,51 +1073,6 @@ const OPEN_PATHS = [
   "/sail_vwap_st-backtest",
   "/sail_vwap_st-backtest/status",
   "/sail_vwap_st-backtest/idle",
-  // Live-harness pages (read-only view + status poll). Their /start and /stop are
-  // deliberately NOT here — those place (or dry-run log) real broker orders.
-  "/ema_rsi_st-live-harness",
-  "/ema_rsi_st-live-harness/status/data",
-  "/ema_rsi_st_v2-live-harness",
-  "/ema_rsi_st_v2-live-harness/status/data",
-  "/bn_ema_rsi_st_v2-live-harness",
-  "/bn_ema_rsi_st_v2-live-harness/status/data",
-  // ST_RSI_PIV_BB's only live page IS its harness, mounted at /st_rsi_piv_bb-live.
-  "/st_rsi_piv_bb-live",
-  "/st_rsi_piv_bb-live/status",
-  "/st_rsi_piv_bb-live/status/data",
-  // SAIL_VWAP_ST's only live page IS its harness, mounted at /sail_vwap_st-live.
-  "/sail_vwap_st-live",
-  "/sail_vwap_st-live/status",
-  "/sail_vwap_st-live/status/data",
-  // PIVOT_EMA_ST family — each one's only live page IS its harness, mounted at /{slug}-live.
-  "/pivot_ema_st-live",
-  "/pivot_ema_st-live/status",
-  "/pivot_ema_st-live/status/data",
-  "/bn_pivot_ema_st-live",
-  "/bn_pivot_ema_st-live/status",
-  "/bn_pivot_ema_st-live/status/data",
-  "/sail_pivot_ema_st-live",
-  "/sail_pivot_ema_st-live/status",
-  "/sail_pivot_ema_st-live/status/data",
-  // GAP_RUNAWAY — its only live page IS its harness, mounted at /gap_runaway-live.
-  "/gap_runaway-live",
-  "/gap_runaway-live/status",
-  "/gap_runaway-live/status/data",
-  "/bb_rsi-live-harness",
-  "/bb_rsi-live-harness/status/data",
-  "/pa-live-harness",
-  "/pa-live-harness/status/data",
-  "/orb-live-harness",
-  "/orb-live-harness/status/data",
-  "/ema9vwap-live",
-  "/trend-pb-live",
-  "/trend-day-scalp-live",
-  "/ha-scalp-live",
-  "/prev-orb-scalp-live",
-  "/early-bird-live",
-  "/simple930-live",
-  "/rsi-pivot-st-live",
-  "/bn-pivot-rsi-st-live",
   // Cross-strategy read-only screens reached from the sidebar / top bar.
   "/realtime",            // unified real-time monitor
   "/realtime/capital",    // capital-pool poll — read-only, drives the shortfall alert banner
@@ -1160,8 +1088,6 @@ const OPEN_PATHS = [
   "/advisor/data",
   "/consolidation-report",
   "/losses-analyzer",
-  "/live-consolidation",
-  "/live-consolidation/data",
   "/pnl-history",         // manual year-wise P&L — the baseline POSTs stay protected
   "/pnl-history/data",
   "/pnl-history/manual/data", // manual-trade analytics read — import/sync POSTs stay protected
@@ -1198,7 +1124,6 @@ const OPEN_PATHS = [
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
   // NOTE: /settings/save requires API_SECRET (write operation)
-  // NOTE: /ema_rsi_st-live/start, /ema_rsi_st-live/stop, /ema_rsi_st-live/exit are intentionally NOT here — they require API_SECRET
   // NOTE: paper /reset and /exit require secret; paper /start and /stop are opened by OPEN_PAPER_CTRL_RE below
   // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
 ];
@@ -1262,10 +1187,9 @@ const OPEN_PREFIXES = [
 // verification — every one of those goes silently blank on a strategy whose
 // exact path nobody remembered to list above. The named entries stay (they also
 // cover /history); this only removes the "new strategy forgot a line" failure.
-const OPEN_STATUS_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-(?:paper|live|live-harness)\/status(?:\/data|\/chart-data)?$/;
+const OPEN_STATUS_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-paper\/status(?:\/data|\/chart-data)?$/;
 // Paper start/stop place no real order, so they skip the secret prompt (still
-// login-gated). Only `-paper` mounts match — live and harness stay protected,
-// as do paper reset/exit.
+// login-gated). Paper reset/exit stay protected.
 const OPEN_PAPER_CTRL_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-paper\/(?:start|stop)$/;
 
 app.use((req, res, next) => {
@@ -1345,7 +1269,7 @@ app.use((req, res, next) => {
 // callback and force-clears every mode: the strategy shows RUNNING with no feed.
 // The replay itself calls /start through the router stack, so it never hits this.
 app.use((req, res, next) => {
-  if (!/-(paper|live|live-harness)\/start\/?$/.test(req.path)) return next();
+  if (!/-paper\/start\/?$/.test(req.path)) return next();
   let inReplay = false;
   try { inReplay = require("./services/tickReplay").isReplayInProgress(); } catch (_) {}
   if (!inReplay) return next();
@@ -1358,7 +1282,6 @@ app.use("/auth",       require("./routes/auth"));
 app.use("/ema_rsi_st-backtest",   lazyRouter(() => require("./routes/emaRsiStBacktest")));
 app.use("/result",     lazyRouter(() => require("./routes/result")));
 app.use("/ema_rsi_st-paper", require("./routes/emaRsiStPaper"));
-app.use("/ema_rsi_st-live",      require("./routes/emaRsiStLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/trade-logs", require("./routes/tradeLogs"));  // ← per-trade JSONL viewer + settings checkpoints
@@ -1373,59 +1296,39 @@ app.use("/docs",        require("./routes/docs"));       // ← docs viewer
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← login attempts log viewer
 app.use("/monitor",     require("./routes/monitor"));    // ← EC2 instance health monitor
 // ── BB_RSI mode routes (independent from main trade) ─────────────────────────
-app.use("/bb_rsi-live",          require("./routes/bbRsiLive"));          // ← bb_rsi live (Fyers orders)
 app.use("/bb_rsi-paper",    require("./routes/bbRsiPaper"));     // ← bb_rsi paper trade
 app.use("/bb_rsi-backtest", lazyRouter(() => require("./routes/bbRsiBacktest")));  // ← bb_rsi backtest
 app.use("/compare",        lazyRouter(() => require("./routes/compare")));        // ← paper vs backtest compare
 // ── Price Action mode routes (5-min, independent from main & bb_rsi) ─────────
-app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders) — legacy
-app.use("/pa-live-harness", require("./routes/paLiveHarness")); // ← PA live via PAPER + harness (LIVE = PAPER guaranteed)
-app.use("/ema_rsi_st-live-harness", require("./routes/emaRsiStLiveHarness")); // ← EMA_RSI_ST live via PAPER + harness (Zerodha orders)
 
 // ── EMA_RSI_ST_V2 routes (EMA20/50 + RSI entry, SuperTrend-only stop, Zerodha) ─
-// A separate strategy from EMA_RSI_ST, not another mode of it. There is no
-// legacy /ema_rsi_st_v2-live route — the harness is V2's only live path.
+// A separate strategy from EMA_RSI_ST, not another mode of it.
 app.use("/ema_rsi_st_v2-paper",        require("./routes/emaRsiStV2Paper"));       // ← canonical engine
 app.use("/ema_rsi_st_v2-backtest",     lazyRouter(() => require("./routes/emaRsiStV2Backtest")));    // ← same signal engine, paper's exits
-app.use("/ema_rsi_st_v2-live-harness", require("./routes/emaRsiStV2LiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── BN_EMA_RSI_ST_V2 routes (the same engine on NIFTY BANK, Zerodha) ──────────
-// Same rules, different underlying and its own BN_EMA_RSI_ST_V2_* settings. Like
-// its NIFTY sibling there is no legacy /bn_ema_rsi_st_v2-live route — the harness
-// is its only live path.
+// Same rules, different underlying and its own BN_EMA_RSI_ST_V2_* settings.
 app.use("/bn_ema_rsi_st_v2-paper",        require("./routes/bnEmaRsiStV2Paper"));       // ← canonical engine
 app.use("/bn_ema_rsi_st_v2-backtest",     lazyRouter(() => require("./routes/bnEmaRsiStV2Backtest")));    // ← same signal engine, paper's exits
-app.use("/bn_ema_rsi_st_v2-live-harness", require("./routes/bnEmaRsiStV2LiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── ST_RSI_PIV_BB routes (SuperTrend + RSI + pivot R1/S1 + Bollinger, Zerodha) ─
-// No separate real-order live engine: /st_rsi_piv_bb-live IS the paper-wrapping
-// harness (it sets router.isLiveHarness, so Start All files it as a harness).
 app.use("/st_rsi_piv_bb-paper",    require("./routes/stRsiPivBbPaper"));       // ← canonical engine
-app.use("/st_rsi_piv_bb-live",     require("./routes/stRsiPivBbLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── SAIL_VWAP_ST routes (SAIL stock options: VWAP cross + breakout, SuperTrend stop, Zerodha) ─
-// No separate real-order live engine: /sail_vwap_st-live IS the paper-wrapping
-// harness (it sets router.isLiveHarness, so Start All files it as a harness).
 app.use("/sail_vwap_st-paper",    require("./routes/sailVwapStPaper"));       // ← canonical engine
 app.use("/sail_vwap_st-backtest", lazyRouter(() => require("./routes/sailVwapStBacktest")));    // ← same signal engine, paper's exits
-app.use("/sail_vwap_st-live",     require("./routes/sailVwapStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── PIVOT_EMA_ST family (pivot zone + EMA20/50 cross + SuperTrend, Zerodha) ──
-// NIFTY / BANK NIFTY / SAIL. Paper + live harness only — no backtest, not
-// replayable. /{slug}-live IS the paper-wrapping harness (router.isLiveHarness).
+// NIFTY / BANK NIFTY / SAIL. Paper only — no backtest, not replayable.
 app.use("/pivot_ema_st-paper",         require("./routes/pivotEmaStPaper"));           // ← canonical engine (NIFTY)
-app.use("/pivot_ema_st-live",          require("./routes/pivotEmaStLiveHarness"));     // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 app.use("/bn_pivot_ema_st-paper",      require("./routes/bnPivotEmaStPaper"));         // ← canonical engine (BANK NIFTY)
-app.use("/bn_pivot_ema_st-live",       require("./routes/bnPivotEmaStLiveHarness"));   // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 app.use("/sail_pivot_ema_st-paper",    require("./routes/sailPivotEmaStPaper"));       // ← canonical engine (SAIL stock options)
-app.use("/sail_pivot_ema_st-live",     require("./routes/sailPivotEmaStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── GAP_RUNAWAY (GAP_runAway__Kirubakaran: daily RSI-on-EMA extreme + gap, Zerodha) ──
-// NIFTY ATM options (paper + live harness) and its F&O stock scanner (intraday
+// NIFTY ATM options (paper) and its F&O stock scanner (intraday
 // shares, paper only). No backtest, not replayable. No common rules on NIFTY;
 // the scanner runs most of them (see gapRunawayStkPaper.js).
 app.use("/gap_runaway-paper",          require("./routes/gapRunawayPaper"));           // ← canonical engine (NIFTY options)
-app.use("/gap_runaway-live",           require("./routes/gapRunawayLiveHarness"));     // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 app.use("/gap_runaway_stk-paper",      require("./routes/gapRunawayStkPaper"));        // ← stock scanner, intraday shares (paper only)
 
 // ── COMMODITY (MCX crude / gold / silver) — paper only ───────────────────────
@@ -1442,70 +1345,57 @@ app.use("/cmx_crude_pivot_ema_st-paper", require("./routes/cmxCrudePivotEmaStPap
 app.use("/cmx_gold_pivot_ema_st-paper", require("./routes/cmxGoldPivotEmaStPaper"));
 app.use("/cmx_silver_pivot_ema_st-paper", require("./routes/cmxSilverPivotEmaStPaper"));
 
-app.use("/bb_rsi-live-harness", require("./routes/bbRsiLiveHarness")); // ← BB_RSI live via PAPER + harness (Fyers orders)
-app.use("/orb-live-harness",   require("./routes/orbLiveHarness"));   // ← ORB live via PAPER + harness (Fyers orders)
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    lazyRouter(() => require("./routes/paBacktest")));  // ← PA backtest
 app.use("/pa-pattern-backtest", lazyRouter(() => require("./routes/paPatternBacktest"))); // ← PA per-pattern backtest dashboard
-// ── ORB routes (parallel strategy — paper, backtest, live) ──────────────────
+// ── ORB routes (parallel strategy — paper, backtest) ────────────────────────
 app.use("/orb-paper",         require("./routes/orbPaper"));      // ← ORB paper trade
 app.use("/orb-backtest",      lazyRouter(() => require("./routes/orbBacktest")));   // ← ORB date-range backtest
-app.use("/orb-live",          require("./routes/orbLive"));       // ← ORB LIVE — real Fyers orders (DRY-RUN gated)
-// ── EMA9+VWAP routes (5-min, EMA9 vs VWAP±σ band; Zerodha live via harness) ──
+// ── EMA9+VWAP routes (5-min, EMA9 vs VWAP±σ band) ────────────────────────────
 app.use("/ema9vwap-paper",    require("./routes/ema9vwapPaper"));       // ← EMA9+VWAP paper trade
 app.use("/ema9vwap-backtest", lazyRouter(() => require("./routes/ema9vwapBacktest")));    // ← EMA9+VWAP date-range backtest
-app.use("/ema9vwap-live",     require("./routes/ema9vwapLiveHarness")); // ← EMA9+VWAP LIVE via PAPER + harness (Zerodha orders)
 // ── Trend Pullback routes (5-min; 15m bias + 5m pullback/resumption) ─────────
 app.use("/trend-pb-paper",    require("./routes/trendPbPaper"));        // ← Trend Pullback paper trade (Phase A)
 app.use("/trend-pb-backtest", lazyRouter(() => require("./routes/trendPbBacktest")));     // ← Trend Pullback backtest — walk-forward + dumb-baseline (Phase B)
-app.use("/trend-pb-live",     require("./routes/trendPbLiveHarness"));  // ← Trend Pullback LIVE via PAPER + harness (Fyers orders, triple-gated dry-run) (Phase C)
 
 // ── TREND_DAY_SCALP routes (10:15 day gate → VWAP/EMA pullback scalp, Fyers) ─
 app.use("/trend-day-scalp-paper",    require("./routes/trendDayScalpPaper"));       // ← canonical engine
 app.use("/trend-day-scalp-backtest", lazyRouter(() => require("./routes/trendDayScalpBacktest")));    // ← same signal engine, paper's exits
-app.use("/trend-day-scalp-live",     require("./routes/trendDayScalpLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 
 // ── HA_SCALP routes (15-min Heikin Ashi trend scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/ha-scalp-paper",      require("./routes/haScalpPaper"));            // ← canonical engine
 app.use("/ha-scalp-backtest",   lazyRouter(() => require("./routes/haScalpBacktest")));         // ← same signal engine, paper's exits
-app.use("/ha-scalp-live",       require("./routes/haScalpLiveHarness"));      // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── PREV_ORB_SCALP routes (prev-day range + 15m/3m ORB scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/prev-orb-scalp-paper",    require("./routes/prevOrbScalpPaper"));        // ← canonical engine
 app.use("/prev-orb-scalp-backtest", lazyRouter(() => require("./routes/prevOrbScalpBacktest")));     // ← same signal engine, paper's exits
-app.use("/prev-orb-scalp-live",     require("./routes/prevOrbScalpLiveHarness"));  // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── EARLYBIRD routes (first 15-min breakout, CASH EQUITY on F&O stocks, Fyers) ─
 app.use("/early-bird-paper",    require("./routes/earlyBirdPaper"));          // ← canonical engine
 app.use("/early-bird-backtest", lazyRouter(() => require("./routes/earlyBirdBacktest")));       // ← same signal engine, paper's exits
-app.use("/early-bird-live",     require("./routes/earlyBirdLiveHarness"));    // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── SIMPLE_9:30 routes (09:25 ITM watchlist → first leg above ₹180, Zerodha) ──
 app.use("/simple930-paper",    require("./routes/simple930Paper"));      // ← canonical engine
 app.use("/simple930-backtest", lazyRouter(() => require("./routes/simple930Backtest")));   // ← same signal engine, paper's exits, REAL option candles
-app.use("/simple930-live",     require("./routes/simple930LiveHarness"));// ← LIVE via PAPER + harness (triple-gated dry-run, ZERODHA orders)
 app.use("/rsi-pivot-st-paper",    require("./routes/rsiPivotStPaper"));       // ← canonical engine
 app.use("/rsi-pivot-st-backtest", lazyRouter(() => require("./routes/rsiPivotStBacktest")));    // ← same signal engine, paper's exits
-app.use("/rsi-pivot-st-live",     require("./routes/rsiPivotStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── BN_PIVOT_RSI_ST routes (RSI_PIVOT_ST rules on NIFTY BANK, Zerodha) ───────
 app.use("/bn-pivot-rsi-st-paper",    require("./routes/bnPivotRsiStPaper"));       // ← canonical engine
 app.use("/bn-pivot-rsi-st-backtest", lazyRouter(() => require("./routes/bnPivotRsiStBacktest")));    // ← same signal engine, paper's exits
-app.use("/bn-pivot-rsi-st-live",     require("./routes/bnPivotRsiStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
-app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
 app.use("/edge-analytics",      require("./routes/edgeAnalytics"));     // ← edge metrics (WR/expectancy/PF/drawdown/by-hour) over recorded trades
-app.use("/consolidation-report", lazyRouter(() => require("./routes/consolidationReport"))); // ← printable consolidated report (paper+live, week/month/range filters, Save-as-PDF)
+app.use("/consolidation-report", lazyRouter(() => require("./routes/consolidationReport"))); // ← printable consolidated report (paper, week/month/range filters, Save-as-PDF)
 app.use("/losses-analyzer",     lazyRouter(() => require("./routes/lossesAnalyzer")));    // ← every losing trade with its full signal/entry/exit/indicator record + a why-it-lost verdict
 app.use("/advisor",             lazyRouter(() => require("./routes/advisor")));           // ← offline settings advisor over the recorded trade book (read-only)
 app.use("/oi-monitor",          lazyRouter(() => require("./routes/oiMonitor")));         // ← live per-strike OI ladder + wall/PCR readout (read-only research page)
 app.use("/swing-scanner",       require("./routes/swingScanner"));      // ← stock swing screen over the active strategies + manual Zerodha CNC entry
-app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
-app.use("/replay",              lazyRouter(() => require("./routes/replay")));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
+app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (paper, all strategies)
+app.use("/replay",              lazyRouter(() => require("./routes/replay")));            // ← deterministic tick-replay backtest (PAPER = REPLAY)
 app.use("/all-backtest",   lazyRouter(() => require("./routes/allBacktest")));    // ← unified backtest dashboard (all 3 strategies, stats only)
-app.use("/pnl-history",    lazyRouter(() => require("./routes/pnlHistory")));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
+app.use("/pnl-history",    lazyRouter(() => require("./routes/pnlHistory")));    // ← manual year-wise P&L (Kite + Fyers)
 
 // Cancel button on the shared backtest progress page. One endpoint for every
 // strategy — the page is built by backtestJobManager, so the job id is all the
@@ -1644,8 +1534,6 @@ app.get("/api/start-all-roster", (req, res) => {
     success: true,
     modes,
     paper:   modes.filter((m) => !m.paperOff).map((m) => m.paper),
-    live:    modes.filter((m) => m.live).map((m) => m.live),
-    harness: modes.filter((m) => m.harness).map((m) => m.harness),
   });
 });
 
@@ -1672,13 +1560,12 @@ app.get("/", (req, res) => {
     return res.redirect("/settings" + (qs > -1 ? req.originalUrl.slice(qs) : ""));
   }
 
-  // When any paper/live session is active, show the unified Real-Time monitor in place
+  // When any paper session is active, show the unified Real-Time monitor in place
   // of the normal dashboard (gated by UI_SHOW_REALTIME, default on).
   const showRealtime = (process.env.UI_SHOW_REALTIME || 'true').toLowerCase() === 'true';
   if (showRealtime && (sharedSocketState.isAnyActive() || require("./utils/commodityPaperRouter").anyRunning())) {
     const { renderRealtimePage } = require("./routes/realtime");
-    const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
-    return res.send(renderRealtimePage({ liveActive, sidebarKey: "dashboard", autoFlipBack: true }));
+    return res.send(renderRealtimePage({ sidebarKey: "dashboard", autoFlipBack: true }));
   }
   try {
   const fyersOk     = !!process.env.ACCESS_TOKEN;
@@ -1688,9 +1575,6 @@ app.get("/", (req, res) => {
   const cmxSessEnd  = /^\d{1,2}:\d{2}$/.test(process.env.CMX_SESSION_END || "") ? process.env.CMX_SESSION_END : "23:30";
   const zerodhaOk   = zerodha.isAuthenticated();
   const zerodhaConf = !!process.env.ZERODHA_API_KEY;
-  const liveEnabled = process.env.EMA_RSI_ST_LIVE_ENABLED === "true";
-  const liveReady   = liveEnabled && fyersOk && zerodhaOk;
-  const liveActive  = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const bbRsiMode   = sharedSocketState.getBbRsiMode();
   const bbRsiEnabled = process.env.BB_RSI_ENABLED === "true";
   const bbRsiModeOn  = (process.env.BB_RSI_MODE_ENABLED || 'true').toLowerCase() === 'true';
@@ -1750,13 +1634,12 @@ app.get("/", (req, res) => {
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
-  // True when ANY strategy (paper or live) is currently running. While active we
+  // True when ANY strategy is currently running. While active we
   // hide the dashboard's control buttons (Start All), broker
   // connection cards, and schedule/cache pills so they can't be touched or
   // distract mid-trade — the running-status badge stays visible. Mirror of the
   // IDLE condition used for the top-bar badge below.
-  const anyModeActive = liveActive
-    || (bbRsiModeOn && bbRsiMode)
+  const anyModeActive = (bbRsiModeOn && bbRsiMode)
     || (paModeOn && paMode)
     || (orbModeOn && orbMode)
     || (ema9vwapModeOn && ema9vwapMode)
@@ -1777,14 +1660,10 @@ app.get("/", (req, res) => {
     || (gapRunawayModeOn && gapRunawayMode)
     || (gapRunawayStkModeOn && gapRunawayStkMode)
     || (bnEmaRsiStV2ModeOn && bnEmaRsiStV2Mode);
-  // The mode-specific top-bar badges below only cover a subset of states
-  // (EMA_RSI_ST live, BB_RSI_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
-  // active (e.g. EMA_RSI_ST/BB_RSI/PA paper, ORB live) we still want a running
-  // indicator visible — show a generic badge in that gap.
-  const specificBadgeShown = liveActive
-    || (bbRsiModeOn && bbRsiMode === 'BB_RSI_LIVE')
-    || (paModeOn && paMode === 'PA_LIVE')
-    || (orbModeOn && orbMode === 'ORB_PAPER');
+  // The mode-specific top-bar badge below only covers ORB_PAPER. When some
+  // OTHER mode is active we still want a running indicator visible — show a
+  // generic badge in that gap.
+  const specificBadgeShown = (orbModeOn && orbMode === 'ORB_PAPER');
 
   // Strategy tiles for the dashboard "Last Session" / "Today So Far" analytics
   // panel — built from the same *_MODE_ENABLED toggles the sidebar uses so the
@@ -1826,15 +1705,12 @@ app.get("/", (req, res) => {
     label: t.label,
     // Where the tile links to — discovered from the mounted routers (same
     // source Start-All uses), so a new strategy's cards are clickable with no
-    // extra wiring. `paper`/`live` are null when that route is not mounted.
-    ...(() => {
-      const pages = (_dashTileRoutes.get(_dashNorm(_dashSlugFor(t.key))) || {}).pages || {};
-      return { paper: pages.paper || null, live: pages.live || pages.harness || null };
-    })(),
+    // extra wiring. `paper` is null when that route is not mounted.
+    paper: ((_dashTileRoutes.get(_dashNorm(_dashSlugFor(t.key))) || {}).pages || {}).paper || null,
   }));
   // COMMODITY pages join the Last Session / Today So Far panel — paper only.
   for (const c of dashCmxCards) {
-    dashSessionTiles.push({ key: c.mode, cls: 'cmx', label: c.icon + ' ' + c.title, paper: c.base + '/status', live: null, statusData: c.base + '/status/data' });
+    dashSessionTiles.push({ key: c.mode, cls: 'cmx', label: c.icon + ' ' + c.title, paper: c.base + '/status', statusData: c.base + '/status/data' });
   }
 
   // ── Start-All roster — the enabled strategies (same helper the sidebar uses)
@@ -1843,26 +1719,12 @@ app.get("/", (req, res) => {
   // it again on click (/api/start-all-roster) so a strategy enabled after this
   // page was rendered still starts without a reload.
   const startAllModes = startAllRoster();
-  // Split per button: a strategy takes part in Live only if it has a real-order
-  // live engine, and in Harness only if it has a declared paper-wrapping one.
-  // Neither list may carry a null endpoint — `startAll` would POST to "null".
-  const startAllLiveModes    = startAllModes.filter((m) => m.live);
-  const startAllHarnessModes = startAllModes.filter((m) => m.harness);
   // Button-state poll: same roster, /start → /status/data on each wired route.
-  const startAllPollTargets = [
-    ...startAllModes.map((m) => ({ url: m.paper.replace('/start', '/status/data'), kind: 'paper' })),
-    ...startAllLiveModes.map((m) => ({ url: m.live.replace('/start', '/status/data'), kind: 'live' })),
-  ];
+  const startAllPollTargets = startAllModes.map((m) => ({ url: m.paper.replace('/start', '/status/data'), kind: 'paper' }));
   // Endpoint → display name, for the Start-All failure list.
-  // Built from the roster so it cannot drift from the endpoints actually called,
-  // and so the harness route of a strategy whose path ends in `-live` (EMA9+VWAP,
-  // TREND_PB) reads "Live (Harness)" instead of being mistaken for a pure-live one.
+  // Built from the roster so it cannot drift from the endpoints actually called.
   const startAllEndpointLabels = {};
-  for (const m of startAllModes) {
-    startAllEndpointLabels[m.paper] = `${m.label} Paper`;
-    if (m.live)    startAllEndpointLabels[m.live]    = `${m.label} Live`;
-    if (m.harness) startAllEndpointLabels[m.harness] = `${m.label} Live (Harness)`;
-  }
+  for (const m of startAllModes) startAllEndpointLabels[m.paper] = `${m.label} Paper`;
 
   // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
   // top-bar date range, summed over every ENABLED strategy that trades through
@@ -1945,7 +1807,7 @@ app.get("/", (req, res) => {
   // is noise the whole trading day and trains the eye to skip the banner —
   // which is exactly the banner that has to be noticed at 5:45 AM.
   const zerodhaExpiryHtml = zerodhaOk && pastExpiry
-    ? `⚠️ <strong>Token expired at 6 AM.</strong> Please re-login with Zerodha before starting live trading.`
+    ? `⚠️ <strong>Token expired at 6 AM.</strong> Please re-login with Zerodha before trading.`
     : zerodhaOk && nearExpiry
     ? `⏰ <strong>Token expires at 6 AM</strong> — Re-login now if you plan to trade after 6 AM.`
     : ``;
@@ -2445,29 +2307,18 @@ app.get("/", (req, res) => {
     .util-btn:active:not(:disabled) { transform:translateY(1px); }
     .util-btn:disabled { opacity:0.55; cursor:not-allowed; }
     .util-btn.run-paper { background:#062016; border-color:#166534; color:#4ade80; font-weight:700; }
-    .util-btn.run-live  { background:#1f0808; border-color:#7f1d1d; color:#f87171; font-weight:700; }
-    /* Active running state — pulsing glow so the user can see the mode is live */
+    /* Active running state — pulsing glow so the user can see the mode is running */
     .util-btn.is-active-paper {
       background:#052e1d !important; border-color:#22c55e !important; color:#86efac !important;
       opacity:1 !important; cursor:default !important;
       animation: pulse-paper 1.8s ease-in-out infinite;
-    }
-    .util-btn.is-active-live {
-      background:#2a0a0a !important; border-color:#ef4444 !important; color:#fca5a5 !important;
-      opacity:1 !important; cursor:default !important;
-      animation: pulse-live 1.8s ease-in-out infinite;
     }
     .util-btn.is-locked { opacity:0.35 !important; cursor:not-allowed !important; filter:grayscale(0.5); }
     @keyframes pulse-paper {
       0%,100% { box-shadow:0 0 0 0 rgba(34,197,94,0.55); }
       50%     { box-shadow:0 0 0 6px rgba(34,197,94,0); }
     }
-    @keyframes pulse-live {
-      0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,0.55); }
-      50%     { box-shadow:0 0 0 6px rgba(239,68,68,0); }
-    }
     :root[data-theme="light"] .util-btn.is-active-paper { background:#dcfce7 !important; border-color:#166534 !important; color:#15803d !important; }
-    :root[data-theme="light"] .util-btn.is-active-live  { background:#fee2e2 !important; border-color:#dc2626 !important; color:#b91c1c !important; }
     .util-info { font-size:0.68rem; color:var(--muted-1,#8ba1c2); margin-left:auto; font-family:'IBM Plex Mono',monospace; }
 
     /* Mobile */
@@ -2503,12 +2354,10 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .util-strip { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .util-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
     :root[data-theme="light"] .util-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#166534; }
-    :root[data-theme="light"] .util-btn.run-live  { background:#fee2e2; border-color:#fca5a5; color:#b91c1c; }
     :root[data-theme="light"] .util-info { color:#4b5769; }
     /* Light theme — top-bar pills/buttons + broker expiry pill (shared chrome lacks light variants) */
     :root[data-theme="light"] .top-bar-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
     :root[data-theme="light"] .top-bar-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#166534; }
-    :root[data-theme="light"] .top-bar-btn.run-live { background:#fee2e2; border-color:#fca5a5; color:#b91c1c; }
     .top-bar-btn.run-cmx { background:#1c1604; border-color:#a16207; color:#facc15; }
     :root[data-theme="light"] .top-bar-btn.run-cmx { background:#fefce8 !important; border-color:#a16207 !important; color:#a16207; }
     /* Pills that open a popup — the rest of the pills are read-only labels.
@@ -2528,7 +2377,7 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .brk-expiry.expired { background:#fef2f2; border-color:#fecaca; color:#c2410c; }
 
     /* ── PER-MODULE START CARDS ── */
-    /* ── PER-MODULE P&L CHART CARDS (Paper/Live toggle) ── */
+    /* ── PER-MODULE P&L CHART CARDS ── */
     /* Rows are balanced over the number of VISIBLE cards and the last row is
        never short of full width. Two pieces make that work:
        - --mm-cols is computed in JS (_layoutModuleGrid) as the count spread
@@ -2579,17 +2428,6 @@ app.get("/", (req, res) => {
     .mm-card.gaprunawaystk .mm-dot { background:#c084fc; }
     .mm-card.cmx .mm-dot { background:#eab308; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
-    /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
-    .dash-src-toggle { display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:4px; padding:2px; flex-shrink:0; }
-    .dst-btn { background:transparent; border:none; color:var(--muted-1,#8ba1c2); font-family:inherit; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:6px 18px; border-radius:2px; cursor:pointer; transition:all 0.15s; }
-    .dst-btn:hover:not(.active) { color:#a0b0c8; }
-    .dst-btn.active { background:#2563eb; color:#fff; }
-    .dst-btn.active[data-src="live"] { background:#dc2626; color:#fff; }
-    :root[data-theme="light"] .dash-src-toggle { background:#f1f5f9; border-color:#e0e4ea; }
-    :root[data-theme="light"] .dst-btn { color:#5c6b7f; }
-    :root[data-theme="light"] .dst-btn:hover:not(.active) { color:#475569; }
-    :root[data-theme="light"] .dst-btn.active { background:#2563eb; color:#fff; }
-    :root[data-theme="light"] .dst-btn.active[data-src="live"] { background:#dc2626; color:#fff; }
     /* Global date-range filter (top-bar) — narrows every chart on the dashboard.
        Same option set as Edge Analytics so the two pages agree on what a range
        means; wraps rather than widening the bar when Custom opens its inputs. */
@@ -2694,7 +2532,7 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .ts-pos-item strong { color:#334155; }
     :root[data-theme="light"] .ts-flat-note { color:#5c6b7f; }
 
-    /* ── CUMULATIVE P&L CHART CARDS (Paper + Live) ── */
+    /* ── CUMULATIVE P&L CHART CARDS (Paper) ── */
     .dash-chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .dash-chart-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:10px 12px 12px; }
     .dash-chart-hdr { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #1a2236; }
@@ -2834,7 +2672,6 @@ app.get("/", (req, res) => {
         justify-content:flex-start; gap:6px;
       }
       .top-bar-right .top-bar-btn { flex:1 1 auto; justify-content:center; }
-      .dash-src-toggle { flex:0 0 auto; }
       .dash-range { flex:0 0 auto; }
       /* The expiry/holiday pills carry a full sentence and are white-space:nowrap
          in sharedNav, so at 320px (iPhone SE) they alone still ran 11px past the
@@ -2855,15 +2692,11 @@ app.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('dashboard', liveActive)}
+${buildSidebar('dashboard', false)}
 <div class="main-content">
   <div class="top-bar">
     <div>
       <div class="top-bar-title">⌂ Dashboard</div>
-    </div>
-    <div class="dash-src-toggle" id="dashSrcToggle" title="Data source for all charts">
-      <button type="button" class="dst-btn active" data-src="paper">PAPER</button>
-      <button type="button" class="dst-btn" data-src="live">LIVE</button>
     </div>
     <div class="dash-range" id="dashRange" title="Date range for all charts">
       <label for="dashRangeSel">Range</label>
@@ -2875,7 +2708,6 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#f59e0b;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllHarnessModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       ${cmxOn ? `<button id="btn-all-cmx" class="top-bar-btn run-cmx" style="display:none;" onclick="startAllCommodity(this)" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet">🛢 Start All (Commodity)</button>` : ''}`}
       <!-- The manual "Reset Token" button was removed: token clearing is now
@@ -2891,9 +2723,6 @@ ${buildSidebar('dashboard', liveActive)}
       <span id="expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY 50 expiry (weekly/monthly) and next NIFTY BANK expiry — BANKNIFTY is monthly only, since NSE withdrew its weekly options in Nov-2024. Click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
       <span id="holiday-info-pill" class="top-bar-cache schedule empty clickable" title="Next NSE trading holiday — click for the full holiday list" onclick="showExpiryHolidaysModal()"></span>
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
-      ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
-      ${bbRsiModeOn && bbRsiMode === 'BB_RSI_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>BB_RSI LIVE</span>' : ''}
-      ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
       ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
     </div>
@@ -2957,7 +2786,7 @@ ${buildSidebar('dashboard', liveActive)}
 
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
-  <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (top-bar Paper/Live toggle + Range filter) -->
+  <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (Range filter) -->
   <!-- Cards are hidden client-side unless the strategy actually traded in the
        selected source/range — see _renderModuleChart. -->
   <div class="mm-grid" id="mmGrid">
@@ -3216,7 +3045,7 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="mm-empty" id="mmGridEmptyTxt">No trades yet</div>
   </div>
 
-  <!-- ⑤ CUMULATIVE P&L CHART (top-bar Paper/Live toggle + Range filter) — full-width band below the strategy grid -->
+  <!-- ⑤ CUMULATIVE P&L CHART (Range filter) — full-width band below the strategy grid -->
   ${cumCardBelow}
 
   ${analyticsPanelOn ? `
@@ -3239,7 +3068,7 @@ ${expiryHolidayModalHTML()}
 ${modalJS()}
 ${expiryHolidayModalJS()}
 ${dateRangeJS()}
-// ── Dashboard: Paper & Live trade status panels ──────────────────────────────
+// ── Dashboard: Paper trade status panels ────────────────────────────────────
 function fmtPnl(v){ if(v===null||v===undefined) return {txt:'—',cls:'flat'}; var n=parseFloat(v); return {txt:(n>=0?'+':'')+'\u20b9'+n.toFixed(0),cls:n>0?'pos':n<0?'neg':'flat'}; }
 function fmtNum(v,prefix,suffix){ if(v===null||v===undefined) return '—'; return (prefix||'')+v+(suffix||''); }
 
@@ -3256,7 +3085,6 @@ function renderPaperStatus(d){
       +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\u20b9'+p.optionEntryLtp+'</strong></span>':'')
       +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
       +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">Unrealised <strong>'+pp.txt+'</strong></span>'
-      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\u20b9'+p.stopLoss+'</strong></span>':'')
       +'</div>';
   } else if(d.running){
     posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
@@ -3268,37 +3096,6 @@ function renderPaperStatus(d){
     +'<div class="ts-cell"><div class="ts-label">Unrealised PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">'+(d.pnlSource||'—')+'</div></div>'
     +'<div class="ts-cell"><div class="ts-label">Capital</div><div class="ts-val">'+capital+'</div><div class="ts-sub">Simulated</div></div>'
     +'<div class="ts-cell"><div class="ts-label">Total PnL (all-time)</div><div class="ts-val '+fmtPnl(d.totalPnl).cls+'">'+fmtPnl(d.totalPnl).txt+'</div><div class="ts-sub">From saved data</div></div>'
-    +'</div>'
-    +posHtml;
-}
-
-function renderLiveStatus(d){
-  var rb=document.getElementById('live-run-badge'), sb=document.getElementById('live-stop-badge');
-  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
-  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
-  var posHtml='';
-  if(d.position){
-    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:d.unrealisedPnl);
-    posHtml='<div class="ts-pos-bar">'
-      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
-      +'<span class="ts-pos-item">Entry Spot <strong>\u20b9'+(p.entryPrice||'—')+'</strong></span>'
-      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\u20b9'+p.optionEntryLtp+'</strong></span>':'')
-      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
-      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">Opt Premium PnL <strong>'+pp.txt+'</strong></span>'
-      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\u20b9'+p.stopLoss+'</strong></span>':'')
-      +(p.orderId?'<span class="ts-pos-item">Order <strong>'+p.orderId+'</strong></span>':'')
-      +'</div>';
-  } else if(d.running){
-    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
-  }
-  var fyers=d.fyersOk?'<span style="color:#4ade80;">●</span> Fyers':'<span style="color:#f87171;">●</span> Fyers';
-  var zerodha=d.zerodhaOk?'<span style="color:#4ade80;">●</span> Zerodha':'<span style="color:#f87171;">●</span> Zerodha';
-  document.getElementById('live-status-body').innerHTML=
-    '<div class="ts-grid">'
-    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Opt Premium PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Unrealised</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Activity</div><div class="ts-val" style="font-size:0.75rem;">'+fyers+' &nbsp; '+zerodha+'</div><div class="ts-sub">Broker connections</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Ticks / Candles</div><div class="ts-val flat" style="font-size:0.82rem;">'+(d.tickCount||0)+' / '+(d.candleCount||0)+'</div><div class="ts-sub">This session</div></div>'
     +'</div>'
     +posHtml;
 }
@@ -3318,7 +3115,6 @@ function renderPAPaperStatus(d){
       +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\\u20b9'+p.optionEntryLtp+'</strong></span>':'')
       +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
       +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">Unrealised <strong>'+pp.txt+'</strong></span>'
-      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
       +'</div>';
   } else if(d.running){
     posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
@@ -3334,34 +3130,6 @@ function renderPAPaperStatus(d){
     +posHtml;
 }
 
-function renderPALiveStatus(d){
-  var rb=document.getElementById('pa-live-run-badge'), sb=document.getElementById('pa-live-stop-badge');
-  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
-  var _u=(d.unrealisedPnl!=null)?d.unrealisedPnl:d.unrealised;
-  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(_u);
-  var posHtml='';
-  if(d.position){
-    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:_u);
-    posHtml='<div class="ts-pos-bar">'
-      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
-      +'<span class="ts-pos-item">Entry <strong>\\u20b9'+(p.entryPrice||'—')+'</strong></span>'
-      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\\u20b9'+p.optionEntryLtp+'</strong></span>':'')
-      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
-      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">P&L <strong>'+pp.txt+'</strong></span>'
-      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
-      +'</div>';
-  } else if(d.running){
-    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
-  }
-  document.getElementById('pa-live-status-body').innerHTML=
-    '<div class="ts-grid">'
-    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Opt Premium PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Unrealised</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Activity</div><div class="ts-val flat" style="font-size:0.82rem;">'+(d.tickCount||0)+' / '+(d.candleCount||0)+'</div><div class="ts-sub">Ticks / Candles</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Daily Loss</div><div class="ts-val flat" style="font-size:0.78rem;color:'+(d.dailyLossHit?'#ef4444':'#10b981')+';">'+(d.dailyLossHit?'KILLED':'OK')+'</div><div class="ts-sub">Price Action</div></div>'
-    +'</div>'
-    +posHtml;
-}
 ` : ''}
 ${bbRsiModeOn ? `
 function renderBbRsiPaperStatus(d){
@@ -3375,7 +3143,6 @@ function renderBbRsiPaperStatus(d){
       +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
       +'<span class="ts-pos-item">Entry <strong>\\u20b9'+(p.entryPrice||'—')+'</strong></span>'
       +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">P&L <strong>'+pp.txt+'</strong></span>'
-      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
       +'</div>';
   } else if(d.running){
     posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
@@ -3391,33 +3158,6 @@ function renderBbRsiPaperStatus(d){
     +posHtml;
 }
 
-function renderBbRsiLiveStatus(d){
-  var rb=document.getElementById('bb_rsi-live-run-badge'), sb=document.getElementById('bb_rsi-live-stop-badge');
-  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
-  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
-  var posHtml='';
-  if(d.position){
-    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:d.unrealisedPnl);
-    posHtml='<div class="ts-pos-bar">'
-      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
-      +'<span class="ts-pos-item">Entry <strong>\\u20b9'+(p.entryPrice||'—')+'</strong></span>'
-      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\\u20b9'+p.optionEntryLtp+'</strong></span>':'')
-      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
-      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">P&L <strong>'+pp.txt+'</strong></span>'
-      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
-      +'</div>';
-  } else if(d.running){
-    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
-  }
-  document.getElementById('bb_rsi-live-status-body').innerHTML=
-    '<div class="ts-grid">'
-    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Opt Premium PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Unrealised</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Activity</div><div class="ts-val flat" style="font-size:0.82rem;">'+(d.tickCount||0)+' / '+(d.candleCount||0)+'</div><div class="ts-sub">Ticks / Candles</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Daily Loss</div><div class="ts-val flat" style="font-size:0.78rem;color:'+(d.dailyLossHit?'#ef4444':'#10b981')+';">'+(d.dailyLossHit?'KILLED':'OK')+'</div><div class="ts-sub">Limit: \\u20b9${process.env.BB_RSI_MAX_DAILY_LOSS || "2000"}</div></div>'
-    +'</div>'
-    +posHtml;
-}
 ` : ''}
 async function pollDashboardStatus(){
   try {
@@ -3427,39 +3167,20 @@ async function pollDashboardStatus(){
   } catch(e){
     renderPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null,pnlSource:'—'});
   }
-  try {
-    var lr = await fetch('/ema_rsi_st-live/status/data',{cache:'no-store'});
-    if(lr.ok){ var ld=await lr.json(); renderLiveStatus(ld); }
-    else { renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0}); }
-  } catch(e){
-    renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0});
-  }
   // BB_RSI Paper status
   ${bbRsiModeOn ? `try {
     var sp = await fetch('/bb_rsi-paper/status/data',{cache:'no-store'});
     if(sp.ok){ var spd=await sp.json(); renderBbRsiPaperStatus(spd); }
     else { renderBbRsiPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
-  } catch(e){ renderBbRsiPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
-  // BB_RSI Live status
-  try {
-    var sr = await fetch('/bb_rsi-live/status/data',{cache:'no-store'});
-    if(sr.ok){ var sd=await sr.json(); renderBbRsiLiveStatus(sd); }
-    else { renderBbRsiLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
-  } catch(e){ renderBbRsiLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
+  } catch(e){ renderBbRsiPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }` : ''}
   // PA Paper status
   ${paModeOn ? `try {
     var pp = await fetch('/pa-paper/status/data',{cache:'no-store'});
     if(pp.ok){ var ppd=await pp.json(); renderPAPaperStatus(ppd); }
     else { renderPAPaperStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
-  } catch(e){ renderPAPaperStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
-  // PA Live status
-  try {
-    var plr = await fetch('/pa-live/status/data',{cache:'no-store'});
-    if(plr.ok){ var pld=await plr.json(); renderPALiveStatus(pld); }
-    else { renderPALiveStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
-  } catch(e){ renderPALiveStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
+  } catch(e){ renderPAPaperStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }` : ''}
   // Toggle quick-action buttons based on running state
-  var bPaper=document.getElementById('btn-all-paper'), bLive=document.getElementById('btn-all-live');
+  var bPaper=document.getElementById('btn-all-paper');
   function _isOn(id){ var el=document.getElementById(id); return !!(el && el.style.display!=='none'); }
   if(bPaper){
     var allOn = _isOn('paper-run-badge')
@@ -3468,31 +3189,19 @@ async function pollDashboardStatus(){
     if(allOn){ bPaper.disabled=true; bPaper.textContent='✓ ALL PAPER RUNNING'; bPaper.style.borderColor='#166534'; bPaper.style.opacity='0.6'; }
     else { bPaper.disabled=false; bPaper.textContent='▶ START ALL PAPER TRADES'; bPaper.style.opacity='1'; }
   }
-  if(bLive){
-    var allLiveOn = _isOn('live-run-badge')
-      && (${bbRsiModeOn ? "_isOn('bb_rsi-live-run-badge')" : "true"})
-      && (${paModeOn ? "_isOn('pa-live-run-badge')" : "true"});
-    if(allLiveOn){ bLive.disabled=true; bLive.textContent='✓ ALL LIVE RUNNING'; bLive.style.borderColor='#7f1d1d'; bLive.style.opacity='0.6'; }
-    else { bLive.disabled=false; bLive.textContent='▶ START ALL LIVE TRADES'; bLive.style.opacity='1'; }
-  }
 }
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
-// ── Quick Action: Start All Paper / All Live ────────────────────────────────
+// ── Quick Action: Start All Paper ───────────────────────────────────────────
 // The lists below are the roster as it stood when this page was RENDERED — the
 // enabled strategies joined to the start routes discovered from the mounted
 // routers. Every Start-All click refetches them from /api/start-all-roster
 // first (_refreshRoster), so a strategy that was added to the app or enabled in
 // Settings since the page loaded is started too, without a reload and without
 // this button naming any strategy. The render-time lists are the fallback for
-// when that fetch fails. Harness routes wrap PAPER (LIVE = PAPER by
-// construction) and respect LIVE_HARNESS_DRY_RUN.
+// when that fetch fails.
 var PAPER_ENDPOINTS   = ${JSON.stringify(startAllModes.filter((m) => !m.paperOff).map((m) => m.paper))};
-var LIVE_ENDPOINTS    = ${JSON.stringify(startAllLiveModes.map((m) => m.live))};
-var HARNESS_ENDPOINTS = ${JSON.stringify(startAllHarnessModes.map((m) => m.harness))};
 var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.filter((m) => !m.paperOff).map((m) => m.label))};
-var LIVE_MODE_LABELS  = ${JSON.stringify(startAllLiveModes.map((m) => m.label))};
-var HARNESS_MODE_LABELS = ${JSON.stringify(startAllHarnessModes.map((m) => m.label))};
 var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
 
 // Replaces every roster-derived list in one place, so the endpoints, the button
@@ -3500,26 +3209,17 @@ var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
 // about which strategies are in play.
 function _applyRoster(modes){
   if(!Array.isArray(modes) || !modes.length) return false;
-  var paper = [], live = [], harness = [];
-  var labels = [], liveLabels = [], harnessLabels = [], names = {}, poll = [];
+  var paper = [];
+  var labels = [], names = {}, poll = [];
   modes.forEach(function(m){
     if(!m || !m.paper) return;
     if(!m.paperOff){ paper.push(m.paper); labels.push(m.label); }
     names[m.paper] = m.label + ' Paper';
     poll.push({ url: m.paper.replace('/start','/status/data'), kind: 'paper' });
-    if(m.live){
-      live.push(m.live); liveLabels.push(m.label);
-      names[m.live] = m.label + ' Live';
-      poll.push({ url: m.live.replace('/start','/status/data'), kind: 'live' });
-    }
-    if(m.harness){
-      harness.push(m.harness); harnessLabels.push(m.label);
-      names[m.harness] = m.label + ' Live (Harness)';
-    }
   });
   if(!paper.length) return false;
-  PAPER_ENDPOINTS = paper; LIVE_ENDPOINTS = live; HARNESS_ENDPOINTS = harness;
-  ALL_MODE_LABELS = labels; LIVE_MODE_LABELS = liveLabels; HARNESS_MODE_LABELS = harnessLabels;
+  PAPER_ENDPOINTS = paper;
+  ALL_MODE_LABELS = labels;
   ENDPOINT_LABELS = names;
   ALL_BTN_POLL = poll;
   return true;
@@ -3626,30 +3326,14 @@ function _statusUrlFor(startEndpoint){
 
 function _sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 
-// The two route families answer with different fields, so "is it up?" is not a
-// single flag. Paper and pure-Live routes report \`running\`. Harness routes
-// report \`installed\` — and the seven paper-wrapping ones ALSO merge the paper
-// engine's \`running\` into the same payload, while the four native ones
-// (EMA_RSI_ST / BB_RSI / PA / ORB) report \`installed\` alone. Reading only
-// \`running\` would therefore mark every native harness FAILED, and reading only
-// \`installed\` would pass a wrapping harness whose paper engine never started.
-// So: use whichever fields the payload actually carries, and require both when
-// both are there.
+// Paper routes report \`running\`.
 function _isUp(d){
   if (!d || typeof d !== 'object') return false;
-  var hasInstalled = Object.prototype.hasOwnProperty.call(d, 'installed');
-  var hasRunning   = Object.prototype.hasOwnProperty.call(d, 'running');
-  if (hasInstalled && hasRunning) return !!(d.installed && d.running);
-  if (hasInstalled) return !!d.installed;
   return !!d.running;
 }
 
-// Names the specific half that is down, so a wrapping harness that installed
-// but whose engine never started does not read as a blanket failure.
 function _whyDown(d){
   if (!d || typeof d !== 'object') return 'no status returned';
-  if (Object.prototype.hasOwnProperty.call(d, 'installed') && !d.installed) return 'harness not installed';
-  if (Object.prototype.hasOwnProperty.call(d, 'installed')) return 'harness installed but engine not running';
   return 'engine not running';
 }
 
@@ -3744,8 +3428,7 @@ async function _handleStartAllResult(btn, origText, label, endpoints, result, cm
   if (okCount > 0) location.reload();
 }
 
-// Guard for an empty roster: every strategy disabled in Settings (or, for Live,
-// only harness-only strategies enabled) would otherwise "succeed" with 0 starts
+// Guard for an empty roster: every strategy disabled in Settings would otherwise "succeed" with 0 starts
 // and silently reload the page.
 async function _noModesEnabled(endpoints, what){
   if (endpoints.length) return false;
@@ -3758,7 +3441,7 @@ async function _noModesEnabled(endpoints, what){
   return true;
 }
 
-// Single entry point for the three Start-All buttons, so the busy flag can
+// Single entry point for the Start-All buttons, so the busy flag can
 // never be left set (or skipped) by one of them drifting from the others.
 async function _runStartAll(btn, origText, label, endpoints, withCmx){
   _startAllBusy = true;
@@ -3803,43 +3486,12 @@ async function _startAllCmx(){
   }
 }
 
-async function startAllLive(btn){
-  var orig = btn.textContent;
-  if (!await _beginStartAll(btn)) return;
-  if (await _noModesEnabled(LIVE_ENDPOINTS, 'Live')) return _abortStartAll(btn, orig);
-  var ok = await showConfirm({
-    icon: '⚠️', title: 'Start ALL Live Trades',
-    message: 'Start ' + LIVE_MODE_LABELS.join(' + ') + ' Live?\\nReal orders will be placed on broker accounts.',
-    confirmText: 'Start All', confirmClass: 'modal-btn-danger'
-  });
-  if(!ok) return _abortStartAll(btn, orig);
-  btn.textContent = '⏳ Starting all live trades...';
-  await _runStartAll(btn, orig, 'All Live', LIVE_ENDPOINTS);
-}
-
-async function startAllHarness(btn){
-  var orig = btn.textContent;
-  if (!await _beginStartAll(btn)) return;
-  if (await _noModesEnabled(HARNESS_ENDPOINTS, 'Live (Harness)')) return _abortStartAll(btn, orig);
-  var modeList = HARNESS_MODE_LABELS.join(' + ');
-  var ok = await showConfirm({
-    icon: '🧪', title: 'Start ALL Live (Harness)',
-    message: 'Start ' + modeList + ' via Paper Harness?\\n\\nEach runs Paper unchanged and logs the broker order it WOULD place. Orders follow the global DRY-RUN flag — no real orders while LIVE_HARNESS_DRY_RUN is ON.',
-    confirmText: 'Start All (Harness)', confirmClass: 'modal-btn-primary'
-  });
-  if(!ok) return _abortStartAll(btn, orig);
-  btn.textContent = '⏳ Starting harness: ' + modeList + '...';
-  await _runStartAll(btn, orig, 'All Harness', HARNESS_ENDPOINTS);
-}
-
-// Single Start-All button follows the top-bar PAPER/LIVE toggle.
 function startAll(btn){
-  return _dashSrc === 'live' ? startAllLive(btn) : startAllPaper(btn);
+  return startAllPaper(btn);
 }
 
-// ── Quick-Action button live state (mutual lock: Paper ↔ Live) ──────────────
-var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
-var _allBtnState = { paperOn:false, liveOn:false };
+// ── Quick-Action button state ───────────────────────────────────────────────
+var _allBtnState = { paperOn:false };
 var CMX_ON = ${cmxOn ? 'true' : 'false'};
 var CMX_STARTABLE = ${cmxOn && fyersOk ? 'true' : 'false'};
 var _cmxOpen = false;              // set by checkTradingStatus(): MCX open and a commodity page can start
@@ -3849,44 +3501,24 @@ var _marketsClosed = false;        // set by checkTradingStatus(): weekend / NSE
 // Derived from the same enabled-strategy roster as the Start-All endpoint lists.
 var ALL_BTN_POLL = ${JSON.stringify(startAllPollTargets)};
 
-function _applyAllBtnState(paperOn, liveOn){
-  // Harness is a paper-side concept (Paper + dry-run live log) — only show it
-  // when the PAPER source is selected; hide it under LIVE.
-  // _marketsClosed wins over both: this poll runs every few seconds and would
+function _applyAllBtnState(paperOn){
+  // _marketsClosed wins: this poll runs every few seconds and would
   // otherwise re-show the buttons that checkTradingStatus() just hid on a
   // weekend / NSE holiday / outside market hours.
-  var hb = document.getElementById('btn-all-harness');
-  if(hb) hb.style.display = (_marketsClosed || _dashSrc === 'live') ? 'none' : '';
   // Commodity is paper-only and follows MCX hours, not NSE's.
   var cb = document.getElementById('btn-all-cmx');
-  if(cb) cb.style.display = (_cmxOpen && _dashSrc !== 'live') ? '' : 'none';
+  if(cb) cb.style.display = _cmxOpen ? '' : 'none';
   var b = document.getElementById('btn-all-start');
   if(!b) return;
   if(_marketsClosed){ b.style.display = 'none'; return; }
   b.style.display = '';
-  b.classList.remove('run-paper','run-live','is-active-paper','is-active-live','is-locked');
-  if(_dashSrc === 'live'){
-    if(liveOn){
-      b.disabled = true; b.classList.add('is-active-live');
-      b.textContent = '● LIVE ACTIVE'; b.title = 'Live trading is running';
-    } else if(paperOn){
-      b.disabled = true; b.classList.add('is-locked');
-      b.textContent = '🔒 Live locked'; b.title = 'Stop all paper trades before starting live';
-    } else {
-      b.disabled = false; b.classList.add('run-live');
-      b.textContent = '▶ Start All (Live)'; b.title = 'Start all live modes';
-    }
+  b.classList.remove('run-paper','is-active-paper','is-locked');
+  if(paperOn){
+    b.disabled = true; b.classList.add('is-active-paper');
+    b.textContent = '● PAPER ACTIVE'; b.title = 'Paper trading is running';
   } else {
-    if(paperOn){
-      b.disabled = true; b.classList.add('is-active-paper');
-      b.textContent = '● PAPER ACTIVE'; b.title = 'Paper trading is running';
-    } else if(liveOn){
-      b.disabled = true; b.classList.add('is-locked');
-      b.textContent = '🔒 Paper locked'; b.title = 'Stop all live trades before starting paper';
-    } else {
-      b.disabled = false; b.classList.add('run-paper');
-      b.textContent = '▶ Start All (Paper)'; b.title = 'Start all paper modes';
-    }
+    b.disabled = false; b.classList.add('run-paper');
+    b.textContent = '▶ Start All (Paper)'; b.title = 'Start all paper modes';
   }
 }
 
@@ -3898,13 +3530,12 @@ async function pollAllBtnsStatus(){
         .then(function(r){ return r.ok ? r.json() : {running:false}; })
         .catch(function(){ return {running:false}; });
     }));
-    var paperOn=false, liveOn=false;
+    var paperOn=false;
     for(var i=0;i<results.length;i++){
-      if(!results[i] || !results[i].running) continue;
-      if(ALL_BTN_POLL[i].kind==='paper') paperOn=true; else liveOn=true;
+      if(results[i] && results[i].running) paperOn=true;
     }
-    _allBtnState.paperOn = paperOn; _allBtnState.liveOn = liveOn;
-    _applyAllBtnState(paperOn, liveOn);
+    _allBtnState.paperOn = paperOn;
+    _applyAllBtnState(paperOn);
   } catch(_){}
 }
 pollAllBtnsStatus();
@@ -3912,7 +3543,7 @@ pollAllBtnsStatus();
 setInterval(function(){ if (!document.hidden) pollAllBtnsStatus(); }, 10000);
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollAllBtnsStatus(); });
 
-// ── Dashboard Cumulative P&L Charts (Paper + Live) ───────────────────────────
+// ── Dashboard Cumulative P&L Charts (Paper) ─────────────────────────────────
 function _fmtINR(n){
   if (typeof n !== 'number' || isNaN(n)) return '—';
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -4048,26 +3679,23 @@ function _applyDashRange(trades){
 }
 function _dashRangeActive(){ return !!(_dashRange.from || _dashRange.to); }
 
-var _dcData = { paper: null, live: null };
+var _dcData = { paper: null };
 var _dcChart = null;
-var _dcToggle = 'paper';
 
 function _renderDashTotal(){
-  var src = _dcToggle;
-  var trades = _applyDashRange(_dcData[src] || []);
+  var trades = _applyDashRange(_dcData.paper || []);
   var total = trades.reduce(function(a,t){ return a + (t.pnl||0); }, 0);
   var dot = document.getElementById('dashCumDot');
   if (dot) dot.style.background = _pnlColor(total);
   var link = document.getElementById('dashCumLink');
   // With commodity in the paper total, "View" opens the report that shows both
   // markets — /consolidation is NSE only.
-  if (link) link.href = src === 'live' ? '/live-consolidation'
-    : ((_dcData.cmx && _dcData.cmx.length) ? '/consolidation-report' : '/consolidation');
+  if (link) link.href = (_dcData.cmx && _dcData.cmx.length) ? '/consolidation-report' : '/consolidation';
   // Nothing in the source/range → no card, same as the strategy cards above.
   var card = document.getElementById('dashCumCard');
   if (card) card.style.display = trades.length ? '' : 'none';
   var emptyEl = document.getElementById('dashCumEmpty');
-  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
+  if (emptyEl) emptyEl.textContent = 'No paper trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
   if (_dcChart) { _dcChart.destroy(); _dcChart = null; }
   _dcChart = _renderDashCumChart('dashCumChart', 'dashCumEmpty', trades);
   _updateChartStats('dash-cum-stats', trades);
@@ -4107,39 +3735,10 @@ async function loadDashCumCharts(){
     if (rc.ok){ var dc = await rc.json(); _dcData.cmx = (dc && dc.trades) || []; }
   } catch(_){}
   if (_dcData.cmx && _dcData.cmx.length) _dcData.paper = (_dcData.paper || []).concat(_dcData.cmx);
-  try {
-    var r2 = await fetch('/live-consolidation/data?enabledOnly=1', { cache: 'no-store' });
-    if (r2.status === 401) _authLost();
-    if (r2.ok){ var d2 = await r2.json(); _dcData.live = (d2 && d2.trades) || []; }
-  } catch(_){ _dcData.live = []; }
   _renderDashTotal();
 }
 
-// Global Paper/Live toggle (top-bar) — one source drives every chart AND the Start-All button.
-document.addEventListener('click', function(e){
-  var btn = e.target.closest && e.target.closest('.dst-btn');
-  if (!btn) return;
-  var src = btn.getAttribute('data-src');
-  if (!src || _dashSrc === src) return;
-  _dashSrc = src;
-  _dcToggle = src;
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(function(m){ _mmToggle[m] = src; });
-  _mmToggle.ST_RSI_PIV_BB = src;
-  _mmToggle.SAIL_VWAP_ST = src;
-  _mmToggle.PIVOT_EMA_ST = src; _mmToggle.BN_PIVOT_EMA_ST = src; _mmToggle.SAIL_PIVOT_EMA_ST = src;
-  _mmToggle.GAP_RUNAWAY = src; _mmToggle.GAP_RUNAWAY_STK = src;
-  document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
-  _renderDashTotal();
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
-  _renderModuleChart('ST_RSI_PIV_BB');
-  _renderModuleChart('SAIL_VWAP_ST');
-  ['PIVOT_EMA_ST','BN_PIVOT_EMA_ST','SAIL_PIVOT_EMA_ST'].forEach(_renderModuleChart);
-  ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
-  _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
-});
-
-// Global date-range selector (top-bar) — re-renders the same charts the
-// Paper/Live toggle drives, so both filters always compose.
+// Global date-range selector (top-bar) — re-renders every chart.
 (function(){
   var sel = document.getElementById('dashRangeSel');
   if (!sel) return;
@@ -4179,19 +3778,13 @@ document.addEventListener('click', function(e){
 
 loadDashCumCharts();
 
-// ── Per-Module P&L Charts (top-bar Paper/Live toggle + Range filter) ─────────
-var _mmData = { paper: null, live: null };
+// ── Per-Module P&L Charts (Range filter) ─────────────────────────────────────
+var _mmData = { paper: null };
 var _mmCharts = {};
-// COMMODITY cards. Paper only, and not in _mmToggle: they follow the top-bar
-// source directly, so under LIVE they find no rows and hide themselves.
+// COMMODITY cards.
 var CMX_MM_MODES = ${JSON.stringify(dashCmxCards.map((c) => c.mode))};
-var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', TDS: 'paper', HA_SCALP: 'paper', PREV_ORB_SCALP: 'paper', EARLYBIRD: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper', BN_PIVOT_RSI_ST: 'paper', EMA_RSI_ST_V2: 'paper', BN_EMA_RSI_ST_V2: 'paper' };
-_mmToggle.ST_RSI_PIV_BB = 'paper';
-_mmToggle.SAIL_VWAP_ST = 'paper';
-_mmToggle.PIVOT_EMA_ST = 'paper'; _mmToggle.BN_PIVOT_EMA_ST = 'paper'; _mmToggle.SAIL_PIVOT_EMA_ST = 'paper';
-_mmToggle.GAP_RUNAWAY = 'paper'; _mmToggle.GAP_RUNAWAY_STK = 'paper';
 
-// A strategy with no trades in the selected source+range has nothing to show,
+// A strategy with no trades in the selected range has nothing to show,
 // so its whole card is hidden rather than kept as a "0 trades" placeholder —
 // and an emptied grid shows nothing at all.
 // Rows are balanced over the VISIBLE cards, never ragged: 4 per row is the
@@ -4222,8 +3815,7 @@ function _updateModuleGridEmpty(){
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
   if (!card) return;
-  var src = _mmToggle[mode] || _dashSrc;
-  var all = _mmData[src] || [];
+  var all = _mmData.paper || [];
   var trades = _applyDashRange(all.filter(function(t){ return (t.mode || '').toUpperCase() === mode; }));
   if (_mmCharts[mode]) { _mmCharts[mode].destroy(); _mmCharts[mode] = null; }
   card.style.display = trades.length ? '' : 'none';
@@ -4237,8 +3829,7 @@ function _renderModuleChart(mode){
 }
 
 // ── Broker wallets — remaining = investment pool + paper P&L in the SAME range
-// the charts are showing. Reads _mmData.paper (every mode, unfiltered by the
-// nav toggles) and narrows it with the pool's own mode list, so a broker's
+// the charts are showing. Reads _mmData.paper (every mode) and narrows it with the pool's own mode list, so a broker's
 // wallet moves only for the strategies that actually trade through it.
 // Deliberately paper-only, and driven by _applyDashRange so the wallet and the
 // curve below it can never quote different periods.
@@ -4271,11 +3862,6 @@ async function loadModuleCharts(){
     if (r1.status === 401) _authLost();
     if (r1.ok){ var d1 = await r1.json(); _mmData.paper = (d1 && d1.trades) || []; }
   } catch(_){ _mmData.paper = []; }
-  try {
-    var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
-    if (r2.status === 401) _authLost();
-    if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
-  } catch(_){ _mmData.live = []; }
   // COMMODITY rows join the paper list; the Fyers wallet counts them. The
   // cumulative chart does not read this list (it has its own fetch).
   if (CMX_MM_MODES.length) {
@@ -4507,13 +4093,10 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     return (+taken > 0) || hasOpenPosition(d);
   }
 
-  // Tile → page URL. Which page depends on where the trades came from: a tile
-  // whose trades are mostly live opens the live route, otherwise paper. Both
-  // URLs come from the server-discovered mounts, so an unmounted route simply
-  // renders a non-clickable tile instead of a dead link.
-  function tileHref(t, preferLive){
-    var url = preferLive ? (t.live || t.paper) : (t.paper || t.live);
-    return url || null;
+  // Tile → paper page URL. It comes from the server-discovered mounts, so an
+  // unmounted route simply renders a non-clickable tile instead of a dead link.
+  function tileHref(t){
+    return t.paper || null;
   }
   // Wraps a tile's inner HTML in an <a> when a route exists, else a plain div —
   // an unmounted route must not render a dead link.
@@ -4534,7 +4117,7 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     tiles.forEach(function(t){
       var d = data[t.key];
       if (!d) {
-        html += tileWrap(tileHref(t, false), t.cls, t.label,
+        html += tileWrap(tileHref(t), t.cls, t.label,
           '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div>'
           + '<div class="da-sub-line">No data</div>');
         return;
@@ -4554,9 +4137,9 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
       var day = (+open || 0) + (+closed || 0);
       var c = cls(day);
       var pill = d.running ? 'run' : 'stop';
-      // The live view polls the paper status endpoint, so its tiles open the
-      // paper page — that is the screen holding the numbers shown here.
-      html += tileWrap(tileHref(t, false), t.cls, t.label,
+      // The in-session view polls the paper status endpoint, so its tiles open
+      // the paper page — that is the screen holding the numbers shown here.
+      html += tileWrap(tileHref(t), t.cls, t.label,
         '<div class="da-tile-hdr">' + t.label + '<span class="da-pill ' + pill + '">' + (d.running ? 'RUNNING' : 'STOPPED') + '</span></div>' +
         '<div class="da-big ' + c + '">' + fmtINR(day) + '</div>' +
         '<div class="da-sub-line">Open ' + fmtINR(open) + ' &middot; Closed ' + fmtINR(closed) + ' &middot; ' + (d.tradeCount!=null?d.tradeCount:(d.tradesTaken||0)) + 'T (' + (d.wins||0) + 'W/' + (d.losses||0) + 'L)</div>');
@@ -4571,7 +4154,7 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     // limited to the enabled tiles. Trades are pre-filtered to enabled modes by
     // the /data?enabledOnly=1 fetch, so the total matches the visible cards.
     var bys = {};
-    SESSION_TILES.forEach(function(t){ bys[t.key] = {net:0,t:0,w:0,l:0,paperT:0,liveT:0}; });
+    SESSION_TILES.forEach(function(t){ bys[t.key] = {net:0,t:0,w:0,l:0}; });
     var tot = { net:0, t:0, w:0, l:0 };
     var byDate = {};
     var bestDay = null, worstDay = null;
@@ -4583,8 +4166,6 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
       var p = +tr.pnl || 0;
       if (bys[key]) {
         bys[key].net += p; bys[key].t++; if (p > 0) bys[key].w++; else if (p < 0) bys[key].l++;
-        // Which page the tile should open: tagged at fetch time by source list.
-        if (tr.__src === 'live') bys[key].liveT++; else bys[key].paperT++;
       }
       tot.net += p; tot.t++; if (p > 0) tot.w++; else if (p < 0) tot.l++;
       byDate[tr.date] = (byDate[tr.date] || 0) + p;
@@ -4608,12 +4189,12 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     return tot === 0 ? 0 : Math.round(100 * w / tot);
   }
 
-  function renderPostMarket(paperTrades, liveTrades) {
-    var combined = (paperTrades || []).concat(liveTrades || []);
+  function renderPostMarket(paperTrades) {
+    var combined = paperTrades || [];
     if (!combined.length) {
-      return '<div class="da-empty">No trade history yet. Run a paper or live session — analytics appears here after-hours.</div>';
+      return '<div class="da-empty">No trade history yet. Run a paper session — analytics appears here after-hours.</div>';
     }
-    // Last completed trading day across paper+live
+    // Last completed trading day
     var combinedAgg = aggregateTrades(combined);
     var lastDay = lastTradingDate(combinedAgg.byDate);
     var lastDayAgg = lastDay ? aggregateTrades(combined, lastDay, lastDay) : null;
@@ -4630,9 +4211,7 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
       var net = s.net;
       var trades = s.t;
       var w = s.w, l = s.l;
-      // Open the page the day's trades actually came from — live when live
-      // contributed more of them, paper otherwise.
-      lastHtml += tileWrap(tileHref(t, s.liveT > s.paperT), t.cls, t.label,
+      lastHtml += tileWrap(tileHref(t), t.cls, t.label,
         '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">' + trades + 'T</span></div>' +
         '<div class="da-big ' + cls(net) + '">' + fmtINR(net) + '</div>' +
         '<div class="da-sub-line">' + w + 'W / ' + l + 'L &middot; WR ' + pctWR(w,l) + '%</div>');
@@ -4642,19 +4221,11 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     var tTrades = lastDayAgg ? lastDayAgg.total.t : 0;
     var tW = lastDayAgg ? lastDayAgg.total.w : 0;
     var tL = lastDayAgg ? lastDayAgg.total.l : 0;
-    // TOTAL spans every strategy, so it opens the cross-mode history page for
-    // whichever side contributed the day's trades.
-    var totLive = 0, totPaper = 0;
-    if (lastDayAgg) {
-      SESSION_TILES.forEach(function(t){
-        var st = lastDayAgg.byStrategy[t.key];
-        if (st) { totLive += st.liveT; totPaper += st.paperT; }
-      });
-    }
+    // TOTAL spans every strategy, so it opens the cross-mode history page.
     // /consolidation is NSE only — a day with commodity in it opens the report
     // that shows both markets.
     var dayHasCmx = !!(lastDayAgg && SESSION_TILES.some(function(t){ return t.cls === 'cmx' && lastDayAgg.byStrategy[t.key].t > 0; }));
-    lastHtml += tileWrap(totLive > totPaper ? '/live-consolidation' : (dayHasCmx ? '/consolidation-report' : '/consolidation'),
+    lastHtml += tileWrap(dayHasCmx ? '/consolidation-report' : '/consolidation',
       'info', 'trade history',
       '<div class="da-tile-hdr">TOTAL<span class="da-pill">' + tTrades + 'T</span></div>' +
       '<div class="da-big ' + cls(tNet) + '">' + fmtINR(tNet) + '</div>' +
@@ -4712,18 +4283,14 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
       clearPoll();
       _pollTimer = setInterval(refresh, 8000);
     } else {
-      setMode('post', 'Paper + Live combined · refreshed ' + istDateISO());
-      var [paper, live, cmx] = await Promise.all([
+      setMode('post', 'Paper · refreshed ' + istDateISO());
+      var [paper, cmx] = await Promise.all([
         fetchJSON('/consolidation/data?enabledOnly=1'),
-        fetchJSON('/live-consolidation/data?enabledOnly=1'),
         fetchJSON('/api/cmx/trades'),
       ]);
-      // Tag each trade with the list it came from so a tile can link to the
-      // page that actually holds it (paper vs live). COMMODITY rows are paper.
-      var paperTrades = ((paper && paper.trades) || []).concat((cmx && cmx.trades) || [])
-        .map(function(t){ t.__src = 'paper'; return t; });
-      var liveTrades  = ((live  && live.trades)  || []).map(function(t){ t.__src = 'live';  return t; });
-      body.innerHTML = renderPostMarket(paperTrades, liveTrades);
+      // COMMODITY rows are paper too.
+      var paperTrades = ((paper && paper.trades) || []).concat((cmx && cmx.trades) || []);
+      body.innerHTML = renderPostMarket(paperTrades);
 
       clearPoll();
       _pollTimer = setInterval(refresh, 60000); // every minute after-hours (covers session end)
@@ -4772,7 +4339,7 @@ async function checkTradingStatus(){
         }
       }
     } catch(e){}
-    // NSE shut = hide both NSE Start-All buttons (paper and harness), applied
+    // NSE shut = hide the NSE Start-All button, applied
     // below via _applyAllBtnState. Pre/post-market counts as shut too — the same
     // window the pill reports as closed.
     _marketsClosed = isHoliday || day === 0 || day === 6 || hour < 7 || hour >= 16;
@@ -4784,7 +4351,7 @@ async function checkTradingStatus(){
     var cmxOpen = CMX_ON && day !== 0 && day !== 6 && mins < CMX_END_MIN
       && !mcxShutAllDay && !(isHoliday && hour < 17);
     _cmxOpen = CMX_STARTABLE && cmxOpen && hour >= 7;
-    _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
+    _applyAllBtnState(_allBtnState.paperOn);
 
     if(!alertDiv || alertDiv._dismissed) return;
     if(isHoliday){
@@ -5013,9 +4580,8 @@ process.on("uncaughtException", (err) => {
   writeCrashMarker("uncaughtException", err);
   try { sendTelegramSync(`🚨 UNCAUGHT EXCEPTION — restarting\n${truncate(err.message, 300)}\n\nStack:\n${truncate(err.stack || "(no stack)", 600)}`); } catch (_) {}
   // After an uncaught exception the process is in an undefined state — staying
-  // alive means trading real money on possibly-corrupt in-memory state. Exit so
-  // PM2 restarts into a clean process and boot-time reconciliation re-verifies
-  // every open position. We already alerted above, so mark plannedExit to skip
+  // alive means trading on possibly-corrupt in-memory state. Exit so PM2
+  // restarts into a clean process. We already alerted above, so mark plannedExit to skip
   // the duplicate "PROCESS EXIT" telegram from the exit handler.
   plannedExit = true;
   process.exit(1);
@@ -5203,10 +4769,8 @@ server.listen(PORT, HOST, () => {
   console.log(`   Lot Size         : ${instrumentConfig.getLotQty()}`);
   console.log(`   Fyers Login      : ${process.env.ACCESS_TOKEN ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
-  console.log(`   Live Trading     : ${process.env.EMA_RSI_ST_LIVE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
   console.log(`   BB_RSI Mode       : ${(process.env.BB_RSI_MODE_ENABLED || "true") === "true" ? "✅ ENABLED" : "🔒 disabled"} | BB_RSI_ENABLED: ${process.env.BB_RSI_ENABLED === "true" ? "✅" : "❌"}`);
   console.log(`   VIX Filter       : ${process.env.VIX_FILTER_ENABLED !== "false" ? `✅ max=${process.env.VIX_MAX_ENTRY || "20"} strong=${process.env.VIX_STRONG_ONLY || "16"}` : "🔒 disabled"}`);
-  console.log(`   Hard SL          : ${process.env.HARD_SL_ENABLED === "true" ? `✅ delta=${process.env.HARD_SL_DELTA || "0.5"}` : "🔒 disabled"}`);
   console.log(`   Telegram         : ${process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID ? "✅ configured" : "❌ not set"}`);
   console.log(`   Login Gate       : ${process.env.LOGIN_SECRET ? "✅ active" : "🔓 open (no LOGIN_SECRET)"}`);
   console.log(`   Node             : ${process.version} | PID: ${process.pid}`);
@@ -5224,7 +4788,7 @@ server.listen(PORT, HOST, () => {
 
   // Day-wide option-chain + VIX + futures-OI recorder — strategy-independent, so
   // a SNAPSHOT replay is reproducible for ANY strategy (not just the strike a
-  // live strategy traded). Pure observer; rides the existing socket fan-out and
+  // running strategy traded). Pure observer; rides the existing socket fan-out and
   // writes to the same tick streams. Gated by OPTION_CHAIN_RECORDER_ENABLED.
   try {
     require("./utils/optionChainRecorder").start();
@@ -5326,10 +4890,19 @@ server.listen(PORT, HOST, () => {
     }
   } catch (_) { /* best-effort */ }
 
-  // ── Startup position reconciliation (crash recovery) ───────────────────────
-  // Checks both brokers for orphaned positions that survived a crash/restart.
-  // Alert-only — does NOT auto-close (too risky without user confirmation).
-  reconcileOrphanedPositions();
+  // ── Boot: drop crash snapshots ─────────────────────────────────────────────
+  // Paper-only app — no real position can survive a restart, so every
+  // .active_*_position.json left over is stale (same as the old paper-only boot).
+  try {
+    const _persist = require("./utils/positionPersist");
+    for (const k of Object.keys(_persist)) {
+      if (!k.startsWith("clear") || k === "clearStaleSnapshot") continue;
+      const load = _persist["load" + k.slice(5)];
+      try { if (typeof load !== "function" || load()) _persist[k](); } catch (_) {}
+    }
+    // load*() above flags previous-day files as stale instead of returning them.
+    for (const s of _persist.getStaleSnapshots()) _persist.clearStaleSnapshot(s.file);
+  } catch (e) { console.error(`[STARTUP] snapshot cleanup failed: ${e.message}`); }
 
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();
@@ -5350,513 +4923,9 @@ server.listen(PORT, HOST, () => {
   catch (err) { console.warn(`[advisor] scheduler start failed: ${err.message}`); }
 });
 
-// ── Position Reconciliation — detect orphaned positions after crash ──────────
-// Real positions the live harness believed it held (persisted by liveHarness on
-// every fill/exit). Accepts { mode: {symbol, qty} } and { "mode|symbol": {...} }
-// and one level of nesting ({ mode: { symbol: {...} } }). Never throws.
-function _readHarnessRealPositions() {
-  const file = path.join(require("os").homedir(), "trading-data", ".harness_real_positions.json");
-  let obj;
-  try {
-    if (!fs.existsSync(file)) return [];
-    obj = JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (err) {
-    return [{ key: "(unreadable)", symbol: "?", qty: "?", error: err.message }];
-  }
-  const out = [];
-  const isRec = (v) => v && typeof v === "object" && v.symbol && Number(v.qty) !== 0 && v.qty != null;
-  for (const [k, v] of Object.entries(obj || {})) {
-    if (isRec(v)) { out.push({ key: k, symbol: v.symbol, qty: v.qty }); continue; }
-    if (v && typeof v === "object") {
-      for (const [k2, v2] of Object.entries(v)) if (isRec(v2)) out.push({ key: `${k}|${k2}`, symbol: v2.symbol, qty: v2.qty });
-    }
-  }
-  return out;
-}
-
-// Which broker a crash snapshot file belongs to (everything else is Fyers).
-const _ZERODHA_SNAPSHOT_FILES = new Set([
-  ".active_ema_rsi_st_position.json", ".active_ema9vwap_position.json",
-  ".active_rsi_pivot_st_position.json", ".active_bn_pivot_rsi_st_position.json",
-  ".active_ema_rsi_st_v2_position.json", ".active_bn_ema_rsi_st_v2_position.json",
-  ".active_st_rsi_piv_bb_position.json",
-  ".active_sail_vwap_st_position.json",
-  ".active_pivot_ema_st_position.json", ".active_bn_pivot_ema_st_position.json",
-  ".active_sail_pivot_ema_st_position.json",
-  ".active_gap_runaway_position.json",
-  ".active_simple930_position.json", ".active_ha_scalp_position.json",
-  ".active_prev_orb_scalp_position.json",
-]);
-
-async function reconcileOrphanedPositions() {
-  const _persist = require("./utils/positionPersist");
-  let _anySnapshots = false;
-  try {
-    // ── Check persisted position files first (bot was tracking a live position) ──
-    const savedTrade = loadTradePosition();
-    if (savedTrade && savedTrade.position) {
-      const p = savedTrade.position;
-      const msg = `🚨 [STARTUP] Persisted TRADE position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedTrade.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-      // Don't clear — keep file until user manually starts a new session
-    }
-
-    const savedBbRsi = loadBbRsiPosition();
-    if (savedBbRsi && savedBbRsi.position) {
-      const p = savedBbRsi.position;
-      const msg = `🚨 [STARTUP] Persisted BB_RSI position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedBbRsi.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Fyers dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedPA = loadPAPosition();
-    if (savedPA && savedPA.position) {
-      const p = savedPA.position;
-      const msg = `🚨 [STARTUP] Persisted PA position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedPA.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Fyers dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedEma9Vwap = loadEma9VwapPosition();
-    if (savedEma9Vwap && savedEma9Vwap.position) {
-      const p = savedEma9Vwap.position;
-      const msg = `🚨 [STARTUP] Persisted EMA9+VWAP position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedEma9Vwap.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedOrb = loadOrbPosition();
-    if (savedOrb && savedOrb.position) {
-      const p = savedOrb.position;
-      const msg = `🚨 [STARTUP] Persisted ORB position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedOrb.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Fyers dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedTds = loadTrendDayScalpPosition();
-    if (savedTds && savedTds.position) {
-      const p = savedTds.position;
-      const msg = `🚨 [STARTUP] Persisted TREND_DAY_SCALP position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} TGT=₹${p.target} qty=${p.qty}${p.beArmed ? " (breakeven ARMED)" : ""}\n` +
-        `  Saved at: ${new Date(savedTds.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Fyers dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedHaScalp = loadHaScalpPosition();
-    if (savedHaScalp && savedHaScalp.position) {
-      const p = savedHaScalp.position;
-      const msg = `🚨 [STARTUP] Persisted HA_SCALP position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss}${p.trailArmed ? " (trailed)" : p.breakevenArmed ? " (breakeven)" : ""} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedHaScalp.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check your broker dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedPrevOrbScalp = loadPrevOrbScalpPosition();
-    if (savedPrevOrbScalp && savedPrevOrbScalp.position) {
-      const p = savedPrevOrbScalp.position;
-      const msg = `🚨 [STARTUP] Persisted PREV_ORB_SCALP position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss}${p.targetReached ? " (target hit, trailing)" : ""} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedPrevOrbScalp.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check your broker dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedEarlyBird = loadEarlyBirdPositions();
-    // The OPTION leg is not in positions[] — it is saved under sessionMeta — so
-    // in option-ONLY mode that array is legitimately empty while a real NIFTY
-    // option position is open. Testing the array alone meant an option-only
-    // crash raised NO alert, even though the retention gate below correctly
-    // kept the snapshot. Both legs are checked here, and each is described in
-    // its own terms: equity names have share counts, the option has a premium.
-    const _ebOptPos = savedEarlyBird && savedEarlyBird.sessionMeta
-      ? savedEarlyBird.sessionMeta.optionPosition : null;
-    const _ebStockPos = savedEarlyBird && Array.isArray(savedEarlyBird.positions)
-      ? savedEarlyBird.positions : [];
-    if (savedEarlyBird && (_ebStockPos.length || _ebOptPos)) {
-      // EarlyBird is the only multi-position strategy here, and its stock legs are
-      // CASH EQUITY in individual stocks — not a NIFTY option — so the message
-      // lists every open name rather than a single symbol.
-      const lines = _ebStockPos.map(p =>
-        `  ${p.side} ${p.qty}×${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stop} TGT=₹${p.target}`).join("\n");
-      const optLine = _ebOptPos
-        ? `  OPTION ${_ebOptPos.optionSide || ""} ${_ebOptPos.qty}×${_ebOptPos.symbol}: entry=₹${_ebOptPos.optionEntryLtp} premium` +
-          ` (${_ebOptPos.side} signal; SL/TGT are SPOT ${_ebOptPos.stop}/${_ebOptPos.target})`
-        : "";
-      const pend = Array.isArray(savedEarlyBird.pendingSetups) ? savedEarlyBird.pendingSetups.length : 0;
-      const what = [
-        _ebStockPos.length ? `${_ebStockPos.length} open EQUITY position(s)` : "",
-        _ebOptPos ? `1 open OPTION position` : "",
-      ].filter(Boolean).join(" + ");
-      const msg = `🚨 [STARTUP] Persisted EARLYBIRD position(s) found (crash recovery)!\n` +
-        `  ${what}` + (pend ? `, ${pend} pending setup(s)` : "") + `\n` +
-        [lines, optLine].filter(Boolean).join("\n") + `\n` +
-        `  Saved at: ${new Date(savedEarlyBird.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking these before crash. Check Fyers dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedSimple930 = loadSimple930Position();
-    if (savedSimple930 && savedSimple930.position) {
-      const p = savedSimple930.position;
-      const msg = `🚨 [STARTUP] Persisted SIMPLE_9:30 position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SL=₹${p.stop} peak=₹${p.peak} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedSimple930.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedRsiPivotSt = loadRsiPivotStPosition();
-    if (savedRsiPivotSt && savedRsiPivotSt.position) {
-      const p = savedRsiPivotSt.position;
-      const msg = `🚨 [STARTUP] Persisted RSI_PIVOT_ST position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SL=${p.stopLoss != null ? p.stopLoss : "no SuperTrend stop"} ` +
-        `floor=${p.premiumFloor != null ? `₹${p.premiumFloor}` : "NONE (premium stop off for this side)"} qty=${p.qty}\n` +
-        (p.stopLoss == null && p.premiumFloor == null ? `  ⚠️ THIS POSITION HAS NO STOP AT ALL — only the EOD square-off can close it.\n` : "") +
-        `  Saved at: ${new Date(savedRsiPivotSt.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedEmaRsiStV2 = loadEmaRsiStV2Position();
-    if (savedEmaRsiStV2 && savedEmaRsiStV2.position) {
-      const p = savedEmaRsiStV2.position;
-      // V2's SuperTrend line is its ONLY stop, so a null stopLoss means the
-      // position is genuinely unprotected — say so rather than implying a floor.
-      const msg = `🚨 [STARTUP] Persisted EMA_RSI_ST_V2 position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SuperTrend SL=${p.stopLoss != null ? p.stopLoss : "NONE"} ` +
-        `initial=${p.initialStopLoss != null ? p.initialStopLoss : "n/a"} qty=${p.qty}\n` +
-        (p.stopLoss == null ? `  ⚠️ NO STOP ON THIS POSITION — the SuperTrend trail is V2's only stop; only the EOD square-off can close it.\n` : "") +
-        `  Saved at: ${new Date(savedEmaRsiStV2.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedStRsiPivBb = loadStRsiPivBbPosition();
-    if (savedStRsiPivBb && savedStRsiPivBb.position) {
-      const p = savedStRsiPivBb.position;
-      // The SuperTrend line is ST_RSI_PIV_BB's ONLY stop (checked on candle
-      // close), so a null stopLoss means the position is genuinely unprotected.
-      const msg = `🚨 [STARTUP] Persisted ST_RSI_PIV_BB position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SuperTrend SL=${p.stopLoss != null ? p.stopLoss : "NONE"} ` +
-        `initial=${p.initialStopLoss != null ? p.initialStopLoss : "n/a"} qty=${p.qty}\n` +
-        (p.stopLoss == null ? `  ⚠️ NO STOP ON THIS POSITION — the SuperTrend trail is its only stop; only the EOD square-off can close it.\n` : "") +
-        `  Saved at: ${new Date(savedStRsiPivBb.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedSailVwapSt = loadSailVwapStPosition();
-    if (savedSailVwapSt && savedSailVwapSt.position) {
-      const p = savedSailVwapSt.position;
-      // The SuperTrend line (a SAIL SPOT price, checked on candle close) is
-      // SAIL_VWAP_ST's spot stop, so a null stopLoss means it is unprotected.
-      const msg = `🚨 [STARTUP] Persisted SAIL_VWAP_ST position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SuperTrend SL (SAIL spot)=${p.stopLoss != null ? p.stopLoss : "NONE"} ` +
-        `initial=${p.initialStopLoss != null ? p.initialStopLoss : "n/a"} qty=${p.qty}\n` +
-        (p.stopLoss == null ? `  ⚠️ NO STOP ON THIS POSITION — the SuperTrend trail is its only spot stop; only the option stop / EOD square-off can close it.\n` : "") +
-        `  Saved at: ${new Date(savedSailVwapSt.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA (SAIL stock options) — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    // PIVOT_EMA_ST family (NIFTY / BANK NIFTY / SAIL). The SuperTrend stop is
-    // checked on candle close only, so a null stopLoss means the position is
-    // genuinely unprotected (only the EOD square-off can close it).
-    const savedPivotEmaSt     = loadPivotEmaStPosition();
-    const savedBnPivotEmaSt   = loadBnPivotEmaStPosition();
-    const savedSailPivotEmaSt = loadSailPivotEmaStPosition();
-    for (const [_pesName, _pesSaved, _pesWhere] of [
-      ["PIVOT_EMA_ST", savedPivotEmaSt, "ZERODHA"],
-      ["BN_PIVOT_EMA_ST", savedBnPivotEmaSt, "ZERODHA (BANK NIFTY options)"],
-      ["SAIL_PIVOT_EMA_ST", savedSailPivotEmaSt, "ZERODHA (SAIL stock options)"],
-    ]) {
-      if (!(_pesSaved && _pesSaved.position)) continue;
-      const p = _pesSaved.position;
-      const msg = `🚨 [STARTUP] Persisted ${_pesName} position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SuperTrend SL (spot)=${p.stopLoss != null ? p.stopLoss : "NONE"} ` +
-        `initial=${p.initialStopLoss != null ? p.initialStopLoss : "n/a"} qty=${p.qty}\n` +
-        (p.stopLoss == null ? `  ⚠️ NO STOP ON THIS POSITION — the SuperTrend trail is its only stop; only the EOD square-off can close it.\n` : "") +
-        `  Saved at: ${new Date(_pesSaved.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ${_pesWhere} — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    // GAP_RUNAWAY (NIFTY options). Its one stop is the gap-fill level (yesterday's
-    // close), checked per tick by the paper engine — a restart leaves it unwatched.
-    const savedGapRunaway = loadGapRunawayPosition();
-    if (savedGapRunaway && savedGapRunaway.position) {
-      const p = savedGapRunaway.position;
-      const msg = `🚨 [STARTUP] Persisted GAP_RUNAWAY position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} gap SL (spot, prev close)=${p.stopLoss != null ? p.stopLoss : "NONE"} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedGapRunaway.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedBnEmaRsiStV2 = loadBnEmaRsiStV2Position();
-    if (savedBnEmaRsiStV2 && savedBnEmaRsiStV2.position) {
-      const p = savedBnEmaRsiStV2.position;
-      // Same single-stop shape as the NIFTY sibling: the SuperTrend line is the
-      // only stop, so a null stopLoss means genuinely unprotected. BANKNIFTY
-      // options are monthly-only and move further per point, so an orphan here
-      // carries more rupee risk than the NIFTY one at the same stop distance.
-      const msg = `🚨 [STARTUP] Persisted BN_EMA_RSI_ST_V2 (NIFTY BANK) position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SuperTrend SL=${p.stopLoss != null ? p.stopLoss : "NONE"} ` +
-        `initial=${p.initialStopLoss != null ? p.initialStopLoss : "n/a"} qty=${p.qty}\n` +
-        (p.stopLoss == null ? `  ⚠️ NO STOP ON THIS POSITION — the SuperTrend trail is its only stop; only the EOD square-off can close it.\n` : "") +
-        `  Saved at: ${new Date(savedBnEmaRsiStV2.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedBnPivotRsiSt = loadBnPivotRsiStPosition();
-    if (savedBnPivotRsiSt && savedBnPivotRsiSt.position) {
-      const p = savedBnPivotRsiSt.position;
-      const msg = `🚨 [STARTUP] Persisted BN_PIVOT_RSI_ST (NIFTY BANK) position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SL=${p.stopLoss != null ? p.stopLoss : "no SuperTrend stop"} ` +
-        `floor=${p.premiumFloor != null ? `₹${p.premiumFloor}` : "NONE (premium stop off for this side)"} qty=${p.qty}\n` +
-        (p.stopLoss == null && p.premiumFloor == null ? `  ⚠️ THIS POSITION HAS NO STOP AT ALL — only the EOD square-off can close it.\n` : "") +
-        `  Saved at: ${new Date(savedBnPivotRsiSt.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedTrendPb = loadTrendPbPosition();
-    if (savedTrendPb && savedTrendPb.position) {
-      const p = savedTrendPb.position;
-      const msg = `🚨 [STARTUP] Persisted Trend_PB position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedTrendPb.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Fyers dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    // ── Corrupt snapshots (moved aside by positionPersist) — always alert ──
-    const _corrupt = typeof _persist.getCorruptSnapshots === "function" ? _persist.getCorruptSnapshots() : [];
-    if (_corrupt.length) {
-      const msg = `🚨 [STARTUP] ${_corrupt.length} CORRUPT crash-recovery snapshot(s) — moved aside, position state UNKNOWN:\n` +
-        _corrupt.map(c => `  ${path.basename(c.file)} → ${path.basename(c.movedTo)} (${c.error})`).join("\n") +
-        `\nA real position may be open. Check BOTH broker dashboards.`;
-      console.error(msg); sendTelegram(msg);
-    }
-
-    // ── Previous-day snapshots — kept by positionPersist until a broker check ──
-    const _staleAll = typeof _persist.getStaleSnapshots === "function" ? _persist.getStaleSnapshots() : [];
-    const _staleHasPos = (r) => {
-      const d = (r && r.data) || {};
-      return !!(d.position || (Array.isArray(d.positions) && d.positions.length) || (d.sessionMeta && d.sessionMeta.optionPosition));
-    };
-    const _staleZ = _staleAll.filter(r => _ZERODHA_SNAPSHOT_FILES.has(r.name));
-    const _staleF = _staleAll.filter(r => !_ZERODHA_SNAPSHOT_FILES.has(r.name));
-    const _staleLine = (r) => `  ${r.name} (saved ${r.savedDate || "?"})${_staleHasPos(r) ? " — HAD AN OPEN POSITION" : ""}`;
-    const _clearStale = (list) => { for (const r of list) { try { _persist.clearStaleSnapshot(r.file); } catch (_) {} } };
-
-    // ── Live-harness real positions (~/trading-data/.harness_real_positions.json) ──
-    // The harness persists what it believes it really holds; after a crash this is
-    // the only record of a harness-live position (paper snapshots don't say "real").
-    const _harnessRecs = _readHarnessRealPositions();
-    if (_harnessRecs.length) {
-      const msg = `🚨 [STARTUP] Live-harness REAL position record(s) found (crash recovery)!\n` +
-        _harnessRecs.map(r => r.error ? `  harness file unreadable: ${r.error}` : `  ${r.key}: ${r.symbol} qty=${r.qty}`).join("\n") +
-        `\nThe harness believed these were open at the broker. Verify on the broker dashboard.`;
-      console.warn(msg); sendTelegram(msg);
-    }
-
-    // Only the retain-on-unreadable-book guard needs to fire when real orders are
-    // possible. In paper-only mode (harness dry-run AND no native live enabled) a
-    // snapshot never maps to a real broker position, so clearing it on an empty
-    // book is always safe — skip the guard to avoid a spurious every-boot warning.
-    const _liveActive =
-      (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "true" ||
-      (process.env.ST_RSI_PIV_BB_LIVE_ENABLED || "false").toLowerCase() === "true" ||
-      (process.env.SAIL_VWAP_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
-      (process.env.PIVOT_EMA_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
-      (process.env.BN_PIVOT_EMA_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
-      (process.env.SAIL_PIVOT_EMA_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
-      (process.env.GAP_RUNAWAY_LIVE_ENABLED || "false").toLowerCase() === "true" ||
-      ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "HA_SCALP", "PREV_ORB_SCALP", "SIMPLE930", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "EARLYBIRD"].some(
-        (s) => (process.env[`${s}_LIVE_ENABLED`] || "").toLowerCase() === "true",
-      );
-
-    // Count only snapshots that actually carry a position — loadTradePosition()
-    // returns the parsed file whenever it exists and is today's, even if the
-    // record has no `.position`.
-    const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedStRsiPivBb, savedSailVwapSt, savedPivotEmaSt, savedBnPivotEmaSt, savedSailPivotEmaSt, savedGapRunaway, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
-    const _zStalePos = _staleZ.filter(_staleHasPos).length;
-    const _zPending = _zSnaps + _zStalePos + _harnessRecs.length;
-    _anySnapshots = _anySnapshots || _zPending > 0;
-
-    // ── Check broker positions (live API) ──
-    if (!zerodha.isAuthenticated()) {
-      // Previously skipped silently — a crash snapshot then sat unverified with no
-      // alert at all. Say so when there is something to verify.
-      if (_liveActive && _zPending > 0) {
-        const msg = `⚠️ [STARTUP] Zerodha is NOT authenticated — cannot read its book. Retaining ${_zSnaps + _zStalePos} crash snapshot(s)` +
-          (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") + ` UNVERIFIED. Log in and check the Zerodha dashboard.`;
-        console.warn(msg); sendTelegram(msg);
-      } else if (!_liveActive) {
-        _clearStale(_staleZ);   // paper-only boot: a previous-day snapshot never maps to a real position
-      }
-    } else {
-      const zPos = await zerodha.getPositions();
-      const zOpen = (zPos.net || zPos.day || []).filter(p =>
-        p.quantity !== 0 && p.tradingsymbol && p.tradingsymbol.includes("NIFTY")
-      );
-      // SAIL_VWAP_ST trades SAIL stock options (e.g. SAIL26OCT170CE) — no "NIFTY"
-      // in the symbol, so the filter above would call a real SAIL orphan "flat"
-      // and the boot would clear its snapshot. /^SAIL\d/ = SAIL F&O only, not the cash leg.
-      for (const p of (zPos.net || zPos.day || [])) if (p.quantity !== 0 && p.tradingsymbol && /^SAIL\d/.test(p.tradingsymbol) && !zOpen.includes(p)) zOpen.push(p);
-      if (zOpen.length > 0) {
-        const msg = `🚨 [STARTUP] Orphaned Zerodha position detected!\n` +
-          zOpen.map(p => `  ${p.tradingsymbol}: qty=${p.quantity} pnl=₹${p.pnl || 0}`).join("\n") +
-          (_staleZ.length ? `\nPrevious-day snapshot(s) kept for reference:\n${_staleZ.map(_staleLine).join("\n")}` : "") +
-          `\nBot is NOT tracking this. Check Zerodha dashboard and close manually if needed.`;
-        console.warn(msg);
-        sendTelegram(msg);
-      } else {
-        // An EMPTY book is ambiguous — both brokers return [] on a swallowed API
-        // error too, so "empty + snapshot present" must NOT clear the snapshot
-        // (that would mask a real orphan). Only clear when the book was provably
-        // readable (non-empty); otherwise retain + warn and re-check next boot.
-        const _zReadable = ((zPos.net || []).length + (zPos.day || []).length) > 0;
-        if (_liveActive && _zPending > 0 && !_zReadable) {
-          const msg = `⚠️ [STARTUP] Zerodha book came back EMPTY — can't tell flat from an API error. Retaining ${_zSnaps + _zStalePos} crash snapshot(s)` +
-            (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") +
-            ` UNVERIFIED (re-checking next boot). Check Zerodha dashboard.`;
-          console.warn(msg); sendTelegram(msg);
-        } else {
-          console.log("✅ [STARTUP] Zerodha: no orphaned positions.");
-          _clearStale(_staleZ);   // broker book proves flat — previous-day snapshots can go
-          if (savedTrade) clearTradePosition();  // broker confirms no position — safe to clear stale file
-          if (savedEma9Vwap) clearEma9VwapPosition(); // EMA9+VWAP trades Zerodha too — safe to clear
-          if (savedRsiPivotSt) clearRsiPivotStPosition(); // RSI_PIVOT_ST places its orders on Zerodha as well
-          if (savedEmaRsiStV2) clearEmaRsiStV2Position();  // EMA_RSI_ST_V2 is a Zerodha strategy too (Fyers candles, Zerodha orders)
-          if (savedBnEmaRsiStV2) clearBnEmaRsiStV2Position(); // BN_EMA_RSI_ST_V2 (NIFTY BANK) is the same engine on Zerodha
-          if (savedStRsiPivBb) clearStRsiPivBbPosition(); // ST_RSI_PIV_BB is a Zerodha strategy too (Fyers candles, Zerodha orders)
-          if (savedSailVwapSt) clearSailVwapStPosition(); // SAIL_VWAP_ST is a Zerodha strategy too (Fyers candles, Zerodha orders)
-          if (savedPivotEmaSt) clearPivotEmaStPosition();         // PIVOT_EMA_ST family — Fyers candles, Zerodha orders
-          if (savedBnPivotEmaSt) clearBnPivotEmaStPosition();
-          if (savedSailPivotEmaSt) clearSailPivotEmaStPosition();
-          if (savedGapRunaway) clearGapRunawayPosition();           // GAP_RUNAWAY — Fyers data, Zerodha orders
-          if (savedBnPivotRsiSt) clearBnPivotRsiStPosition(); // BN_PIVOT_RSI_ST (NIFTY BANK) is the same engine on Zerodha
-          if (savedSimple930) clearSimple930Position();   // SIMPLE_9:30 is a Zerodha strategy too (Fyers data, Zerodha orders)
-          if (savedHaScalp) clearHaScalpPosition();       // HA_SCALP likewise — Fyers candles, Zerodha orders
-          if (savedPrevOrbScalp) clearPrevOrbScalpPosition(); // PREV_ORB_SCALP likewise — Fyers candles, Zerodha orders
-        }
-      }
-    }
-
-    const _ebHasPosF = !!(savedEarlyBird && (
-      (Array.isArray(savedEarlyBird.positions) && savedEarlyBird.positions.length) ||
-      (savedEarlyBird.sessionMeta && savedEarlyBird.sessionMeta.optionPosition)
-    ));
-    const _fStalePos = _staleF.filter(_staleHasPos).length;
-    const _fPending = [savedBbRsi, savedPA, savedOrb, savedTrendPb, savedTds].filter(x => x && x.position).length +
-      (_ebHasPosF ? 1 : 0) + _fStalePos + _harnessRecs.length;
-    _anySnapshots = _anySnapshots || _fPending > 0;
-
-    if (!fyersBroker.isAuthenticated()) {
-      if (_liveActive && _fPending > 0) {
-        const msg = `⚠️ [STARTUP] Fyers is NOT authenticated — cannot read its book. Retaining ${_fPending - _harnessRecs.length} crash snapshot(s)` +
-          (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") + ` UNVERIFIED. Log in and check the Fyers dashboard.`;
-        console.warn(msg); sendTelegram(msg);
-      } else if (!_liveActive) {
-        _clearStale(_staleF);
-      }
-    } else {
-      const fPos = await fyersBroker.getPositions();
-      // EarlyBird trades CASH EQUITY in individual stocks, so a NIFTY-only
-      // filter would silently miss every one of its orphans. Match a NIFTY leg
-      // (every other strategy here) OR any non-zero equity leg (-EQ).
-      const fOpen = (fPos.netPositions || []).filter(p =>
-        p.netQty !== 0 && p.symbol && (p.symbol.includes("NIFTY") || /-EQ$/.test(p.symbol))
-      );
-      if (fOpen.length > 0) {
-        const msg = `🚨 [STARTUP] Orphaned Fyers position detected!\n` +
-          fOpen.map(p => `  ${p.symbol}: qty=${p.netQty} pnl=₹${p.pl || 0}`).join("\n") +
-          (_staleF.length ? `\nPrevious-day snapshot(s) kept for reference:\n${_staleF.map(_staleLine).join("\n")}` : "") +
-          `\nBot is NOT tracking this. Check Fyers dashboard and close manually if needed.`;
-        console.warn(msg);
-        sendTelegram(msg);
-      } else {
-        // Empty Fyers book is ambiguous (genuinely flat OR a swallowed API error
-        // that also returns []). Only clear snapshots when the book was provably
-        // readable; otherwise retain + warn so a real orphan isn't masked.
-        const _fReadable = Array.isArray(fPos.netPositions) && fPos.netPositions.length > 0;
-        // EarlyBird's snapshot carries an ARRAY, so it is counted differently.
-        // Its OPTION leg (EARLYBIRD_TRADE_MODE=option|both) lives in sessionMeta
-        // instead of that array, so in option-ONLY mode `positions` is legitimately
-        // empty while a real position is open — counting only the array there would
-        // clear the one snapshot proving the orphan.
-        const _ebHasPos = !!(savedEarlyBird && (
-          (Array.isArray(savedEarlyBird.positions) && savedEarlyBird.positions.length) ||
-          (savedEarlyBird.sessionMeta && savedEarlyBird.sessionMeta.optionPosition)
-        ));
-        const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb, savedTds].filter(x => x && x.position).length +
-          (_ebHasPos ? 1 : 0);
-        if (_liveActive && (_fSnaps + _fStalePos + _harnessRecs.length) > 0 && !_fReadable) {
-          const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps + _fStalePos} crash snapshot(s)` +
-            (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") +
-            ` UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
-          console.warn(msg); sendTelegram(msg);
-        } else {
-          console.log("✅ [STARTUP] Fyers: no orphaned positions.");
-          _clearStale(_staleF);
-          // BB_RSI + PA + ORB + Trend_PB + TREND_DAY_SCALP all trade on Fyers; broker-flat means any stale snapshot is safe to clear.
-          if (savedBbRsi)   clearBbRsiPosition();  // broker confirms no position — safe to clear
-          if (savedPA)      clearPAPosition();
-          if (savedOrb)     clearOrbPosition();
-          if (savedTrendPb) clearTrendPbPosition();
-          if (savedTds)     clearTrendDayScalpPosition();
-          if (savedEarlyBird) clearEarlyBirdPositions();  // EarlyBird is a Fyers strategy (equity orders + data)
-        }
-      }
-    }
-  } catch (err) {
-    console.warn(`⚠️ [STARTUP] Position reconciliation failed: ${err.message}`);
-    // A throw mid-reconcile (broker API error) leaves every snapshot unverified —
-    // that must not be silent when there was something to verify.
-    if (_anySnapshots) {
-      try { sendTelegram(`⚠️ [STARTUP] Position reconciliation FAILED (${err.message}) with crash snapshot(s) present — positions UNVERIFIED. Check both broker dashboards.`); } catch (_) {}
-    }
-  }
-}
-
 // ── Graceful Shutdown — square off positions on SIGTERM/SIGINT ───────────────
 // When PM2 or Docker sends SIGTERM, attempt to exit open positions before dying.
-// Calls stopSession() on each active mode to trigger squareOff for live modes.
+// Calls stopSession() on each active mode so paper positions are closed and saved.
 let _shutdownInProgress = false;
 
 async function gracefulShutdown(signal) {
@@ -5891,8 +4960,8 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getEarlyBirdMode && sharedSocketState.getEarlyBirdMode()) activeModes.push(sharedSocketState.getEarlyBirdMode());
 
     if (activeModes.length === 0) {
-      // No Telegram here: with no live positions in play there is nothing the
-      // user needs to verify on a broker dashboard, and PM2 reloads on every
+      // No Telegram here: with nothing running there is nothing to report,
+      // and PM2 reloads on every
       // deploy were producing a stream of identical SHUTDOWN messages.
       console.log("✅ [SHUTDOWN] No active trading modes — clean exit.");
       process.exit(0);
@@ -5900,40 +4969,15 @@ async function gracefulShutdown(signal) {
     }
 
     const modeList = activeModes.join(", ");
-    // A harness-live session runs under a *_PAPER mode string, so the mode list
-    // alone can't tell us real orders are in play — ask the harness directly.
-    let _harnessLive = false;
-    try { _harnessLive = require("./services/liveHarness").hasLiveHarness(); } catch (_) {}
-    const hasLive = _harnessLive || activeModes.some(m =>
-      m === "EMA_RSI_ST_LIVE" || m === "BB_RSI_LIVE" || m === "PA_LIVE" ||
-      m === "ORB_LIVE" || m === "EMA9VWAP_LIVE" || m === "TREND_PB_LIVE" ||
-      m === "TREND_DAY_SCALP_LIVE" || m === "HA_SCALP_LIVE" ||
-      m === "PREV_ORB_SCALP_LIVE" ||
-      m === "EARLY_BIRD_LIVE" ||
-      m === "SIMPLE930_LIVE" ||
-      m === "RSI_PIVOT_ST_LIVE" ||
-      m === "BN_PIVOT_RSI_ST_LIVE" ||
-      m === "EMA_RSI_ST_V2_LIVE" ||
-      m === "ST_RSI_PIV_BB_LIVE" ||
-      m === "SAIL_VWAP_ST_LIVE" ||
-      m === "PIVOT_EMA_ST_LIVE" ||
-      m === "BN_PIVOT_EMA_ST_LIVE" ||
-      m === "SAIL_PIVOT_EMA_ST_LIVE" ||
-      m === "GAP_RUNAWAY_LIVE" ||
-      m === "BN_EMA_RSI_ST_V2_LIVE");
-    console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}${_harnessLive ? " (harness LIVE)" : ""} — stopping sessions...`);
+    console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList} — stopping sessions...`);
 
-    // Call stopSession() on each active route — this triggers squareOff for live
-    // modes. Routes without a stopSession export are skipped by the guard below.
+    // Call stopSession() on each active route. Routes without a stopSession
+    // export are skipped by the guard below.
     const routeMap = {
-      "EMA_RSI_ST_LIVE": require("./routes/emaRsiStLive"),
       "EMA_RSI_ST_PAPER":require("./routes/emaRsiStPaper"),
-      "BB_RSI_LIVE":     require("./routes/bbRsiLive"),
       "BB_RSI_PAPER":    require("./routes/bbRsiPaper"),
-      "PA_LIVE":        require("./routes/paLive"),
       "PA_PAPER":       require("./routes/paPaper"),
       "ORB_PAPER":      require("./routes/orbPaper"),
-      "ORB_LIVE":       require("./routes/orbLive"),
       "EMA9VWAP_PAPER": require("./routes/ema9vwapPaper"),
       "TREND_PB_PAPER": require("./routes/trendPbPaper"),
       "TREND_DAY_SCALP_PAPER": require("./routes/trendDayScalpPaper"),
@@ -5958,10 +5002,9 @@ async function gracefulShutdown(signal) {
       if (route && typeof route.stopSession === "function") {
         try {
           console.log(`🔄 [SHUTDOWN] Stopping ${mode}...`);
-          // await: a live route's stopSession squares off through the broker and is
-          // async. Firing it un-awaited let the shutdown march on (and process.exit
-          // fire) while the exit order was still in flight. Sync stopSessions are
-          // unaffected — awaiting a non-promise resolves immediately.
+          // await: an async stopSession must finish before process.exit fires.
+          // Sync stopSessions are unaffected — awaiting a non-promise resolves
+          // immediately.
           await route.stopSession();
         } catch (err) {
           console.error(`⚠️ [SHUTDOWN] Error stopping ${mode}: ${err.message}`);
@@ -5979,27 +5022,13 @@ async function gracefulShutdown(signal) {
       const mu = process.memoryUsage();
       const memLine = `RSS=${(mu.rss/1048576).toFixed(0)}MB heap=${(mu.heapUsed/1048576).toFixed(0)}/${(mu.heapTotal/1048576).toFixed(0)}MB ext=${(mu.external/1048576).toFixed(0)}MB`;
       const uptime  = `uptime=${Math.floor(process.uptime())}s`;
-      if (hasLive) {
-        sendTelegramSync(`🛑 SHUTDOWN: Bot received ${signal}. Live modes stopped: ${modeList} — squareOff triggered. Verify on broker dashboard.\n${memLine} ${uptime}`);
-      } else {
-        sendTelegramSync(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).\n${memLine} ${uptime}`);
-      }
+      sendTelegramSync(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).\n${memLine} ${uptime}`);
     } catch (_) {}
 
-    // Wait for squareOff orders to complete before exiting. The harness exit is
-    // sequential — getPositions reconcile (≤3s) + cancel-SL + SELL (≤HARNESS_BROKER_TIMEOUT_MS,
-    // default 8s) — so the live drain must exceed that or process.exit() abandons an
-    // in-flight square-off. Scale off the configured broker timeout + margin.
-    const _harnessTimeout = Math.max(1500, parseInt(process.env.HARNESS_BROKER_TIMEOUT_MS || "8000", 10));
-    const waitMs = hasLive ? (3000 + _harnessTimeout + 2000) : 3000;
+    // Give the paper saves a moment to flush before exiting.
+    const waitMs = 3000;
     console.log(`🔄 [SHUTDOWN] Waiting ${waitMs / 1000}s for exits to complete...`);
     setTimeout(() => {
-      // Belt-and-braces: drop every live harness only AFTER the drain wait. A
-      // stopSession() can resolve before its harness square-off (cancel SL →
-      // exit order) has finished, and that in-flight exit still needs the
-      // order hooks; stopSession() does NOT reliably uninstall them itself.
-      // Dropping them here guarantees nothing is left armed while we exit.
-      try { require("./services/liveHarness").uninstallHarness(); } catch (_) {}
       console.log("👋 [SHUTDOWN] Exiting.");
       process.exit(0);
     }, waitMs);

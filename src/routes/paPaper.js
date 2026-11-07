@@ -41,7 +41,6 @@ const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
-const commonTradeWindow = require("../utils/commonTradeWindow");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
@@ -56,21 +55,11 @@ const CALLBACK_ID = "PA_PAPER";
 // replay engine's _applySettingsOverride() and the Settings UI's mid-session
 // process.env mutations would never reach the running strategy code.
 let PA_RES;
-let _PA_MAX_TRADES;
-let _PA_MAX_LOSS;
-let _PA_PAUSE_CANDLES;
-let _PA_BE_TRIGGER;
-let _PA_BE_BUFFER;
 let _STOP_MINS;
 let _ENTRY_STOP_MINS;
 let _PA_START_MINS;
 function _refreshConfig() {
   PA_RES               = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
-  _PA_MAX_TRADES       = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
-  _PA_MAX_LOSS         = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
-  _PA_PAUSE_CANDLES    = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
-  _PA_BE_TRIGGER       = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300"); // ₹ peak profit to lift SL to breakeven (0 = off)
-  _PA_BE_BUFFER        = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");    // spot pts above (CE) / below (PE) entry for the BE SL
   _STOP_MINS           = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
   _ENTRY_STOP_MINS     = parseTimeToMinutes(process.env.PA_ENTRY_END, "14:30");
   _PA_START_MINS       = parseTimeToMinutes(process.env.PA_ENTRY_START, "09:21");
@@ -149,8 +138,6 @@ let state = {
   optionLtp:      null,
   optionLtpUpdatedAt: null,
   optionSymbol:   null,
-  _slPauseUntil:  null,
-  _dailyLossHit:  false,
   _simMode:       false,
   _simScenario:   null,
   // Sticky "this session came from /simulate" marker. onSimDone() clears _simMode
@@ -215,20 +202,6 @@ function rehydrateSessionFromJsonl() {
 }
 rehydrateSessionFromJsonl();
 
-// ── Daily limits survive a Stop → Start ──────────────────────────────────────
-// /start resets sessionPnl / the trade list, so a mid-day restart used to hand the
-// engine a fresh daily-loss budget and trade count. Seed both from today's
-// already-logged trades (the day JSONL — the same source the boot rehydrate reads;
-// rows tagged _live are live-engine records, not this paper's). Never during a
-// replay, whose day file is not today's real session.
-function _priorTodayTotals(key) {
-  try { if (require("../services/tickReplay").isReplayInProgress()) return { pnl: 0, count: 0 }; } catch (_) {}
-  try {
-    const rows = tradeLogger.readDailyTrades(key, tradeLogger.istDateString(Date.now()))
-      .filter(t => t && !t.type && !t._live && (t.side || t.entryTime || t.entryBarTime || t.symbol));
-    return { pnl: parseFloat(rows.reduce((s, t) => s + (Number(t.pnl) || 0), 0).toFixed(2)), count: rows.length };
-  } catch (_) { return { pnl: 0, count: 0 }; }
-}
 // Capital pool: realized P&L = file totalPnl + this session's closed trades not yet
 // saved there (rehydrated above after a restart). Sim sessions never reach the file.
 capitalPool.trackSession("pa", () =>
@@ -396,7 +369,7 @@ function stopOptionPolling() {
 // not usable for this — /start assigns it only after its history pre-load await.
 let _entryGen = 0;
 
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource, entryMeta = {}) {
+function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, entryMeta = {}) {
   if (state.position) return;
 
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
@@ -442,10 +415,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     spotAtEntry:      spotAtEntry || price,
     entryTime:        istNow(),
     reason,
-    stopLoss,
-    initialStopLoss:  stopLoss,
-    slSource:         slSource || "Swing",
-    target,
     bestPrice:        null,
     bestOptionLtp:    null,   // peak (highest) option premium reached during trade — observer-only
     candlesHeld:      0,
@@ -491,7 +460,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     startOptionPolling(symbol);
   }
 
-  log(`📝 [PA-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | SL: ₹${stopLoss} | ${reason}`);
+  log(`📝 [PA-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | ${reason}`);
 
   if (state._simMode) return; // skip Telegram in sim mode
 
@@ -499,7 +468,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     mode: "PA-PAPER",
     side, symbol, spotAtEntry: price,
     optionEntryLtp: null,
-    stopLoss, qty, reason,
+    qty, reason,
   });
 }
 
@@ -552,7 +521,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     optionStrike: state.position.optionStrike || null,
     optionExpiry: state.position.optionExpiry || null,
     optionType: state.position.optionType || side,
-    stopLoss: state.position.initialStopLoss || null,
     entryReason: state.position.reason || "",
     entryTime, exitTime: istNow(),
     pnl: netPnl, pnlMode, exitReason: reason,
@@ -566,9 +534,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     entryHourIST:   entryHourIST   != null ? entryHourIST   : null,
     entryMinuteIST: entryMinuteIST != null ? entryMinuteIST : null,
     // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
-    initialStopLoss: state.position.initialStopLoss || null,
-    slSource:        state.position.slSource        || null,
-    target:          state.position.target          || null,
     bestPrice:       state.position.bestPrice       || null,
     bestOptionLtp:   state.position.bestOptionLtp   || null,   // peak option premium during trade
     candlesHeld:     state.position.candlesHeld     || 0,
@@ -611,26 +576,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   state.optionSymbol = null;
   state.optionLtp    = null;
   state.optionLtpUpdatedAt = null;
-
-  // SL pause — escalate after consecutive SLs
-  if (reason.includes("SL")) {
-    state._consecSLs = (state._consecSLs || 0) + 1;
-    const extraPause = parseInt(process.env.PA_CONSEC_SL_EXTRA_PAUSE || "2", 10);
-    const pauseCandles = state._consecSLs >= 2
-      ? _PA_PAUSE_CANDLES + extraPause * (state._consecSLs - 1)
-      : _PA_PAUSE_CANDLES;
-    state._slPauseUntil = simNow() + (pauseCandles * PA_RES * 60 * 1000);
-    const escalateNote = state._consecSLs >= 2 ? ` (${state._consecSLs} consecutive SLs → ${pauseCandles} candles)` : "";
-    log(`⏸️ [PA-PAPER] SL pause — no entries for ${pauseCandles} candles${escalateNote}`);
-  } else if (netPnl > 0) {
-    state._consecSLs = 0; // Reset on a winning trade
-  }
-
-  // Daily loss kill
-  if ((state.sessionPnl + (state._dayPnlBase || 0)) <= -_PA_MAX_LOSS) {
-    state._dailyLossHit = true;
-    log(`🚨 [PA-PAPER] Daily loss limit hit (₹${state.sessionPnl} <= -₹${_PA_MAX_LOSS}) — no more entries today`);
-  }
 
   state.position = null;
   capitalPool.release("pa", netPnl, { sim: (state._simMode || state._simSession) });
@@ -714,7 +659,7 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
     const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    // Running PNL helper (₹) — must match simulateSell logic for consistent trailing
+    // Running PNL helper (₹) — must match simulateSell logic (MFE/MAE tracking)
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
       const _staleMs = parseInt(process.env.LTP_STALE_FALLBACK_SEC || "5", 10) * 1000;
@@ -723,7 +668,7 @@ function onTick(tick) {
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      // Sim mode OR stale option LTP: delta-based spot-proxy keeps trail responsive
+      // Sim mode OR stale option LTP: delta-based spot-proxy keeps the excursions current
       if (state._simMode || (!isFut && pos.optionEntryLtp)) {
         const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
         const spotMove = (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
@@ -755,58 +700,13 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
-    // ── Global profit lock + breakeven (shared across every strategy — see tradeGuards).
-    // Before the stop: once armed, the locked floor sits above entry. Premium rules,
-    // so a futures leg is excluded.
+    // ── Global profit lock (shared across every strategy — see tradeGuards). The
+    // engine's only automatic exit. Premium rule, so a futures leg is excluded.
     if (!isFut && pos.optionEntryLtp && state.optionLtp) {
-      const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp)
-        || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp);
+      const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp);
       if (_plMsg) {
         log(`🔒 [PA-PAPER] ${_plMsg}`);
         simulateSell(price, _plMsg, price);
-        return;
-      }
-    }
-
-    // 1. SL hit (initial or swing-trailed)
-    if (pos.side === "CE" && price <= pos.stopLoss) {
-      const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      const _src = pos.slSource || "Swing";
-      simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
-      return;
-    }
-    if (pos.side === "PE" && price >= pos.stopLoss) {
-      const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      const _src = pos.slSource || "Swing";
-      simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
-      return;
-    }
-
-    // Target: the setup's own high/low. Manual entries carry none.
-    if (pos.target != null && (pos.side === "CE" ? price >= pos.target : price <= pos.target)) {
-      simulateSell(pos.target, "Target hit", price);
-      return;
-    }
-
-    // 2. BREAKEVEN — once peak profit clears the trigger, lift SL to entry+buffer
-    //    so a winner can't round-trip to a loss. Structure-trail (candle close)
-    //    keeps tightening from there. Only ever moves the SL the favourable way.
-    if (_PA_BE_TRIGGER > 0 && !pos.breakevenArmed && pos.peakPnl >= _PA_BE_TRIGGER) {
-      const beLevel = pos.side === "CE" ? pos.spotAtEntry + _PA_BE_BUFFER : pos.spotAtEntry - _PA_BE_BUFFER;
-      const better = pos.side === "CE" ? beLevel > pos.stopLoss : beLevel < pos.stopLoss;
-      if (better) {
-        log(`🛡️ [PA-PAPER] Breakeven: SL ₹${pos.stopLoss} → ₹${beLevel.toFixed(2)} (peak ₹${Math.round(pos.peakPnl)} ≥ ₹${_PA_BE_TRIGGER})`);
-        pos.stopLoss = parseFloat(beLevel.toFixed(2));
-        pos.slSource = "Breakeven";
-      }
-      pos.breakevenArmed = true;
-    }
-
-    // EOD check — skip in simulation mode
-    if (!state._simMode) {
-      const nowMin = getISTMinutes();
-      if (nowMin >= commonTradeWindow.exitCap(_STOP_MINS - 10)) {
-        simulateSell(price, "EOD square-off", price);
         return;
       }
     }
@@ -825,23 +725,9 @@ async function onCandleClose(bar) {
   // so the buildup series stays filled even on no-signal / in-position candles.
   if (!state._simMode) await oiFilter.recordOiSample(bar.close);
 
-  // Count candles held + exit checks
+  // Count candles held
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
-
-    // Use only completed candles (matches backtest logic)
-    const window = [...state.candles];
-
-    // Structure trail: tighten SL to the most recent swing low (CE) / high (PE)
-    if (window.length >= 15) {
-      const trailResult = paStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
-      if (trailResult.sl !== state.position.stopLoss) {
-        log(`📐 [PA-PAPER] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
-        state.position.stopLoss = trailResult.sl;
-        if (trailResult.source) state.position.slSource = trailResult.source;
-      }
-    }
-
     return; // In position — don't look for new entry
   }
 
@@ -851,14 +737,7 @@ async function onCandleClose(bar) {
     return;
   }
   state._omhLogged = false;
-  if (state._dailyLossHit) { log(`⏭️ [PA-PAPER] SKIP: daily loss limit hit`); return; }
   { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [PA-PAPER] SKIP: ${_pf.reason}`); return; } }
-  if (state.sessionTrades.length + (state._dayTradesBase || 0) >= _PA_MAX_TRADES) { log(`⏭️ [PA-PAPER] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }
-  if (state._slPauseUntil && simNow() < state._slPauseUntil) {
-    const secsLeft = Math.ceil((state._slPauseUntil - simNow()) / 1000);
-    log(`⏭️ [PA-PAPER] SKIP: SL cooldown (${secsLeft}s left)`);
-    return;
-  }
   if (state._expiryDayBlocked) { log(`⏭️ [PA-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
 
   const window = [...state.candles];
@@ -960,8 +839,6 @@ async function resolveAndEnter(side, spot, result, sid = _entryGen) {
       symbol = optionInfo.symbol;
     }
     const qty = getLotQty();
-    // SL is the structural level computed by getSignal (pattern invalidation) — use as-is, no clamp.
-    const structuralSL = result.stopLoss;
 
     // ── Bid-ask spread guard (fail-open if broker snapshot lacks depth) ──
     if (!state._simMode) {
@@ -986,7 +863,7 @@ async function resolveAndEnter(side, spot, result, sid = _entryGen) {
     // would strand an orphan position and its capital block.
     if (state.position || !state.running || _entryGen !== _sid) return;
 
-    simulateBuy(symbol, side, qty, spot, result.reason, structuralSL, result.target, spot, result.slSource, {
+    simulateBuy(symbol, side, qty, spot, result.reason, spot, {
       signalStrength: result.signalStrength || null,
       rsiAtEntry:     result.rsi        != null ? result.rsi   : null,
       adxAtEntry:     result.adx        != null ? result.adx   : null,
@@ -1077,28 +954,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The PA-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "PA-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   const nowMins = getISTMinutes();
@@ -1120,14 +975,6 @@ function _errorPage(title, message, linkHref, linkText) {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/pa-paper/status");
 
   // Re-read env into module-level config so Settings UI changes and replay
@@ -1167,18 +1014,12 @@ router.get("/start", async (req, res) => {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-    optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
+    optionLtp: null, optionSymbol: null,
     _reentryBlockUntil: 0,
     _expiryDayBlocked: _expiryBlocked,
     _simSession: false,   // a real session — persistence is live again
     _pnlSaved: false,
   };
-  {
-    const _prior = _priorTodayTotals("pa");
-    state._dayPnlBase = _prior.pnl; state._dayTradesBase = _prior.count;
-    if (_prior.count) log(`📒 [PA-PAPER] ${_prior.count} trade(s) already taken today (₹${_prior.pnl}) — counted toward today's limits`);
-    if (_prior.pnl <= -_PA_MAX_LOSS) state._dailyLossHit = true;
-  }
   _entryGen++;
   // Safety net: a block stranded by a previous session (position never exited)
   // would otherwise shrink the shared pool for the rest of the process.
@@ -1253,15 +1094,13 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
 
   // Exit any open position
   if (state.position) {
     simulateSell(state.lastTickPrice || state.position.entryPrice, "Session stopped", state.lastTickPrice);
   }
 
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopOptionPolling();
 
@@ -1353,18 +1192,7 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL = Previous candle low/high, capped at MAX_SL_PTS, floored at MIN_SL_PTS
   const candles = state.candles || [];
-  const { max: MAX_SL_PTS, min: MIN_SL_PTS } = paStrategy.stopLimits();
-  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
-  let sl;
-  if (prevCandle) {
-    const rawSL = side === "CE" ? prevCandle.low : prevCandle.high;
-    const slPts = Math.max(Math.min(Math.abs(spot - rawSL), MAX_SL_PTS), MIN_SL_PTS);
-    sl = side === "CE" ? parseFloat((spot - slPts).toFixed(2)) : parseFloat((spot + slPts).toFixed(2));
-  } else {
-    sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
-  }
   const sig = candles.length >= 30 ? paStrategy.getSignal(candles, { silent: true, preview: true }) : null;
 
   const _sid = _entryGen;
@@ -1378,13 +1206,13 @@ router.post("/manualEntry", async (req, res) => {
     }
     const symbol = optResult.symbol;
     const qty = getLotQty();
-    log(`🖐️ [PA-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (PrevCandle${prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
-    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot);
+    log(`🖐️ [PA-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot}`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, spot);
     if (!state.position || !/^Manual/.test(String(state.position.reason || ""))) {
       // simulateBuy refused (capital gate or a guard) — it has already logged why.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
-    return res.json({ success: true, spot, side, sl, symbol });
+    return res.json({ success: true, spot, side, symbol });
   } catch (e) {
     log(`❌ [PA-PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -1469,9 +1297,8 @@ router.get("/status/chart-data", async (req, res) => {
       }
       if (t.exitPrice && t.exitBarTime) { const w = t.pnl > 0; markers.push({ time: t.exitBarTime, position: 'aboveBar', color: w ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (w ? '+' : '') + (t.pnl ? t.pnl.toFixed(0) : '') }); }
     }
-    const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, patternLevel,
+    return res.json({ candles, markers, entryPrice, patternLevel,
       optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
@@ -1533,11 +1360,8 @@ router.get("/status/data", (req, res) => {
       qty:               pos.qty,
       entryPrice:        pos.entryPrice,
       entryTime:         pos.entryTime,
-      stopLoss:          pos.stopLoss,
-      target:            pos.target,
       bestPrice:         pos.bestPrice,
       peakPnl:           pos.peakPnl || 0,
-      initialStopLoss:   pos.initialStopLoss,
       candlesHeld:       pos.candlesHeld,
       optionStrike:      pos.optionStrike,
       optionExpiry:      pos.optionExpiry,
@@ -1556,8 +1380,6 @@ router.get("/status/data", (req, res) => {
     tradeCount:    state.sessionTrades.length,
     wins:          state._wins || 0,
     losses:        state._losses || 0,
-    dailyLossHit:  state._dailyLossHit,
-    slPauseUntil:  state._slPauseUntil || null,
     simMode:       state._simMode || false,
     simScenario:   state._simScenario || null,
     logTotal:      state.log.length,
@@ -1591,7 +1413,7 @@ router.get("/status/data", (req, res) => {
 // ── Status page ─────────────────────────────────────────────────────────────
 
 router.get("/status", (req, res) => {
-  const liveActive  = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive  = false;
   const pos         = state.position;
   const data        = loadPAData();
 
@@ -1738,7 +1560,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
 
-      <!-- Secondary grid: NIFTY spot + SL + Target + Trail -->
+      <!-- Secondary grid: NIFTY spot + peak + candles held -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
@@ -1749,26 +1571,9 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
-          <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
-        </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
           <div id="ajax-peak-pnl" style="font-size:1.05rem;font-weight:700;color:${(pos.peakPnl || 0) >= 0 ? "#10b981" : "#ef4444"};">${(pos.peakPnl || 0) >= 0 ? "+" : ""}${inr(pos.peakPnl || 0)}</div>
-        </div>
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
-          <div id="ajax-sl-trail" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss && pos.initialStopLoss ? (pos.side === "CE" ? "+" : "+") + Math.abs(pos.stopLoss - pos.initialStopLoss).toFixed(2) + " pts" : "0 pts"}</div>
-          <div style="font-size:0.58rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
-        </div>
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
-          <div id="ajax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span></div>
-        </div>
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
-          <div id="ajax-rr" style="font-size:0.9rem;font-weight:700;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};">${(() => { const risk = pos.initialStopLoss ? Math.abs(pos.entryPrice - pos.initialStopLoss) : 0; return risk > 0 ? (pointsMoved / risk).toFixed(1) + "x" : "\u2014"; })()}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
           <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
@@ -1886,7 +1691,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Price Action Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: beyond the order block \u00b7 Breakeven \u20b9${_PA_BE_TRIGGER} ${process.env.PA_SMC_TRAIL_ENABLED === "true" ? "then swing trail" : "+ target"} \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 Exit: profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
@@ -1926,18 +1731,8 @@ ${buildSidebar('paPaper', liveActive, state.running)}
   </div>
   <div class="sc" style="border-top:1.5px solid #6a5090;">
     <div class="sc-label">${state._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
-    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_PA_MAX_TRADES}</span></div>
+    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span></div>
     <div id="ajax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
-  </div>
-  <div class="sc" style="border-top:2px solid ${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#4a6080'};">
-    <div class="sc-label">SL Pause</div>
-    <div class="sc-val" id="ajax-sl-pause" style="color:${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#10b981'}">${state._slPauseUntil && Date.now() < state._slPauseUntil ? 'PAUSED' : 'OK'}</div>
-    <div id="ajax-sl-pause-sub" style="font-size:0.7rem;margin-top:4px;color:var(--muted-1,#8ba1c2);">${_PA_PAUSE_CANDLES} candle cooldown after SL</div>
-  </div>
-  <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};">
-    <div class="sc-label">Daily Loss Limit</div>
-    <div class="sc-val" id="ajax-daily-loss-val" style="color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? 'HIT' : 'OK'} <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);">/ -\u20b9${_PA_MAX_LOSS.toLocaleString("en-IN")}</span></div>
-    <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${state._dailyLossHit ? '#ef4444' : '#10b981'}">${state._dailyLossHit ? 'KILLED \u2014 no entries' : 'Active'}</div>
   </div>
   <div class="sc" style="border-top:1.5px solid #a07010;">
     <div class="sc-label">Candles Loaded</div>
@@ -2418,7 +2213,7 @@ async function ptHandleReset(btn) {
     },
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
-  var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, neckLine = null, _lcc = 0;
+  var entryLine = null, selEntryLine = null, selSlLine = null, neckLine = null, _lcc = 0;
   chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false, lockVisibleTimeRangeOnResize: true });
   // Robust zoom preservation: track user-driven range and restore after every poll.
   var _userRange = null, _internalUpdate = false, _internalTimer = null;
@@ -2479,8 +2274,6 @@ async function ptHandleReset(btn) {
         });
       }
       if (markers.length) { var s = markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
-      if (slLine) { cs.removePriceLine(slLine); slLine = null; }
-      if (d.stopLoss && !selEt) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (d.entryPrice && !selEt) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
       if (neckLine) { cs.removePriceLine(neckLine); neckLine = null; }
@@ -2567,23 +2360,6 @@ ${optionChart.optionChartScript({ dataUrl: '/pa-paper/status/chart-data', id: 'p
       var wlEl = document.getElementById('ajax-wl');
       if (wlEl) wlEl.textContent = d.wins + 'W \\u00b7 ' + d.losses + 'L';
 
-      // SL Pause
-      var slEl = document.getElementById('ajax-sl-pause');
-      if (slEl) {
-        var paused = d.slPauseUntil && Date.now() < d.slPauseUntil;
-        slEl.textContent = paused ? 'PAUSED' : 'OK';
-        slEl.style.color = paused ? '#ef4444' : '#10b981';
-      }
-
-      // Daily loss
-      var dlEl = document.getElementById('ajax-daily-loss-val');
-      if (dlEl) dlEl.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-      var dlStatus = document.getElementById('ajax-daily-loss-status');
-      if (dlStatus) {
-        dlStatus.textContent = d.dailyLossHit ? 'KILLED \\u2014 no entries' : 'Active';
-        dlStatus.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-      }
-
       // Candles
       var candleEl = document.getElementById('ajax-candle-count');
       if (candleEl) { candleEl.textContent = d.candleCount; candleEl.style.color = d.candleCount >= ${paStrategy.TAIL_BARS} ? '#10b981' : '#f59e0b'; }
@@ -2656,38 +2432,12 @@ ${optionChart.optionChartScript({ dataUrl: '/pa-paper/status/chart-data', id: 'p
             sub.style.color = moved >= 0 ? '#10b981' : '#ef4444';
           }
         }
-        // SL
-        var slPosEl = document.getElementById('ajax-stop-loss');
-        if (slPosEl) slPosEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\\u2014';
         // Peak P&L
         var peakEl = document.getElementById('ajax-peak-pnl');
         if (peakEl) {
           var peak = p.peakPnl || 0;
           peakEl.textContent = (peak >= 0 ? '+' : '') + INR(peak);
           peakEl.style.color = peak >= 0 ? '#10b981' : '#ef4444';
-        }
-        // SL Trailed
-        var slTrailEl = document.getElementById('ajax-sl-trail');
-        if (slTrailEl && p.stopLoss && p.initialStopLoss) {
-          slTrailEl.textContent = Math.abs(p.stopLoss - p.initialStopLoss).toFixed(2) + ' pts';
-        }
-        // SL Distance
-        var slDistEl = document.getElementById('ajax-sl-dist');
-        if (slDistEl && p.stopLoss && ltpNow) {
-          var dist = Math.abs(ltpNow - p.stopLoss);
-          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span>';
-          slDistEl.style.color = dist < 20 ? '#ef4444' : dist < 40 ? '#f59e0b' : '#10b981';
-        }
-        // R:R
-        var rrEl = document.getElementById('ajax-rr');
-        if (rrEl && p.initialStopLoss) {
-          var risk = Math.abs(p.entryPrice - p.initialStopLoss);
-          var moved = (ltpNow - p.entryPrice) * (p.side === 'CE' ? 1 : -1);
-          if (risk > 0) {
-            var rr = (moved / risk).toFixed(1);
-            rrEl.textContent = rr + 'x';
-            rrEl.style.color = moved >= 0 ? '#10b981' : '#ef4444';
-          }
         }
         // Candles held
         var candPosEl = document.getElementById('ajax-pos-candles');
@@ -2761,7 +2511,7 @@ function getPACapitalFromEnv() {
 
 router.get("/history", (req, res) => {
   const data = loadPAData();
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive = false;
 
   // Canonical pattern name (uses t.pattern if present, else extracts from entryReason)
   const patternOf = (t) => {
@@ -3217,9 +2967,6 @@ function _post(url, body, btn, resetLabel) {
 
 router.post("/simulate/start", async (req, res) => {
   if (state.running) return res.json({ success: false, error: "Session already running. Stop it first." });
-  // The simulator bypasses /start; sim mode never notifies, but release anyway so
-  // "paper can never place a real order" does not rest on one flag.
-  _releaseLiveHarness("simulate/start");
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
@@ -3229,7 +2976,7 @@ router.post("/simulate/start", async (req, res) => {
       running: true, position: null, candles: [], currentBar: null, barStartTime: null,
       log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
       sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-      optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
+      optionLtp: null, optionSymbol: null,
       _reentryBlockUntil: 0,
       _expiryDayBlocked: false,
       _simMode: true, _simScenario: label,

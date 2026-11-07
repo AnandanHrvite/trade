@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Date-range backtest on 5-minute NIFTY BANK (NSE:NIFTYBANK-INDEX) candles —
  * the SAME rules as RSI_PIVOT_ST, on a different underlying. The RSI, the pivot
- * levels, the cross test, the strike choice and the SuperTrend stop all come
+ * levels, the cross test, the strike choice and the SuperTrend filter all come
  * from the SAME engine the paper route uses (src/strategies/bn_pivot_rsi_st.js) —
  * there is no second copy of the rules here. This file only re-implements the
  * paper route's exits, because paper is canonical:
@@ -12,7 +12,7 @@
  *     pivots = computePivots(daily bars, { forDayKey: this day })   ← yesterday's
  *     for each closed 5-min bar:
  *       getSignal(bars so far, { pivots })  → BUY_CE / BUY_PE / NONE
- *   exits: premium floor → SuperTrend (CE only, trailed) → EOD
+ *   exit: the global profit lock on the simulated premium, else the day's last bar
  *
  * TWO SERIES ARE FETCHED. The intraday 5-min bars drive every decision; a
  * separate DAILY series supplies each session's pivots. The daily series is
@@ -20,20 +20,12 @@
  * a yesterday to compute R1/S1 from — without that padding the first session of
  * every run would silently take no trades.
  *
- * CONSERVATIVE INTRA-BAR ORDERING (this is where naive backtests lie):
- *   • the adverse STOP is tested on the bar's high/low BEFORE anything
- *     favourable, so a bar that touched both books the LOSS;
- *   • a bar that OPENED beyond a level fills at the OPEN, never at the better
- *     level — no assuming a fill the market never offered;
- *   • entry is the signal bar's CLOSE, exactly as paper reads it;
- *   • the SuperTrend trail advances only on a bar CLOSE, matching paper, so the
- *     stop can never tighten on a level the bar merely traded through.
- *
- * THE PREMIUM STOP IS APPROXIMATED. Paper measures the 25% floor against a real
- * option LTP; there is no historical option chain here, so the premium is δ+θ
- * simulated and the floor is applied to that simulated premium. It is directional,
- * not exact — a 25% premium move is roughly a `0.25 × premium / delta` spot move,
- * and that conversion is where this backtest is least trustworthy.
+ * THE PROFIT LOCK (tradeGuards.checkProfitLock) is the ONLY automatic exit, as
+ * in paper. There is no historical option chain, so it is applied to a δ+θ
+ * simulated premium. Each bar is walked open → adverse extreme → favourable
+ * extreme → close: the peak only rises on the open and the favourable leg, so a
+ * bar can never lock in a gain it had not yet printed. A trade still open at the
+ * day's last bar is closed there (paper's session teardown).
  *
  * A spread/slippage haircut of BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS is applied EACH way —
  * without it a backtest of option BUYING always flatters.
@@ -126,13 +118,9 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
   const SLIPPAGE_PTS = parseFloat(process.env.BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS || "2");
   const RES          = cfg.resolutionMins;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
-  // Paper measures it from the exit's clock time: a stop exits INSIDE the bar
-  // (≈ bar open here), a SuperTrend flip at the bar's CLOSE.
+  // Paper measures it from the exit's clock time: an exit INSIDE the bar
+  // (≈ bar open here), or one at the bar's CLOSE.
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
-
-  const MAX_TRADES   = cfg.maxDailyTrades;
-  const MAX_DAY_LOSS = cfg.maxDailyLoss;
-  const FORCED_EXIT_MIN = cfg.exitTime;
 
   const sorted = intraday.slice().sort((a, b) => a.time - b.time);
   const dailySorted = Array.isArray(daily) ? daily.slice().sort((a, b) => a.time - b.time) : [];
@@ -174,15 +162,13 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
       continue;
     }
 
-    let dayPnl = 0, dayTrades = 0, dayStopOuts = 0, dayClosed = false;
     let pos = null;
     let sawSetup = false;
     let reentryBlockUntil = 0;   // wait-after-any-exit cooldown (unix secs)
 
     /**
-     * Simulated premium at a given spot, with theta decay and the slippage
-     * haircut applied both ways. This is also what the premium FLOOR is measured
-     * against — see the header note about that approximation.
+     * Simulated premium at a given spot, with theta decay. This is also what the
+     * profit lock is measured against — see the header note.
      */
     function premiumAt(exitPx, exitTime) {
       const barsHeld = Math.max(0, (exitTime - pos.entryTime) / 60 / RES);
@@ -203,29 +189,26 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
       };
     }
 
-    function close(exitPx, exitTime, reason, isStopOut, atBarClose) {
+    function close(exitPx, exitTime, reason, atBarClose) {
       if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
       const p = priceAt(exitPx, exitTime);
-      dayPnl += p.pnl;
-      if (isStopOut) dayStopOuts++;
       trades.push({
         side: pos.side,
         entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),
         entryTs: pos.entryTime, exitTs: exitTime,
         ePrice: pos.entrySpot, xPrice: parseFloat(exitPx.toFixed(2)),
-        sl: pos.slSpot, target: null,
-        riskPts: pos.slPts,
+        sl: null, target: null,
         rsi: pos.rsi, pp: pos.pp, r1: pos.r1, s1: pos.s1,
         crossedLevel: pos.crossedLevel, pivotFrom: pos.pivotFrom,
         strike: pos.strike, strikeMode: pos.strikeMode,
-        premiumFloor: Number.isFinite(pos.premiumFloor) ? parseFloat(pos.premiumFloor.toFixed(2)) : null,
+        peakPremium: parseFloat(pos.peakPremium.toFixed(2)),
         pnl: p.pnl, reason, entryReason: pos.entryReason,
         strength: "STRONG",
         eOpt: pos.optionEntryLtp, xOpt: p.exitPrem, held: p.held,
       });
-      // PER-TRADE LOG. Names the RESOLVED strike and the exact stop that closed
-      // the trade — a run whose strikes are off the 100-pt BANKNIFTY grid, or
-      // whose trades all die on one stop, is invisible in the summary numbers.
+      // PER-TRADE LOG. Names the RESOLVED strike and the exit that closed the
+      // trade — a run whose strikes are off the 100-pt BANKNIFTY grid is
+      // invisible in the summary numbers.
       const _strikeStr = pos.strike != null ? `${pos.strike}${pos.side}` : `${pos.side} (no strike — futures)`;
       console.log(
         `   ${p.pnl >= 0 ? "🟢" : "🔴"} ${entryTsStr(pos.entryTime)} ${_strikeStr}` +
@@ -234,87 +217,44 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
         ` | ${p.held} bar(s) | ₹${p.pnl} | exit: ${reason}`
       );
       pos = null;
-      // Day-level breakers — identical thresholds to the paper route.
-      if (MAX_DAY_LOSS > 0 && dayPnl <= -MAX_DAY_LOSS) dayClosed = true;
-      else if (dayTrades >= MAX_TRADES) dayClosed = true;
+    }
+
+    /**
+     * The global profit lock on one bar, walked open → adverse → favourable →
+     * close. Options only — paper skips it in futures mode, where the "premium"
+     * is the spot itself.
+     */
+    function lockExit(c) {
+      if (IS_FUT) return;
+      const isCE = pos.side === "CE";
+      const entry = pos.optionEntryLtp;
+      const pOpen = premiumAt(c.open, c.time);
+      if (pOpen > pos.peakPremium) pos.peakPremium = pOpen;
+      let msg = tradeGuards.checkProfitLock(entry, pOpen, pos.peakPremium);
+      if (msg) { close(c.open, c.time, `${msg} (bar opened through it — filled at the open)`); return; }
+      msg = tradeGuards.checkProfitLock(entry, premiumAt(isCE ? c.low : c.high, c.time), pos.peakPremium);
+      if (msg) {
+        // Fill at the spot that produces the locked floor, never better than the open.
+        const floor = tradeGuards.profitLockFloorLtp(entry, pos.peakPremium, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+        const raw = pos.entrySpot + (isCE ? 1 : -1) * ((floor - entry) / DELTA);
+        close(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), c.time, msg);
+        return;
+      }
+      const pFav = premiumAt(isCE ? c.high : c.low, c.time);
+      if (pFav > pos.peakPremium) pos.peakPremium = pFav;
+      msg = tradeGuards.checkProfitLock(entry, premiumAt(c.close, c.time), pos.peakPremium);
+      if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, true);
     }
 
     for (let i = 0; i < bars.length; i++) {
       const c = bars[i];
       const istMin = _utcSecToIstMins(c.time);
 
-      // ── Manage an open position on THIS bar. ───────────────────────────────
-      if (pos) {
-        if (istMin >= FORCED_EXIT_MIN) {
-          close(c.open, c.time, `EOD square-off (${bnPivotStrategy._fmtMins(FORCED_EXIT_MIN)} IST)`, false);
-        } else {
-          const isCE = pos.side === "CE";
-          // 1. The PREMIUM floor, tested against the bar's ADVERSE extreme —
-          //    the worst premium the bar could have printed. Paper tests this
-          //    first too, and it is the only stop a PE carries.
-          const adverse = isCE ? c.low : c.high;
-          const worstPrem = premiumAt(adverse, c.time);
-          // Explicit isFinite: a side with the premium stop switched off carries
-          // a null floor, and `worstPrem <= null` would silently mean "<= 0".
-          if (Number.isFinite(pos.premiumFloor) && worstPrem <= pos.premiumFloor) {
-            // Convert the floor back into the spot that produced it, so the fill
-            // is the level rather than the bar's extreme — unless the bar OPENED
-            // already through it, in which case the open is the honest fill.
-            const floorSpot = pos.entrySpot + (isCE ? 1 : -1) * ((pos.premiumFloor - pos.optionEntryLtp) / DELTA);
-            const openThrough = isCE ? c.open <= floorSpot : c.open >= floorSpot;
-            const fill = openThrough ? c.open : floorSpot;
-            const trailing = pos.premiumFloor > pos.initialPremiumFloor;
-            close(fill, c.time,
-              `Premium ${trailing ? "trailing " : ""}stop — simulated premium reached the ${cfg.premiumStopPct}% floor ₹${pos.premiumFloor.toFixed(2)}` +
-              (trailing ? ` (peak ₹${pos.peakPremium.toFixed(2)})` : ""),
-              true);
-          }
-        }
-      }
-
-      // 2. The SuperTrend stop, on whichever sides carry it. Tested against the
-      //    bar's ADVERSE extreme — the low for a CE, the high for a PE.
-      if (pos && Number.isFinite(pos.slSpot)) {
-        const stIsCE = pos.side === "CE";
-        const adverseSt = stIsCE ? c.low : c.high;
-        if (bnPivotStrategy.stopHit(pos.side, adverseSt, pos.slSpot)) {
-          // A bar that OPENED already through the level fills at the open.
-          const openThroughSt = stIsCE ? c.open < pos.slSpot : c.open > pos.slSpot;
-          const fill = openThroughSt ? c.open : pos.slSpot;
-          const trailing = stIsCE ? pos.slSpot > pos.initialSlSpot : pos.slSpot < pos.initialSlSpot;
-          close(fill, c.time,
-            `SuperTrend ${trailing ? "trailing " : ""}stop hit at ${pos.slSpot}` + (trailing ? ` (initial ${pos.initialSlSpot})` : ""),
-            true);
-        }
-      }
-
-      // ── Trail on the bar's CLOSE, exactly as paper does. ───────────────────
-      if (pos) {
-        // Premium high-water → floor ratchet.
-        const closePrem = premiumAt(c.close, c.time);
-        if (closePrem > pos.peakPremium) {
-          pos.peakPremium = closePrem;
-          const trailed = bnPivotStrategy.premiumStop(pos.optionEntryLtp, pos.peakPremium, cfg, pos.side);
-          if (Number.isFinite(trailed) && trailed > pos.premiumFloor) pos.premiumFloor = trailed;
-        }
-        // SuperTrend ratchet / flip, mirrored per side — exactly as paper does.
-        if (bnPivotStrategy.stApplies(pos.side, cfg)) {
-          const stIsCE = pos.side === "CE";
-          const series = bnPivotStrategy.computeSuperTrendSeries(bars.slice(0, i + 1), cfg);
-          const st = bnPivotStrategy.superTrendStop(pos.side, series, pos.slSpot, cfg);
-          if (st) {
-            if (st.flipped) {
-              close(c.close, c.time, `SuperTrend flipped ${stIsCE ? "bearish" : "bullish"} — the ${pos.side}'s trend premise is gone`, true, true);
-            } else if (Number.isFinite(st.stop) &&
-                       (!Number.isFinite(pos.slSpot) || (stIsCE ? st.stop > pos.slSpot : st.stop < pos.slSpot))) {
-              pos.slSpot = st.stop;
-            }
-          }
-        }
-      }
+      // ── Manage an open position on THIS bar — the profit lock only. ────────
+      if (pos) lockExit(c);
 
       // ── Look for a new entry on this bar's close. ──────────────────────────
-      if (!pos && !dayClosed && dayTrades < MAX_TRADES) {
+      if (!pos) {
         const closeMins = istMin + RES;
         if (closeMins > cfg.entryEndMin) continue;
         const sig = bnPivotStrategy.getSignal(bars.slice(0, i + 1), { cfg, pivots, silent: true });
@@ -335,35 +275,24 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
         if (c.time < reentryBlockUntil) continue;
 
         const entryPrem = IS_FUT ? sig.entrySpot : SEED_PREMIUM;
-        // null when the premium stop is switched off for this side — the exit
-        // block below skips the floor test entirely in that case.
-        // Futures have no premium, so the premium floor is absent — matching the
-        // paper route, which disables it rather than deriving one from a spot.
-        const floor = IS_FUT ? null : bnPivotStrategy.premiumStop(entryPrem, null, cfg, sig.side);
         pos = {
           side: sig.side,
           entryTime: c.time,
           entrySpot: sig.entrySpot,          // the bar's CLOSE — same as paper
           optionEntryLtp: entryPrem,
           peakPremium: entryPrem,
-          premiumFloor: floor,
-          initialPremiumFloor: floor,
-          slSpot: sig.slSpot,                // null when this side has no SuperTrend
-          initialSlSpot: sig.slSpot,
-          slPts: sig.slPts,
           rsi: sig.rsi, pp: sig.pp, r1: sig.r1, s1: sig.s1,
           crossedLevel: sig.crossedLevel,
           pivotFrom: pivots.from,
           strike: sig.strike, strikeMode: sig.strikeMode,
           entryReason: sig.reason,
         };
-        dayTrades++;
       }
     }
 
     if (pos) {
       const last = bars[bars.length - 1];
-      close(last.close, last.time, "EOD (end of day candles)", false);
+      close(last.close, last.time, "Session end (last candle of the day)", true);
     }
     if (!sawSetup) {
       skipped.push({ date: istDateOf(dayTs), reason: `no RSI+pivot cross all session (R1 ${pivots.r1}, S1 ${pivots.s1})` });
@@ -402,7 +331,6 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { key: "rsi", label: "RSI" },
       { key: "crossedLevel", label: "Level" },
       { key: "strike", label: "Strike" },
-      { key: "riskPts", label: "Risk (pt)" },
       { key: "held", label: "Held" },
     ],
     extraStats: [
@@ -414,10 +342,10 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Skipped — no pivot levels", value: gs.noPivots },
       { label: "Skipped — crossed, RSI failed", value: gs.crossNoRsi },
       { label: "Skipped — RSI ok, no fresh cross", value: gs.rsiNoCross },
-      { label: "Skipped — CE without SuperTrend", value: gs.noSuperTrend },
+      { label: "Skipped — SuperTrend disagreed", value: gs.noSuperTrend },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium stop (they have no meaning without a premium); a PE is a SHORT. " : ""}<b>Instrument:</b> ${escHtml(instrumentBanner())}. <b>Chart:</b> ${escHtml(_u().label)} INDEX (<code>${escHtml(_u().spot)}</code>) ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest ${bnPivotStrategy.strikeStep()}-point BANKNIFTY strike, ${_u().weekly ? "weekly or monthly expiry" : "<b>MONTHLY expiry only</b> (NSE withdrew BANKNIFTY weeklies in Nov-2024, so the premium decays more slowly than a NIFTY weekly and the premium floor is a looser stop in rupee terms)"}. <b>Stops (both are per-side toggles):</b> a SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) trail on <b>${cfg.stSides}</b> (<code>BN_PIVOT_RSI_ST_ST_SIDES</code>) — bullish line below a CE, bearish line above a PE, ratcheting only in the trade's favour, and a flip is itself an exit — plus a ${cfg.premiumStopPct}% premium floor on <b>${cfg.premiumStopSides}</b> (<code>BN_PIVOT_RSI_ST_PREMIUM_SL_SIDES</code>)${["CE","PE"].filter(s => bnPivotStrategy.isStoplessSide(s, cfg)).map(s => ` <b>[${s} therefore has NO stop and can only exit at EOD]</b>`).join("")}. Both trail and neither ever loosens. There is <b>no profit target</b> — the trade runs until a stop trails into it or ${bnPivotStrategy._fmtMins(cfg.exitTime)} forces it out. Max ${cfg.maxDailyTrades} trades/day, day ends on a ₹${cfg.maxDailyLoss} loss. <b>Intra-bar ordering is conservative:</b> the premium floor is tested against the bar's adverse extreme and the SuperTrend against the bar's low, both BEFORE any trail advances, and a bar that opened beyond a level fills at the open. <b>The premium stop is the weakest part of this simulation</b> — and it is weaker here than on NIFTY: BANKNIFTY trades a MONTHLY contract, which decays far more slowly than a NIFTY weekly, so the ${cfg.premiumStopPct}% floor is a materially LOOSER stop in rupee terms. The rule is implemented as-is and nothing compensates for it. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.BN_PIVOT_RSI_ST_BT_SEED_PREMIUM || "180"}, and the 25% floor is measured against that simulated number rather than a real quote, PLUS ${process.env.BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS || "2"}pt slippage EACH way. The δ, θ and seed-premium DEFAULTS are NIFTY-weekly-shaped — a BANKNIFTY monthly ATM premium is several times ₹180 and decays slower — so set <code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code>, <code>BACKTEST_THETA_DAY</code> and <code>BACKTEST_DELTA</code> for the contract you are actually simulating. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Instrument:</b> ${escHtml(instrumentBanner())}. <b>Chart:</b> ${escHtml(_u().label)} INDEX (<code>${escHtml(_u().spot)}</code>) ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest ${bnPivotStrategy.strikeStep()}-point BANKNIFTY strike, ${_u().weekly ? "weekly or monthly expiry" : "<b>MONTHLY expiry only</b> (NSE withdrew BANKNIFTY weeklies in Nov-2024, so the premium decays more slowly than a NIFTY weekly)"}. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>BN_PIVOT_RSI_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.BN_PIVOT_RSI_ST_BT_SEED_PREMIUM || "180"}, and the lock is measured against that simulated number rather than a real quote, PLUS ${process.env.BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS || "2"}pt slippage EACH way. The δ, θ and seed-premium DEFAULTS are NIFTY-weekly-shaped — a BANKNIFTY monthly ATM premium is several times ₹180 and decays slower — so set <code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code>, <code>BACKTEST_THETA_DAY</code> and <code>BACKTEST_DELTA</code> for the contract you are actually simulating. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
   });
   res.send(html);
 }
@@ -439,7 +367,7 @@ router.get("/", async (req, res) => {
         console.log(`🔍 BN_PIVOT_RSI_ST Backtest job ${id}: ${from} → ${to}`);
         console.log(`   └ instrument: ${instrumentBanner()}`);
         if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES" && !process.env.BN_PIVOT_RSI_ST_BT_SEED_PREMIUM) {
-          console.warn(`   ⚠️ BN_PIVOT_RSI_ST_BT_SEED_PREMIUM unset — simulating on the ₹180 NIFTY-weekly default. A BANKNIFTY MONTHLY ATM premium is several times that and decays slower, so the ${bnPivotStrategy.getConfig().premiumStopPct}% floor will read as a looser stop in ₹ than it is. Rule unchanged; only the simulation's premium seed is wrong.`);
+          console.warn(`   ⚠️ BN_PIVOT_RSI_ST_BT_SEED_PREMIUM unset — simulating on the ₹180 NIFTY-weekly default. A BANKNIFTY MONTHLY ATM premium is several times that and decays slower, so the simulated premium (and the profit lock measured on it) is off. Rule unchanged; only the simulation's premium seed is wrong.`);
         }
         backtestJobs.updateProgress(id, { phase: `Fetching ${_resMin()}-min ${_u().label} candles (${BANKNIFTY_INDEX_SYMBOL})…`, pct: 20 });
 

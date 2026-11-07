@@ -2,7 +2,9 @@
  * ORB PAPER TRADE — /orb-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Opening Range Breakout (15-min OR, 5-min confirm) — single-leg ATM option
- * buying. Intraday MIS only, max 1 trade/session, square-off 15:15 IST.
+ * buying. Intraday MIS only. The only automatic exit is the global profit lock;
+ * an open position is otherwise closed by manual exit, /stop or the
+ * TRADE_STOP_TIME session auto-stop.
  *
  * Uses LIVE NIFTY data (Fyers WebSocket) but SIMULATES the orders locally.
  * No broker is hit — everything is in-memory + persisted to JSON & JSONL.
@@ -52,8 +54,6 @@ const skipLogger = require("../utils/skipLogger");
 const { RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 const tradeGuards = require("../utils/tradeGuards");
-const orbRiskState = require("../utils/orbRiskState");
-const orbStopRisk  = require("../utils/orbStopRisk");
 const capitalPool  = require("../utils/capitalPool");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -197,20 +197,6 @@ function rehydrateSessionFromJsonl() {
 }
 rehydrateSessionFromJsonl();
 
-// ── Daily limits survive a Stop → Start ──────────────────────────────────────
-// /start resets sessionPnl / the trade list, so a mid-day restart used to hand the
-// engine a fresh daily-loss budget and trade count. Seed both from today's
-// already-logged trades (the day JSONL — the same source the boot rehydrate reads;
-// rows tagged _live are live-engine records, not this paper's). Never during a
-// replay, whose day file is not today's real session.
-function _priorTodayTotals(key) {
-  try { if (require("../services/tickReplay").isReplayInProgress()) return { pnl: 0, count: 0 }; } catch (_) {}
-  try {
-    const rows = tradeLogger.readDailyTrades(key, tradeLogger.istDateString(Date.now()))
-      .filter(t => t && !t.type && !t._live && (t.side || t.entryTime || t.entryBarTime || t.symbol));
-    return { pnl: parseFloat(rows.reduce((s, t) => s + (Number(t.pnl) || 0), 0).toFixed(2)), count: rows.length };
-  } catch (_) { return { pnl: 0, count: 0 }; }
-}
 // A previous day's session may only stay on screen while the market is shut.
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[ORB-PAPER]");
 
@@ -401,21 +387,6 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     return;
   }
 
-  // ── Initial hard SL comes from the STRATEGY (sig.slSpot) — the wider of the
-  //    entry candle's own extreme and ORB_SL_ATR_MULT × ATR(5m). The route used to
-  //    recompute this from state.candles, which duplicated the logic three ways
-  //    (paper/live/backtest) and produced a stop ~23pt wide that was hit on 4 of 6
-  //    trades — including the day that then ran 213pt our way. One owner now.
-  //    This is only the disaster stop; the trade is managed on each candle close by
-  //    _managePositionOnClose (breakeven → EMA trend-trail) plus the per-trade
-  //    rupee cap and premium-collapse stop in _checkExits.
-  //    Reconciled against ORB_MAX_TRADE_LOSS by orbStopRisk so the level we show,
-  //    alert on and record is the level that actually ends the trade.
-  const _stop = orbStopRisk.resolveInitialStop({
-    side, entrySpot: spot, strategyStop: sigSnapshot.slSpot, qty,
-    fallbackStop: side === "CE" ? sigSnapshot.orl : sigSnapshot.orh,
-  });
-  const _initSl = _stop.slSpot;
   const pos = {
     side,
     isFutures:      _isFut,
@@ -433,12 +404,6 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     orl:            sigSnapshot.orl,
     rangePts:       sigSnapshot.rangePts,
     targetSpot:     sigSnapshot.targetSpot,   // informational only — no target exit
-    initialSlSpot:  _initSl,
-    slSpot:         _initSl,
-    breakevenArmed: false,
-    emaArmed:       false,
-    lastEma:        null,
-    lastStopSt:     null,
     peakPremium:    optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength,
     vixAtEntry:     getCachedVix(),
@@ -473,13 +438,12 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   if (!_isFut) startOptionPolling();
 
   log(`🟢 [ORB-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spot}${_isFut ? "" : ` optLtp=${optionEntryLtp}`}`);
-  log(`   risk: ${_stop.note}`);
 
   notifyEntry({
     mode: "ORB-PAPER",
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
-    qty, stopLoss: pos.slSpot,
+    qty,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -491,7 +455,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
       spotEntry: spot, optionEntry: optionEntryLtp,
-      stopLoss: pos.slSpot, targetSpot: pos.targetSpot,
+      targetSpot: pos.targetSpot,
       reason: pos.entryReason,
     });
   } catch (_) {}
@@ -532,8 +496,6 @@ function simulateSell(reason) {
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
     exitReason:     reason,
     entryReason:    pos.entryReason,
-    stopLoss:       pos.slSpot,
-    initialStopLoss: pos.initialSlSpot,
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
@@ -600,40 +562,11 @@ function simulateSell(reason) {
 }
 
 // ── In-position management ──────────────────────────────────────────────────
-// The RULES live in src/strategies/orbExits.js — one owner shared by paper, live,
-// backtest and scripts/orbValidate.js. Paper remains canonical (its behaviour is
-// what was extracted); these two functions are now just the paper EXECUTION of a
-// shared decision: simulate the fill, log, persist.
+// The RULE lives in src/strategies/orbExits.js (the global profit lock — the only
+// automatic exit). This function is just the paper EXECUTION of that decision:
+// simulate the fill, log, persist.
 
-// Per-candle-close position management:
-//   1. Strong opposite reversal candle → exit now.
-//   2. Breakeven — once favourable by ORB_BREAKEVEN_PTS, lift the hard SL to entry.
-//   3. EMA trend-trail — exit only when a candle CLOSES back across the EMA, so a
-//      winner rides the whole move instead of dying on the first pullback.
-// The tick-level hard SL + per-trade loss cap live in _checkExits.
-function _managePositionOnClose(bar) {
-  const pos = state.position;
-  if (!pos) return;
-
-  const d = orbExits.evaluateCloseExits(pos, bar, state.candles);
-
-  if (d.breakevenArmed) {
-    // Re-snapshot so crash recovery sees the LIFTED stop, not the entry stop.
-    // Persistence only — no decision, fill or exit changes here; it just stops a
-    // restart from resurrecting a stop the engine had already tightened.
-    try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-    log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt ≥ ${d.bePts}pt)`);
-  }
-  if (d.trailMoved) {
-    // Same reason as breakeven: crash recovery must see the RATCHETED stop.
-    try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-    log(`🪜 [ORB-PAPER] ${d.trailNote || "Trail"} — SL → ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt)`);
-  }
-  if (d.exit) simulateSell(d.reason);
-}
-
-// Tick-level exits: the per-trade rupee cap, the premium disaster stop and the
-// hard SL (lifted to breakeven). Also tracks peak premium + MFE/MAE.
+// Tick-level exit: the global profit lock. Also tracks peak premium + MFE/MAE.
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
@@ -647,12 +580,9 @@ function _checkExits(spotPrice) {
   const optLtp = state.optionLtp || pos.optionEntryLtp;
 
   // Stale-premium warning. WARN ONLY — every other engine in this repo does the
-  // same and leaves the exit rules untouched (see emaRsiStPaper). ORB was the one
-  // strategy that tracked optionLtpUpdatedAt and never read it, so a dead option
-  // poll silently fed the rupee cap and the premium stop an arbitrarily old price
-  // with nothing in the log to show it.
+  // same and leaves the exit rules untouched (see emaRsiStPaper).
   if (orbExits.isLtpStale(state.optionLtpUpdatedAt, Date.now()) && !state._ltpStaleLogged) {
-    log(`⚠️ [ORB-PAPER] Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. Loss cap + premium stop + P&L are using a stale premium.`);
+    log(`⚠️ [ORB-PAPER] Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. Profit lock + P&L are using a stale premium.`);
     state._ltpStaleLogged = true;
   }
 
@@ -664,53 +594,16 @@ function _checkExits(spotPrice) {
 
 // ── Candle close handler ────────────────────────────────────────────────────
 
-/**
- * This session's exits, oldest first, in the shape orbStrategy.reentryPlan() wants.
- *
- * Read straight off state.sessionTrades rather than kept as a second counter, so it
- * survives the JSONL rehydrate after a PM2 restart for free — `exitBarTime` (the
- * 5-min bucket the exit fell in, unix seconds) and `exitReason` are both persisted
- * fields. A trade whose exitBarTime is missing contributes its reason but no re-arm
- * time, which degrades to "no re-entry" rather than to a wrongly-timed one.
- */
-function _todaysExits() {
-  return (state.sessionTrades || [])
-    .filter(t => t && t.exitReason)
-    .map(t => ({ reason: t.exitReason, atUnixSec: Number(t.exitBarTime) || 0 }));
-}
-
 async function onCandleClose(bar) {
   // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
   // the buildup series stays filled even on no-signal candles.
   await oiFilter.recordOiSample(bar && bar.close);
 
-  // Already in position? Manage it on this candle close (breakeven → EMA
-  // trend-trail → strong-opposite-candle), then bail — entries aren't
-  // re-evaluated and the tick-level hard SL / loss cap run in _checkExits.
-  if (state.position) { _managePositionOnClose(bar); return; }
+  // Already in position? Nothing to do on the close — the only automatic exit
+  // (the profit lock) runs per tick in _checkExits.
+  if (state.position) return;
 
   const _spot = bar && bar.close;
-
-  // Max trades guard (default 1 — ORB is 1/day). Checked BEFORE the daily-loss
-  // kill: once the day's trade budget is spent we bail SILENTLY (day is over).
-  // A single ORB stop (~₹1.5k) already exceeds ORB_MAX_DAILY_LOSS, so leaving the
-  // loss gate first made it re-fire on every remaining candle and spam the skip
-  // log (200+ "daily_loss" rows/day) without ever changing an outcome.
-  // Re-entry after a stop-out (ORB_REENTRY_AFTER_SL, ships off) can extend the day's
-  // budget and re-arm the breakout hunt past the stop candle. The STRATEGY owns that
-  // decision — live and backtest call the same helper, so the three cannot drift.
-  // A restored PREVIOUS-day session is excluded: those exits are not today's, and
-  // letting them mint a re-entry budget would hand today a trade off stale state.
-  const plan = orbStrategy.reentryPlan(state._staleSession ? [] : _todaysExits(), parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10));
-  const maxTrades = plan.maxTrades;
-  if (state.tradesTaken >= maxTrades) return; // expected, not a skip
-
-  // Daily-loss kill — only bites while trade budget remains (maxTrades > 1).
-  const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
-  if ((state.sessionPnl + (state._dayPnlBase || 0)) <= -maxLoss) {
-    skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `day PnL ${state.sessionPnl + (state._dayPnlBase || 0)} <= -${maxLoss}`, spot: _spot });
-    return;
-  }
 
   // Portfolio-wide daily loss cap (across ALL strategies; default disabled).
   {
@@ -721,14 +614,6 @@ async function onCandleClose(bar) {
     }
   }
 
-  // Portfolio risk breaker — consecutive-losing-days / weekly-loss stop.
-  const _throttle = orbRiskState.getThrottle("orb-paper", tradeLogger.istDateString(Date.now()), state.sessionPnl);
-  if (_throttle.block) {
-    log(`⏸️ [ORB-PAPER] Risk breaker: ${_throttle.reason}`);
-    skipLogger.appendSkipLog("orb", { gate: "risk_throttle", reason: _throttle.reason, spot: _spot });
-    return;
-  }
-
   // Expiry-day-only filter
   if (state._expiryDayBlocked) {
     skipLogger.appendSkipLog("orb", { gate: "expiry_day_only", reason: "Not an expiry day", spot: _spot });
@@ -736,10 +621,7 @@ async function onCandleClose(bar) {
   }
 
   // Evaluate ORB signal
-  const sig = orbStrategy.getSignal(state.candles, {
-    alreadyTraded: state.tradesTaken >= maxTrades,
-    rearmAfterTime: plan.rearmAfterTime,
-  });
+  const sig = orbStrategy.getSignal(state.candles);
   if (sig.signal === "NONE" || !sig.side) {
     // Only log when the signal actually evaluated (range formed) — pre-range
     // candles produce "waiting for OR" noise.
@@ -821,19 +703,6 @@ function onTick(tick) {
   if (state.position) {
     _checkExits(price);
   }
-
-  // EOD square-off
-  if (state.position) {
-    const nowMin = getISTMinutes();
-    const stopMin = (function() {
-      const raw = process.env.ORB_FORCED_EXIT || "15:15";
-      const [h, m] = raw.split(":").map(Number);
-      return h * 60 + (isNaN(m) ? 0 : m);
-    })();
-    if (nowMin >= stopMin) {
-      simulateSell(`EOD square-off (${process.env.ORB_FORCED_EXIT || "15:15"} IST)`);
-    }
-  }
 }
 
 // ── Preload spot history (so OR is built from the day's actual candles) ─────
@@ -844,15 +713,15 @@ async function preloadHistory() {
     const { fetchCandles } = require("../services/backtestEngine");
     const _now = new Date();
     const istToday = _now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    // Preload ~7 calendar days so the EMA trend-trail is seeded before the open —
-    // a 20-EMA on 5-min needs ~100 min of bars, never available for a 09:35 entry
+    // Preload ~7 calendar days so the entry indicators (ATR5/ATR15, RSI,
+    // SuperTrend) are seeded before the open — never available for a 09:35 entry
     // from today alone. The opening range + VWAP are day-scoped in the strategy,
-    // so the prior-day candles seed the EMA without polluting today's OR.
+    // so the prior-day candles seed them without polluting today's OR.
     const istStart = new Date(_now.getTime() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(RES_MIN), istStart, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length > 0) {
       state.candles = candles.slice(-200);
-      log(`📊 [ORB-PAPER] Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles (${istStart}→${istToday}, EMA-seeded)`);
+      log(`📊 [ORB-PAPER] Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles (${istStart}→${istToday}, indicator-seeded)`);
     } else {
       log(`📊 [ORB-PAPER] No history available — will build from live ticks`);
     }
@@ -876,28 +745,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The ORB-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "ORB-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -915,14 +762,6 @@ function scheduleAutoStop() {
 // ── Session lifecycle ───────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/orb-paper/status");
 
   if ((process.env.ORB_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -938,17 +777,6 @@ router.get("/start", async (req, res) => {
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/orb-paper/status", "← Back"));
 
-  // Past 15:15 = entries useless
-  const nowMin = getISTMinutes();
-  const stopMin = (function() {
-    const raw = process.env.ORB_FORCED_EXIT || "15:15";
-    const [h, m] = raw.split(":").map(Number);
-    return h * 60 + (isNaN(m) ? 0 : m);
-  })();
-  if (nowMin >= stopMin) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${process.env.ORB_FORCED_EXIT || "15:15"} IST — ORB does not enter after this`, "/orb-paper/status", "← Back"));
-  }
-
   let _expiryBlocked = false;
   if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
     const { isExpiryDay } = require("../utils/nseHolidays");
@@ -963,12 +791,6 @@ router.get("/start", async (req, res) => {
   state.sessionStart = new Date().toISOString();
   state._sessionId = `orb-paper:${Date.now()}`;
   state._expiryDayBlocked = _expiryBlocked;
-  {
-    const _prior = _priorTodayTotals("orb");
-    state._dayPnlBase  = _prior.pnl;
-    state.tradesTaken  = _prior.count;   // the daily trade budget is per DAY, not per Start
-    if (_prior.count) log(`📒 [ORB-PAPER] ${_prior.count} trade(s) already taken today (₹${_prior.pnl}) — counted toward today's limits`);
-  }
 
   sharedSocketState.setOrbActive("ORB_PAPER");
 
@@ -1015,8 +837,6 @@ router.get("/start", async (req, res) => {
   scheduleAutoStop();
   log(`🟢 [ORB-PAPER] Session started — ${RES_MIN}-min candles, OR=${OR_BARS} bars (${RES_MIN * OR_BARS}-min)`);
 
-  const _reentryMax = Math.max(0, parseInt(process.env.ORB_REENTRY_AFTER_SL || "0", 10) || 0);
-
   notifyStarted({
     mode: "ORB-PAPER",
     text: [
@@ -1027,12 +847,10 @@ router.get("/start", async (req, res) => {
       ``,
       `Strategy  : ${orbStrategy.NAME}`,
       `OR window : ${process.env.ORB_RANGE_START || "09:15"} → ${process.env.ORB_RANGE_END || "09:30"} IST`,
-      // Reports the rule that will actually run today, not the one that used to.
-      // ORB_ENTRY_START can now hold the hunt past the OR lock, and a stop-out can
-      // buy extra attempts — a summary that omitted either would misdescribe the
-      // session it is announcing.
-      `Entry     : from ${process.env.ORB_ENTRY_START || process.env.ORB_RANGE_END || "09:30"} IST, max ${process.env.ORB_MAX_DAILY_TRADES || "1"} trade/day${_reentryMax > 0 ? ` (+${_reentryMax} after a stop-out)` : ""}`,
-      `Square-off: ${process.env.ORB_FORCED_EXIT || "15:15"} IST`,
+      // Reports the rule that will actually run today: ORB_ENTRY_START can hold the
+      // hunt past the OR lock.
+      `Entry     : from ${process.env.ORB_ENTRY_START || process.env.ORB_RANGE_END || "09:30"} IST`,
+      `Exit      : profit lock only`,
       _expiryBlocked ? `\n⚠️ Expiry-only mode: entries blocked (not expiry day)` : null,
     ].filter(Boolean).join("\n"),
   });
@@ -1041,10 +859,8 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
   if (state.position) simulateSell("Session stopped");
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopOptionPolling();
 
@@ -1079,10 +895,6 @@ function stopSession() {
     }
   }
 
-  // Record today's net for the risk breaker (0 on a no-trade/skip day → one-day
-  // cool-off resets a losing streak rather than deadlocking).
-  try { orbRiskState.recordDay("orb-paper", tradeLogger.istDateString(Date.now()), state.sessionPnl); } catch (_) {}
-
   log("🔴 [ORB-PAPER] Session stopped");
 
   notifyDayReport({
@@ -1105,7 +917,7 @@ router.get("/exit", (req, res) => {
 
 // ── Manual CE/PE entry — bypasses ORB break, useful when user reads the
 //    market manually and wants to take a trade. Reuses the same simulateBuy
-//    path so all the standard SL/target/charges/logging applies. ───────────
+//    path so all the standard charges/logging/profit lock applies. ──────────
 router.post("/manualEntry", async (req, res) => {
   if (!state.running)  return res.status(400).json({ success: false, error: "ORB paper is not running." });
   if (state.position)  return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
@@ -1116,13 +928,12 @@ router.post("/manualEntry", async (req, res) => {
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
   // Build a synthetic ORB signal snapshot — use current OR if formed, else
-  // synthesize a small range around spot so SL/target math still works.
+  // synthesize a small range around spot so the target line still draws.
   let or = null;
   try { or = orbStrategy.computeOpeningRange(state.candles); } catch (_) {}
   const rangePts = or ? Math.round((or.high - or.low) * 100) / 100 : 50;
   const orh = or ? or.high : spot + 25;
   const orl = or ? or.low  : spot - 25;
-  const slSpot = side === "CE" ? orl : orh;
   // Same constant the strategy uses for an auto signal — one owner, so a manual
   // entry's chart line matches an automated one. (There is no target EXIT; this
   // is display only.)
@@ -1132,7 +943,7 @@ router.post("/manualEntry", async (req, res) => {
   const sig = {
     signal: side === "CE" ? "BUY_CE" : "BUY_PE",
     side, orh, orl, rangePts,
-    entrySpot: spot, slSpot, targetSpot,
+    entrySpot: spot, targetSpot,
     signalStrength: "MANUAL",
     reason: `🖐️ MANUAL ${side} entry @ spot ₹${spot} (range ${rangePts}pt)`,
   };
@@ -1144,7 +955,7 @@ router.post("/manualEntry", async (req, res) => {
       // or an automatic entry won the race. Never report a manual fill that did not happen.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
-    return res.json({ success: true, side, spot, slSpot, targetSpot });
+    return res.json({ success: true, side, spot, targetSpot });
   } catch (e) {
     log(`❌ [ORB-PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -1216,7 +1027,6 @@ router.get("/status/chart-data", async (req, res) => {
       }
     }
 
-    const stopLoss   = state.position && state.position.slSpot     != null ? state.position.slSpot     : null;
     const entryPrice = state.position && state.position.entrySpot  != null ? state.position.entrySpot  : null;
     const target     = state.position && state.position.targetSpot != null ? state.position.targetSpot : null;
 
@@ -1258,7 +1068,7 @@ router.get("/status/chart-data", async (req, res) => {
       stOn:     (process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
     };
 
-    return res.json({ candles, markers, stopLoss, entryPrice, target, orhLine, orlLine, rsi, superTrend, gateCfg,
+    return res.json({ candles, markers, entryPrice, target, orhLine, orlLine, rsi, superTrend, gateCfg,
       optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1324,8 +1134,7 @@ router.get("/status/data", (req, res) => {
     position: pos ? {
       side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol,
       entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
-      slSpot: pos.slSpot, targetSpot: pos.targetSpot,
-      initialSlSpot: pos.initialSlSpot, breakevenArmed: pos.breakevenArmed, lastEma: pos.lastEma, lastStopSt: pos.lastStopSt, peakPremium: pos.peakPremium,
+      targetSpot: pos.targetSpot, peakPremium: pos.peakPremium,
       entryTime: pos.entryTime, signalStrength: pos.signalStrength,
       orh: pos.orh, orl: pos.orl, rangePts: pos.rangePts,
       qty: pos.qty,
@@ -1342,7 +1151,7 @@ function _orbCapital() {
 }
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive = false;
   const data = loadData();
   const pos  = state.position;
 
@@ -1359,15 +1168,8 @@ router.get("/status", (req, res) => {
   // "NORMAL" right up to the block level and never showed the amber STRONG-ONLY
   // band the setting configures. Same source as the gate.
   const _vixStrongOnly = vixFilter.getVixStrongOnly("orb");
-  // The EFFECTIVE budget, so the "n / N" badge matches the gate that actually runs:
-  // a stop-out with ORB_REENTRY_AFTER_SL on raises N, and showing "1 / 1" on a day
-  // that can still take a second trade would be the dashboard lying about the rule.
-  const _maxTrades = orbStrategy.reentryPlan(state._staleSession ? [] : _todaysExits(), parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10)).maxTrades;
-  const _maxLoss   = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
-  const _forcedExit = process.env.ORB_FORCED_EXIT || "15:15";
   const _orStart = process.env.ORB_RANGE_START || "09:15";
   const _orEnd   = process.env.ORB_RANGE_END   || "09:30";
-  const dailyLossHit = state.sessionPnl <= -_maxLoss;
 
   const pnlColor = (n) => (n || 0) >= 0 ? "#10b981" : "#ef4444";
 
@@ -1389,7 +1191,7 @@ router.get("/status", (req, res) => {
     },
     {
       label: state._staleSession ? "Trades (Last Session)" : "Trades Today",
-      value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_maxTrades}</span>`,
+      value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span>`,
       sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>`,
       accent: "#6a5090",
     },
@@ -1410,12 +1212,6 @@ router.get("/status", (req, res) => {
       value: `<span id="ajax-or-range">${or && or.high && or.low ? `${or.low}/${or.high}` : "—"}</span>`,
       sub: `<span id="ajax-or-sub" style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">${or && or.high && or.low ? `${(or.high-or.low).toFixed(1)} pts · ${_orStart}–${_orEnd}` : `${_orStart}–${_orEnd} IST`}</span>`,
       accent: "#7c3aed",
-    },
-    {
-      label: "Daily Loss Limit",
-      value: `<span id="ajax-daily-loss-val" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "HIT" : "OK"} <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);">/ -₹${_maxLoss.toLocaleString("en-IN")}</span></span>`,
-      sub: `<span id="ajax-daily-loss-sub" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "KILLED — no entries" : "Active"}</span>`,
-      accent: dailyLossHit ? "#ef4444" : "#10b981",
     },
     {
       label: "Candles Loaded",
@@ -1524,17 +1320,9 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${state.lastTickPrice ? "₹" + state.lastTickPrice.toFixed(2) : "—"}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div>
         </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Hard SL${pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}${pos.lastStopSt ? ` · ST ${pos.lastStopSt}` : ""}</div>
-          <div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div>
-        </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Spot Target <span style="color:var(--muted-2,#6d85a8);">(info)</span></div>
           <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.targetSpot ? "₹" + pos.targetSpot.toFixed(2) : "—"}</div>
-        </div>
-        <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Initial SL</div>
-          <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${pos.initialSlSpot ? "₹" + pos.initialSlSpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${pos.isFutures ? "Peak Price" : "Peak Premium"}</div>
@@ -1596,7 +1384,7 @@ ${buildSidebar('orbPaper', liveActive, state.running, {
 
 ${bbRsiTopBar({
   title: "ORB Paper Trade",
-  metaLine: `Strategy: ${orbStrategy.NAME} · OR ${_orStart}–${_orEnd} · Square-off ${_forcedExit} IST · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
+  metaLine: `Strategy: ${orbStrategy.NAME} · OR ${_orStart}–${_orEnd} · Exit: profit lock · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
   running: state.running,
   vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: _vixStrongOnly },
   primaryAction: { label: "Start ORB Paper", href: "/orb-paper/start" },
@@ -1625,7 +1413,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;line-height:1.6;">
-      <div><span style="color:#10b981;">── ORH</span> &nbsp;<span style="color:#ef4444;">── ORL</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#10b981;">── Target</span></div>
+      <div><span style="color:#10b981;">── ORH</span> &nbsp;<span style="color:#ef4444;">── ORL</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">── Target</span></div>
       <div><span style="color:#a855f7;">── SuperTrend</span> <span id="orbp-st-now" style="color:#8ba1c2;"></span></div>
     </div>
   </div>
@@ -1677,7 +1465,7 @@ async function orbpManualEntry(side) {
 </script>
 
 <script>
-// ── NIFTY Lightweight Chart (with OR overlay + entry/SL/target lines) ────
+// ── NIFTY Lightweight Chart (with OR overlay + entry/target lines) ────
 (function(){
   if (typeof LightweightCharts === 'undefined' || '${process.env.CHART_ENABLED}' === 'false') return;
   var container = document.getElementById('nifty-chart');
@@ -1701,7 +1489,7 @@ async function orbpManualEntry(side) {
   // line breaks at the flip instead of drawing a diagonal across it.
   var stUpS = chart.addLineSeries({ color:'#10b981', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var stDnS = chart.addLineSeries({ color:'#ef4444', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  var entryLine = null, slLine = null, tgtLine = null, _zoomed = false;
+  var entryLine = null, tgtLine = null, _zoomed = false;
 
   // ── RSI pane — its own chart, time scale kept in lockstep with the price chart
   var rsiContainer = document.getElementById('orbp-rsi-chart');
@@ -1811,10 +1599,8 @@ async function orbpManualEntry(side) {
       }
       if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
-      if (slLine)    { cs.removePriceLine(slLine);    slLine = null; }
       if (tgtLine)   { cs.removePriceLine(tgtLine);   tgtLine = null; }
       if (d.entryPrice) entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
-      if (d.stopLoss)   slLine    = cs.createPriceLine({ price:d.stopLoss,   color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' });
       if (d.target)     tgtLine   = cs.createPriceLine({ price:d.target,    color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Target' });
     } catch (e) {}
   }
@@ -1837,7 +1623,6 @@ ${optionChart.optionChartScript({ dataUrl: '/orb-paper/status/chart-data', id: '
   var _lastTradeCount  = ${state.sessionTrades.length};
   var _lastLogCount    = ${state.log.length};
   var _lastRunning     = ${state.running};
-  var _maxLoss         = ${_maxLoss};
   var _interval        = null;
 
   function setText(id, val){ var el=document.getElementById(id); if(el && el.textContent !== String(val)) el.textContent = val; }
@@ -1916,13 +1701,6 @@ ${optionChart.optionChartScript({ dataUrl: '/orb-paper/status/chart-data', id: '
       var orValEl = document.getElementById('ajax-or-range');
       if (orValEl) { if (d.orh && d.orl) { orValEl.textContent = d.orl + '/' + d.orh; } else { orValEl.textContent = '—'; } }
       setText('ajax-or-sub', d.orh && d.orl ? (d.rangePts + ' pts · ${_orStart}–${_orEnd}') : '${_orStart}–${_orEnd} IST');
-
-      // Daily loss
-      var dlossHit = (d.sessionPnl || 0) <= -_maxLoss;
-      var dlEl = document.getElementById('ajax-daily-loss-val');
-      if (dlEl) dlEl.style.color = dlossHit ? '#ef4444' : '#10b981';
-      var dlSub = document.getElementById('ajax-daily-loss-sub');
-      if (dlSub) { dlSub.textContent = dlossHit ? 'KILLED — no entries' : 'Active'; dlSub.style.color = dlossHit ? '#ef4444' : '#10b981'; }
 
       // Candles + ticks
       var cEl = document.getElementById('ajax-candle-count');
@@ -2016,7 +1794,7 @@ ${optionChart.optionChartScript({ dataUrl: '/orb-paper/status/chart-data', id: '
 
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive = false;
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/orb-paper",

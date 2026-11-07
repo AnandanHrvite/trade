@@ -32,13 +32,9 @@ body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:
 .top-bar-badge{font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:0.8px;display:inline-flex;align-items:center;gap:5px;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);}
 .badge-running{background:#064e3b;color:#34d399;border:1px solid #10b981;}
 .badge-stopped{background:#1c1017;color:#ef4444;border:1px solid #ef4444;}
-.badge-dry{background:rgba(245,158,11,0.12);color:#fbbf24;border:1px solid rgba(245,158,11,0.4);}
-.badge-live{background:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.4);}
 
 /* Banner (live pages) */
 .banner{border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:0.72rem;font-weight:700;}
-.banner-dry{background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);color:#fbbf24;}
-.banner-live{background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.4);color:#ef4444;}
 
 /* Capital strip */
 .capital-strip{display:flex;background:#0d1320;border:1px solid #1a2236;border-radius:9px;overflow:hidden;margin-bottom:14px;}
@@ -91,7 +87,6 @@ body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:
  *   stopAction      { label, href }          shown when running
  *   historyHref     string (or null)
  *   resetJs         string (or null) — inline onclick JS
- *   liveBadge       { kind: 'dry' | 'live' } | null
  */
 function bbRsiTopBar(opts) {
   const o = opts || {};
@@ -106,12 +101,6 @@ function bbRsiTopBar(opts) {
         const label = v == null ? "n/a" : (v.toFixed(1) + (v > m ? " · BLOCKED" : v > s ? " · STRONG ONLY" : " · NORMAL"));
         return `<span class="top-bar-badge" style="border-color:${bd};background:${bg};color:${c};">VIX ${label}</span>`;
       })()
-    : "";
-
-  const liveBadge = o.liveBadge
-    ? (o.liveBadge.kind === "dry"
-        ? `<span class="top-bar-badge badge-dry">DRY-RUN</span>`
-        : `<span class="top-bar-badge badge-live">LIVE</span>`)
     : "";
 
   const statusBadge = o.running
@@ -141,7 +130,6 @@ function bbRsiTopBar(opts) {
   </div>
   <div class="top-bar-right">
     ${statusBadge}
-    ${liveBadge}
     ${vixBadge}
     ${primaryBtn}
     ${historyBtn}

@@ -37,13 +37,9 @@
  *      (ORB_OR_ATR_MAX = 0, ORB_GAP_OR_MULT = 0).
  *   3. The NEXT candle must simply CLOSE beyond that candle's close
  *      (ORB_CONFIRM_MODE = close). Entry is that close.
- *   4. Initial stop = the BREAKOUT candle's low/high (ORB_SL_SOURCE = breakout,
- *      ORB_SL_ATR_MULT = 0). NOTE: ORB_MAX_TRADE_LOSS still clamps it to 1,500 INR
- *      (~38 spot pts) and does so on most trades — set that to 0 to let the
- *      structural stop actually be the stop.
- *   5. Exit = EMA9 close-trail, ONE close through it (ORB_TRAIL_EMA = 20,
- *      ORB_TRAIL_CONFIRM_CLOSES = 1, ORB_TRAIL_ARM_PTS = 0). No breakeven, no
- *      opposite-candle exit, no premium band.
+ *   4. Exit = the global profit lock only (2026-11-07, owner order — every stop,
+ *      trail, breakeven, opposite-candle exit and the ORB EOD square-off were
+ *      deleted; see src/strategies/orbExits.js). This engine proposes no stop.
  *
  * Every gate described in the rest of this header still EXISTS and is one env key
  * away; it simply ships off. The ablation numbers below were measured with them ON
@@ -61,7 +57,6 @@
  *                        before 09:50 net -2,372 INR over 9 trades while entries
  *                        after net -4,213 over 8, and a delay deletes the two best
  *                        trades of the sample. Measure it, do not assume it.
- *   ORB_REENTRY_AFTER_SL extra attempts allowed after a STOP-OUT (see reentryPlan).
  *
  * ── THE PIPELINE ────────────────────────────────────────────────────────────
  *   1. Build the opening range 09:15–09:30 and FREEZE it (never recalculated).
@@ -79,27 +74,6 @@
  *      back through the box cancels the day.
  *   7. Entry is always a candle CLOSE — never intrabar.
  *
- * ── WHY THE INITIAL STOP IS ATR-BASED (2026-07-26), AND ITS REAL LIMIT ─────
- * The breakout candle is BY CONSTRUCTION a large-body momentum bar. Placing the
- * stop at its opposite extreme puts it ~one body away -- exactly where the normal
- * post-momentum retracement lives. Measured: that stop had a median width of 23pt
- * and was hit on 4 of 6 trades, including the day that then ran 213pt our way.
- * The stop is now the WIDER of the structural extreme and ORB_SL_ATR_MULT x ATR(5m).
- *
- * BUT KNOW THIS (2026-07-26 adversarial re-review): the route's ORB_MAX_TRADE_LOSS
- * rupee cap is a TIGHTER stop than this one. At the shipped 1500 INR / 65-lot /
- * ~0.6 delta it trips after only ~38 spot pts, while ORB_SL_ATR_MULT=1.5 sits at
- * 50-83pt. So the rupee cap ends essentially every losing trade and the spot SL
- * never binds. Consequences, all verified on the 39-session sample:
- *   - every ATR multiplier from 1.0x to 2.5x gives an IDENTICAL result;
- *   - so does using the plain OR opposite edge. The multiplier is not tuned, it
- *     is INERT. Do not "optimise" it -- change ORB_MAX_TRADE_LOSS instead.
- *   - the only thing that mattered was that the OLD stop was TIGHTER than the cap
- *     and so fired first. Direction of the fix: supported. Magnitude: untested.
- * RECONCILED 2026-07-26: src/utils/orbStopRisk.js now clamps this stop to the level
- * the rupee budget actually allows, so what the dashboard shows IS what executes.
- * It logs when it clamps. Raise ORB_MAX_TRADE_LOSS if you want the full ATR stop.
- *
  * ── HOW MUCH TO TRUST THE NUMBERS BELOW ────────────────────────────────────
  * Authoritative figures come from `node scripts/orbValidate.js`, which drives THIS
  * engine plus the full production exit stack (adaptive breakeven, EMA trail, the
@@ -110,7 +84,7 @@
  *     bootstrap 95% CI on mean/trade = [-1,288, +2,511] INR
  *     P(true edge <= 0) = ~37%
  *     the single best trade is 211% of net -- REMOVE IT AND THE RESULT IS -3,786 INR
- *     the rupee budget clamped the stop on 9 of 9 trades (see ORB_SL_ATR_MULT below)
+ *     the rupee budget clamped the stop on 9 of 9 trades (stop since deleted)
  *
  * AND THAT 9 IS AN UPPER BOUND. Paper/live also run entry gates that need a live
  * option chain -- the premium band, the bid-ask spread cap and (shipped ENABLED) the
@@ -176,22 +150,19 @@
  * through the day), not a measured one. Extending to 14:30 looked better in rupees
  * on this sample (+15.6k vs +9.7k) but also produced the worst single trade. Undetermined.
  *
- * Returns { signal, side, reason, orh, orl, rangePts, entrySpot, slSpot, targetSpot,
+ * NOTE (2026-11-07): every exit-side figure quoted above was measured with the
+ * stops/trails that have since been deleted — none of them describe the current
+ * profit-lock-only exit.
+ *
+ * Returns { signal, side, reason, orh, orl, rangePts, entrySpot, targetSpot,
  *           signalStrength, vwap, atr5, atr15, gapPts, bodyPct, confirmed, gates }
  *   signal: "BUY_CE" | "BUY_PE" | "NONE"
- *   slSpot: the strategy's proposed initial stop. Routes must use this rather than
- *           recomputing one of their own — a single owner keeps paper/live/backtest
- *           in parity — and pass it through orbStopRisk.resolveInitialStop() to
- *           reconcile it with the per-trade rupee budget before placing it.
  */
 
 const { ATR, RSI } = require("technicalindicators");
 // Repo convention: SuperTrend is not in `technicalindicators`, so every strategy
 // that needs it uses this one shared implementation rather than a private copy.
 const { computeSuperTrend } = require("../utils/supertrend");
-// Exit classification for the re-entry rule. One-way dependency (entry reads the
-// exit engine's verdict); orbExits requires nothing from here, so there is no cycle.
-const { isStopOutExit, stopSuperTrendParams } = require("./orbExits");
 
 const NAME        = "ORB_15MIN";
 const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmation, slightly-ITM CE/PE buying";
@@ -550,7 +521,7 @@ function _tracer(candle, ctx, silent) {
  * embedding the raw array would bloat the day file for little gain. This keeps the
  * WHOLE funnel — which gates ran, in order, and how each resolved — in ~90 bytes:
  *
- *   "time window:P,trade budget:P,OR ready:P,OR vs ATR15:P,gap sanity:P,breakout:F"
+ *   "time window:P,OR ready:P,OR vs ATR15:P,gap sanity:P,breakout:F"
  *
  * P=pass, F=fail, S=skipped (filter off / not seeded), I=informational.
  * Without this the skip log records only the FIRST blocking reason, which is what
@@ -562,62 +533,11 @@ function summarizeGates(sig) {
   return sig.gates.map(g => `${g.gate}:${code[g.status] || "?"}`).join(",");
 }
 
-/**
- * RE-ENTRY AFTER A STOP-OUT (2026-08-13, owner request).
- *
- * ORB commits to ONE breakout per day. When that breakout is stopped out on noise
- * and the real move starts twenty minutes later, the day is over regardless — the
- * engine keeps re-finding the SAME committed breakout candle and refuses ("already
- * confirmed"), so raising ORB_MAX_DAILY_TRADES on its own could never produce a
- * second entry. Two owner-supplied cases:
- *
- *   2026-08-03  CE entry 10:15, stop 24563.85 (the breakout bar's low, 24pt away).
- *               Wicked it at 10:35 and turned; the day traded higher into 12:35.
- *   2026-07-29  CE entry 09:40, stopped 09:55, broke out again minutes later.
- *
- * THE RULE: after a stop-out, the breakout hunt RE-ARMS and ignores every candle up
- * to and including the one the stop was hit on. The next close beyond the same
- * frozen opening-range edge becomes a fresh breakout candle and the ordinary
- * confirmation / retest machinery runs again from scratch. Excluding the stop-out
- * candle itself is what makes the two cases above enter at 10:45 and 10:05 rather
- * than immediately re-buying the bar that just stopped us.
- *
- * ONLY a stop-out re-arms. An EMA-trail or opposite-candle exit means the MOVE is
- * over, not that the breakout was wrong, so there is nothing to try again.
- *
- * SHIPS OFF (ORB_REENTRY_AFTER_SL=0). With it at 0 this function returns the caller's
- * budget unchanged and a null re-arm, so the engine behaves exactly as before.
- *
- * @param {Array<{reason:string, atUnixSec:number}>} exits  today's exits, oldest first
- * @param {number} maxTrades  ORB_MAX_DAILY_TRADES
- * @returns {{maxTrades:number, rearmAfterTime:number|null, reentries:number}}
- */
-function reentryPlan(exits, maxTrades) {
-  const base = { maxTrades, rearmAfterTime: null, reentries: 0 };
-  const allowed = parseInt(process.env.ORB_REENTRY_AFTER_SL || "0", 10);
-  if (!Number.isFinite(allowed) || allowed <= 0) return base;
-  if (!Array.isArray(exits) || exits.length === 0) return base;
-
-  // Each stop-out buys one extra attempt, capped at `allowed`. A trail/EOD exit
-  // buys nothing, so a day cannot chain attempts off exits that were not failures.
-  const stops = exits.filter(e => e && isStopOutExit(e.reason)).length;
-  const reentries = Math.min(stops, allowed);
-  if (reentries <= 0) return base;
-
-  // Re-arm only when the MOST RECENT exit was itself a stop-out: if the last trade
-  // ended on the trail, the day's move has run and we are not hunting it again.
-  const last = exits[exits.length - 1];
-  const rearm = (isStopOutExit(last.reason) && typeof last.atUnixSec === "number" && last.atUnixSec > 0)
-    ? last.atUnixSec
-    : null;
-  return { maxTrades: maxTrades + reentries, rearmAfterTime: rearm, reentries };
-}
-
 function _blank() {
   return {
     signal: "NONE", side: null, reason: "",
     orh: null, orl: null, rangePts: null,
-    entrySpot: null, slSpot: null, targetSpot: null, signalStrength: null,
+    entrySpot: null, targetSpot: null, signalStrength: null,
     vwap: null, atr5: null, atr15: null, gapPts: null, bodyPct: null,
     confirmed: null, gates: null, rsi: null, superTrend: null, superTrendDir: null,
     // Retained as nulls purely so historical trade records keep a stable shape.
@@ -632,18 +552,10 @@ function _blank() {
  *        MUST include prior-day history (the routes preload ~7 days) so ATR(5m) and
  *        ATR(15m) are seeded before the open. The opening range and VWAP are
  *        day-scoped internally, so prior days never leak into today's range.
- * @param {{silent?:boolean, alreadyTraded?:boolean, rearmAfterTime?:number}} [opts]
- *        rearmAfterTime — unix seconds of the last STOP-OUT exit. Every candle at or
- *        before it is invisible to the breakout hunt, so the day can commit to a
- *        fresh breakout after a failed one. Supply it from reentryPlan(), never by
- *        hand: that helper owns which exits qualify. Null/absent = no re-arm.
+ * @param {{silent?:boolean}} [opts]
  */
 function getSignal(candles, opts) {
   const silent = !!(opts && opts.silent);
-  const alreadyTraded = !!(opts && opts.alreadyTraded);
-  const rearmAfter = (opts && typeof opts.rearmAfterTime === "number" && opts.rearmAfterTime > 0)
-    ? opts.rearmAfterTime
-    : null;
   const sig = _blank();
 
   // The tracer is created BEFORE the warm-up guard so that `sig.gates` is present
@@ -673,19 +585,6 @@ function getSignal(candles, opts) {
     bufferAtrMult:parseFloat(process.env.ORB_BUFFER_ATR_MULT || String(BUFFER_ATR_DFLT)),
     bufferMinPts: parseFloat(process.env.ORB_BUFFER_MIN_PTS  || "0"),
     confirmMode:  (process.env.ORB_CONFIRM_MODE || "close").toLowerCase(),
-    slSource:     (process.env.ORB_SL_SOURCE    || "breakout").toLowerCase(),
-    // Only read by slSource = "lookback": how many candles, counting BACK from and
-    // including the entry candle, the stop must clear. 2 = the entry candle and the
-    // one before it, which is the shape a discretionary trader draws by hand.
-    slLookback:   Math.max(1, parseInt(process.env.ORB_SL_LOOKBACK_CANDLES || "2", 10) || 1),
-    // Read by slSource = "supertrend". Resolved by orbExits — the ONE owner of these
-    // two keys — because the SuperTrend trail ratchets the very line this anchor
-    // places the stop on, and a second parse here is how the two silently end up on
-    // different bands (a junk or 0 multiplier fell through to computeSuperTrend's own
-    // 10/3 default on this side while the trail used 10/2). Deliberately separate from
-    // the ORB_ST_* entry gate below: that one is a direction filter at 10/3, this one
-    // is a stop at 10/2 (a tighter band trails closer behind price).
-    slSt:         stopSuperTrendParams(),
     vwapOn:       _vwapFilterOn(),
     rsiOn:        (process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
     rsiPeriod:    Math.max(2, parseInt(process.env.ORB_RSI_PERIOD || "14", 10)),
@@ -694,14 +593,12 @@ function getSignal(candles, opts) {
     stOn:         (process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
     stPeriod:     Math.max(2, parseInt(process.env.ORB_ST_PERIOD || "10", 10)),
     stMult:       parseFloat(process.env.ORB_ST_MULT || "3"),
-    slAtrMult:    parseFloat(process.env.ORB_SL_ATR_MULT     || "0"),
     retestWindow: parseInt  (process.env.ORB_RETEST_MAX_WAIT || "6", 10),
   };
 
   // A start earlier than the OR freeze is meaningless — the range does not exist
   // yet — so the freeze is a hard floor rather than a misconfiguration to honour.
-  // NaN-safe for the same reason orbExits.trailArmPts() is: a hand-edited .env with
-  // a non-time value would otherwise leave entryStart = NaN, every `lastIst >= NaN`
+  // NaN-safe: a hand-edited .env with a non-time value would otherwise leave entryStart = NaN, every `lastIst >= NaN`
   // comparison false, and ORB silently refusing to trade for the whole session with
   // nothing in the log to explain it. A bad value degrades to the shipped rule.
   if (!Number.isFinite(cfg.entryStart) || cfg.entryStart < cfg.orEnd) cfg.entryStart = cfg.orEnd;
@@ -725,9 +622,6 @@ function getSignal(candles, opts) {
             : `Before ${_startLabel} IST — ORB is not hunting breakouts yet`)
         : `Past ${process.env.ORB_ENTRY_END || "11:30"} IST — no new ORB entries (breakout is stale)`,
     }));
-  }
-  if (!tr.check("trade budget", !alreadyTraded, "ORB takes one trade per day")) {
-    return done(Object.assign(sig, { reason: "Already traded this session — ORB takes only 1 trade/day" }));
   }
 
   // ── 2. Frozen opening range ───────────────────────────────────────────────
@@ -842,19 +736,10 @@ function getSignal(candles, opts) {
   // ORB_BREAKOUT_RESCAN=false restores the old first-close-is-final behaviour.
   const rescan = (process.env.ORB_BREAKOUT_RESCAN || "true").toLowerCase() === "true";
 
-  // A stop-out RE-ARMS the hunt: every candle up to and including the one the stop
-  // was hit on is invisible, so the day commits to a genuinely fresh breakout rather
-  // than re-buying the bar that just stopped us out. See reentryPlan() for which
-  // exits qualify and why the stop candle itself is excluded.
-  if (rearmAfter != null) {
-    tr.info("re-entry", `re-armed — ignoring breakouts at or before ${new Date(rearmAfter * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" })}`);
-  }
-
   let b = -1, side = null, q = null, rejected = null;
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
     if (_istDay(c.time) !== day) continue;
-    if (rearmAfter != null && c.time <= rearmAfter) continue;
     const m = _istMins(c.time);
     if (m < cfg.entryStart || m >= cfg.entryEnd) continue;
     let s = null;
@@ -925,12 +810,8 @@ function getSignal(candles, opts) {
     return done(Object.assign(sig, { reason: `Breakout ${side} candle formed (close ${brk.close}) — waiting for the next candle to confirm` }));
   }
 
-  // ── 8. Entry construction. The strategy OWNS the stop — routes execute it. ──
-  // Tagged so a re-entry is identifiable in the trade log and the AI export without
-  // having to reconstruct the day's sequence.
-  const rearmTag = rearmAfter != null ? " [re-entry]" : "";
-  const _fire = (why, pathTag) => {
-    const tag = `${rearmTag}${pathTag}`;
+  // ── 8. Entry construction ────────────────────────────────────────────────
+  const _fire = (why, tag) => {
     // Momentum gate. Inside _fire on purpose: confirmation, resume and retest all
     // funnel through here, so the rule cannot be bypassed by one of the three paths.
     const rsiChk = _rsiGate(candles, side, cfg);
@@ -951,83 +832,20 @@ function getSignal(candles, opts) {
     }
 
     const entrySpot = last.close;
-    // Wider of the structural extreme and the ATR floor. See the header note.
-    //
-    // ORB_SL_SOURCE picks WHICH candle's extreme is "structural":
-    //   "entry"    (default) — the candle we are entering on, i.e. today's rule.
-    //   "breakout" — the FIRST candle that closed past the range edge. That is the
-    //                bar the move is built on, so its extreme is the level that
-    //                invalidates the breakout; it also gives a stop that does not
-    //                shrink just because the entry candle happened to be small.
-    //   "supertrend"— the SuperTrend(ORB_SL_ST_PERIOD, ORB_SL_ST_MULT) line, default
-    //                10/2. Not a candle extreme at all: an ATR band that already
-    //                sits where the trend would be invalidated, and the one anchor
-    //                that keeps moving after entry (turn on ORB_ST_TRAIL_ENABLED
-    //                and the same line becomes the trailing stop).
-    //   "lookback" — the extreme of the LAST ORB_SL_LOOKBACK_CANDLES candles ending
-    //                at the entry candle (default 2 = entry candle + the one before
-    //                it). "breakout" anchors to a bar that may be many candles back,
-    //                which on a resume/retest entry produces a stop far wider than
-    //                the swing being traded; "entry" anchors to a single bar that
-    //                can be tiny. This is the middle ground and it is what a
-    //                discretionary trader draws: clear the recent swing, nothing more.
-    //                Window never crosses into the previous day.
-    let structural;
-    if (cfg.slSource === "supertrend") {
-      // The SuperTrend line as at the entry candle. This is the SAME line the
-      // SuperTrend trail (ORB_ST_TRAIL_ENABLED) then ratchets, so a trade that
-      // starts on it stays on it. Falls back to the entry candle's extreme while
-      // SuperTrend is still warming up — never to "no stop".
-      const stArr  = computeSuperTrend(candles, cfg.slSt.period, cfg.slSt.mult);
-      const stLast = stArr[lastIdx];
-      structural = (stLast && stLast.value != null)
-        ? stLast.value
-        : (side === "CE" ? last.low : last.high);
-    } else if (cfg.slSource === "lookback") {
-      const from = Math.max(0, lastIdx - (cfg.slLookback - 1));
-      let ext = side === "CE" ? last.low : last.high;
-      for (let i = lastIdx; i >= from; i--) {
-        const c = candles[i];
-        if (!c || _istDay(c.time) !== day) break;   // same session only
-        ext = side === "CE" ? Math.min(ext, c.low) : Math.max(ext, c.high);
-      }
-      structural = ext;
-    } else {
-      const slBar = cfg.slSource === "breakout" ? brk : last;
-      structural = side === "CE" ? slBar.low : slBar.high;
-    }
-
-    // A breakout-anchored stop can land on the WRONG SIDE of the entry, which would
-    // be an instantly-stopped-out trade rather than a stop at all. It happens on the
-    // retest/resume path: the breakout candle can sit entirely clear of the range
-    // (e.g. ORH 140, breakout bar low 175) and the entry then comes several candles
-    // later at a pullback close of 150 — below the bar the stop is anchored to.
-    // Reproduced: CE entry 150 with SL 175. Fall back to the entry candle's own
-    // extreme, and to the opposite range edge if even that is not strictly beyond
-    // the entry (a close that IS the candle's low/high). The ATR floor below cannot
-    // catch this on its own, because ORB_SL_ATR_MULT=0 disables it.
-    const wrongSide = (v) => (side === "CE" ? v >= entrySpot : v <= entrySpot);
-    if (wrongSide(structural)) structural = side === "CE" ? last.low : last.high;
-    if (wrongSide(structural)) structural = side === "CE" ? or.low : or.high;
-    const atrStop = atr5 != null && cfg.slAtrMult > 0
-      ? (side === "CE" ? entrySpot - cfg.slAtrMult * atr5 : entrySpot + cfg.slAtrMult * atr5)
-      : structural;
-    const slSpot = side === "CE" ? Math.min(structural, atrStop) : Math.max(structural, atrStop);
     const targetSpot = side === "CE" ? or.high + rangePts * TARGET_OR_MULT : or.low - rangePts * TARGET_OR_MULT;
 
     if (!silent) {
       const t = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-      console.log(`[ORB ${t}] ENTER ${side}${tag} | ORH=${or.high} ORL=${or.low} range=${rangePts}pt${atr15 ? ` (${(rangePts / atr15).toFixed(2)}×ATR15)` : ""} buf=${buffer} | brk body=${_r2(brkBody)}pt | entry ${_r2(entrySpot)} SL ${_r2(slSpot)} (risk ${_r2(Math.abs(entrySpot - slSpot))}pt) | ${why}`);
+      console.log(`[ORB ${t}] ENTER ${side}${tag} | ORH=${or.high} ORL=${or.low} range=${rangePts}pt${atr15 ? ` (${(rangePts / atr15).toFixed(2)}×ATR15)` : ""} buf=${buffer} | brk body=${_r2(brkBody)}pt | entry ${_r2(entrySpot)} | ${why}`);
     }
     return done(Object.assign(sig, {
       signal: side === "CE" ? "BUY_CE" : "BUY_PE",
       side,
       entrySpot:  _r2(entrySpot),
-      slSpot:     _r2(slSpot),
       targetSpot: _r2(targetSpot),
       signalStrength: "STRONG",
       confirmed: true,
-      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "supertrend" ? `SuperTrend(${cfg.slSt.period},${cfg.slSt.mult}) line` : cfg.slSource === "lookback" ? `last-${cfg.slLookback}-candle extreme` : cfg.slSource === "breakout" ? "breakout-candle extreme" : "entry-candle extreme"} / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
+      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}${gapPts != null ? `; gap ${gapPts}pt` : ""}`,
     }));
   };
 
@@ -1044,8 +862,7 @@ function getSignal(candles, opts) {
   if (confPass) {
     if (lastIdx === b + 1) return _fire("confirmation candle extended the move", "");
     // Entry is ALWAYS the confirmation candle's close; we never buy in late. This is
-    // not the trade-budget rule (that is the `trade budget` gate above) — it is why a
-    // re-entry needs a genuinely NEW breakout candle rather than this same one.
+    // A later entry needs a genuinely NEW breakout candle, never this same one.
     return done(Object.assign(sig, { reason: `Breakout already confirmed at candle #${b + 1} — entry is that candle's close only, no late entry` }));
   }
 
@@ -1082,4 +899,4 @@ function getSignal(candles, opts) {
   return done(Object.assign(sig, { reason: `Waiting for a retest or resume of ${side === "CE" ? "ORH" : "ORL"} (candle ${lastIdx - b}/${cfg.retestWindow + 1})` }));
 }
 
-module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, summarizeGates, reentryPlan, TARGET_OR_MULT };
+module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, summarizeGates, TARGET_OR_MULT };

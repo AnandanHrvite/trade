@@ -75,7 +75,7 @@ function line(label, s) {
 
   console.log(`${"═".repeat(120)}\nOVERALL\n${"═".repeat(120)}`);
   console.log(line("all trades", stats(trades)));
-  console.log(`  trades per session: ${r2(trades.length / sessions)}   stop clamped by the rupee budget on ${trades.filter(t => t.clamped).length}/${trades.length}`);
+  console.log(`  trades per session: ${r2(trades.length / sessions)}`);
 
   // ── Statistical honesty: bootstrap + concentration ──
   const inrs = trades.map(t => t.inr);
@@ -108,11 +108,8 @@ function line(label, s) {
     "OR >= 1.5x ATR15":     t => t.orAtr != null && t.orAtr >= 1.5,
     "gap up > 0.3% ":       t => t.gap != null && t.gap > 0,
     "gap down":             t => t.gap != null && t.gap < 0,
-    "exit: trail":          t => t.why === "trail",
-    "exit: breakeven":      t => t.why === "BE",
-    "exit: stop":           t => t.why === "SL",
-    "exit: opposite candle":t => t.why === "opp",
-    "exit: EOD":            t => t.why === "EOD",
+    "exit: profit lock":    t => t.why === "lock",
+    "exit: session end":    t => t.why === "EOD",
   };
   for (const [k, f] of Object.entries(groups)) console.log(line(k, stats(trades.filter(f))));
 

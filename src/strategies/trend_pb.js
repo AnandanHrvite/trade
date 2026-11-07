@@ -22,21 +22,19 @@
  *      Body-vs-ATR is the conviction proxy (NIFTY spot has no real volume) — a
  *      decisive close on close, never a wick.
  *
- * Exit is owned by the route (trendPbPaper.js), NOT here — structural stop at the
- * pullback low → breakeven → ATR-chandelier trail on SPOT (the right-tail engine)
- * → EMA20(5m)-close trend-failure → time-stop → EOD → premium disaster backstop.
- * No fixed target, no partial booking.
+ * Exit is owned by the route (trendPbPaper.js), NOT here — the global profit
+ * lock on the option premium is the only automatic exit.
  *
  * Returns:
- *   { signal: "BUY_CE"|"BUY_PE"|"NONE", side, reason, entrySpot, slSpot,
+ *   { signal: "BUY_CE"|"BUY_PE"|"NONE", side, reason, entrySpot,
  *     targetSpot:null, signalStrength, trendBias, vwap, ema5, ema20_15, ema50_15,
- *     atr5, pullbackLow, bodyPts, ... }   slSpot = structural stop (pullback low).
+ *     atr5, pullbackLow, bodyPts, ... }
  */
 
 const { EMA, ATR } = require("technicalindicators");
 
 const NAME        = "TREND_PULLBACK";
-const DESCRIPTION = "Trend Pullback — 15m bias + 5m pullback/resumption, slightly-ITM CE/PE buying, ATR-trail exits";
+const DESCRIPTION = "Trend Pullback — 15m bias + 5m pullback/resumption, slightly-ITM CE/PE buying, profit-lock exit";
 
 // ── time / day helpers (repo convention, mirrors orb_breakout.js) ────────────
 function _parseMins(envKey, fallback) {
@@ -131,7 +129,7 @@ function _swings(cands, L) {
 function _baseSignal() {
   return {
     signal: "NONE", side: null, reason: "",
-    entrySpot: null, slSpot: null, targetSpot: null, signalStrength: null,
+    entrySpot: null, targetSpot: null, signalStrength: null,
     trendBias: null, vwap: null, ema5: null, ema20_15: null, ema50_15: null,
     atr5: null, pullbackLow: null, pullbackHigh: null, bodyPts: null,
     // ORB-compatible fields the shared route/record readers may look for:
@@ -144,11 +142,10 @@ function _baseSignal() {
  * getSignal(candles, opts) — 5-min IST spot candles WITH multi-day history (so
  * EMA20(15m)/EMA50(15m)/EMA20(5m)/ATR(5m) are seeded before the open). VWAP +
  * today's session are day-scoped internally so prior days never leak.
- * opts: { silent, alreadyTraded }.
+ * opts: { silent }.
  */
 function getSignal(candles, opts) {
   const silent = !!(opts && opts.silent);
-  const alreadyTraded = !!(opts && opts.alreadyTraded);
   const base = _baseSignal();
   if (!candles || candles.length < 2) {
     return Object.assign(base, { reason: `Warming up (${candles ? candles.length : 0} candles)` });
@@ -177,7 +174,6 @@ function getSignal(candles, opts) {
 
   if (lastIst < entryStartMin) return Object.assign(base, { reason: `Before entry window (${process.env.TREND_PB_ENTRY_START || "09:45"} IST)` });
   if (lastIst >= entryEndMin)  return Object.assign(base, { reason: `Past entry window (${process.env.TREND_PB_ENTRY_END || "14:30"} IST) — no new entries` });
-  if (alreadyTraded)           return Object.assign(base, { reason: "Daily trade budget spent — no new entries" });
 
   // ── Indicators ───────────────────────────────────────────────────────────
   const closes5 = candles.map(c => c.close);
@@ -313,18 +309,15 @@ function getSignal(candles, opts) {
   if (!resumeOk)   return Object.assign(base, { reason: `${side} pullback ok, waiting for resumption: ${resumeWhy}` });
 
   // ── ALL PASSED → enter on this candle's close ────────────────────────────
-  // Structural stop = pullback extreme (route clamps it to a sane band).
-  const slSpot = side === "CE" ? pbLow : pbHigh;
   base.signal = side === "CE" ? "BUY_CE" : "BUY_PE";
   base.entrySpot = _r2(last.close);
-  base.slSpot = slSpot;
-  base.targetSpot = null;                 // no fixed target — right-tail via trailing
+  base.targetSpot = null;                 // no fixed target
   base.signalStrength = "STRONG";
   base.reason = `TREND PB ${side}: 15m ${bias} (HH/HL${side === "CE" ? "" : "→LH/LL"}, EMA20${side === "CE" ? ">" : "<"}EMA50, slope ${side === "CE" ? "up" : "dn"}${vwap != null ? `, spot ${side === "CE" ? ">" : "<"} VWAP ${vwap}` : ""}) → healthy 5m pullback to EMA${cfg.ema5Period} (low ${pbLow}) → resumption close ${_r2(last.close)} beyond prev ${side === "CE" ? "high" : "low"}, body ${_r2(body)}pt ≥ ${_r2(minBody)}pt [STRONG]`;
 
   if (!silent) {
     const istStr = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-    console.log(`[TREND_PB ${istStr}] ENTER ${side} | bias=${bias} EMA20_15=${base.ema20_15}/EMA50_15=${base.ema50_15} | ATR5=${base.atr5} pbLow=${pbLow} | resume close=${_r2(last.close)} body=${_r2(body)}pt SL=${slSpot} [STRONG]`);
+    console.log(`[TREND_PB ${istStr}] ENTER ${side} | bias=${bias} EMA20_15=${base.ema20_15}/EMA50_15=${base.ema50_15} | ATR5=${base.atr5} pbLow=${pbLow} | resume close=${_r2(last.close)} body=${_r2(body)}pt [STRONG]`);
   }
 
   return base;

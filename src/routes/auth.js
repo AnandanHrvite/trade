@@ -46,9 +46,8 @@ function _reauthFyersSocket() {
   }
 }
 
-// Strategies whose orders go to ZERODHA (paper modes included: a harness-live
-// session runs under its *_PAPER mode string and still places Zerodha orders).
-const _ZERODHA_STRATEGY_RE = /^(EMA_RSI_ST|EMA9VWAP|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930|HA_SCALP|PREV_ORB_SCALP)_(PAPER|LIVE)$/;
+// Strategies that use the ZERODHA session.
+const _ZERODHA_STRATEGY_RE = /^(EMA_RSI_ST|EMA9VWAP|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930|HA_SCALP|PREV_ORB_SCALP)_PAPER$/;
 function _activeZerodhaModes() {
   const out = [];
   for (const [name, fn] of Object.entries(sharedSocketState)) {
@@ -58,24 +57,24 @@ function _activeZerodhaModes() {
   // ST_RSI_PIV_BB — Fyers candles, Zerodha orders.
   try {
     const m = sharedSocketState.getStRsiPivBbMode && sharedSocketState.getStRsiPivBbMode();
-    if (m && /^ST_RSI_PIV_BB_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+    if (m && /^ST_RSI_PIV_BB_PAPER$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
   // SAIL_VWAP_ST — Fyers candles, Zerodha orders (SAIL stock options).
   try {
     const m = sharedSocketState.getSailVwapStMode && sharedSocketState.getSailVwapStMode();
-    if (m && /^SAIL_VWAP_ST_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+    if (m && /^SAIL_VWAP_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
   // PIVOT_EMA_ST family (NIFTY / BANK NIFTY / SAIL) — Fyers candles, Zerodha orders.
   for (const g of ["getPivotEmaStMode", "getBnPivotEmaStMode", "getSailPivotEmaStMode"]) {
     try {
       const m = sharedSocketState[g] && sharedSocketState[g]();
-      if (m && /^(SAIL_|BN_)?PIVOT_EMA_ST_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+      if (m && /^(SAIL_|BN_)?PIVOT_EMA_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
     } catch (_) {}
   }
   // GAP_RUNAWAY — Fyers data, Zerodha orders (the stock scanner places none).
   try {
     const m = sharedSocketState.getGapRunawayMode && sharedSocketState.getGapRunawayMode();
-    if (m && /^GAP_RUNAWAY_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+    if (m && /^GAP_RUNAWAY_PAPER$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
   return out;
 }
@@ -524,7 +523,7 @@ router.post("/zerodha/logout", (req, res) => {
   console.log(`🔴 [Zerodha] Token cleared via logout route${active.length ? ` (FORCED with active: ${active.join(", ")})` : ""}.`);
   return res.send(buildSuccessPage(
     "Zerodha Logged Out ✅",
-    "Zerodha token has been cleared. You will need to login again before starting Live Trade."
+    "Zerodha token has been cleared. You will need to login again before trading."
   ));
 });
 
@@ -547,7 +546,6 @@ router.get("/status/all", (req, res) => {
   res.json({
     fyers:     { loggedIn: fyersOk,   message: fyersOk   ? "Logged in" : "Not logged in" },
     zerodha:   { loggedIn: zerodhaOk, configured: !!process.env.ZERODHA_API_KEY, message: zerodhaOk ? "Logged in" : "Not logged in" },
-    liveReady: fyersOk && zerodhaOk && process.env.EMA_RSI_ST_LIVE_ENABLED === "true",
   });
 });
 

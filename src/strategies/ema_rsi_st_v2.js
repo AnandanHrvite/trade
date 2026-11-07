@@ -19,14 +19,13 @@
  *
  * DELIBERATE DIFFERENCES FROM V1 — do NOT "helpfully" add these back:
  *   • NO SuperTrend gate on ENTRY. V1 requires ST bullish for CE / bearish for PE.
- *     V2 does not: SuperTrend is used ONLY as the stop (see below). A V2 CE entry
- *     can legitimately fire while SuperTrend is red.
+ *     V2 does not: SuperTrend is read only for the protective-side check below. A
+ *     V2 CE entry can legitimately fire while SuperTrend is red.
  *   • NO RSI upper/lower cap. V1 blocks CE at RSI >= 80 (overbought) and PE at
  *     RSI <= 20 (oversold). V2 has a SINGLE threshold per side and no cap at all,
  *     so RSI 95 is a valid CE entry.
  *   • NO EMA9 triple-stack option, and NO EMA21 anywhere — not in the entry, not in
- *     the exit, not in the trail. V1 computes EMA21(OHLC4) and trails on it; V2's
- *     only trail is SuperTrend.
+ *     the exit, not in the trail. V1 computes EMA21(OHLC4); V2 does not.
  *
  * WHICH BAR IS READ: every indicator reads the LAST FULLY CLOSED candle. The last
  * element of `candles` is the signal candle. Nothing reads the live/forming bar and
@@ -39,17 +38,15 @@
  * at the crossing price. Paper/Live fill at the first tick past the trigger;
  * Backtest fills at the same market moment via confirmCandle.barCrossFill.
  *
- * STOP LOSS — SuperTrend(10, 2), and nothing else:
- *   Initial SL  = the SuperTrend value at entry (below price for CE, above for PE).
- *   Trailing SL = the SuperTrend value re-read at every candle close, TIGHTEN-ONLY
- *                 (CE may only move up, PE only down), enforced INTRA-CANDLE by the
- *                 execution layer on each tick.
- *   There is NO negative-candle stop, NO option-premium stop, NO fixed-point stop
- *   and NO profit target. The only other exit is the hard 14:00 close.
+ * EXITS live in the execution layer, not here. The NIFTY / BANKNIFTY V2 paper and
+ * backtest routes exit ONLY on the global profit lock (tradeGuards.checkProfitLock)
+ * plus the session teardown — they ignore `stopLoss` and never call trailStop().
+ * getSignal() still returns the SuperTrend level as `stopLoss` / `slSpot`, and
+ * trailStop() stays exported, because other callers (commodityPaper.js, the swing
+ * scanner adapters) still consume them.
  *
  * Timeframe: 5-min (TRADE_RESOLUTION) · entry window 10:30–13:00 IST
- *            (EMA_RSI_ST_V2_ENTRY_START / _ENTRY_END) · hard square-off 14:00
- *            (EMA_RSI_ST_V2_EOD_EXIT_TIME).
+ *            (EMA_RSI_ST_V2_ENTRY_START / _ENTRY_END).
  *
  * WARM-UP: EMA_SLOW + 5 candles are refused outright (warmup:true). At the default
  * 50/5-min that is 55 bars ≈ 4.6 hours, i.e. MORE than one session — so the paper
@@ -74,7 +71,7 @@ const PREFIXES = { EMA_RSI_ST_V2: "NIFTY", BN_EMA_RSI_ST_V2: "BANKNIFTY" };
 function underlyingFor(prefix) { return PREFIXES[prefix || DEFAULT_PREFIX] || "NIFTY"; }
 
 const NAME        = "EMA_RSI_ST_V2";
-const DESCRIPTION = "EMA_RSI_ST_V2 | EMA20/EMA50(close) + RSI(14) + SuperTrend(10,2) | EMA alignment + close-beyond-EMA20 + single RSI threshold (no ST entry gate, no RSI cap) | SuperTrend-only trailing SL | 10:30–13:00 entries, hard close 14:00";
+const DESCRIPTION = "EMA_RSI_ST_V2 | EMA20/EMA50(close) + RSI(14) + SuperTrend(10,2) | EMA alignment + close-beyond-EMA20 + single RSI threshold (no ST entry gate, no RSI cap) | exit = global profit lock | 10:30–13:00 entries";
 
 // ── Trading window ────────────────────────────────────────────────────────
 // V2 owns its OWN window keys — it must not inherit V1's TRADE_ENTRY_START/END,
@@ -186,7 +183,8 @@ function computeSeries(candles, cfg) {
  *           entrySpot, triggerLevel, rsi, ema20, ema50, supertrend, stTrend,
  *           stTrendInt, prevCandleHigh, prevCandleLow, signalStrength }.
  *
- * `stopLoss` is the SuperTrend value — the initial stop AND the seed of the trail.
+ * `stopLoss` is the SuperTrend value at the signal bar. The V2 routes no longer use
+ * it as a stop (profit lock only); it is kept for the callers that still do.
  * signalStrength is always "STRONG" (kept for the VIX gate's call shape, which only
  * hard-blocks above VIX_MAX_ENTRY).
  */
@@ -391,9 +389,8 @@ function getSignal(candles, opts) {
 /**
  * trailStop(candles, side, currentStop, cfg)
  *
- * The ONE place the SuperTrend trail is computed — the paper route, the backtest
- * and (through the harness) live all call this, so a tighten-only bug cannot exist
- * on one surface and not another.
+ * The SuperTrend tighten-only trail. The NIFTY / BANKNIFTY V2 routes no longer
+ * call it (their only exit is the profit lock); it stays for commodityPaper.js.
  *
  * Returns { stop, changed, tag } — `stop` is the tightened stop (never looser than
  * `currentStop`), `changed` says whether it moved. A non-finite SuperTrend or a

@@ -2,17 +2,16 @@
  * TREND PULLBACK PAPER TRADE — /trend-pb-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Trade WITH an established trend, enter on a healthy 5-min pullback that resumes.
- * Single-leg slightly-ITM NIFTY option buying. Intraday MIS only, square-off 15:15.
+ * Single-leg slightly-ITM NIFTY option buying. Intraday MIS only.
  *
  * Uses LIVE NIFTY data (Fyers WebSocket) but SIMULATES orders locally — no broker
  * is hit; everything is in-memory + persisted to JSON & JSONL. Paper is canonical:
- * the backtest and live engines must match THIS decision/fill/exit logic.
+ * the backtest must match THIS decision/fill/exit logic.
  *
  * Strategy signal: src/strategies/trend_pb.js
- * Exits (owned here, all on SPOT except the premium backstop):
- *   structural stop (pullback low, clamped) → breakeven → ATR-chandelier trail on
- *   spot (the right-tail engine) → EMA20(5m)-close trend-failure → time-stop → EOD
- *   → premium disaster backstop. No fixed target, no partial booking.
+ * Exit (owned here): the global profit lock (tradeGuards.checkProfitLock) on the
+ * option premium is the only automatic exit; otherwise the trade is held until a
+ * manual exit, /stop, or the TRADE_STOP_TIME session auto-stop.
  *
  * Endpoints: /start /stop /exit /status /status/data /status/chart-data /history …
  */
@@ -22,7 +21,7 @@ const { trackPath, pathFields } = require("../utils/tradePath");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const { EMA, ATR } = require("technicalindicators");
+const { EMA } = require("technicalindicators");
 
 const trendPbStrategy    = require("../strategies/trend_pb");
 const instrumentConfig   = require("../config/instrument");
@@ -107,7 +106,6 @@ function _freshState() {
     // totalPnl — the capital pool adds sessionPnl only then (see trackSession below).
     _unsaved:       false,
     tradesTaken:    0,
-    consecutiveLosses: 0,
     candles:        [],
     currentBar:     null,
     barStartTime:   null,
@@ -250,12 +248,6 @@ function _computeEma(candles, period) {
   const arr = EMA.calculate({ period, values: closes });
   return arr && arr.length ? arr[arr.length - 1] : null;
 }
-function _computeAtr(candles, period) {
-  if (!candles || candles.length < period + 1) return null;
-  const highs = candles.map(c => c.high), lows = candles.map(c => c.low), closes = candles.map(c => c.close);
-  const arr = ATR.calculate({ period, high: highs, low: lows, close: closes });
-  return arr && arr.length ? arr[arr.length - 1] : null;
-}
 
 // ── Trade simulation ──────────────────────────────────────────────────────────
 // Guards the await window inside simulateBuy. state.position is only set AFTER
@@ -367,17 +359,6 @@ async function _simulateBuyInner(side, sig, spot) {
     return;
   }
 
-  // ── Initial hard SL = structural (pullback low CE / high PE), clamped to a
-  //    sane band so a wide structure doesn't over-risk and a tight one doesn't
-  //    get noise-stopped. risk = clamp(|entry - structuralStop|, min, max).
-  const clampMin = parseFloat(process.env.TREND_PB_STOP_CLAMP_MIN || "8");
-  const clampMax = parseFloat(process.env.TREND_PB_STOP_CLAMP_MAX || "30");
-  let structStop = (sig && typeof sig.slSpot === "number") ? sig.slSpot
-                    : (side === "CE" ? spot - clampMin : spot + clampMin);
-  let riskPts = Math.abs(spot - structStop);
-  riskPts = Math.min(Math.max(riskPts, clampMin), clampMax);
-  const _initSl = Math.round((side === "CE" ? spot - riskPts : spot + riskPts) * 100) / 100;
-
   const pos = {
     side,
     isFutures:      _isFut,
@@ -391,17 +372,6 @@ async function _simulateBuyInner(side, sig, spot) {
     entryTime:      istNow(),
     entryTimeMs:    Date.now(),
     entryBarTime:   Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
-    riskPts,
-    targetSpot:     null,                 // no fixed target
-    initialSlSpot:  _initSl,
-    slSpot:         _initSl,
-    bestSpot:       spot,                 // MFE anchor for the ATR-chandelier trail
-    breakevenArmed: false,
-    trailArmed:     false,
-    emaArmed:       false,
-    lastEma:        null,
-    lastAtr:        null,
-    candlesHeld:    0,
     peakPremium:    optionEntryLtp,
     signalStrength: sig && sig.signalStrength,
     vixAtEntry:     getCachedVix(),
@@ -426,13 +396,13 @@ async function _simulateBuyInner(side, sig, spot) {
   // Futures P&L comes from the spot feed — there is no option contract to poll.
   if (!_isFut) startOptionPolling();
 
-  log(`🟢 [TREND_PB-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spot}${_isFut ? "" : ` optLtp=${optionEntryLtp}`} | initial SL=${pos.slSpot} (risk ${riskPts.toFixed(1)}pt, structural)`);
+  log(`🟢 [TREND_PB-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spot}${_isFut ? "" : ` optLtp=${optionEntryLtp}`}`);
 
   notifyEntry({
     mode: "TREND_PB-PAPER",
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
-    qty, stopLoss: pos.slSpot,
+    qty,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -444,7 +414,7 @@ async function _simulateBuyInner(side, sig, spot) {
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
       spotEntry: spot, optionEntry: optionEntryLtp,
-      stopLoss: pos.slSpot, targetSpot: null,
+      stopLoss: null, targetSpot: null,
       reason: pos.entryReason,
     });
   } catch (_) {}
@@ -465,7 +435,6 @@ function simulateSell(reason) {
   const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
-  if (pnl < 0) state.consecutiveLosses++; else if (pnl > 0) state.consecutiveLosses = 0;
 
   const trade = {
     side:           pos.side,
@@ -486,8 +455,6 @@ function simulateSell(reason) {
     pnlMode:        _pnlRes.pnlMode,
     exitReason:     reason,
     entryReason:    pos.entryReason,
-    stopLoss:       pos.slSpot,
-    initialStopLoss: pos.initialSlSpot,
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
@@ -498,7 +465,6 @@ function simulateSell(reason) {
     oiAtEntry:      pos.oiAtEntry != null ? pos.oiAtEntry : null,
     oiRegime:       pos.oiRegime || null,
     trendBias:      pos.trendBias || null,
-    riskPts:        pos.riskPts,
     pullbackLow:    pos.pullbackLow,
     pullbackHigh:   pos.pullbackHigh,
     atr5AtEntry:    pos.atr5AtEntry,
@@ -550,65 +516,8 @@ function simulateSell(reason) {
   stopOptionPolling();
 }
 
-// ── In-position management ────────────────────────────────────────────────────
-// Per 5-min close: breakeven → ATR-chandelier trail (raise the spot stop) →
-// EMA20(5m)-close trend-failure → time-stop. Tick-level hard SL / premium
-// backstop / loss cap live in _checkExits.
-function _managePositionOnClose(bar) {
-  const pos = state.position;
-  if (!pos || !bar || typeof bar.close !== "number") return;
-  const close = bar.close;
-  pos.candlesHeld = (pos.candlesHeld || 0) + 1;
-
-  const favPts = (close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-
-  // 1. Breakeven — lift the stop to entry once favourable by BREAKEVEN_R × risk.
-  const beR = parseFloat(process.env.TREND_PB_BREAKEVEN_R || "1.0");
-  if (!pos.breakevenArmed && beR > 0 && pos.riskPts > 0 && favPts >= beR * pos.riskPts) {
-    if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
-    if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
-    pos.breakevenArmed = true;
-    log(`🔒 [TREND_PB-PAPER] Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${(beR * pos.riskPts).toFixed(1)}pt)`);
-  }
-
-  // 2. ATR-chandelier trail — raise the spot stop to bestSpot − mult × ATR5.
-  //    Ratchets one direction only; this is the right-tail engine (let winners run).
-  const trailMult = parseFloat(process.env.TREND_PB_TRAIL_ATR_MULT || "2.5");
-  const atrPeriod = parseInt(process.env.TREND_PB_ATR_PERIOD || "14", 10);
-  const atr5 = _computeAtr(state.candles, atrPeriod);
-  if (atr5 != null) {
-    pos.lastAtr = Math.round(atr5 * 100) / 100;
-    const cand = pos.side === "CE" ? pos.bestSpot - trailMult * atr5 : pos.bestSpot + trailMult * atr5;
-    if (pos.side === "CE" && cand > pos.slSpot) { pos.slSpot = Math.round(cand * 100) / 100; pos.trailArmed = true; }
-    if (pos.side === "PE" && cand < pos.slSpot) { pos.slSpot = Math.round(cand * 100) / 100; pos.trailArmed = true; }
-  }
-
-  // 3. EMA20(5m)-close trend-failure — exit only on a CLOSE back across the EMA,
-  //    and only after price first closed on the correct side (emaArmed) so a fresh
-  //    entry below a stale EMA isn't stopped on its first candle.
-  const emaExitOn = (process.env.TREND_PB_EMA_EXIT_ENABLED || "true").toLowerCase() === "true";
-  const emaPeriod = Math.max(2, parseInt(process.env.TREND_PB_TRAIL_EMA || "20", 10));
-  const ema = _computeEma(state.candles, emaPeriod);
-  if (ema != null) {
-    pos.lastEma = Math.round(ema * 100) / 100;
-    if (pos.side === "CE") {
-      if (close >= ema) pos.emaArmed = true;
-      else if (pos.emaArmed && emaExitOn) return simulateSell(`Closed below EMA${emaPeriod}(5m) (${close} < ${pos.lastEma}) — trend failed`);
-    } else {
-      if (close <= ema) pos.emaArmed = true;
-      else if (pos.emaArmed && emaExitOn) return simulateSell(`Closed above EMA${emaPeriod}(5m) (${close} > ${pos.lastEma}) — trend failed`);
-    }
-  }
-
-  // 4. Time stop — flat for too long = theta bleed (shared guard).
-  const tsCandles = parseInt(process.env.TREND_PB_TIME_STOP_CANDLES || "6", 10);
-  const tsFlat    = parseFloat(process.env.TREND_PB_TIME_STOP_FLAT_PTS || "12");
-  const tsReason = tradeGuards.checkTimeStop(pos.candlesHeld, favPts, { maxCandles: tsCandles, flatPts: tsFlat });
-  if (tsReason) return simulateSell(tsReason);
-}
-
-// Tick-level exits: hard SL (structural / breakeven / ATR-trail — all folded into
-// slSpot), the premium disaster backstop, and an optional per-trade rupee cap.
+// Tick-level exit: the global profit lock (tradeGuards) is the ONLY automatic
+// exit. Manual exit, /stop and the TRADE_STOP_TIME auto-stop close the rest.
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
@@ -621,9 +530,7 @@ function _checkExits(spotPrice) {
   }
   const optLtp = state.optionLtp || pos.optionEntryLtp;
 
-  // Track best spot (MFE anchor for the trail) + peak premium + MFE/MAE.
-  if (pos.side === "CE") { if (spotPrice > pos.bestSpot) pos.bestSpot = spotPrice; }
-  else                   { if (spotPrice < pos.bestSpot) pos.bestSpot = spotPrice; }
+  // Track peak premium + MFE/MAE.
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
 
   const _favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
@@ -637,42 +544,26 @@ function _checkExits(spotPrice) {
   trackPath(pos, _favPts, Date.now());
   if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
 
-  // Optional per-trade rupee cap (default off — the structural + trail stops govern).
-  const maxTradeLoss = parseFloat(process.env.TREND_PB_MAX_TRADE_LOSS || "0");
-  if (maxTradeLoss > 0 && _curPnl <= -maxTradeLoss) {
-    simulateSell(`Max trade loss (₹${Math.round(_curPnl)} ≤ -₹${maxTradeLoss})`);
-    return;
+  // Global profit lock (shared across every strategy — see tradeGuards). Options
+  // only: the lock is defined on option premium, and in futures mode optLtp
+  // mirrors the SPOT, so leaving it on would test an 8% move in NIFTY itself.
+  if (!pos.isFutures && pos.optionEntryLtp && state.optionLtp) {
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.peakPremium);
+    if (_plMsg) {
+      log(`🔒 [TREND_PB-PAPER] ${_plMsg}`);
+      simulateSell(_plMsg);
+      return;
+    }
   }
-
-  // Premium disaster backstop — catches IV-crush / gap the spot stop can miss.
-  // Futures have no premium and no IV, so this backstop does not apply.
-  const premStopPct = pos.isFutures ? 0 : parseFloat(process.env.TREND_PB_PREMIUM_STOP_PCT || "35");
-  if (premStopPct > 0 && optLtp <= pos.optionEntryLtp * (1 - premStopPct / 100)) {
-    simulateSell(`Premium disaster stop (₹${optLtp} ≤ −${premStopPct}% of entry ₹${pos.optionEntryLtp})`);
-    return;
-  }
-
-  // Hard SL (structural → breakeven → ATR-trail, all folded into slSpot) — spot-based.
-  if (pos.side === "CE" && spotPrice <= pos.slSpot) { simulateSell(`Stop hit (${spotPrice} ≤ ${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); return; }
-  if (pos.side === "PE" && spotPrice >= pos.slSpot) { simulateSell(`Stop hit (${spotPrice} ≥ ${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); return; }
 }
 
 // ── Candle close handler ──────────────────────────────────────────────────────
 async function onCandleClose(bar) {
   await oiFilter.recordOiSample(bar && bar.close);
 
-  if (state.position) { _managePositionOnClose(bar); return; }
+  if (state.position) return;
 
   const _spot = bar && bar.close;
-
-  const maxTrades = parseInt(process.env.TREND_PB_MAX_DAILY_TRADES || "3", 10);
-  if (state.tradesTaken >= maxTrades) return; // budget spent — expected, not a skip
-
-  const maxLoss = parseFloat(process.env.TREND_PB_MAX_DAILY_LOSS || "5000");
-  if (state.sessionPnl <= -maxLoss) {
-    skipLogger.appendSkipLog("trend_pb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot });
-    return;
-  }
 
   // Portfolio-wide daily loss cap (across ALL strategies; default disabled).
   {
@@ -683,13 +574,7 @@ async function onCandleClose(bar) {
     }
   }
 
-  const streakSkip = parseInt(process.env.TREND_PB_LOSS_STREAK_SKIP || "3", 10);
-  if (streakSkip > 0 && state.consecutiveLosses >= streakSkip) {
-    skipLogger.appendSkipLog("trend_pb", { gate: "loss_streak", reason: `${state.consecutiveLosses} consecutive losses ≥ ${streakSkip} — session cool-off`, spot: _spot });
-    return;
-  }
-
-  const sig = trendPbStrategy.getSignal(state.candles, { alreadyTraded: state.tradesTaken >= maxTrades });
+  const sig = trendPbStrategy.getSignal(state.candles);
   if (sig.signal === "NONE" || !sig.side) {
     // Only log post-warmup skips (indicators seeded) — avoids "warming up" noise.
     if (sig.atr5 != null && sig.ema20_15 != null) {
@@ -762,16 +647,6 @@ function onTick(tick) {
   }
 
   if (state.position) _checkExits(price);
-
-  if (state.position) {
-    const nowMin = getISTMinutes();
-    const stopMin = (function() {
-      const raw = process.env.TREND_PB_FORCED_EXIT || "15:15";
-      const [h, m] = raw.split(":").map(Number);
-      return h * 60 + (isNaN(m) ? 0 : m);
-    })();
-    if (nowMin >= stopMin) simulateSell(`EOD square-off (${process.env.TREND_PB_FORCED_EXIT || "15:15"} IST)`);
-  }
 }
 
 // ── Preload spot history (seed EMA/ATR before the open) ───────────────────────
@@ -808,28 +683,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The TREND_PB-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "TREND_PB-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -843,14 +696,6 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ─────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/trend-pb-paper/status");
 
   if ((process.env.TREND_PB_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -865,16 +710,6 @@ router.get("/start", async (req, res) => {
 
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/trend-pb-paper/status", "← Back"));
-
-  const nowMin = getISTMinutes();
-  const stopMin = (function() {
-    const raw = process.env.TREND_PB_FORCED_EXIT || "15:15";
-    const [h, m] = raw.split(":").map(Number);
-    return h * 60 + (isNaN(m) ? 0 : m);
-  })();
-  if (nowMin >= stopMin) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${process.env.TREND_PB_FORCED_EXIT || "15:15"} IST — Trend Pullback does not enter after this`, "/trend-pb-paper/status", "← Back"));
-  }
 
   state = _freshState();
   state.running = true;
@@ -930,8 +765,6 @@ router.get("/start", async (req, res) => {
       ``,
       `Strategy  : ${trendPbStrategy.NAME}`,
       `Entry win : ${process.env.TREND_PB_ENTRY_START || "09:45"} → ${process.env.TREND_PB_ENTRY_END || "14:30"} IST`,
-      `Max trades: ${process.env.TREND_PB_MAX_DAILY_TRADES || "3"}/day`,
-      `Square-off: ${process.env.TREND_PB_FORCED_EXIT || "15:15"} IST`,
     ].filter(Boolean).join("\n"),
   });
 
@@ -939,10 +772,8 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
   if (state.position) simulateSell("Session stopped");
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopOptionPolling();
 
@@ -981,7 +812,7 @@ function stopSession() {
 router.get("/stop", (req, res) => { stopSession(); res.redirect("/trend-pb-paper/status"); });
 router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit"); res.redirect("/trend-pb-paper/status"); });
 
-// ── Manual CE/PE entry — reuses the simulateBuy path (SL/charges/logging apply) ──
+// ── Manual CE/PE entry — reuses the simulateBuy path (charges/logging apply) ──
 router.post("/manualEntry", async (req, res) => {
   if (!state.running)  return res.status(400).json({ success: false, error: "Trend Pullback paper is not running." });
   if (state.position)  return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
@@ -991,11 +822,9 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  const clampMin = parseFloat(process.env.TREND_PB_STOP_CLAMP_MIN || "8");
-  const slSpot = side === "CE" ? spot - clampMin : spot + clampMin;
   const sig = {
     signal: side === "CE" ? "BUY_CE" : "BUY_PE",
-    side, entrySpot: spot, slSpot, targetSpot: null,
+    side, entrySpot: spot, targetSpot: null,
     signalStrength: "MANUAL",
     reason: `🖐️ MANUAL ${side} entry @ spot ₹${spot}`,
   };
@@ -1007,7 +836,7 @@ router.post("/manualEntry", async (req, res) => {
       // or an automatic entry won the race. Never report a manual fill that did not happen.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
-    return res.json({ success: true, side, spot, slSpot });
+    return res.json({ success: true, side, spot });
   } catch (e) {
     log(`❌ [TREND_PB-PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -1048,9 +877,8 @@ router.get("/status/chart-data", async (req, res) => {
       }
     }
 
-    const stopLoss   = state.position && state.position.slSpot    != null ? state.position.slSpot    : null;
     const entryPrice = state.position && state.position.entrySpot != null ? state.position.entrySpot : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, target: null, vwapLine, ema5Line,
+    return res.json({ candles, markers, entryPrice, target: null, vwapLine, ema5Line,
       optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1096,10 +924,9 @@ router.get("/status/data", (req, res) => {
     wins, losses, winRate, bestTrade, worstTrade, cumPnl, livePnl,
     position: pos ? {
       side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
-      slSpot: pos.slSpot, targetSpot: null, initialSlSpot: pos.initialSlSpot,
-      breakevenArmed: pos.breakevenArmed, trailArmed: pos.trailArmed, lastEma: pos.lastEma, lastAtr: pos.lastAtr,
+      targetSpot: null,
       peakPremium: pos.peakPremium, entryTime: pos.entryTime, signalStrength: pos.signalStrength,
-      trendBias: pos.trendBias, pullbackLow: pos.pullbackLow, pullbackHigh: pos.pullbackHigh, riskPts: pos.riskPts,
+      trendBias: pos.trendBias, pullbackLow: pos.pullbackLow, pullbackHigh: pos.pullbackHigh,
       qty: pos.qty, currentOptLtp: state.optionLtp,
     } : null,
     totalPnl: data.totalPnl, capital: data.capital,
@@ -1112,7 +939,7 @@ function _tpbCapital() {
 }
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive = false;
   const data = loadData();
   const pos  = state.position;
 
@@ -1122,12 +949,8 @@ router.get("/status", (req, res) => {
   const _vix = getCachedVix();
   const _vixEnabled = (process.env.TREND_PB_VIX_ENABLED || "false").toLowerCase() === "true";
   const _vixMaxEntry = vixFilter.getVixMaxEntry("trend_pb");
-  const _maxTrades = parseInt(process.env.TREND_PB_MAX_DAILY_TRADES || "3", 10);
-  const _maxLoss   = parseFloat(process.env.TREND_PB_MAX_DAILY_LOSS || "5000");
-  const _forcedExit = process.env.TREND_PB_FORCED_EXIT || "15:15";
   const _entryStart = process.env.TREND_PB_ENTRY_START || "09:45";
   const _entryEnd   = process.env.TREND_PB_ENTRY_END   || "14:30";
-  const dailyLossHit = state.sessionPnl <= -_maxLoss;
 
   let _diag = {}; try { const s = trendPbStrategy.getSignal(state.candles, { silent: true }); _diag = { trendBias: s.trendBias, vwap: s.vwap, atr5: s.atr5 }; } catch (_) {}
   const _biasColor = _diag.trendBias === "UP" ? "#10b981" : _diag.trendBias === "DOWN" ? "#ef4444" : "#8ba1c2";
@@ -1145,11 +968,10 @@ router.get("/status", (req, res) => {
 
   const statCards = [
     { label: "Session PnL", value: `<span id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${typeof state.sessionPnl === "number" ? (state.sessionPnl >= 0 ? "+" : "") + "₹" + state.sessionPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>`, accent: pnlColor(state.sessionPnl) },
-    { label: state._staleSession ? "Trades (Last Session)" : "Trades Today", value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_maxTrades}</span>`, sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>`, accent: "#6a5090" },
+    { label: state._staleSession ? "Trades (Last Session)" : "Trades Today", value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span>`, sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>`, accent: "#6a5090" },
     { label: "Live PnL", value: `<span id="ajax-live-pnl" style="color:${livePnl == null ? "#c8d8f0" : pnlColor(livePnl)};">${livePnl == null ? "—" : (livePnl >= 0 ? "+" : "") + "₹" + livePnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</span>`, sub: `<span id="ajax-live-pnl-sub">${pos ? "unrealised" : "no open position"}</span>`, accent: "#3b82f6" },
     { label: "Win Rate", value: `<span id="ajax-wr">${winRate != null ? winRate + "%" : "—"}</span>`, sub: `<span id="ajax-wr-sub" style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">single best ${(state.sessionTrades.length ? Math.max(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")} / worst ${(state.sessionTrades.length ? Math.min(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")}</span>`, accent: "#a07010" },
     { label: "Trend Bias", value: `<span id="ajax-trend-bias" style="color:${_biasColor};font-weight:800;">${_diag.trendBias || "—"}</span>`, sub: `<span id="ajax-trend-sub" style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">15m structure${_diag.atr5 != null ? ` · ATR5 ${_diag.atr5}` : ""}</span>`, accent: "#7c3aed" },
-    { label: "Daily Loss Limit", value: `<span id="ajax-daily-loss-val" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "HIT" : "OK"} <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);">/ -₹${_maxLoss.toLocaleString("en-IN")}</span></span>`, sub: `<span id="ajax-daily-loss-sub" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "KILLED — no entries" : "Active"}</span>`, accent: dailyLossHit ? "#ef4444" : "#10b981" },
     { label: "VWAP", value: `<span id="ajax-vwap">${_diag.vwap != null ? "₹" + _diag.vwap : "—"}</span>`, sub: `<span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">session anchored</span>`, accent: "#2a6080" },
     { label: "WebSocket Ticks", value: `<span id="ajax-tick-count">${(state.tickCount || 0).toLocaleString()}</span>`, sub: `Last: <span id="ajax-last-tick">${state.lastTickPrice ? "₹" + state.lastTickPrice.toLocaleString("en-IN") : "—"}</span>`, accent: "#2a6080" },
     { label: "Session Start", value: `<span style="font-size:0.85rem;color:#c8d8f0;">${state.sessionStart ? fmtISTDateTime(state.sessionStart) : "—"}</span>`, accent: "#2a4020" },
@@ -1213,8 +1035,6 @@ router.get("/status", (req, res) => {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY @ Entry</div><div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">₹${pos.entrySpot ? pos.entrySpot.toFixed(2) : "—"}</div></div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div><div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${state.lastTickPrice ? "₹" + state.lastTickPrice.toFixed(2) : "—"}</div><div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div></div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop${pos.trailArmed ? " (trail)" : pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}</div><div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div></div>
-        <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Initial SL <span style="color:var(--muted-2,#6d85a8);">(risk ${pos.riskPts ? pos.riskPts.toFixed(1) : "—"}pt)</span></div><div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${pos.initialSlSpot ? "₹" + pos.initialSlSpot.toFixed(2) : "—"}</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Pullback ${pos.side === "CE" ? "Low" : "High"}</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${(pos.side === "CE" ? pos.pullbackLow : pos.pullbackHigh) != null ? "₹" + (pos.side === "CE" ? pos.pullbackLow : pos.pullbackHigh).toFixed(2) : "—"}</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${pos.isFutures ? "Peak Price" : "Peak Premium"}</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div></div>
       </div>
@@ -1257,7 +1077,7 @@ ${buildSidebar('trendPbPaper', liveActive, state.running, {
 
 ${bbRsiTopBar({
   title: "Trend Pullback Paper Trade",
-  metaLine: `Strategy: ${trendPbStrategy.NAME} · Entry ${_entryStart}–${_entryEnd} · Square-off ${_forcedExit} IST · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
+  metaLine: `Strategy: ${trendPbStrategy.NAME} · Entry ${_entryStart}–${_entryEnd} IST · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
   running: state.running,
   vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: Infinity },
   primaryAction: { label: "Start Trend PB Paper", href: "/trend-pb-paper/start" },
@@ -1281,7 +1101,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
-      <span style="color:#3b82f6;">── VWAP</span> &nbsp;<span style="color:#a78bfa;">── EMA20(5m)</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#f59e0b;">── Stop</span>
+      <span style="color:#3b82f6;">── VWAP</span> &nbsp;<span style="color:#a78bfa;">── EMA20(5m)</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span>
     </div>
   </div>
   ${optionChart.optionChartHtml('tpb-opt-chart')}
@@ -1339,7 +1159,7 @@ async function tpbpManualEntry(side) {
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var vwapS = chart.addLineSeries({ color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var ema5S = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  var entryLine = null, slLine = null, _zoomed = false;
+  var entryLine = null, _zoomed = false;
   async function fetchChart(){
     try {
       var r = await fetch('/trend-pb-paper/status/chart-data', { cache:'no-store' });
@@ -1365,9 +1185,7 @@ async function tpbpManualEntry(side) {
       ema5S.setData(d.ema5Line || []);
       if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
-      if (slLine)    { cs.removePriceLine(slLine);    slLine = null; }
       if (d.entryPrice) entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
-      if (d.stopLoss)   slLine    = cs.createPriceLine({ price:d.stopLoss,   color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Stop' });
     } catch (e) {}
   }
   fetchChart();
@@ -1385,7 +1203,6 @@ ${optionChart.optionChartScript({ dataUrl: '/trend-pb-paper/status/chart-data', 
   var _lastTradeCount  = ${state.sessionTrades.length};
   var _lastLogCount    = ${state.log.length};
   var _lastRunning     = ${state.running};
-  var _maxLoss         = ${_maxLoss};
   var _interval        = null;
 
   function setText(id, val){ var el=document.getElementById(id); if(el && el.textContent !== String(val)) el.textContent = val; }
@@ -1437,9 +1254,6 @@ ${optionChart.optionChartScript({ dataUrl: '/trend-pb-paper/status/chart-data', 
       if (biasEl) { biasEl.textContent = d.trendBias || '—'; biasEl.style.color = d.trendBias === 'UP' ? '#10b981' : d.trendBias === 'DOWN' ? '#ef4444' : '#8ba1c2'; }
       setText('ajax-trend-sub', '15m structure' + (d.atr5 != null ? ' · ATR5 ' + d.atr5 : ''));
       setText('ajax-vwap', d.vwap != null ? '₹' + d.vwap : '—');
-      var dlossHit = (d.sessionPnl || 0) <= -_maxLoss;
-      var dlEl = document.getElementById('ajax-daily-loss-val'); if (dlEl) dlEl.style.color = dlossHit ? '#ef4444' : '#10b981';
-      var dlSub = document.getElementById('ajax-daily-loss-sub'); if (dlSub) { dlSub.textContent = dlossHit ? 'KILLED — no entries' : 'Active'; dlSub.style.color = dlossHit ? '#ef4444' : '#10b981'; }
       setText('ajax-tick-count', (d.tickCount || 0).toLocaleString());
       setText('ajax-last-tick', d.lastTickPrice ? INR(d.lastTickPrice) : '—');
       var capEl = document.getElementById('ajax-current-capital'); if (capEl) { capEl.textContent = INR(d.capital); capEl.style.color = d.capital >= ${_tpbCapital()} ? '#10b981' : '#ef4444'; }
@@ -1479,7 +1293,7 @@ ${optionChart.optionChartScript({ dataUrl: '/trend-pb-paper/status/chart-data', 
 // ── History + daily-file viewers + restore + reset ────────────────────────────
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive = false;
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/trend-pb-paper",

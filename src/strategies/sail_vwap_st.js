@@ -1,7 +1,7 @@
 /**
  * STRATEGY: SAIL_VWAP_ST  (created 2026-10-20)
  * ═════════════════════════════════════════════════════════════════════════════
- * VWAP cross + breakout confirmation, SuperTrend stop — on SAIL STOCK OPTIONS.
+ * VWAP cross + breakout confirmation, SuperTrend-confirmed — on SAIL STOCK OPTIONS.
  * Option BUYING · intraday · Fyers data (NSE:SAIL-EQ), Zerodha orders.
  *
  * Chart: SAIL 5-min candles (SAIL_VWAP_ST_TF = 3 | 5 | 15, default 5), the
@@ -21,36 +21,26 @@
  *   3. Every close from the cross candle to the signal candle stays above VWAP.
  *      One close back at/below VWAP cancels the setup.
  *   4. SuperTrend is GREEN on the signal candle (user's choice 2026-10-20: a CE
- *      while SuperTrend is red is SKIPPED, because its line is above price and
- *      cannot be the stop).
+ *      while SuperTrend is red is SKIPPED).
  * ── ENTRY — BUY_PE (downside), the exact mirror ──────────────────────────────
  *   Cross candle closes BELOW VWAP (previous at/above); a later candle within 3
  *   closes BELOW the cross candle's LOW; no close back at/above VWAP; SuperTrend
  *   RED. Example (CE): VWAP 169.68, the 10:05 candle closes 169.80 (cross, high
- *   169.90), the 10:10 candle closes 170.05 > 169.90 → BUY the ATM SAIL CE,
- *   stop = SuperTrend 169.30.
+ *   169.90), the 10:10 candle closes 170.05 > 169.90 → BUY the ATM SAIL CE.
  *   Paper/Live fill at the first tick after the signal candle closes; Backtest
  *   at the next bar's open — the same market moment.
  *
- * ── EXIT — SuperTrend trailing stop, on CANDLE CLOSE only ───────────────────
- *   Initial stop = SuperTrend on the signal candle. At every later close:
- *     CE exits when SuperTrend flips RED, or the close is below the trailed
- *        stop.  PE: flips GREEN, or close above the stop.
- *     Otherwise the stop trails to that candle's SuperTrend, tighten-only.
- *   Not checked tick-by-tick (user's choice 2026-10-20) — a wick through the
- *   line that closes back does not exit. The routes ALSO run the repo-wide
- *   common exits on ticks: profit lock + breakeven (tradeGuards), the option
- *   premium stop (SAIL_VWAP_ST_OPT_STOP_PCT) and the square-off at
- *   SAIL_VWAP_ST_EOD_EXIT_TIME (15:15).
+ * ── EXIT — none here. Paper exits ONLY through the repo-wide profit lock
+ *   (tradeGuards.checkProfitLock, per tick on the option premium), plus manual
+ *   exit and the global session teardown; the backtest applies the same lock
+ *   to its simulated premium and closes anything still open at day end.
  *
  * ── SESSION ─────────────────────────────────────────────────────────────────
- *   1 trade per day (SAIL_VWAP_ST_MAX_DAILY_TRADES), entries 09:30–14:30 on the
- *   signal candle's close, daily loss cap, strike ATM (₹2.5 grid), monthly
- *   expiry, SAIL_VWAP_ST_LOTS lots of SAIL_LOT_SIZE (4700).
+ *   Entries 09:30–14:30 on the signal candle's close, strike ATM (₹2.5 grid),
+ *   monthly expiry, SAIL_VWAP_ST_LOTS lots of SAIL_LOT_SIZE (4700).
  *
  * ── DELIBERATELY NOT HERE (do not "helpfully" add these) ────────────────────
- *   No RSI, EMA, ADX, VIX, OI, volume filter, ATR filter, multi-timeframe, fixed
- *   target, cooldown, re-entry after a stop, or tick-level SuperTrend stop.
+ *   No RSI, EMA, ADX, VIX, OI, volume filter, ATR filter, multi-timeframe.
  *   No futures mode — SAIL options only, whatever the NIFTY INSTRUMENT toggle says.
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
@@ -66,9 +56,8 @@
  *   getConfig()                            -> live env read (never cached)
  *   warmupBars(cfg) / warmupDays()         -> bars refused below / days to preload
  *   computeSeries(candles, cfg)            -> { vwap, supertrend } 1:1 with candles
- *   getSignal(candles, opts)               -> { signal, reason, stopLoss, setup, ... }
- *   exitCheck(side, bar, stBar, stop)      -> { exit, reason } — the ONLY exit test
- *   trailStop(candles, side, stop, cfg, pre) -> { stop, changed, tag } tighten-only
+ *   getSignal(candles, opts)               -> { signal, reason, setup, ... }
+ *   lotQty(cfg)                            -> SAIL_VWAP_ST_LOTS × SAIL lot size
  */
 
 const { computeSuperTrend } = require("../utils/supertrend");
@@ -78,7 +67,7 @@ const PREFIX = "SAIL_VWAP_ST";
 const UNDERLYING = "SAIL";
 const DESCRIPTION =
   "SAIL_VWAP_ST — SAIL 5-min VWAP cross, entered only after a candle closes beyond the cross candle's high/low, " +
-  "SuperTrend(10,2) must agree · SuperTrend trailing stop on candle close · 1 trade/day · SAIL options, Zerodha";
+  "SuperTrend(10,2) must agree · profit-lock exit · SAIL options, Zerodha";
 
 const TFS = [3, 5, 15];
 
@@ -137,14 +126,9 @@ function getConfig() {
 
     ENTRY_START:    _parseHHMM(process.env[PREFIX + "_ENTRY_START"], 9 * 60 + 30),
     ENTRY_END:      _parseHHMM(process.env[PREFIX + "_ENTRY_END"], 14 * 60 + 30),
-    EOD_EXIT:       _parseHHMM(process.env[PREFIX + "_EOD_EXIT_TIME"], 15 * 60 + 15),
 
-    // Session guards + sizing. Route-level, read here so one config describes the mode.
-    MAX_DAILY_TRADES: _intEnv(PREFIX + "_MAX_DAILY_TRADES", 1, 1, 10),
-    MAX_DAILY_LOSS:   _numEnv(PREFIX + "_MAX_DAILY_LOSS", 5000, 0),
+    // Sizing. Route-level, read here so one config describes the mode.
     LOTS:             _intEnv(PREFIX + "_LOTS", 1, 1, 50),
-    // Common option-premium stop (fraction of the entry premium, 0 = off).
-    OPT_STOP_PCT:     _numEnv(PREFIX + "_OPT_STOP_PCT", 0.25, 0, 0.9),
   };
 }
 
@@ -166,12 +150,6 @@ function isInTradingWindow(barTimeSec, cfg) {
   if (closeMin < cfg.ENTRY_START) return { ok: false, reason: `Before ${_fmtMins(cfg.ENTRY_START)} — outside the entry window` };
   if (closeMin > cfg.ENTRY_END)   return { ok: false, reason: `After ${_fmtMins(cfg.ENTRY_END)} — no new entries` };
   return { ok: true, reason: null };
-}
-
-/** True when the given time is at/after the forced square-off. */
-function isEodExit(unixSec, cfg) {
-  cfg = cfg || getConfig();
-  return _istMins(unixSec) >= cfg.EOD_EXIT;
 }
 
 // ── indicator series ─────────────────────────────────────────────────────────
@@ -269,7 +247,7 @@ function findSetup(candles, vwap, last, cfg) {
   return null;
 }
 
-const _NO = { stopLoss: null, slSpot: null, entrySpot: null };
+const _NO = { entrySpot: null };
 
 /**
  * getSignal(candles, opts)
@@ -279,7 +257,7 @@ const _NO = { stopLoss: null, slSpot: null, entrySpot: null };
  *                        array. Both indicators are causal, so it equals
  *                        recomputing on candles.slice(0, endIdx + 1).
  *   opts.silent        — no console line on a signal.
- * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup, stopLoss, slSpot,
+ * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup,
  *           entrySpot, vwap, supertrend, stTrend, setup, crossLevel, ... }.
  */
 function getSignal(candles, opts) {
@@ -307,7 +285,7 @@ function getSignal(candles, opts) {
     stTrend: st && st.trend === 1 ? "BULLISH" : st && st.trend === -1 ? "BEARISH" : null,
     stTrendInt: st && (st.trend === 1 || st.trend === -1) ? st.trend : null,
     tradeRes: cfg.TRADE_RES,
-    entrySpot: bar.close, stopLoss: null, slSpot: null,
+    entrySpot: bar.close,
     setup: null, crossLevel: null, crossTime: null,
     signalStrength: "STRONG",
   };
@@ -342,64 +320,19 @@ function getSignal(candles, opts) {
     const w = isInTradingWindow(bar.time, cfg);
     if (!w.ok) return Object.assign({}, base, { signal: "NONE", skipReason: "window", reason: `${side} breakout confirmed but ${w.reason}` });
   }
-  // SuperTrend must agree: its line is then on the protective side of the close.
+  // SuperTrend must agree: green (line below the close) for CE, red for PE.
   const stv = base.supertrend;
   if (side === "CE" && !(base.stTrendInt === 1 && stv < bar.close)) {
-    return Object.assign({}, base, { signal: "NONE", skipReason: "st_disagrees", reason: `CE breakout confirmed but SuperTrend is RED (${stv}) — skipped, no stop below price` });
+    return Object.assign({}, base, { signal: "NONE", skipReason: "st_disagrees", reason: `CE breakout confirmed but SuperTrend is RED (${stv}) — skipped` });
   }
   if (side === "PE" && !(base.stTrendInt === -1 && stv > bar.close)) {
-    return Object.assign({}, base, { signal: "NONE", skipReason: "st_disagrees", reason: `PE breakout confirmed but SuperTrend is GREEN (${stv}) — skipped, no stop above price` });
+    return Object.assign({}, base, { signal: "NONE", skipReason: "st_disagrees", reason: `PE breakout confirmed but SuperTrend is GREEN (${stv}) — skipped` });
   }
   const reason = side === "CE"
-    ? `CE ${tag}: VWAP cross ${crossAt} (C>${setup.vwapAtCross}) → close ${bar.close} > cross high ${setup.level} | VWAP ${base.vwap} | ST green | SL=ST ${stv}`
-    : `PE ${tag}: VWAP cross ${crossAt} (C<${setup.vwapAtCross}) → close ${bar.close} < cross low ${setup.level} | VWAP ${base.vwap} | ST red | SL=ST ${stv}`;
+    ? `CE ${tag}: VWAP cross ${crossAt} (C>${setup.vwapAtCross}) → close ${bar.close} > cross high ${setup.level} | VWAP ${base.vwap} | ST green ${stv}`
+    : `PE ${tag}: VWAP cross ${crossAt} (C<${setup.vwapAtCross}) → close ${bar.close} < cross low ${setup.level} | VWAP ${base.vwap} | ST red ${stv}`;
   if (!o.silent) console.log(`[${NAME}] 🟢 ${side === "CE" ? "BUY_CE" : "BUY_PE"} — ${reason}`);
-  return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", stopLoss: stv, slSpot: stv, reason });
-}
-
-/**
- * The ONLY strategy exit test, run on each CLOSED candle while in a position.
- * `stBar` is that candle's SuperTrend { value, trend }, `stop` the trail in
- * force BEFORE this candle.
- */
-function exitCheck(side, bar, stBar, stop) {
-  if (!_okBar(bar)) return { exit: false, reason: null };
-  const c = bar.close;
-  const trend = stBar && (stBar.trend === 1 || stBar.trend === -1) ? stBar.trend : null;
-  if (side === "CE") {
-    if (trend === -1) return { exit: true, reason: `SuperTrend flipped red — close ${c}` };
-    if (_num(stop) && c < stop) return { exit: true, reason: `SuperTrend stop — close ${c} below ${stop}` };
-  } else if (side === "PE") {
-    if (trend === 1) return { exit: true, reason: `SuperTrend flipped green — close ${c}` };
-    if (_num(stop) && c > stop) return { exit: true, reason: `SuperTrend stop — close ${c} above ${stop}` };
-  }
-  return { exit: false, reason: null };
-}
-
-/**
- * Trail the stop to the last closed candle's SuperTrend, tighten-only. A line on
- * the wrong side of the close, or in the opposite trend, leaves the stop alone
- * (exitCheck handles the flip).
- * `precomputed` — OFFLINE / BACKTEST: { supertrend, endIdx } over the whole array.
- */
-function trailStop(candles, side, currentStop, cfg, precomputed) {
-  cfg = cfg || getConfig();
-  const unchanged = { stop: currentStop, changed: false, tag: null };
-  const pre = precomputed || null;
-  const nBars = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
-  if (nBars < cfg.ST_PERIOD + 2) return unchanged;
-  const bar = candles[nBars - 1];
-  const st = pre ? pre.supertrend : computeSuperTrend(candles, cfg.ST_PERIOD, cfg.ST_MULT);
-  const cur = st[nBars - 1];
-  if (!_okBar(bar) || !cur || !_num(cur.value)) return unchanged;
-  const lvl = _r2(cur.value);
-  if (side === "CE" && cur.trend === 1 && lvl < bar.close && (!_num(currentStop) || lvl > currentStop)) {
-    return { stop: lvl, changed: true, tag: "SuperTrend" };
-  }
-  if (side === "PE" && cur.trend === -1 && lvl > bar.close && (!_num(currentStop) || lvl < currentStop)) {
-    return { stop: lvl, changed: true, tag: "SuperTrend" };
-  }
-  return unchanged;
+  return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", reason });
 }
 
 /** Contracts per trade: SAIL_VWAP_ST_LOTS × the SAIL lot size (SAIL_LOT_SIZE). */
@@ -420,13 +353,10 @@ module.exports = {
   warmupBars,
   warmupDays,
   isInTradingWindow,
-  isEodExit,
   computeVwap,
   computeSeries,
   findSetup,
   getSignal,
-  exitCheck,
-  trailStop,
   lotQty,
   _istDayOf,
   _istMins,

@@ -12,7 +12,7 @@
  * Only for PURE routers: no boot-time side effects and no other boot importer.
  * A lazy mount exposes no `.stack`, so it is invisible to router-stack walkers
  * (utils/startAllRoster.js looks for `/start`, utils/paperReset.js for `/reset`) —
- * never use it for a -paper / -live / -live-harness mount.
+ * never use it for a -paper mount.
  */
 function lazyRouter(load) {
   let router = null;

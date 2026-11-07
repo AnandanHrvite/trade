@@ -30,7 +30,6 @@ const sailVwapStStrategy = require("../strategies/sail_vwap_st");
 const emaRsiStV2Strategy = require("../strategies/ema_rsi_st_v2");
 const simple930Strategy  = require("../strategies/simple930");
 const earlyBirdStrategy  = require("../strategies/early_bird");
-const sharedSocketState = require("../utils/sharedSocketState");
 
 const EMA_RSI_ST_KEY = ACTIVE;
 const BB_RSI_KEY = "BB_RSI_BACKTEST";
@@ -143,7 +142,6 @@ function timeAgo(d) {
 
 // ── Dashboard page ───────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
@@ -364,7 +362,7 @@ router.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('allBacktest', liveActive)}
+${buildSidebar('allBacktest', false)}
 <div class="main-content">
 <div class="page">
 

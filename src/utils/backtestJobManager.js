@@ -50,34 +50,7 @@ function _scheduleExpiry(id) {
 // login's read-only GET allowance and any stray link could otherwise kick off a
 // Fyers-heavy job. createJob() is the one place every route funnels through, so
 // the refusal lives here rather than in 16 routers:
-//   • a demo session may view finished results but never start a run;
-//   • nobody starts a run during market hours (Mon–Fri 09:15–15:30 IST) while a
-//     live engine is active — a *_LIVE socket slot, or any installed live
-//     harness (harness-live sessions run under a *_PAPER mode string).
-function _isMarketHoursIST(now = Date.now()) {
-  const ist = new Date(now + 19800 * 1000);       // UTC+5:30, read via getUTC*
-  const day = ist.getUTCDay();
-  if (day === 0 || day === 6) return false;
-  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  return mins >= 555 && mins < 930;
-}
-
-function _activeLiveModes() {
-  const live = [];
-  try {
-    const s = require("./sharedSocketState");
-    for (const [name, fn] of Object.entries(s)) {
-      if (!/^get[A-Za-z0-9]*Mode$/.test(name) || typeof fn !== "function") continue;
-      const m = fn();
-      if (typeof m === "string" && /_LIVE$/.test(m) && !live.includes(m)) live.push(m);
-    }
-  } catch (_) {}
-  try {
-    const harness = require("../services/liveHarness");
-    if (typeof harness.isInstalled === "function" && harness.isInstalled()) live.push("live harness");
-  } catch (_) {}
-  return live;
-}
+//   • a demo session may view finished results but never start a run.
 
 /** Why a new run must not start right now, or null when it may. */
 function runRefusal() {
@@ -86,13 +59,6 @@ function runRefusal() {
       return "Running a backtest is disabled in the demo login — finished results can still be viewed.";
     }
   } catch (_) {}
-  if (_isMarketHoursIST()) {
-    const live = _activeLiveModes();
-    if (live.length) {
-      return `Backtest blocked during market hours while live trading is active (${live.join(", ")}). ` +
-             `Run it after 15:30 IST or once the live session is stopped.`;
-    }
-  }
   return null;
 }
 

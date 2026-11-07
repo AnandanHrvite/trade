@@ -4,28 +4,25 @@
  * Date-range backtest. The DAY GATE and the ENTRY decision both come from the
  * SAME engine the paper route uses (src/strategies/trend_day_scalp.js) — there
  * is no second copy of the rules here. This file only re-implements the paper
- * route's exits, because paper is canonical:
+ * route's exit, because paper is canonical:
  *
  *   for each trading day:
  *     evaluateDayGate(bars up to 10:15)     → tradeable? which side?
  *     for each later closed bar until 14:00:
  *       getSignal(bars, {dayGate})          → BUY_CE / BUY_PE / NONE
- *     exits: hard stop → fixed target → breakeven jump → time stop → EOD
+ *     exit: the global profit lock (tradeGuards.checkProfitLock) on the
+ *           simulated premium; anything still open closes at the day's last bar
+ *           (paper's TRADE_STOP_TIME session teardown).
  *
- * CONSERVATIVE INTRA-BAR ORDERING (this is where naive backtests lie):
- *   • the adverse STOP is tested on the bar's high/low BEFORE the favourable
- *     target is tested, so a bar that touched both books the LOSS;
- *   • a bar that OPENED beyond a level fills at the OPEN, never at the better
- *     level — no assuming a fill the market never offered;
- *   • the breakeven jump arms off the bar's favourable EXTREME (paper arms it
- *     per tick, and a tick is what an extreme is made of), but the resulting
- *     stop can only be hit on a LATER bar — never on the same bar that armed it.
+ * INTRA-BAR ORDERING per bar: open → adverse extreme → favourable extreme →
+ * close. A bar that OPENED through the lock floor fills at the open; a floor
+ * crossed on the adverse leg fills at its spot-equivalent, never better than
+ * the open; a lock armed by THIS bar's peak and given back fills at the close.
  *
  * There is NO historical option chain, so premium is δ+θ simulated. Treat ₹ as
  * DIRECTIONAL, not exact. A spread/slippage haircut of TDS_BT_SLIPPAGE_PTS is
  * applied EACH way — without it a backtest of option BUYING always flatters.
- * The premium stop (-TDS_PREMIUM_STOP_PCT%) is modelled off that simulated
- * premium, so it fires on the δ+θ curve rather than on a real IV crush.
+ * Futures mode: paper skips the premium lock, so trades run to the day's end.
  */
 
 const express = require("express");
@@ -83,11 +80,11 @@ async function runTrendDayScalpBacktest(intraday) {
   // position), so each one is measured from the exit bar's open (≈ c.time here).
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
 
-  const MAX_TRADES  = Math.max(1, parseInt(process.env.TDS_MAX_DAILY_TRADES || "2", 10) || 2);
-  const MAX_LOSSES  = Math.max(0, parseInt(process.env.TDS_MAX_DAILY_LOSSES || "2", 10));
-  const MAX_DAY_LOSS = parseFloat(process.env.TDS_MAX_DAILY_LOSS   || "3000");
   const PROFIT_LOCK  = parseFloat(process.env.TDS_DAILY_PROFIT_LOCK || "3000");
-  const FORCED_EXIT_MIN = tdsStrategy._parseHHMM(process.env.TDS_FORCED_EXIT, 15 * 60 + 10);
+  // Global per-trade profit lock — the same live settings paper reads.
+  const LOCK_FLOOR_PCT = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
+  const LOCK_TRAIL_PCT = tradeGuards.PROFIT_LOCK_TRAIL_PCT;
+  const LOCK_TIERS     = tradeGuards.PROFIT_LOCK_TRAIL_TIERS;
 
   const sorted = intraday.slice().sort((a, b) => a.time - b.time);
 
@@ -135,7 +132,7 @@ async function runTrendDayScalpBacktest(intraday) {
     gateStats.tradeable++;
 
     // ── Hunt entries on later closed bars. ────────────────────────────────────
-    let dayPnl = 0, dayTrades = 0, dayStopOuts = 0, dayClosed = false;
+    let dayPnl = 0, dayClosed = false;
     let reentryBlockUntilTs = 0;   // wait-after-any-exit cooldown, per day like paper's session
     let pos = null;
 
@@ -153,25 +150,37 @@ async function runTrendDayScalpBacktest(intraday) {
         held: Math.round(barsHeld),
       };
     }
-    /** Mirrors the premium the paper route would be watching, for the -25% stop. */
+    /** Mirrors the premium the paper route would be watching, for the profit lock. */
     function premiumAt(spot, t) {
       const barsHeld = Math.max(0, (t - pos.entryTime) / 60 / RES);
       const barsPerDay = Math.max(1, Math.round(375 / RES));
       const thetaCost = (THETA_DAY * barsHeld) / barsPerDay;
       const spotMove = pos.side === "CE" ? (spot - pos.entrySpot) : (pos.entrySpot - spot);
-      return Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
+      // Rounded to paise like a real LTP, so the lock sees a quotable price.
+      return Math.max(0.05, parseFloat((pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE).toFixed(2)));
     }
-    function close(exitSpot, exitTime, reason, isStopOut) {
+    /** Inverse of premiumAt: the spot at which the simulated premium equals `prem`. */
+    function spotForPrem(prem, t) {
+      const barsHeld = Math.max(0, (t - pos.entryTime) / 60 / RES);
+      const barsPerDay = Math.max(1, Math.round(375 / RES));
+      const thetaCost = (THETA_DAY * barsHeld) / barsPerDay;
+      const spotMove = (prem - pos.optionEntryLtp + thetaCost / LOT_SIZE) / DELTA;
+      return pos.side === "CE" ? pos.entrySpot + spotMove : pos.entrySpot - spotMove;
+    }
+    /** The profit lock on one simulated premium (options only — paper skips futures). */
+    function lockHit(prem) {
+      if (IS_FUT) return null;
+      return tradeGuards.checkProfitLock(pos.optionEntryLtp, prem, pos.peak);
+    }
+    function close(exitSpot, exitTime, reason) {
       const p = priceAt(exitSpot, exitTime);
       dayPnl += p.pnl;
-      if (isStopOut) dayStopOuts++;
       trades.push({
         side: pos.side,
         entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),
         entryTs: pos.entryTime, exitTs: exitTime,
         ePrice: pos.entrySpot, xPrice: parseFloat(exitSpot.toFixed(2)),
-        sl: pos.slSpot, initialSl: pos.initialSlSpot, target: pos.targetSpot,
-        beArmed: !!pos.beArmed, riskPts: pos.slPts, targetR: cfg.targetR,
+        sl: null, target: null, peakPrem: parseFloat(pos.peak.toFixed(2)),
         pnl: p.pnl, reason, entryReason: pos.entryReason,
         zone: pos.zone, atr: pos.atr, bodyPts: pos.bodyPts,
         gateSide: gate.side, gateRangePts: gate.rangePts, gateRangePct: gate.rangePct,
@@ -182,11 +191,8 @@ async function runTrendDayScalpBacktest(intraday) {
       pos = null;
       // Wait-after-any-exit cooldown — every exit reason, both sides.
       if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = exitTime + REENTRY_COOLDOWN_SECS;
-      // Day-level breakers — identical thresholds to the paper route.
-      if (MAX_DAY_LOSS > 0 && dayPnl <= -MAX_DAY_LOSS) dayClosed = true;
-      else if (PROFIT_LOCK > 0 && dayPnl >= PROFIT_LOCK) dayClosed = true;
-      else if (MAX_LOSSES > 0 && dayStopOuts >= MAX_LOSSES) dayClosed = true;
-      else if (dayTrades >= MAX_TRADES) dayClosed = true;
+      // Day-level breaker — identical threshold to the paper route.
+      if (PROFIT_LOCK > 0 && dayPnl >= PROFIT_LOCK) dayClosed = true;
     }
 
     for (let p = gateIdxPos + 1; p < idxs.length; p++) {
@@ -194,58 +200,39 @@ async function runTrendDayScalpBacktest(intraday) {
       const c = sorted[i];
       const istMin = _utcSecToIstMins(c.time);
 
-      // ── Manage an open position on THIS bar. ───────────────────────────────
+      // ── Manage an open position on THIS bar (profit lock only). ───────────
       if (pos) {
-        if (istMin >= FORCED_EXIT_MIN) {
-          close(c.open, c.time, `EOD square-off (${process.env.TDS_FORCED_EXIT || "15:10"} IST)`, false);
+        const isCE = pos.side === "CE";
+        const barEnd = c.time + RES * 60;
+        // a) the open
+        const pOpen = premiumAt(c.open, c.time);
+        if (pOpen > pos.peak) pos.peak = pOpen;
+        let hit = lockHit(pOpen);
+        if (hit) {
+          close(c.open, c.time, `${hit} (bar opened through it — filled at the open ${c.open})`);
         } else {
-          const isCE = pos.side === "CE";
-          // Same comparison paper runs per tick (tdsStrategy.stopHit / targetHit),
-          // fed the bar's adverse / favourable extreme instead of a tick price —
-          // bar-vs-tick sampling is the only difference, the rule is the engine's.
-          // The helpers also own the "level must be a real number" guard.
-          const stopTouched = tdsStrategy.stopHit(pos.side, isCE ? c.low : c.high, pos.slSpot);
-          const tgtTouched  = tdsStrategy.targetHit(pos.side, isCE ? c.high : c.low, pos.targetSpot);
-
-          if (stopTouched) {
-            // Worse-of open/level fill; a gap through the stop fills at the open.
-            const fill = isCE
-              ? (c.open < pos.slSpot ? c.open : pos.slSpot)
-              : (c.open > pos.slSpot ? c.open : pos.slSpot);
-            close(fill, c.time,
-              pos.beArmed
-                ? `Breakeven stop — price came back to ${pos.slSpot} after arming at +${cfg.breakevenR}R`
-                : `Stop hit — ${pos.slPts}pt against, at ${pos.slSpot}`,
-              !pos.beArmed);
-          } else if (tgtTouched) {
-            const fill = isCE
-              ? (c.open > pos.targetSpot ? c.open : pos.targetSpot)
-              : (c.open < pos.targetSpot ? c.open : pos.targetSpot);
-            close(fill, c.time, `Target hit — ${cfg.targetR}R at ${pos.targetSpot}`, false);
+          // b) open → adverse extreme: a floor armed earlier is crossed first.
+          const adv = isCE ? c.low : c.high;
+          hit = lockHit(premiumAt(adv, barEnd));
+          if (hit) {
+            const lvl = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peak, LOCK_FLOOR_PCT, LOCK_TRAIL_PCT, LOCK_TIERS);
+            const raw = spotForPrem(lvl, barEnd);
+            // Never better than the open (the open did not trigger, so the level lies past it).
+            const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
+            close(fill, barEnd, `${hit} — level premium ₹${lvl} ≈ spot ${parseFloat(raw.toFixed(2))}`);
           } else {
-            // Breakeven arm off this bar's favourable extreme. The moved stop can
-            // only be hit from the NEXT bar on — arming and stopping inside one
-            // bar would need intra-bar ordering the data cannot supply.
-            if (!pos.beArmed) {
-              const fav = isCE ? c.high : c.low;
-              const be = tdsStrategy.breakevenJump(pos.side, pos.entrySpot, fav, pos.slPts, cfg);
-              if (be.armed && typeof be.stop === "number" && Number.isFinite(be.stop)) {
-                pos.beArmed = true;
-                pos.slSpot = be.stop;
-              }
-            }
-            // Time stop — only while breakeven has not armed (same rule as paper).
-            if (pos && tdsStrategy.timeStopHit(pos.entryTime, c.time, pos.beArmed, cfg)) {
-              close(c.close, c.time, `Time stop — ${cfg.timeStopMins}m elapsed without reaching +${cfg.breakevenR}R`, false);
-            } else if (pos && tdsStrategy.premiumStopHit(pos.optionEntryLtp, premiumAt(c.close, c.time), cfg)) {
-              close(c.close, c.time, `Premium stop — simulated premium -${cfg.premiumStopPct}%`, false);
-            }
+            // c) adverse → favourable extreme: the peak rises, nothing exits.
+            const pFav = premiumAt(isCE ? c.high : c.low, c.time);
+            if (pFav > pos.peak) pos.peak = pFav;
+            // d) favourable → close: a lock armed by THIS peak and given back.
+            hit = lockHit(premiumAt(c.close, barEnd));
+            if (hit) close(c.close, barEnd, `${hit} (armed and given back inside the bar — filled at the close ${c.close})`);
           }
         }
       }
 
       // ── Look for a new entry on this bar's close. ──────────────────────────
-      if (!pos && !dayClosed && dayTrades < MAX_TRADES) {
+      if (!pos && !dayClosed) {
         const closeMins = istMin + RES;
         if (closeMins > cfg.entryEndMin) continue;
         const sig = tdsStrategy.getSignal(sorted, {
@@ -261,21 +248,16 @@ async function runTrendDayScalpBacktest(intraday) {
           entryTime: c.time,
           entrySpot: sig.entrySpot,          // the bar's CLOSE — same as paper
           optionEntryLtp: IS_FUT ? sig.entrySpot : SEED_PREMIUM,
-          slPts: sig.slPts,
-          slSpot: sig.slSpot,
-          initialSlSpot: sig.slSpot,
-          targetSpot: sig.targetSpot,
-          beArmed: false,
           zone: sig.zone, atr: sig.atr, bodyPts: sig.bodyPts,
           entryReason: sig.reason,
         };
-        dayTrades++;
+        pos.peak = pos.optionEntryLtp;
       }
     }
 
     if (pos) {
       const last = sorted[idxs[idxs.length - 1]];
-      close(last.close, last.time, "EOD (end of day candles)", false);
+      close(last.close, last.time + RES * 60, "Session end — closed at the day's last bar (paper's TRADE_STOP_TIME teardown)");
     }
   }
 
@@ -308,9 +290,8 @@ function _renderResults(res, from, to, trades, stats, meta) {
     trades,
     activePage: "trendDayScalpBacktest",
     extraTradeColumns: [
-      { key: "riskPts", label: "Risk (pt)" },
       { key: "gateRangePct", label: "1h range %" },
-      { key: "beArmed", label: "BE armed" },
+      { key: "peakPrem", label: "Peak prem" },
       { key: "held", label: "Held" },
     ],
     extraStats: [
@@ -321,7 +302,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Day gate PASSED", value: `${gs.tradeable} / ${gs.decided} (${gs.decided ? ((gs.tradeable / gs.decided) * 100).toFixed(0) : 0}%)` },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium stop (they have no meaning without a premium); a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. <b>Risk:</b> stop = the pullback extreme floored to ${cfg.minSlPts}pt and SKIPPED entirely above ${cfg.maxSlPts}pt, fixed ${cfg.targetR}R target, one breakeven jump at +${cfg.breakevenR}R to entry±${cfg.breakevenBuffer} (never a rolling trail), ${cfg.timeStopMins}m time stop while un-armed, −${cfg.premiumStopPct}% premium stop, EOD ${process.env.TDS_FORCED_EXIT || "15:10"}. Max ${process.env.TDS_MAX_DAILY_TRADES || "2"} trades/day, day ends on ${process.env.TDS_MAX_DAILY_LOSSES || "2"} stop-outs / ₹${process.env.TDS_MAX_DAILY_LOSS || "3000"} loss / ₹${process.env.TDS_DAILY_PROFIT_LOCK || "3000"} profit lock. <b>Intra-bar ordering is conservative:</b> the stop is tested on the bar high/low BEFORE the target, so a bar touching both books the loss, and a bar that opened beyond a level fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.TDS_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.TDS_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. New entries stop for the day at a ₹${process.env.TDS_DAILY_PROFIT_LOCK || "3000"} day profit. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.TDS_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.TDS_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
   });
   res.send(html);
 }

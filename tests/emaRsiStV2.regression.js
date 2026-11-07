@@ -378,21 +378,6 @@ check("V1 and V2 reach different decisions on the same candles", () => {
   assert.notStrictEqual(b, "BUY_CE", "V1 should refuse it (RSI cap) — the two must differ here");
 });
 
-check("V2 has no legacy hand-written *Live.js (live can only come from paper)", () => {
-  assert.ok(!exists("routes/emaRsiStV2Live.js"),
-    "a second live implementation is exactly what drifts from paper");
-  assert.ok(exists("routes/emaRsiStV2LiveHarness.js"), "the paper-wrapping harness must exist");
-});
-
-check("the live harness is triple-gated and defaults to dry-run", () => {
-  const h = read("routes/emaRsiStV2LiveHarness.js");
-  assert.ok(/EMA_RSI_ST_V2_LIVE_ENABLED/.test(h), "must read its own live gate");
-  assert.ok(!/[^2]_LIVE_ENABLED/.test(h.replace(/EMA_RSI_ST_V2_LIVE_ENABLED/g, "")),
-    "must not read another strategy's live gate");
-  assert.ok(/isDryRun\("EMA_RSI_ST_V2"\)/.test(h), "must ask liveDryRun with its own key");
-  assert.ok(/isAuthenticated/.test(h), "must check broker auth before real orders");
-});
-
 check("the paper route is the only place the rules are executed", () => {
   if (!exists("routes/emaRsiStV2Paper.js")) throw new Error("paper route missing");
   const p = read("routes/emaRsiStV2Paper.js");
@@ -418,8 +403,6 @@ check("V2 claims its OWN socket mutex slot, so V1 and V2 run in parallel", () =>
     // …but V2 must still exclude itself.
     sss.setEmaRsiStV2Mode("EMA_RSI_ST_V2_PAPER");
     assert.strictEqual(sss.canStart("EMA_RSI_ST_V2_PAPER").allowed, false);
-    assert.strictEqual(sss.canStart("EMA_RSI_ST_V2_LIVE").allowed, false,
-      "V2 live must not start while V2 paper runs");
     // Stopping V2 must leave V1 alone.
     sss.clearEmaRsiStV2Mode();
     assert.strictEqual(sss.getMode(), "EMA_RSI_ST_PAPER",
@@ -537,30 +520,13 @@ check("the stock scanner excludes V2 until it is switched on", () => {
   assert.ok(withV2Unset(keys).includes("EMA_RSI_ST"), "V1 must still default ON");
 });
 
-check("both consolidation screens default V2 off without disturbing other modes", () => {
-  for (const f of ["routes/consolidation.js", "routes/liveConsolidation.js"]) {
+check("the consolidation screen defaults V2 off without disturbing other modes", () => {
+  for (const f of ["routes/consolidation.js"]) {
     const src = read(f);
     assert.ok(/_DEFAULT_OFF_MODES/.test(src), `${f} must carry the default-off set`);
     assert.ok(/"EMA_RSI_ST_V2"/.test(src.slice(src.indexOf("_DEFAULT_OFF_MODES"), src.indexOf("_DEFAULT_OFF_MODES") + 200)),
       `${f} must list EMA_RSI_ST_V2 as default-off`);
   }
-});
-
-check("live orders stay double-gated and default to dry-run", () => {
-  const dry = require("../src/utils/liveDryRun");
-  const keys = ["LIVE_HARNESS_DRY_RUN", "EMA_RSI_ST_V2_LIVE_ENABLED", "EMA_RSI_ST_V2_LIVE_DRY_RUN"];
-  const prev = keys.map((k) => process.env[k]);
-  const set = (o) => { keys.forEach((k) => delete process.env[k]); Object.assign(process.env, o); };
-  try {
-    set({});
-    assert.strictEqual(dry.isDryRun("EMA_RSI_ST_V2"), true, "defaults must be dry-run");
-    set({ LIVE_HARNESS_DRY_RUN: "false" });
-    assert.strictEqual(dry.isDryRun("EMA_RSI_ST_V2"), true, "global off alone must NOT arm V2");
-    set({ LIVE_HARNESS_DRY_RUN: "false", EMA_RSI_ST_V2_LIVE_ENABLED: "true" });
-    assert.strictEqual(dry.isDryRun("EMA_RSI_ST_V2"), false, "both gates open = real orders");
-    set({ LIVE_HARNESS_DRY_RUN: "false", EMA_RSI_ST_V2_LIVE_ENABLED: "true", EMA_RSI_ST_V2_LIVE_DRY_RUN: "true" });
-    assert.strictEqual(dry.isDryRun("EMA_RSI_ST_V2"), true, "the hold-back override must win");
-  } finally { keys.forEach((k, i) => { if (prev[i] === undefined) delete process.env[k]; else process.env[k] = prev[i]; }); }
 });
 
 check("the paper route refuses to start while V2 is disabled", () => {
@@ -587,14 +553,13 @@ section("Group 8 — the BANKNIFTY twin trades ITS OWN settings");
 const BN_ROUTES = [
   "routes/bnEmaRsiStV2Paper.js",
   "routes/bnEmaRsiStV2Backtest.js",
-  "routes/bnEmaRsiStV2LiveHarness.js",
 ];
 
 check("every BN route exists and shares the ONE engine file", () => {
   for (const f of BN_ROUTES) assert.ok(exists(f), `${f} is missing`);
   assert.ok(!exists("strategies/bn_ema_rsi_st_v2.js"),
     "the BN variant must share ema_rsi_st_v2.js, never copy it");
-  for (const f of [BN_ROUTES[0], BN_ROUTES[1]]) {
+  for (const f of BN_ROUTES) {
     const src = read(f);
     assert.ok(/require\("\.\.\/strategies\/ema_rsi_st_v2"\)/.test(src),
       `${f} must require the shared engine`);
@@ -605,7 +570,7 @@ check("every BN route exists and shares the ONE engine file", () => {
 
 check("EVERY engine call in the BN routes carries the BN prefix", () => {
   const CALL = /engine\.(getSignal|getConfig|trailStop|warmupBars|computeSeries|isInTradingWindow)\s*\(/g;
-  for (const f of [BN_ROUTES[0], BN_ROUTES[1]]) {
+  for (const f of BN_ROUTES) {
     // strip comments so prose mentioning engine.trailStop() is not counted
     const code = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     assert.ok(/PREFIX\s*=\s*"BN_EMA_RSI_ST_V2"/.test(code), `${f} must declare the BN prefix`);
@@ -678,13 +643,6 @@ check("BANKNIFTY option symbols are parsed as BANKNIFTY, not NIFTY", () => {
     "a hardcoded NSE:NIFTY… option regex would blank strike/expiry on every BANKNIFTY trade record");
   assert.ok(/optPrefix|strikeStep/.test(code),
     "strike/expiry parsing must derive from the underlying, not a NIFTY literal");
-});
-
-check("the BN live path is the harness only, and stays double-gated", () => {
-  assert.ok(!exists("routes/bnEmaRsiStV2Live.js"), "no second live implementation");
-  const h = read(BN_ROUTES[2]);
-  assert.ok(/BN_EMA_RSI_ST_V2_LIVE_ENABLED/.test(h), "must read its OWN live gate");
-  assert.ok(/isDryRun\("BN_EMA_RSI_ST_V2"\)/.test(h), "must ask liveDryRun with its own key");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

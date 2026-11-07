@@ -1,8 +1,8 @@
 /**
  * tradeUtils.js — Shared pure utility functions for all trade route files
  * ─────────────────────────────────────────────────────────────────────────────
- * Contains stateless helpers that are identical across bbRsiPaper, bbRsiLive,
- * paPaper, and paLive. Single source of truth — avoids duplicated code.
+ * Contains stateless helpers shared by bbRsiPaper and paPaper (and their
+ * backtests). Single source of truth — avoids duplicated code.
  *
  * IMPORTANT: This module must remain STATELESS — no module-level mutable state.
  * All functions are pure (output depends only on inputs).

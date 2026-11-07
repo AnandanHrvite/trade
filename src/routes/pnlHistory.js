@@ -6,10 +6,7 @@
  *
  *   past pnl         = one-time user entry per broker (baseline, not FY-split)
  *                      stored in ~/trading-data/historical_pnl.json
- *   live bot pnl     = auto-computed from the bot's own live-trade JSON files
- *                      (EMA_RSI_ST live → Kite; bb_rsi live + PA live → Fyers),
- *                      grouped by Indian financial year (Apr–Mar)
- *   grand total      = past baseline + manual trades + live bot pnl, per broker
+ *   grand total      = past baseline + manual trades, per broker
  *                      and overall; a source filter narrows it (default All)
  *   manual trades    = the user's own hand-placed trades (equity + F&O), fed by
  *                      ~/trading-data/manual_trades.json (see utils/manualTrades.js).
@@ -24,7 +21,7 @@
  *                      too, so past trades come from a tradebook CSV import.
  *
  * User sets the past baseline once per broker; it never changes unless edited.
- * Everything else updates automatically as live trades close / manual trades sync.
+ * Everything else updates automatically as manual trades sync.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -32,7 +29,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS, enabledStrategies } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 const manualTrades = require("../utils/manualTrades");
 const manualTradesSyncJob = require("../utils/manualTradesSyncJob");
@@ -40,12 +37,6 @@ const manualTradesSyncJob = require("../utils/manualTradesSyncJob");
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 const DATA_FILE = path.join(DATA_DIR, "historical_pnl.json");
-
-const LIVE_SOURCES = [
-  { file: path.join(DATA_DIR, "ema_rsi_st_live_trades.json"),       broker: "kite",  mode: "EMA_RSI_ST" },
-  { file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), broker: "fyers", mode: "BB_RSI" },
-  { file: path.join(DATA_DIR, "pa_live_trades.json"),    broker: "fyers", mode: "PA"    },
-];
 
 function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -97,34 +88,6 @@ function toFy(dateLike) {
   return `${startYear}-${yy}`;
 }
 
-// Only strategies enabled in Settings count, the same gate as the sidebar and
-// both consolidation pages. A disabled strategy's file is left untouched, so
-// switching it back on restores its history here too.
-function loadLiveTrades() {
-  const trades = [];
-  const enabled = new Set(enabledStrategies().map((s) => s.mode));
-  for (const src of LIVE_SOURCES) {
-    if (!enabled.has(src.mode)) continue;
-    const data = safeRead(src.file);
-    if (!data || !Array.isArray(data.sessions)) continue;
-    for (const s of data.sessions) {
-      const sessionDate = s.date;
-      for (const t of (s.trades || [])) {
-        const dateForFy = t.exitTime || t.entryTime || sessionDate;
-        const fy = toFy(dateForFy);
-        if (!fy) continue;
-        trades.push({
-          broker: src.broker,
-          mode:   src.mode,
-          fy,
-          pnl:    Number(t.pnl) || 0,
-        });
-      }
-    }
-  }
-  return trades;
-}
-
 // ── Mutations ────────────────────────────────────────────────────────────────
 
 router.use(express.urlencoded({ extended: true }));
@@ -165,7 +128,6 @@ router.get("/data", (req, res) => {
   res.json({
     success:    true,
     baselines:  loadBaselines(),
-    liveTrades: loadLiveTrades(),
   });
 });
 
@@ -222,7 +184,6 @@ router.get("/manual/data", (req, res) => {
 
 router.get("/", (req, res) => {
   const baselines = loadBaselines();
-  const liveTrades = loadLiveTrades();
   const manualStore = manualTrades.loadStore();
   const manualRoundTrips = manualTrades.buildRoundTrips(manualStore.fills);
   const manualOpenLots = manualTrades.buildOpenLots(manualStore.fills);
@@ -234,14 +195,9 @@ router.get("/", (req, res) => {
   const currentFy = toFy(new Date());
   const consolidated = {
     past:   { kite: baselines.kite.pnl || 0, fyers: baselines.fyers.pnl || 0 },
-    live:   { kite: 0, fyers: 0 },
     manual: { kite: 0, fyers: 0 },
-    fy:     { label: currentFy, live: { kite: 0, fyers: 0 }, manual: { kite: 0, fyers: 0 } },
+    fy:     { label: currentFy, manual: { kite: 0, fyers: 0 } },
   };
-  for (const t of liveTrades) {
-    consolidated.live[t.broker] += t.pnl;
-    if (t.fy === currentFy) consolidated.fy.live[t.broker] += t.pnl;
-  }
   for (const t of manualRoundTrips) {
     if (!(t.broker in consolidated.manual)) continue;
     consolidated.manual[t.broker] += t.pnl;
@@ -391,14 +347,13 @@ router.get("/", (req, res) => {
       <span class="bc-current">💰 P&amp;L History</span>
     </nav>
     <h1 class="page-title">💰 P&amp;L History</h1>
-    <div class="page-sub">Past baseline (one-time, per broker) + manual trades + live bot P&amp;L. Manual P&amp;L is before charges. All values in ₹.</div>
+    <div class="page-sub">Past baseline (one-time, per broker) + manual trades. Manual P&amp;L is before charges. All values in ₹.</div>
 
     <!-- Summary cards — filled by renderConsolidated() -->
     <div class="toolbar">
       <span class="seg-toggle" id="consToggle">
         <button class="active" data-src="all" onclick="setConsSource('all')">All</button>
         <button data-src="manual" onclick="setConsSource('manual')">Manual</button>
-        <button data-src="live" onclick="setConsSource('live')">Live Bot</button>
         <button data-src="past" onclick="setConsSource('past')">Past</button>
       </span>
     </div>
@@ -477,7 +432,7 @@ const SEARCH_TIMERS = {};
 
 // ── Summary cards, narrowed by the source filter ────────────────────────────
 const CONS = ${jsonForScript(consolidated)};
-const CONS_SOURCES = [{ key: 'manual', label: 'Manual' }, { key: 'live', label: 'Live bot' }, { key: 'past', label: 'Past' }];
+const CONS_SOURCES = [{ key: 'manual', label: 'Manual' }, { key: 'past', label: 'Past' }];
 let consSource = 'all';
 
 function setConsSource(src){

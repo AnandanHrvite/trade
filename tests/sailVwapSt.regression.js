@@ -12,8 +12,8 @@
  *           close beyond the cross candle's high (CE) / low (PE); every close in
  *           between stays on the cross side; SuperTrend(10,2) must agree, else
  *           skip. Only the FIRST breakout close counts.
- *   exit  : candle close only — SuperTrend flips, or close beyond the trailed
- *           stop. Trail tighten-only. Square-off 15:15. 1 trade/day.
+ *   exit  : the profit lock only (owned by the routes); the backtest closes
+ *           anything still open at the day's last candle.
  */
 
 process.env.TZ = "Asia/Calcutta";
@@ -99,25 +99,21 @@ test("defaults match the confirmed rules", () => {
   assert.strictEqual(c.BREAKOUT_BARS, 3);
   assert.strictEqual(c.ENTRY_START, 9 * 60 + 30);
   assert.strictEqual(c.ENTRY_END, 14 * 60 + 30);
-  assert.strictEqual(c.EOD_EXIT, 15 * 60 + 15);
-  assert.strictEqual(c.MAX_DAILY_TRADES, 1);
-  assert.strictEqual(c.MAX_DAILY_LOSS, 5000);
   assert.strictEqual(c.LOTS, 1);
-  assert.strictEqual(c.OPT_STOP_PCT, 0.25);
+  for (const k of ["EOD_EXIT", "MAX_DAILY_TRADES", "MAX_DAILY_LOSS", "OPT_STOP_PCT"]) assert.ok(!(k in c), k);
+  for (const f of ["isEodExit", "exitCheck", "trailStop"]) assert.strictEqual(E[f], undefined, f);
   assert.strictEqual(c.UNDERLYING, "SAIL");
   assert.strictEqual(E.warmupDays(), 2);
   assert.strictEqual(E.warmupBars(c), 17);
 });
 test("every threshold is configurable; garbage falls back", () => withEnv({
   SAIL_VWAP_ST_TF: "15", SAIL_VWAP_ST_ST_PERIOD: "7", SAIL_VWAP_ST_ST_MULT: "1", SAIL_VWAP_ST_BREAKOUT_BARS: "5",
-  SAIL_VWAP_ST_ENTRY_START: "10:00", SAIL_VWAP_ST_ENTRY_END: "13:00", SAIL_VWAP_ST_EOD_EXIT_TIME: "15:00",
-  SAIL_VWAP_ST_MAX_DAILY_TRADES: "2", SAIL_VWAP_ST_MAX_DAILY_LOSS: "0", SAIL_VWAP_ST_LOTS: "3", SAIL_VWAP_ST_OPT_STOP_PCT: "0",
+  SAIL_VWAP_ST_ENTRY_START: "10:00", SAIL_VWAP_ST_ENTRY_END: "13:00", SAIL_VWAP_ST_LOTS: "3",
   SAIL_VWAP_ST_WARMUP_DAYS: "4",
 }, () => {
   const c = E.getConfig();
   assert.deepStrictEqual([c.TRADE_RES, c.ST_PERIOD, c.ST_MULT, c.BREAKOUT_BARS], [15, 7, 1, 5]);
-  assert.deepStrictEqual([c.ENTRY_START, c.ENTRY_END, c.EOD_EXIT], [600, 780, 900]);
-  assert.deepStrictEqual([c.MAX_DAILY_TRADES, c.MAX_DAILY_LOSS, c.LOTS, c.OPT_STOP_PCT], [2, 0, 3, 0]);
+  assert.deepStrictEqual([c.ENTRY_START, c.ENTRY_END, c.LOTS], [600, 780, 3]);
   assert.strictEqual(E.warmupDays(), 4);
 }));
 test("bad env values fall back to defaults", () => withEnv({
@@ -210,13 +206,14 @@ test("fixture: bar 4 crosses up, bars 5–7 stay above VWAP, ST green on bar 6",
 });
 
 // ── entry ───────────────────────────────────────────────────────────────────
-test("CE: breakout close above the cross candle's high → BUY_CE, stop = SuperTrend", () => {
+test("CE: breakout close above the cross candle's high → BUY_CE, SuperTrend green below the close", () => {
   const cs = CE_SET(), end = N_PREV + 6;
   const s = E.getSignal(cs.slice(0, end + 1), { silent: true });
   const st = E.computeSeries(cs.slice(0, end + 1)).supertrend[end];
   assert.strictEqual(s.signal, "BUY_CE", s.reason);
-  assert.strictEqual(s.stopLoss, Math.round(st.value * 100) / 100);
-  assert.ok(s.stopLoss < cs[end].close);
+  assert.strictEqual(s.supertrend, Math.round(st.value * 100) / 100);
+  assert.ok(s.supertrend < cs[end].close);
+  assert.strictEqual(s.stopLoss, undefined);
   assert.strictEqual(s.crossLevel, 167.4);
   assert.strictEqual(s.setup.status, "confirmed");
   assert.strictEqual(s.setup.side, "CE");
@@ -295,7 +292,7 @@ test("PE mirror: close below the cross candle's low with SuperTrend red → BUY_
   const cs = mirror(CE_SET()), end = N_PREV + 6;
   const s = E.getSignal(cs.slice(0, end + 1), { silent: true });
   assert.strictEqual(s.signal, "BUY_PE", s.reason);
-  assert.ok(s.stopLoss > cs[end].close);
+  assert.ok(s.supertrend > cs[end].close);
   assert.strictEqual(s.crossLevel, Math.round((400 - 167.4) * 100) / 100);
   assert.strictEqual(s.setup.side, "PE");
 });
@@ -345,71 +342,38 @@ test("precomputed series gives the identical decision at every bar", () => {
     const a = E.getSignal(cs.slice(0, i + 1), { silent: true });
     const b = E.getSignal(cs, { silent: true, precomputed: { series, endIdx: i, cfg } });
     assert.strictEqual(a.signal, b.signal, `bar ${i}`);
-    assert.strictEqual(a.stopLoss, b.stopLoss, `bar ${i}`);
+    assert.strictEqual(a.supertrend, b.supertrend, `bar ${i}`);
     assert.strictEqual(a.reason, b.reason, `bar ${i}`);
   }
 });
 
-// ── exits ───────────────────────────────────────────────────────────────────
-const B = (c) => bar(ist(DAY, 11, 0), c, c + 0.1, c - 0.1, c, 100);
-test("CE exits: SuperTrend flip red, or close below the trailed stop", () => {
-  assert.strictEqual(E.exitCheck("CE", B(170), { value: 170.5, trend: -1 }, 169).exit, true);
-  assert.ok(/flipped red/.test(E.exitCheck("CE", B(170), { value: 170.5, trend: -1 }, 169).reason));
-  assert.strictEqual(E.exitCheck("CE", B(168.9), { value: 168.5, trend: 1 }, 169).exit, true);
-  assert.ok(/SuperTrend stop/.test(E.exitCheck("CE", B(168.9), { value: 168.5, trend: 1 }, 169).reason));
-  assert.strictEqual(E.exitCheck("CE", B(169), { value: 168.5, trend: 1 }, 169).exit, false);   // equal is not below
-  assert.strictEqual(E.exitCheck("CE", B(170), { value: 169.5, trend: 1 }, 169).exit, false);
+// ── backtest: the profit lock is the only exit; session end closes the rest ──
+const BT = require("../src/routes/sailVwapStBacktest");
+/** CE_SET, then a rally (arms the lock) and a give-back on the same day. */
+function rallyThenFade() {
+  const cs = CE_SET();
+  const t = (i) => ist(DAY, 9, 15) + i * 300;
+  let p = 167.8;
+  for (let i = 8; i < 20; i++) { p += 0.6; cs.push(bar(t(i), p - 0.3, p + 0.1, p - 0.4, p, 1000)); }
+  for (let i = 20; i < 30; i++) { p -= 0.8; cs.push(bar(t(i), p + 0.4, p + 0.5, p - 0.1, p, 1000)); }
+  return cs;
+}
+test("backtest: exit reasons are only 'profit lock' and 'session end'", () => {
+  assert.deepStrictEqual(Object.values(BT.EXIT).sort(), ["profit lock", "session end"]);
+  const r = BT.simulate(rallyThenFade(), { tradeFrom: DAY, tradeTo: DAY });
+  assert.ok(r.trades.length > 0, "the fixture must trade");
+  for (const t of r.trades) assert.ok(Object.values(BT.EXIT).includes(t.exitReason), t.exitReason);
+  assert.strictEqual(r.trades[0].exitReason, "profit lock", r.trades[0].exitDetail);
+  assert.ok(r.trades[0].pnl > 0);
+  for (const t of r.trades) assert.strictEqual(t.sl, null);
 });
-test("PE exits: SuperTrend flip green, or close above the trailed stop", () => {
-  assert.strictEqual(E.exitCheck("PE", B(168), { value: 167.5, trend: 1 }, 169).exit, true);
-  assert.strictEqual(E.exitCheck("PE", B(169.1), { value: 169.5, trend: -1 }, 169).exit, true);
-  assert.strictEqual(E.exitCheck("PE", B(168), { value: 168.5, trend: -1 }, 169).exit, false);
-});
-test("exit null guards: a null stop or bad bar never exits by itself", () => {
-  assert.strictEqual(E.exitCheck("CE", B(1), { value: 0.5, trend: 1 }, null).exit, false);   // spot >= null must not fire
-  assert.strictEqual(E.exitCheck("PE", B(1e6), { value: 2e6, trend: -1 }, undefined).exit, false);
-  assert.strictEqual(E.exitCheck("CE", { time: 1, open: 1, high: 1, low: 1, close: NaN }, { trend: -1 }, 5).exit, false);
-  assert.strictEqual(E.exitCheck("CE", B(170), null, 169).exit, false);
-  assert.strictEqual(E.exitCheck("XX", B(170), { value: 1, trend: -1 }, 169).exit, false);
-});
-test("trail is tighten-only and follows SuperTrend on its own side", () => {
-  const cs = CE_SET(), cfg = E.getConfig();
-  const st = computeSuperTrend(cs, 10, 2), last = cs.length - 1;
-  const lvl = Math.round(st[last].value * 100) / 100;
-  const t = E.trailStop(cs, "CE", 100, cfg);
-  assert.strictEqual(t.changed, true); assert.strictEqual(t.stop, lvl);
-  const same = E.trailStop(cs, "CE", lvl + 0.5, cfg);   // never loosens
-  assert.strictEqual(same.changed, false); assert.strictEqual(same.stop, lvl + 0.5);
-  assert.strictEqual(E.trailStop(cs, "PE", 300, cfg).changed, false);   // green line never trails a PE
-  assert.strictEqual(E.trailStop(cs.slice(0, 5), "CE", 100, cfg).changed, false);
-  assert.deepStrictEqual(E.trailStop(cs, "CE", 100, cfg, { supertrend: st, endIdx: last }), t);
-});
-test("PE trail tightens downward only", () => {
-  const cs = mirror(CE_SET()), cfg = E.getConfig();
-  const t = E.trailStop(cs, "PE", 500, cfg);
-  assert.strictEqual(t.changed, true); assert.ok(t.stop > cs[cs.length - 1].close && t.stop < 500);
-  assert.strictEqual(E.trailStop(cs, "PE", t.stop - 0.5, cfg).changed, false);
-});
-test("EOD square-off at 15:15", () => {
-  assert.strictEqual(E.isEodExit(ist(DAY, 15, 14)), false);
-  assert.strictEqual(E.isEodExit(ist(DAY, 15, 15)), true);
-});
-test("walk: entry once, stop below every close while held, trail never loosens", () => {
-  const cs = CE_SET(), cfg = E.getConfig();
-  let pos = null;
-  for (let i = E.warmupBars(); i < cs.length; i++) {
-    const c = cs.slice(0, i + 1);
-    if (!pos) {
-      const s = E.getSignal(c, { silent: true });
-      if (s.signal === "BUY_CE") pos = { stop: s.stopLoss };
-    } else {
-      const stb = E.computeSeries(c, cfg).supertrend[i];
-      if (E.exitCheck("CE", c[i], stb, pos.stop).exit) { pos = null; continue; }
-      const t = E.trailStop(c, "CE", pos.stop, cfg);
-      assert.ok(t.stop >= pos.stop); pos.stop = t.stop;
-      assert.ok(pos.stop < c[i].close);
-    }
-  }
+test("backtest: with the lock off, a trade is held to the day's last candle and closed there", () => {
+  const cs = rallyThenFade();
+  const r = BT.simulate(cs, { tradeFrom: DAY, tradeTo: DAY, guards: { lockEnabled: false } });
+  assert.strictEqual(r.trades.length, 1);
+  const tr = r.trades[0];
+  assert.strictEqual(tr.exitReason, "session end");
+  assert.strictEqual(tr.exitBarTime, cs[cs.length - 1].time + 300);
 });
 
 console.log(`\nSAIL_VWAP_ST: ${passed} passed, ${failed} failed`);

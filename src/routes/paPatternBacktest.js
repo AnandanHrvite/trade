@@ -23,7 +23,6 @@ const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { saveResult, loadResult } = require("../utils/resultStore");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const backtestJobs = require("../utils/backtestJobManager");
 
@@ -206,10 +205,6 @@ router.get("/trades", (req, res) => {
 
 // ── Trigger one pattern's backtest (background) ──────────────────────────────
 router.get("/run", async (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE" ||
-                     sharedSocketState.getMode() === "PA_LIVE" ||
-                     sharedSocketState.getMode() === "BB_RSI_LIVE";
-  if (liveActive) return res.status(503).json({ error: "live trading active" });
   if (!process.env.ACCESS_TOKEN) return res.status(401).json({ error: "not authenticated" });
 
   const pattern = String(req.query.pattern || "");
@@ -276,7 +271,6 @@ router.get("/run", async (req, res) => {
 
 // ── Dashboard page ───────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
@@ -392,7 +386,7 @@ router.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('paPatternBacktest', liveActive)}
+${buildSidebar('paPatternBacktest', false)}
 <div class="main-content">
 <div class="page">
 

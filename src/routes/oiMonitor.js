@@ -57,7 +57,6 @@ const router  = express.Router();
 
 const oiChain             = require("../services/oiChain");
 const optionChainRecorder = require("../utils/optionChainRecorder");
-const sharedSocketState   = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
 // Lookbacks are in OI MOVES, not polls or minutes — see oiChain's header.
@@ -219,7 +218,6 @@ router.get("/data", (req, res) => {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -294,7 +292,7 @@ router.get("/", (req, res) => {
   </style>
 </head>
 <body>
-${buildSidebar('oi-monitor', liveActive)}
+${buildSidebar('oi-monitor', false)}
 <div class="main-content">
   <div class="wrap">
     <h1>OI Monitor <span class="dim" style="font-size:0.7rem;font-weight:400;">read-only</span></h1>

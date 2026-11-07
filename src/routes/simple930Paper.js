@@ -2,33 +2,31 @@
  * SIMPLE_9:30 PAPER — /simple930-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * CANONICAL surface. Every decision / fill / exit semantic for SIMPLE_9:30
- * lives here; the backtest and the live harness must match THIS, never the
+ * lives here; the backtest must match THIS, never the
  * reverse (see feedback_paper_logic_untouchable).
  *
  * The day in one paragraph: at 09:25 the ITM ladder is quoted on both sides and
  * the ONE strike per side trading nearest ₹180 becomes the watchlist. From then
  * until 09:35 both premiums are polled; the first to trade above ₹180 is bought
- * at market with a 20-point stop off the ACTUAL FILL. That stop does NOT trail
- * straight away: it sits flat until the premium touches the top of the box, and
- * only then starts trailing the peak by the same 20 points — otherwise the first
- * rupee of noise tightens a 20-point stop into a much smaller one. At 09:45 a
- * trade that never touched ₹220 or ₹160 is closed regardless of P&L. One trade per day. EOD square-off 15:15.
+ * at market. The global profit lock (tradeGuards.checkProfitLock, on the option
+ * premium) is the ONLY automatic exit; anything still open is closed by the
+ * session teardown (TRADE_STOP_TIME auto-stop, /stop) or the manual exit.
+ * One trade per day.
  *
  * ONE INSTRUMENT DRIVES EVERY DECISION: the OPTION PREMIUM, read every
  * SIMPLE930_POLL_MS from the shared websocket (fyers.getQuotes only when the
  * streamed price is stale) and recorded to the tick archive, which is what
- * makes Paper ≡ Live-harness ≡ Replay. The NIFTY 50
+ * makes Paper ≡ Replay. The NIFTY 50
  * index arrives on the shared spot socket and is used for exactly two things —
  * the ATM strike sampled ONCE at 09:25, and the context chart on this page.
  * No rule reads the index chart.
  *
- * ORDERS GO TO ZERODHA. The live harness wraps this route with broker
- * "zerodha", so the capital pool, the charges model and the crash-recovery
- * reconciliation all sit on the Zerodha side. Market DATA is still Fyers —
+ * The capital pool, the charges model and the crash-recovery reconciliation
+ * all sit on the Zerodha side. Market DATA is still Fyers —
  * that is the only broker with a NIFTY option feed in this repo.
  *
- * Signal engine: src/strategies/simple930.js (shared by paper, backtest, live
- * harness and replay — no rule is re-implemented in this file).
+ * Signal engine: src/strategies/simple930.js (shared by paper, backtest
+ * and replay — no rule is re-implemented in this file).
  *
  * Uses LIVE data but SIMULATES orders locally.
  * Endpoints: GET  /start /stop /exit /status /status/data /status/chart-data
@@ -91,8 +89,8 @@ const PT_FILE  = path.join(DATA_DIR, "simple930_paper_trades.json");
 function _startCapital() {
   return parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000");
 }
-function _maxDailyTrades() { return Math.max(1, parseInt(process.env.SIMPLE930_MAX_DAILY_TRADES || "1", 10) || 1); }
-function _maxDailyLoss()   { return parseFloat(process.env.SIMPLE930_MAX_DAILY_LOSS   || "0"); }
+/** The rule is ONE trade a day — part of the entry definition, not a setting. */
+const TRADES_PER_DAY = 1;
 function _pollMs() {
   const v = parseInt(process.env.SIMPLE930_POLL_MS || "1000", 10);
   return Number.isFinite(v) && v >= 250 && v <= 15000 ? v : 1000;
@@ -177,7 +175,6 @@ function _freshState() {
     // totalPnl — the capital pool adds sessionPnl only then (see trackSession below).
     _unsaved:       false,
     tradesTaken:    0,
-    stopOuts:       0,
 
     // NIFTY 50 INDEX — ATM sampling + the context chart + the session heartbeat.
     tickCount:      0,
@@ -239,7 +236,7 @@ function decide(kind, headline, detail) {
   const row = {
     ts:     new Date().toISOString(),
     ist:    new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }),
-    kind,                       // PLAN | SCAN | WATCH | ENTRY | TRAIL | BAND | EXIT | SKIP | DAY
+    kind,                       // PLAN | SCAN | WATCH | ENTRY | PROFIT_LOCK | EXIT | SKIP | DAY
     headline,
     ...(detail && typeof detail === "object" ? { detail } : {}),
   };
@@ -279,10 +276,9 @@ function rehydrateSessionFromJsonl() {
     state._unsaved      = false;   // rehydrated trades are not counted: they may have been deleted from History, and the pool must not resurrect them
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
-    state.stopOuts      = trades.filter(t => /stop/i.test(String(t.exitReason || ""))).length;
     state.sessionPnl    = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ ${LOG_TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl}, ${state.stopOuts} stop-out(s))`);
+    console.log(`♻️ ${LOG_TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
     console.warn(`${LOG_TAG} session rehydrate failed: ${err.message}`);
   }
@@ -406,8 +402,8 @@ async function runSelection() {
   const nowMin = getISTMinutes();
   if (nowMin < cfg.selectionMin) return;
 
-  // SIMPLE930 is premium-denominated end to end: the entry trigger, the stop,
-  // the trail and the band are all option-premium levels (see the pnlMode
+  // SIMPLE930 is premium-denominated end to end: the entry trigger and the
+  // profit lock are both option-premium levels (see the pnlMode
   // string — "every level is a premium, not a spot"). NIFTY futures have no
   // premium, so there is no faithful futures translation of this strategy.
   // Refuse loudly rather than trade options against an explicit FUTURES toggle.
@@ -580,7 +576,7 @@ async function evaluateEntry() {
   const cfg = strategy.getConfig();
   const nowMin = getISTMinutes();
   if (!strategy.inEntryWindow(nowMin, cfg)) return;
-  if (state.tradesTaken >= _maxDailyTrades()) return;
+  if (state.tradesTaken >= TRADES_PER_DAY) return;
   // The sustain counters are kept BEFORE the retry backoff returns. They mean
   // "consecutive quotes above the trigger", and a leg that dipped below during
   // the backoff has broken that run — freezing the counter through the pause
@@ -677,7 +673,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
   // The session must still be the one that decided to buy. A /stop or an
   // auto-stop that landed during the re-quote has already run its square-off and
   // torn down the poll chain, so committing the position now would leave a real
-  // broker order with nothing left to trail it, stop it or square it off.
+  // broker order with nothing left to manage it or square it off.
   if (!state.running || state._sessionId !== sessionId) {
     log(`🚫 ${LOG_TAG} Session ended while the ${side} fill was in flight — entry abandoned, no order placed`);
     skipLogger.appendSkipLog(MODE_KEY, { gate: "session_ended", side, reason: "session stopped mid-fill", symbol: leg.symbol });
@@ -698,15 +694,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
     return;
   }
 
-  const stop = strategy.computeInitialStop(fillLtp, cfg);
-  if (!strategy._num(stop)) {
-    log(`🚫 ${LOG_TAG} Entry ABORTED — stop level uncomputable from fill ₹${fillLtp}. Refusing to enter without one.`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `stop uncomputable from fill ${fillLtp}`, side, symbol: leg.symbol });
-    return;
-  }
-
   const qty  = simpleLotQty();
-  const band = strategy.bandLevels(cfg);
 
   // ── Capital gate — HARD: the pool must fund qty × premium or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
@@ -736,29 +724,13 @@ async function simulateBuy(side, leg, verdict, cfg) {
     atmAtSelection: state.selection ? state.selection.atm : null,
     selectionLtp:  leg.selLtp,
     trigger:       cfg.triggerPremium,
-    stop:          stop,
-    stopLoss:      stop,
-    initialStop:   stop,
-    initialStopLoss: stop,
-    slPts:         cfg.slPts,
-    trailPts:      cfg.trailPts,
-    trailEnabled:  cfg.trailEnabled,
-    // The trail is parked until the premium touches the box top — frozen on the
-    // position so a mid-trade Settings change cannot re-arm or dis-arm it.
-    trailArmAtBandUp: cfg.trailArmAtBandUp,
-    trailArmed:    false,
-    trailMoves:    0,
-    bandUp:        band.up,
-    bandDown:      band.down,
-    expanded:      false,
-    expandedAt:    null,
     peak:          strategy._r2(fillLtp),
     trough:        strategy._r2(fillLtp),
     peakPremium:   strategy._r2(fillLtp),
     entryTime:     istNow(),
     entryTimeMs:   Date.now(),
     vixAtEntry:     vixFilter.getCachedVix(),   // observer-only — see VIX_LOG_ENABLED
-    entryMin:      getISTMinutes(),   // IST minute-of-day — the 09:45 rule needs it
+    entryMin:      getISTMinutes(),   // IST minute-of-day the position opened
     entryUnixSec:  Math.floor(Date.now() / 1000),
     entryBarTime:  Math.floor(getBucketStart(Date.now(), PREMIUM_BAR_MIN) / 1000),
     entryReason:   verdict ? verdict.reason : `${side} above ₹${cfg.triggerPremium}`,
@@ -776,16 +748,12 @@ async function simulateBuy(side, leg, verdict, cfg) {
 
   log(`🟢 ${LOG_TAG} BUY ${side} ${leg.symbol} qty=${qty} @ ₹${pos.optionEntryLtp}`);
   log(`   ├─ Trigger: ${pos.entryReason}`);
-  log(`   ├─ SL ₹${stop} (${cfg.slPts}pt off the fill) · ${strategy.describeTrail(cfg, pos)}`);
-  log(`   └─ ${strategy._fmtMins(cfg.sidewaysMin)} check: must trade ≥₹${band.up} or ≤₹${band.down} or the trade is closed · EOD ${strategy._fmtMins(cfg.forcedExitMin)}`);
+  log(`   └─ Exit: global profit lock only`);
 
-  decide("ENTRY", `BUY ${side} ${leg.strike} @ ₹${pos.optionEntryLtp} — SL ₹${stop}`, {
+  decide("ENTRY", `BUY ${side} ${leg.strike} @ ₹${pos.optionEntryLtp}`, {
     symbol: leg.symbol, strike: leg.strike, qty,
     fill: pos.optionEntryLtp, trigger: cfg.triggerPremium,
     selectionLtp: leg.selLtp,
-    stop, slPts: cfg.slPts, trailPts: cfg.trailPts, trailEnabled: cfg.trailEnabled,
-    bandUp: band.up, bandDown: band.down,
-    sidewaysAt: strategy._fmtMins(cfg.sidewaysMin), eod: strategy._fmtMins(cfg.forcedExitMin),
     bothLegsAbove: pos.bothAbove,
   });
 
@@ -794,7 +762,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
     side, symbol: leg.symbol,
     strike: leg.strike, expiry: pos.optionExpiry,
     spotAtEntry: state.lastTickPrice, optionEntryLtp: pos.optionEntryLtp,
-    qty, stopLoss: stop, target: null,
+    qty, stopLoss: null, target: null,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -807,8 +775,7 @@ function simulateSell(reason, opts) {
   const pos = state.position;
   const exitLtp = strategy._px(state.optionLtp) ? state.optionLtp : pos.optionEntryLtp;
   // Whether the price this exit was booked at was actually current. A stale exit
-  // still sends the real order in LIVE — it is the RECORD that would otherwise
-  // be fiction, so the trade carries the age it was priced at.
+  // would make the RECORD fiction, so the trade carries the age it was priced at.
   const exitAgeSec  = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
   const exitStale   = strategy._num(exitAgeSec) && exitAgeSec * 1000 > _ltpStaleMs();
   const qty     = pos.qty;
@@ -816,9 +783,6 @@ function simulateSell(reason, opts) {
   const pnl     = parseFloat(((exitLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
-  // Only a REAL stop-out burns a stop-out slot — never inferred from the sign
-  // of the P&L, so a trailed stop that nets positive still counts as one.
-  if (o.isStopOut) state.stopOuts++;
 
   const trade = {
     side:            pos.side,
@@ -849,18 +813,10 @@ function simulateSell(reason, opts) {
     exitReason:      reason,
     exitKind:        o.kind || null,
     entryReason:     pos.entryReason,
-    stopLoss:        pos.stop,
-    initialStopLoss: pos.initialStop,
-    trailMoves:      pos.trailMoves,
-    bandUp:          pos.bandUp,
-    bandDown:        pos.bandDown,
-    expanded:        pos.expanded,
-    expandedAt:      pos.expandedAt,
     optionStrike:    pos.optionStrike,
     optionExpiry:    pos.optionExpiry,
     optionType:      pos.side,
     optionEntrySymbol: pos.symbol,
-    riskPts:         pos.slPts,
     mfePts:          pos.mfePts || 0,
     mfePnl:          pos.mfePnl || 0,
     maePts:          pos.maePts || 0,
@@ -883,13 +839,12 @@ function simulateSell(reason, opts) {
 
   log(`🔴 ${LOG_TAG} EXIT ${pos.side} ${pos.symbol} @ ₹${trade.optionExitLtp} | PnL=₹${pnl} (${reason})`);
   if (exitStale) log(`   ⚠️ Booked on a ${exitAgeSec}s-OLD premium — this P&L is NOT a real fill. In live the broker filled at the market price, not this one.`);
-  log(`   └─ Ranged ₹${pos.trough}–₹${pos.peak} · ${pos.trailMoves} trail move(s) · held ${Math.round(trade.durationMs / 1000)}s · charges ₹${charges}`);
+  log(`   └─ Ranged ₹${pos.trough}–₹${pos.peak} · held ${Math.round(trade.durationMs / 1000)}s · charges ₹${charges}`);
 
   decide("EXIT", `${o.kind || "EXIT"} ${pos.side} ${pos.optionStrike} @ ₹${trade.optionExitLtp} — ₹${pnl}`, {
     reason, kind: o.kind || null,
     entry: pos.optionEntryLtp, exit: trade.optionExitLtp,
-    stop: pos.stop, initialStop: pos.initialStop, trailMoves: pos.trailMoves,
-    peak: pos.peak, trough: pos.trough, expanded: pos.expanded,
+    peak: pos.peak, trough: pos.trough,
     pnl, charges, heldSec: Math.round(trade.durationMs / 1000),
   });
 
@@ -917,16 +872,11 @@ function simulateSell(reason, opts) {
   _applyDayBreakers();
 }
 
-/** Day-level breakers, evaluated after every exit. Each one CLOSES the day. */
+/** After every exit: the day's one trade is spent, so the day CLOSES. */
 function _applyDayBreakers() {
   if (state.dayClosed) return;
-  const maxLoss = _maxDailyLoss();
-  if (maxLoss > 0 && state.sessionPnl <= -maxLoss) {
-    _closeDay(`Daily loss cap hit (₹${state.sessionPnl} ≤ -₹${maxLoss})`);
-    return;
-  }
-  if (state.tradesTaken >= _maxDailyTrades()) {
-    _closeDay(`Daily trade budget spent (${state.tradesTaken}/${_maxDailyTrades()})`);
+  if (state.tradesTaken >= TRADES_PER_DAY) {
+    _closeDay(`Day's trade taken (${state.tradesTaken}/${TRADES_PER_DAY})`);
   }
 }
 
@@ -941,24 +891,19 @@ function _closeDay(reason) {
 }
 
 /**
- * Every exit test, run on each polled premium.
- *
- * Order matters and is deliberate: the running peak/trough are updated FIRST
- * (so the trail and the band see this quote), then the stop is recomputed, then
- * the engine decides. A quote that both makes a new high and falls back to the
- * trail cannot happen — those are two different quotes — but a quote that
- * arrives after 09:45 AND is below the stop can, and exitCheck books the stop.
+ * The exit test, run on each polled premium. The running peak/trough are
+ * updated FIRST (so the lock sees this quote), then the global profit lock —
+ * the ONLY automatic exit — decides.
  */
 function _checkExits() {
   const pos = state.position;
   if (!pos) return;
   const ltp = state.optionLtp;
   if (!strategy._px(ltp)) return;
-  const cfg = strategy.getConfig();
 
   // ── Stale-premium watchdog ──
-  // Every exit below is measured against the LAST polled premium, so when the
-  // quote feed dies with a position open the stop simply never fires: the frozen
+  // The exit below is measured against the LAST polled premium, so when the
+  // quote feed dies with a position open the lock simply never fires: the frozen
   // number never breaches it while the real premium collapses. Entry already
   // refuses a stale quote; an exit cannot refuse — in LIVE the square-off order
   // still has to go out, and it will fill at the real price whatever this engine
@@ -970,10 +915,10 @@ function _checkExits() {
     if (!state._staleQuoteAlertMs || Date.now() - state._staleQuoteAlertMs > 60000) {
       state._staleQuoteAlertMs = Date.now();
       const secs = Math.round(ltpAge / 1000);
-      log(`🚨 ${LOG_TAG} ${pos.symbol} premium is ${secs}s STALE — the stop cannot fire on a frozen price. Check the Fyers feed; square off manually if this persists.`);
-      decide("SKIP", `Premium feed stale for ${secs}s — exits are running on an old price`, { symbol: pos.symbol, ageSec: secs, lastPremium: ltp, stop: pos.stop });
+      log(`🚨 ${LOG_TAG} ${pos.symbol} premium is ${secs}s STALE — the profit lock cannot fire on a frozen price. Check the Fyers feed; square off manually if this persists.`);
+      decide("SKIP", `Premium feed stale for ${secs}s — exits are running on an old price`, { symbol: pos.symbol, ageSec: secs, lastPremium: ltp });
       try {
-        sendIfMaster(`🚨 SIMPLE_9:30 — premium feed STALE\n${pos.symbol} last priced ₹${ltp}, ${secs}s ago.\nThe ${cfg.slPts}pt stop at ₹${pos.stop} CANNOT fire while the price is frozen.\nCheck the Fyers feed and square off manually if it does not recover.`);
+        sendIfMaster(`🚨 SIMPLE_9:30 — premium feed STALE\n${pos.symbol} last priced ₹${ltp}, ${secs}s ago.\nThe profit lock CANNOT fire while the price is frozen.\nCheck the Fyers feed and square off manually if it does not recover.`);
       } catch (_) {}
     }
   } else {
@@ -992,71 +937,24 @@ function _checkExits() {
   trackPath(pos, favPts, Date.now());
   if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
 
-  // Band expansion — announced once, because it is what saves the trade from
-  // the 09:45 exit and the operator should be able to see the exact moment.
-  // `pos` is passed so this reads the SAME box exitCheck reads — the one the
-  // trade opened under. Without it a Settings change mid-trade made the page and
-  // the decision trail announce "the band broke" while the engine still closed
-  // the trade at 09:45.
-  if (!pos.expanded && strategy.isExpanded(pos.peak, pos.trough, cfg, pos)) {
-    pos.expanded = true;
-    pos.expandedAt = istNow();
-    const edge = pos.peak >= cfg.bandUp ? `above ₹${cfg.bandUp}` : `below ₹${cfg.bandDown}`;
-    log(`📈 ${LOG_TAG} Band broken — premium traded ${edge}; the ${strategy._fmtMins(cfg.sidewaysMin)} sideways exit no longer applies`);
-    decide("BAND", `Premium left the ₹${cfg.bandDown}–₹${cfg.bandUp} box (${edge})`, { peak: pos.peak, trough: pos.trough, at: pos.expandedAt });
-    try { require("../utils/positionPersist").saveSimple930Position(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-  }
-
-  // Trail — ratchet only, never below the initial stop, and DISARMED until the
-  // premium has touched the top of the box. `pos` is passed so the arming level
-  // is the band the trade OPENED under, the same one isExpanded reads above.
-  const newStop = strategy.computeTrailStop(pos.peak, pos.initialStop, cfg, pos);
-  // The arming moment is worth one line: it is the point the risk on the trade
-  // changes hands from the flat stop to the trail, and without it the log jumps
-  // straight from "SL ₹165" to a burst of trail moves with nothing explaining why.
-  if (!pos.trailArmed && strategy.isTrailArmed(pos.peak, cfg, pos)) {
-    pos.trailArmed = true;
-    const at = strategy._num(pos.bandUp) ? pos.bandUp : cfg.bandUp;
-    log(`🔓 ${LOG_TAG} Trail ARMED — premium touched ₹${at} (peak ₹${pos.peak}); the ${cfg.trailPts}pt trail now owns the stop`);
-    decide("TRAIL", `Trail armed at ₹${at}`, { armedAt: at, peak: pos.peak, trailPts: cfg.trailPts, armed: true });
-  }
-  if (strategy._num(newStop) && newStop > pos.stop) {
-    const prev = pos.stop;
-    pos.stop = newStop;
-    pos.stopLoss = newStop;
-    pos.trailMoves++;
-    log(`🧗 ${LOG_TAG} Trail — SL ₹${prev} → ₹${newStop} (peak ₹${pos.peak}, ${cfg.trailPts}pt behind)`);
-    decide("TRAIL", `SL moved ₹${prev} → ₹${newStop}`, { peak: pos.peak, trailPts: cfg.trailPts, move: pos.trailMoves });
-    try { require("../utils/positionPersist").saveSimple930Position(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-  }
-
-  // Global profit lock (shared across every strategy — see tradeGuards). Checked
-  // before this engine's own exits: it is a premium ratchet that only ever fires
-  // ABOVE entry, so it can never loosen the flat stop or the trail above.
+  // Global profit lock (shared across every strategy — see tradeGuards) — the
+  // ONLY automatic exit this strategy has.
   if (pos.optionEntryLtp) {
-    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, ltp, pos.peak)
-      // Fallback for a trade that never reached the lock's arm level.
-      || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, ltp, pos.peak);
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, ltp, pos.peak);
     if (_plMsg) {
       log(`🔒 ${LOG_TAG} ${_plMsg}`);
       decide("PROFIT_LOCK", _plMsg, {
         entry: pos.optionEntryLtp, peak: pos.peak, ltp,
         armPct: tradeGuards.PROFIT_LOCK_ARM_PCT, floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
       });
-      simulateSell(_plMsg, { kind: "PROFIT_LOCK", isStopOut: false });
-      return;
+      simulateSell(_plMsg, { kind: "PROFIT_LOCK" });
     }
-  }
-
-  const verdict = strategy.exitCheck(pos, ltp, getISTMinutes(), cfg);
-  if (verdict && verdict.exit) {
-    simulateSell(verdict.reason, { kind: verdict.kind, isStopOut: verdict.kind === "STOP" || verdict.kind === "TRAIL" });
   }
 }
 
 /**
  * Close the day once the entry window has passed with nothing taken. Without
- * this the page would sit "running, waiting" until 15:15 with no explanation.
+ * this the page would sit "running, waiting" until the auto-stop with no explanation.
  */
 function _closeIfWindowMissed() {
   if (state.dayClosed || state.position || state.tradesTaken > 0) return;
@@ -1089,7 +987,7 @@ function startPolling() {
         await runSelection();
       } else if (!state.dayClosed || state.position) {
         // Once the day is closed and flat nothing reads these prices, so stop
-        // asking Fyers for them (the 1s poll used to run until 15:15).
+        // asking Fyers for them (the 1s poll used to run until the auto-stop).
         // Each leg streams on the shared websocket; REST is asked only for a
         // leg whose streamed price is not fresh.
         const q = new Map();
@@ -1131,7 +1029,7 @@ function startPolling() {
       }
     }
 
-    // Exits first — a stop must never wait behind an entry evaluation.
+    // Exits first — the profit lock must never wait behind an entry evaluation.
     try { _checkExits(); } catch (e) { console.error(`🚨 ${LOG_TAG} exit-check error: ${e.message}`); }
     try { if (!state.position) { evaluateEntry().catch(err => console.error(`🚨 ${LOG_TAG} entry error: ${err.message}`)); } } catch (e) { console.error(`🚨 ${LOG_TAG} entry error: ${e.message}`); }
     try { _closeIfWindowMissed(); } catch (e) { console.error(`🚨 ${LOG_TAG} window-close error: ${e.message}`); }
@@ -1183,28 +1081,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The SIMPLE930-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "SIMPLE930-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -1217,14 +1093,6 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/simple930-paper/status");
 
   if (String(process.env.SIMPLE930_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -1247,9 +1115,6 @@ router.get("/start", async (req, res) => {
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/simple930-paper/status", "← Back"));
 
   const cfg = strategy.getConfig();
-  if (getISTMinutes() >= cfg.forcedExitMin) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${strategy._fmtMins(cfg.forcedExitMin)} IST — SIMPLE_9:30 does not trade after this`, "/simple930-paper/status", "← Back"));
-  }
 
   state = _freshState();
   state.running = true;
@@ -1278,7 +1143,7 @@ router.get("/start", async (req, res) => {
 
   log(`🟢 ${LOG_TAG} Session started — ${strategy.NAME}`);
   log(`⚙️ ${LOG_TAG} ${strategy.describePlan(cfg)}`);
-  log(`⚙️ ${LOG_TAG} Ladder ${cfg.scanItmStrikes} ITM${cfg.scanOtmStrikes ? ` + ${cfg.scanOtmStrikes} OTM` : ""} per side · qty ${simpleLotQty()} · max ${_maxDailyTrades()} trade(s)/day · orders route to ZERODHA · quotes every ${_pollMs()}ms`);
+  log(`⚙️ ${LOG_TAG} Ladder ${cfg.scanItmStrikes} ITM${cfg.scanOtmStrikes ? ` + ${cfg.scanOtmStrikes} OTM` : ""} per side · qty ${simpleLotQty()} · ${TRADES_PER_DAY} trade/day · orders route to ZERODHA · quotes every ${_pollMs()}ms`);
   if (cfg.maxPremiumDist || cfg.minPremium || cfg.sustainPolls > 1) {
     log(`⚙️ ${LOG_TAG} Optional guards ON — ${[
       cfg.maxPremiumDist ? `reject a side further than ₹${cfg.maxPremiumDist} from ₹${cfg.triggerPremium}` : null,
@@ -1287,12 +1152,10 @@ router.get("/start", async (req, res) => {
     ].filter(Boolean).join(" · ")}`);
   }
   decide("PLAN", strategy.describePlan(cfg), {
-    trigger: cfg.triggerPremium, bandUp: cfg.bandUp, bandDown: cfg.bandDown,
-    slPts: cfg.slPts, trailPts: cfg.trailPts, trailEnabled: cfg.trailEnabled,
+    trigger: cfg.triggerPremium,
     selection: strategy._fmtMins(cfg.selectionMin),
     entryWindow: `${strategy._fmtMins(cfg.entryStartMin)}–${strategy._fmtMins(cfg.entryEndMin)}`,
-    sideways: strategy._fmtMins(cfg.sidewaysMin), eod: strategy._fmtMins(cfg.forcedExitMin),
-    qty: simpleLotQty(), maxDailyTrades: _maxDailyTrades(), broker: "zerodha",
+    qty: simpleLotQty(), tradesPerDay: TRADES_PER_DAY, broker: "zerodha",
   });
 
   if (getISTMinutes() > cfg.entryEndMin) {
@@ -1340,9 +1203,7 @@ router.get("/start", async (req, res) => {
       `Strategy  : ${strategy.NAME}`,
       `Select    : ${strategy._fmtMins(cfg.selectionMin)} — the strike nearest ₹${cfg.triggerPremium} on each side`,
       `Entry     : first watchlist leg above ₹${cfg.triggerPremium}, ${strategy._fmtMins(cfg.entryStartMin)}–${strategy._fmtMins(cfg.entryEndMin)}`,
-      `Risk      : ${cfg.slPts}pt stop off the fill, ${strategy.describeTrail(cfg)}`,
-      `Sideways  : close at ${strategy._fmtMins(cfg.sidewaysMin)} if still inside ₹${cfg.bandDown}–₹${cfg.bandUp}`,
-      `Square-off: ${strategy._fmtMins(cfg.forcedExitMin)} IST · orders → Zerodha`,
+      `Exit      : global profit lock only · orders → Zerodha`,
     ].join("\n"),
   });
 
@@ -1350,10 +1211,8 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
   if (state.position) simulateSell("Session stopped", { kind: "MANUAL" });
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopPolling();
 
@@ -1416,7 +1275,6 @@ router.get("/status/chart-data", (req, res) => {
         selLtp: w.selLtp, ltp: w.ltp, high: w.high, low: w.low,
         bars, markers,
         held: !!(pos && pos.side === side),
-        stop: pos && pos.side === side ? pos.stop : null,
         entry: pos && pos.side === side ? pos.optionEntryLtp : null,
       };
     };
@@ -1441,8 +1299,6 @@ router.get("/status/chart-data", (req, res) => {
       pe: peLeg,
       indexCandles,
       trigger: cfg.triggerPremium,
-      bandUp: cfg.bandUp,
-      bandDown: cfg.bandDown,
       resMin: PREMIUM_BAR_MIN,
       atm: state.selection ? state.selection.atm : null,
     });
@@ -1510,15 +1366,12 @@ router.get("/status/data", (req, res) => {
     lastTriggerNote: state.lastTriggerNote,
     inEntryWindow: strategy.inEntryWindow(getISTMinutes(), cfg),
     dayClosed: state.dayClosed, dayClosedReason: state.dayClosedReason,
-    stopOuts: state.stopOuts, maxDailyTrades: _maxDailyTrades(), maxDailyLoss: _maxDailyLoss(),
+    tradesPerDay: TRADES_PER_DAY,
     cfg: {
-      trigger: cfg.triggerPremium, bandUp: cfg.bandUp, bandDown: cfg.bandDown,
-      slPts: cfg.slPts, trailPts: cfg.trailPts, trailEnabled: cfg.trailEnabled,
+      trigger: cfg.triggerPremium,
       selectionTime: strategy._fmtMins(cfg.selectionMin),
       entryStart: strategy._fmtMins(cfg.entryStartMin),
       entryEnd: strategy._fmtMins(cfg.entryEndMin),
-      sideways: strategy._fmtMins(cfg.sidewaysMin),
-      forcedExit: strategy._fmtMins(cfg.forcedExitMin),
       scanItm: cfg.scanItmStrikes, scanOtm: cfg.scanOtmStrikes,
       sustainPolls: cfg.sustainPolls, maxPremiumDist: cfg.maxPremiumDist, minPremium: cfg.minPremium,
       pollMs: _pollMs(), qty: simpleLotQty(), broker: "zerodha",
@@ -1526,18 +1379,9 @@ router.get("/status/data", (req, res) => {
     position: pos ? {
       side: pos.side, symbol: pos.symbol, optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
       optionEntryLtp: pos.optionEntryLtp, currentOptLtp: state.optionLtp,
-      stop: pos.stop, initialStop: pos.initialStop, trailMoves: pos.trailMoves,
       peak: pos.peak, trough: pos.trough,
-      bandUp: pos.bandUp, bandDown: pos.bandDown, expanded: pos.expanded, expandedAt: pos.expandedAt,
       qty: pos.qty, entryTime: pos.entryTime,
       heldSec: Math.round((Date.now() - pos.entryTimeMs) / 1000),
-      riskPts: pos.slPts,
-      // The trail is disarmed until the peak touches the box top. The panel
-      // says which of the two stops is actually in force, because "Stop ₹165"
-      // alone does not tell the operator whether it can still move.
-      trailArmed: strategy.isTrailArmed(pos.peak, cfg, pos),
-      trailArmAt: cfg.trailArmAtBandUp ? pos.bandUp : null,
-      trailPts: cfg.trailPts, trailEnabled: cfg.trailEnabled,
     } : null,
     totalPnl: data.totalPnl, capital: data.capital,
   });
@@ -1545,7 +1389,6 @@ router.get("/status/data", (req, res) => {
 
 // ── The page ─────────────────────────────────────────────────────────────────
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getSimple930Mode() === "SIMPLE930_LIVE";
   const data = loadData();
   const cfg  = strategy.getConfig();
 
@@ -1583,8 +1426,7 @@ router.get("/status", (req, res) => {
 .dec-PLAN .kind{background:#1e293b;color:#94a3b8;}   .dec-PLAN{border-left-color:#334155;}
 .dec-SCAN .kind{background:#0c4a6e;color:#7dd3fc;}   .dec-SCAN{border-left-color:#0284c7;}
 .dec-ENTRY .kind{background:#064e3b;color:#6ee7b7;}  .dec-ENTRY{border-left-color:#10b981;}
-.dec-TRAIL .kind{background:#1e3a8a;color:#93c5fd;}  .dec-TRAIL{border-left-color:#3b82f6;}
-.dec-BAND .kind{background:#3b0764;color:#d8b4fe;}   .dec-BAND{border-left-color:#a855f7;}
+.dec-PROFIT_LOCK .kind{background:#1e3a8a;color:#93c5fd;}  .dec-PROFIT_LOCK{border-left-color:#3b82f6;}
 .dec-EXIT .kind{background:#7f1d1d;color:#fca5a5;}   .dec-EXIT{border-left-color:#ef4444;}
 .dec-SKIP .kind{background:#78350f;color:#fcd34d;}   .dec-SKIP{border-left-color:#f59e0b;}
 .dec-DAY .kind{background:#334155;color:#cbd5e1;}    .dec-DAY{border-left-color:#64748b;}
@@ -1593,7 +1435,7 @@ router.get("/status", (req, res) => {
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 @media(max-width:900px){ .charts{grid-template-columns:1fr;} }
 
-/* The day as five plain-English steps. Each lights up as the day reaches it,
+/* The day as plain-English steps. Each lights up as the day reaches it,
    so the page answers "what is it doing right now" without the operator having
    to read config numbers off a row and hold the clock in their head. */
 .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;}
@@ -1609,16 +1451,6 @@ router.get("/status", (req, res) => {
 .step.miss{border-color:#3f2d10;}
 .step.miss .step-s{color:#f59e0b;}
 
-/* The two-stop story: which stop is actually in force right now. */
-.stopbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
-@media(max-width:520px){ .stopbar{grid-template-columns:1fr;} }
-.stopcell{background:#070d1a;border:1px solid #16203a;border-radius:8px;padding:9px 11px;}
-.stopcell.live{border-color:#f59e0b;box-shadow:0 0 0 1px rgba(245,158,11,0.25) inset;}
-.stopcell .sc-k{font-size:0.6rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;}
-.stopcell .sc-v{font-size:1.05rem;color:#e2e8f0;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums;}
-.stopcell .sc-d{font-size:0.66rem;color:#8ba1c2;margin-top:4px;line-height:1.4;}
-.armbar{height:5px;background:#101b30;border-radius:99px;overflow:hidden;margin-top:6px;}
-.armbar > i{display:block;height:100%;background:#38bdf8;border-radius:99px;transition:width .3s;}
 @media(max-width:560px){
   .s930-card{padding:12px 12px;}
   .step-h{font-size:0.78rem;}
@@ -1629,7 +1461,7 @@ router.get("/status", (req, res) => {
 </style>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head><body>
-${buildSidebar('simple930Paper', liveActive)}
+${buildSidebar('simple930Paper', false)}
 <div class="main-content">
 ${bbRsiTopBar({
   title: "⏰ SIMPLE_9:30 — Paper",
@@ -1657,27 +1489,11 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
       <div class="step-d">CE or PE — whichever crosses first. Nothing crosses, no trade today.</div>
       <div class="step-s" id="step-s-entry">waiting</div>
     </div>
-    <div class="step" data-step="risk">
+    <div class="step" data-step="exit">
       <div class="step-t">on fill</div>
-      <div class="step-h">Stop ${cfg.slPts}pt under the fill</div>
-      <div class="step-d">${cfg.trailEnabled
-        ? (cfg.trailArmAtBandUp
-            ? `It does not move until the premium touches ₹${cfg.bandUp}. Only then does a ${cfg.trailPts}pt trail take over.`
-            : `A ${cfg.trailPts}pt trail follows the peak from the fill.`)
-        : "Fixed for the whole trade — no trail."}</div>
-      <div class="step-s" id="step-s-risk">waiting</div>
-    </div>
-    <div class="step" data-step="box">
-      <div class="step-t">${strategy._fmtMins(cfg.sidewaysMin)}</div>
-      <div class="step-h">Going nowhere? Close it</div>
-      <div class="step-d">Still stuck between ₹${cfg.bandDown} and ₹${cfg.bandUp} at ${strategy._fmtMins(cfg.sidewaysMin)} — out, win or lose.</div>
-      <div class="step-s" id="step-s-box">waiting</div>
-    </div>
-    <div class="step" data-step="eod">
-      <div class="step-t">${strategy._fmtMins(cfg.forcedExitMin)}</div>
-      <div class="step-h">Square off</div>
-      <div class="step-d">Anything still open is closed at market. ${simpleLotQty()} qty · orders → Zerodha.</div>
-      <div class="step-s" id="step-s-eod">waiting</div>
+      <div class="step-h">Exit on the profit lock</div>
+      <div class="step-d">The global profit lock is the only automatic exit. Anything still open at the session auto-stop is closed at market. ${simpleLotQty()} qty · orders → Zerodha.</div>
+      <div class="step-s" id="step-s-exit">waiting</div>
     </div>
   </div>
   <div id="s930-day" style="font-size:0.72rem;color:#f59e0b;margin-top:12px;">${state.dayClosed ? `⏸️ ${state.dayClosedReason}` : ""}</div>
@@ -1691,10 +1507,9 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
 
 ${bbRsiStatGrid([
   { label: "Session P&L", value: inr(state.sessionPnl), color: state.sessionPnl >= 0 ? "#10b981" : "#ef4444" },
-  { label: "Trades", value: `${state.tradesTaken}/${_maxDailyTrades()}` },
+  { label: "Trades", value: `${state.tradesTaken}/${TRADES_PER_DAY}` },
   { label: "W / L", value: `${wins} / ${losses}` },
   { label: "Trigger", value: `₹${cfg.triggerPremium}` },
-  { label: "Sideways box", value: `₹${cfg.bandDown}–₹${cfg.bandUp}` },
   { label: "NIFTY", value: state.lastTickPrice != null ? String(state.lastTickPrice) : "—" },
 ])}
 
@@ -1706,7 +1521,7 @@ ${bbRsiStatGrid([
 </div>
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">Option premium charts — the ONLY charts a rule reads (trigger, band, stop)</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">Option premium charts — the ONLY charts a rule reads (trigger, profit lock)</div>
   <div class="charts">
     <div class="chart-box" style="height:300px;"><div id="chartCE" style="width:100%;height:100%;"></div>
       <div style="position:absolute;top:8px;left:12px;font-size:0.66rem;color:#8ba1c2;pointer-events:none;z-index:2;" id="lblCE">CE —</div></div>
@@ -1794,48 +1609,8 @@ function renderPos(d) {
   var staleWarn = d.quoteStale
     ? '<div style="background:#7f1d1d;border:1px solid #ef4444;border-radius:6px;padding:8px 10px;margin-bottom:8px;color:#fecaca;font-size:0.72rem;">' +
       '\u{1F6A8} Premium feed STALE (' + (d.optionLtpAgeSec != null ? d.optionLtpAgeSec + 's old' : 'unknown age') +
-      ') \u2014 the stop cannot fire on a frozen price. Check the Fyers feed; square off manually if it does not recover.</div>'
+      ') \u2014 the profit lock cannot fire on a frozen price. Check the Fyers feed; square off manually if it does not recover.</div>'
     : '';
-
-  // Which stop is in force. Before the trail arms the flat stop is the ONLY
-  // risk, and saying so plainly is the whole point — the old panel showed one
-  // "Stop" number and left the operator guessing whether it could still move.
-  var armed   = !!p.trailArmed;
-  var armAt   = p.trailArmAt;
-  var trailOn = p.trailEnabled !== false;
-  var pct = 0;
-  if (armAt && p.optionEntryLtp != null && armAt > p.optionEntryLtp) {
-    pct = Math.max(0, Math.min(100, ((p.peak - p.optionEntryLtp) / (armAt - p.optionEntryLtp)) * 100));
-  } else if (armed) { pct = 100; }
-
-  // "In force" means THIS is the stop that would fire right now. With the trail
-  // off, or before it arms, that is always the fixed stop.
-  var fixedLive = !trailOn || !armed;
-  var fixedCell = '<div class="stopcell' + (fixedLive ? ' live' : '') + '">' +
-    '<div class="sc-k">Fixed stop' + (fixedLive ? ' \u2014 in force' : '') + '</div>' +
-    '<div class="sc-v">\u20b9' + p.initialStop + '</div>' +
-    '<div class="sc-d">' + p.riskPts + 'pt under the \u20b9' + p.optionEntryLtp + ' fill.' +
-      (!trailOn ? ' It runs the whole trade.'
-                : armed ? ' Superseded by the trail.' : ' This is the only stop right now.') + '</div></div>';
-
-  var trailCell;
-  if (!trailOn) {
-    trailCell = '<div class="stopcell"><div class="sc-k">Trail</div><div class="sc-v">OFF</div>' +
-      '<div class="sc-d">The fixed stop runs the whole trade.</div></div>';
-  } else if (armed) {
-    trailCell = '<div class="stopcell live"><div class="sc-k">Trail \u2014 in force</div>' +
-      '<div class="sc-v">\u20b9' + p.stop + '</div>' +
-      '<div class="sc-d">' + p.trailPts + 'pt under the \u20b9' + p.peak + ' peak \u00b7 moved ' + p.trailMoves + '\u00d7. It only ratchets up.</div></div>';
-  } else {
-    trailCell = '<div class="stopcell"><div class="sc-k">Trail \u2014 not armed</div>' +
-      '<div class="sc-v">\u20b9' + (armAt != null ? armAt : '\u2014') + ' to arm</div>' +
-      '<div class="sc-d">Peak \u20b9' + p.peak + '. The trail stays parked until the premium touches \u20b9' + armAt + '.' +
-      '<div class="armbar"><i style="width:' + pct.toFixed(0) + '%"></i></div></div></div>';
-  }
-
-  var boxLine = p.expanded
-    ? 'Broken \u2014 the ' + d.cfg.sideways + ' exit no longer applies; the stop runs the trade.'
-    : 'Still inside \u2014 if it is still here at ' + d.cfg.sideways + ', the trade is closed.';
 
   el.innerHTML = '<div class="s930-card" style="margin-bottom:0;border-color:' + (d.quoteStale ? '#ef4444' : '#f59e0b') + ';">' + staleWarn +
     '<div class="s930-hdr"><span>Holding ' + esc(p.side) + ' ' + p.optionStrike + ' \u00b7 ' + p.qty + ' qty \u00b7 ' + p.heldSec + 's</span>' +
@@ -1846,9 +1621,7 @@ function renderPos(d) {
       '<div><span class="k">Now</span>\u20b9' + (p.currentOptLtp != null ? Number(p.currentOptLtp).toFixed(2) : '\u2014') + '</div>' +
       '<div><span class="k">Best / worst</span>\u20b9' + p.peak + ' / \u20b9' + p.trough + '</div>' +
     '</div>' +
-    '<div class="stopbar">' + fixedCell + trailCell + '</div>' +
-    '<div class="sc-d" style="margin-top:9px;font-size:0.7rem;color:#8ba1c2;">' +
-      '<b style="color:#cbd5e1;">Box \u20b9' + p.bandDown + '\u2013\u20b9' + p.bandUp + ':</b> ' + boxLine + '</div>' +
+    '<div style="margin-top:9px;font-size:0.7rem;color:#8ba1c2;">Exit: global profit lock only.</div>' +
     '</div>';
 }
 
@@ -1875,16 +1648,10 @@ function renderSteps(d) {
   else if (sel)               set('entry', 'now', 'watching both legs');
   else                        set('entry', '', 'waiting');
 
-  if (p) {
-    set('risk', 'now', p.trailArmed ? 'trail in force \u20b9' + p.stop : 'fixed stop \u20b9' + p.initialStop);
-  } else if (d.tradesTaken)   set('risk', 'done', 'closed');
-  else                        set('risk', '', 'waiting');
-
-  if (p)                      set('box', p.expanded ? 'done' : 'now', p.expanded ? 'broken \u2014 exit dropped' : 'still inside');
-  else if (d.tradesTaken)     set('box', 'done', 'closed');
-  else                        set('box', '', 'waiting');
-
-  set('eod', p ? 'now' : (d.tradesTaken || done ? 'done' : ''), p ? 'open \u2014 due ' + d.cfg.forcedExit : (d.tradesTaken || done ? 'flat' : 'waiting'));
+  if (p)                      set('exit', 'now', 'open \u2014 profit lock watching');
+  else if (d.tradesTaken)     set('exit', 'done', 'closed');
+  else if (done)              set('exit', 'done', 'flat');
+  else                        set('exit', '', 'waiting');
 }
 async function s930Refresh() {
   try {
@@ -1958,10 +1725,7 @@ setInterval(s930Refresh, 3000);
         lines[s].forEach(function(l){ try { series[s].removePriceLine(l); } catch(_){} });
         lines[s] = [];
         addLine(s, d.trigger,  '#38bdf8', 'Trigger ' + d.trigger, LightweightCharts.LineStyle.Solid);
-        addLine(s, d.bandUp,   '#a855f7', 'Box top ' + d.bandUp, LightweightCharts.LineStyle.Dashed);
-        addLine(s, d.bandDown, '#a855f7', 'Box floor ' + d.bandDown, LightweightCharts.LineStyle.Dashed);
         addLine(s, leg.entry,  '#94a3b8', 'Entry', LightweightCharts.LineStyle.Dotted);
-        addLine(s, leg.stop,   '#ef4444', 'Stop', LightweightCharts.LineStyle.Solid);
       });
       if (ics && d.indexCandles && d.indexCandles.length) ics.setData(d.indexCandles);
     } catch(e) {}
@@ -1983,39 +1747,26 @@ function _positionCardHtml(pos, optLtp) {
     return `<div class="s930-card" style="margin-bottom:0;color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No open position.</div>`;
   }
   const live = strategy._px(optLtp) ? ((optLtp - pos.optionEntryLtp) * pos.qty).toFixed(0) : "—";
-  // First paint only — renderPos() replaces this on the next poll. It carries
-  // the same two-stop wording so the card does not change its story a second
-  // after load.
-  const cfg   = strategy.getConfig();
-  const armed = strategy.isTrailArmed(pos.peak, cfg, pos);
-  const armAt = cfg.trailArmAtBandUp ? pos.bandUp : null;
-  const trailLine = !cfg.trailEnabled
-    ? "Trail OFF — the fixed stop runs the whole trade."
-    : armed
-      ? `Trail in force at ₹${pos.stop} — ${cfg.trailPts}pt under the ₹${pos.peak} peak (moved ${pos.trailMoves}×).`
-      : `Trail not armed — it stays parked until the premium touches ₹${armAt}. Peak so far ₹${pos.peak}.`;
+  // First paint only — renderPos() replaces this on the next poll.
   return `<div class="s930-card" style="margin-bottom:0;border-color:#f59e0b;">
   <div class="s930-hdr"><span>Holding ${pos.side} ${pos.optionStrike} · ${pos.qty} qty</span><span style="text-transform:none;letter-spacing:0;">₹${live}</span></div>
   <div class="s930-row">
     <div><span class="k">Bought at</span>₹${pos.optionEntryLtp}</div>
-    <div><span class="k">Fixed stop</span>₹${pos.initialStop}${armed ? "" : " (in force)"}</div>
     <div><span class="k">Best / worst</span>₹${pos.peak} / ₹${pos.trough}</div>
   </div>
-  <div class="sc-d" style="margin-top:9px;font-size:0.7rem;color:#8ba1c2;">${trailLine}</div>
+  <div style="margin-top:9px;font-size:0.7rem;color:#8ba1c2;">Exit: global profit lock only.</div>
 </div>`;
 }
 
 // ── History + daily-file viewers + restore + reset ───────────────────────────
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getSimple930Mode() === "SIMPLE930_LIVE";
   res.send(renderHistoryPage({
     routePrefix: "/simple930-paper",
     sidebarKey: "simple930History",
     pageTitle: "⏰ SIMPLE_9:30 Paper Trade History",
     pageDocTitle: "SIMPLE_9:30 Paper — History",
     modalLabel: "SIMPLE_9:30 Paper",
-    liveActive,
     sessions: data.sessions || [],
     totalPnl: data.totalPnl,
     startCap: _startCapital(),

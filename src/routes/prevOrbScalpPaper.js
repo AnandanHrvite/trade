@@ -2,25 +2,22 @@
  * PREV ORB SCALP PAPER — /prev-orb-scalp-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * CANONICAL surface. Every decision / fill / exit semantic for PREV_ORB_SCALP
- * lives here; the backtest and the live harness must match THIS, never the
+ * lives here; the backtest must match THIS, never the
  * reverse (see feedback_paper_logic_untouchable).
  *
  * The day in one paragraph: yesterday's NIFTY high and low are marked. If the
  * 09:15 15-minute candle CLOSES below yesterday's low it is a PE day (above
  * yesterday's high → CE day); otherwise nothing trades. On a PE day the FIRST
  * 3-minute candle that closes below the 09:15 candle's low is bought (ITM PE)
- * at its close. Stop = that 3-min candle's high; target = its size projected
- * down from the entry. At the target the stop jumps to the target and then
- * trails each closed 3-min candle's high. CE is the mirror. One trade a day.
+ * at its close. CE is the mirror. One trade a day.
  *
- * Exits, in the order they are tested:
- *   per tick   : global premium profit lock (tradeGuards) → stop → target
- *   per candle : trail to the closed candle's high (PE) / low (CE), only once
- *                the target has been reached
- *   clock      : forced square-off at PREV_ORB_SCALP_FORCED_EXIT (15:15)
+ * Exits: the global premium profit lock (tradeGuards.checkProfitLock) is the
+ * ONLY automatic exit, tested per tick. Otherwise a trade closes on the manual
+ * exit, /stop, or the global TRADE_STOP_TIME session auto-stop. There is no
+ * stop loss, target, trail or early square-off.
  *
- * Signal engine: src/strategies/prev_orb_scalp.js (shared by paper, backtest,
- * live harness and replay — no rule is re-implemented in this file).
+ * Signal engine: src/strategies/prev_orb_scalp.js (shared by paper, backtest
+ * and replay — no rule is re-implemented in this file).
  *
  * PERFORMANCE (runs on a t3.micro next to every other engine): the decision
  * series is one 3-min history fetch per bar, levels are recomputed once per
@@ -73,10 +70,8 @@ const PT_FILE  = path.join(DATA_DIR, "prev_orb_scalp_paper_trades.json");
 
 // ── Config readers (Settings mutates process.env live — never cache) ──────────
 function _resMin() { return strat.getConfig().resolutionMins; }
-function _forcedExitStr() { return strat._fmtMins(strat.getConfig().forcedExitMin); }
 // One trade a day by rule: only the FIRST break candle can ever enter.
 function _maxDailyTrades() { return 1; }
-function _maxWeeklyLoss()  { const v = parseFloat(process.env.PREV_ORB_SCALP_MAX_WEEKLY_LOSS || "0"); return Number.isFinite(v) && v > 0 ? v : 0; }
 function _pollMs() {
   const v = parseInt(process.env.PREV_ORB_SCALP_POLL_MS || "2000", 10);
   return Number.isFinite(v) && v >= 500 && v <= 30000 ? v : 2000;
@@ -314,9 +309,8 @@ function startPolling() {
       }
     } catch (_) {}
 
-    // Exits first (a stop must not wait on a history round-trip), then bar work.
+    // Exits first (a profit-lock hit must not wait on a history round-trip), then bar work.
     try { if (state.position) _checkExits(state.lastTickPrice); } catch (e) { console.error(`🚨 ${TAG} exit-check error: ${e.message}`); }
-    try { _enforceEod(); } catch (e) { console.error(`🚨 ${TAG} eod error: ${e.message}`); }
     _maybeRefreshHistory().catch(e => console.error(`🚨 ${TAG} history refresh error: ${e.message}`));
     if (!state.position && state._pendingEntry) {
       _retryPendingEntry().catch(e => console.error(`🚨 ${TAG} entry-retry error: ${e.message}`));
@@ -503,24 +497,11 @@ async function simulateBuy(side, sig) {
   const _tickFresh = typeof state.lastTickPrice === "number" && state.lastTickPrice > 0
     && typeof state.lastTickTime === "number" && Date.now() - state.lastTickTime <= SPOT_MAX_AGE_MS;
   const fillSpot = (_tickFresh || _spot.source !== "quote") && state.lastTickPrice > 0 ? state.lastTickPrice : spotPrice;
-  const slSpot = sig.slSpot;
-  const targetSpot = sig.targetSpot;
-  if (!Number.isFinite(slSpot) || !Number.isFinite(targetSpot)) {
-    log(`🚫 ${TAG} Entry ABORTED — levels unusable (SL ${slSpot}, target ${targetSpot})`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `SL ${slSpot} / target ${targetSpot}`, side, spot: fillSpot });
-    return;
-  }
-  if (strat.stopHit(side, fillSpot, slSpot)) {
-    log(`🚫 ${TAG} Entry ABORTED — spot ${fillSpot} is already through the stop ${slSpot}`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "fill_past_stop", reason: `spot ${fillSpot} already beyond stop ${slSpot}`, side, spot: fillSpot });
-    return;
-  }
   // Every abort path above can still be retried; a position is about to exist,
   // so re-check that nothing else opened one while we awaited.
   if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = lotQty();
-  const slPts = parseFloat(Math.abs(slSpot - fillSpot).toFixed(2));
 
   const _cap = capitalPool.gate(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
@@ -548,12 +529,6 @@ async function simulateBuy(side, sig) {
     vixAtEntry:     vixFilter.getCachedVix(),   // observer-only
     entryUnixSec:   Math.floor(Date.now() / 1000),
     entryBarTime:   Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
-    slSpot,
-    initialSlSpot:  slSpot,
-    slPts,
-    riskPts:        slPts,
-    targetSpot,
-    targetReached:  false,
     candleSize:     sig.candleSize,
     signalSpot:     sig.entrySpot,
     signalBarTime:  sig.signalBarTime,
@@ -584,14 +559,13 @@ async function simulateBuy(side, sig) {
   log(`🟢 ${TAG} ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${fillSpot}${_isFut ? "" : ` optLtp=₹${optionEntryLtp}`}`);
   log(`   ├─ Setup  : ${strat._fmtMins(cfg.sessionStartMin)} candle closed ${pos.orClose} ${side === "PE" ? `below yesterday's LOW ${pos.prevLow}` : `above yesterday's HIGH ${pos.prevHigh}`}`);
   log(`   ├─ Break  : first ${cfg.resolutionMins}-min close ${side === "PE" ? "below" : "above"} ${pos.breakLevel} → ${sig.entrySpot}`);
-  log(`   ├─ Stop   : ${slSpot} (break candle ${side === "PE" ? "high" : "low"}, ${slPts}pt)`);
-  log(`   └─ Target : ${targetSpot} (candle size ${pos.candleSize}pt)${cfg.trailAfterTarget ? " — then SL → target and trail each candle" : " — exit there"} · EOD ${_forcedExitStr()}`);
+  log(`   └─ Exit   : global profit lock — no stop, target or trail`);
 
   notifyEntry({
     mode: "PREV-ORB-SCALP-PAPER",
     side, symbol: optInfo.symbol,
     spotAtEntry: fillSpot, optionEntryLtp,
-    qty, stopLoss: slSpot, target: targetSpot,
+    qty, stopLoss: null, target: null,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -601,20 +575,17 @@ async function simulateBuy(side, sig) {
       mode: "prev-orb-scalp-paper", sessionId: state._sessionId, ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
       spotEntry: fillSpot, optionEntry: optionEntryLtp,
-      stopLoss: slSpot, target: targetSpot,
+      stopLoss: null, target: null,
       reason: pos.entryReason,
     });
   } catch (_) {}
 }
 
-function simulateSell(reason, opts) {
+function simulateSell(reason) {
   if (!state.position) return;
-  const o = opts || {};
   const pos = state.position;
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
-  const exitSpot = (typeof o.exitSpot === "number" && Number.isFinite(o.exitSpot))
-    ? parseFloat(o.exitSpot.toFixed(2))
-    : (state.lastTickPrice || pos.entrySpot);
+  const exitSpot = state.lastTickPrice || pos.entrySpot;
   const qty = pos.qty;
   const _pnlRes = instrumentMode.computePnl({
     side: pos.side, entrySpot: pos.entrySpot, exitSpot,
@@ -629,8 +600,7 @@ function simulateSell(reason, opts) {
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
   // ...which means a throw anywhere below (trade log, persistence) would leave the
-  // position cleared with NO notifyExit — and the live harness, which only sees
-  // notifyExit, would never close the REAL position. The finally guarantees it.
+  // position cleared with NO notifyExit. The finally guarantees it.
   let _exitNotified = false;
   try {
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
@@ -653,21 +623,18 @@ function simulateSell(reason, opts) {
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     entryBarTime:   pos.entryBarTime,
-    exitBarTime:    typeof o.exitBarTime === "number" ? o.exitBarTime : Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
+    exitBarTime:    Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
     pnl,
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp} (levels measured on NIFTY 50 spot)`,
     exitReason:     reason,
     entryReason:    pos.entryReason,
-    stopLoss:       pos.slSpot,
-    initialStopLoss: pos.initialSlSpot,
-    target:         pos.targetSpot,
-    targetReached:  !!pos.targetReached,
+    stopLoss:       null,
+    target:         null,
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
     optionEntrySymbol: pos.symbol,
     signalStrength: pos.signalStrength,
-    riskPts:        pos.riskPts,
     candleSize:     pos.candleSize,
     breakLevel:     pos.breakLevel,
     prevHigh:       pos.prevHigh,
@@ -753,9 +720,8 @@ function _closeDay(reason, opts) {
 }
 
 // ── Exits ────────────────────────────────────────────────────────────────────
-// Per tick: the global premium profit lock, the stop, and the target. The trail
-// is a candle-close event (_trailOnBar). Every level is finite-checked inside
-// the engine's stopHit/targetHit before it is compared.
+// Per tick: the global premium profit lock — the ONLY automatic exit. This also
+// keeps the peak premium and the MFE/MAE bookkeeping current.
 function _checkExits(spotPrice) {
   const pos = state.position;
   if (!pos) return;
@@ -777,52 +743,7 @@ function _checkExits(spotPrice) {
     if (plMsg) {
       log(`🔒 ${TAG} ${plMsg}`);
       simulateSell(plMsg);
-      return;
     }
-  }
-
-  if (strat.stopHit(pos.side, spotPrice, pos.slSpot)) {
-    const what = pos.targetReached
-      ? (pos.slSpot === pos.targetSpot ? "the locked target level" : "the trailed stop")
-      : `the break candle's ${pos.side === "CE" ? "low" : "high"}`;
-    simulateSell(`Stop hit — spot ${spotPrice} took out ${what} ${pos.slSpot}`);
-    return;
-  }
-
-  if (!pos.targetReached && strat.targetHit(pos.side, spotPrice, pos.targetSpot)) {
-    const act = strat.onTarget(pos);
-    if (!act || act.action === "EXIT") {
-      simulateSell(`Target hit — spot ${spotPrice} reached ${pos.targetSpot} (candle size ${pos.candleSize}pt)`);
-      return;
-    }
-    pos.targetReached = true;
-    pos.slSpot = act.stop;
-    pos.slPts = parseFloat(Math.abs(act.stop - pos.entrySpot).toFixed(2));
-    log(`🎯 ${TAG} Target ${pos.targetSpot} reached (spot ${spotPrice}) — SL moved to ${pos.slSpot}; now trailing each ${_resMin()}-min candle's ${pos.side === "CE" ? "low" : "high"}`);
-    _persist();
-  }
-}
-
-/** Candle-close trail, only after the target was reached. */
-function _trailOnBar(bar) {
-  const pos = state.position;
-  if (!pos || !pos.targetReached) return;
-  if (pos.signalBarTime != null && bar.time <= pos.signalBarTime) return;
-  const tr = strat.trailStop(pos, bar);
-  if (!tr) return;
-  pos.slSpot = tr.stop;
-  pos.slPts = parseFloat(Math.abs(tr.stop - pos.entrySpot).toFixed(2));
-  log(`🔒 ${TAG} Trail — SL → ${pos.slSpot} (${strat._fmtMins(strat._utcSecToIstMins(bar.time))} candle ${pos.side === "CE" ? "low" : "high"})`);
-  _persist();
-  // A candle that closed already through its own trailed level stops on the
-  // next tick — test now so a quiet tape cannot leave it hanging.
-  if (typeof state.lastTickPrice === "number") _checkExits(state.lastTickPrice);
-}
-
-function _enforceEod() {
-  if (!state.position) return;
-  if (getISTMinutes() >= strat.getConfig().forcedExitMin) {
-    simulateSell(`EOD square-off (${_forcedExitStr()} IST)`);
   }
 }
 
@@ -838,8 +759,6 @@ function _skipGate(sig) {
   if (/incomplete/.test(r))               return "data_incomplete";
   if (/already used/.test(r))             return "setup_spent";
   if (/cut-off/.test(r))                  return "outside_window";
-  if (/zero/.test(r))                     return "degenerate_candle";
-  if (/budget/.test(r))                   return "day_budget_spent";
   if (/waiting for/.test(r))              return "waiting_for_break";
   return "no_setup";
 }
@@ -851,18 +770,13 @@ async function evaluateEntry(opts) {
   if (state.position || state._entryInFlight || state.dayClosed) return;
   if (state.tradesTaken >= _maxDailyTrades()) { _closeDay(`Daily trade budget spent (${state.tradesTaken}/${_maxDailyTrades()})`); return; }
 
-  const maxWeek = _maxWeeklyLoss();
-  if (maxWeek > 0) {
-    const wk = weeklyPnl();
-    if (wk <= -maxWeek) { _closeDay(`Weekly loss cap hit (week P&L ₹${wk} ≤ -₹${maxWeek})`); return; }
-  }
   {
     const pf = require("../utils/portfolioRisk").checkPortfolioCap();
     if (pf.blocked) { _closeDay(pf.reason); return; }
   }
 
   const series = o.series || state.candles;
-  const sig = strat.getSignal(series, { silent: true, alreadyTraded: false });
+  const sig = strat.getSignal(series, { silent: true });
   state.lastSignal = sig;
 
   if (sig.signal === "NONE" || !sig.side) {
@@ -930,7 +844,6 @@ async function _retryPendingEntry() {
   if (!p) return;
   if (state.position || state._entryInFlight) return;
   if (state.dayClosed || state.tradesTaken >= _maxDailyTrades()) { state._pendingEntry = null; return; }
-  if (getISTMinutes() >= strat.getConfig().forcedExitMin) { state._pendingEntry = null; return; }
   if (state._reentryBlockUntil > Date.now()) { state._pendingEntry = null; return; } // wait-after-exit cooldown
   if (Date.now() - p.lastAttemptMs < ENTRY_RETRY_MS) return;
 
@@ -946,7 +859,7 @@ async function _retryPendingEntry() {
 
 /**
  * One CLOSED bar. `late` = this bar arrived in a batch behind a newer one.
- * An open position trails first; a flat engine evaluates the entry on the
+ * An open position ignores it; a flat engine evaluates the entry on the
  * series ending AT this bar, so a batch is judged one bar at a time exactly as
  * the backtest judges it.
  */
@@ -954,10 +867,7 @@ function onCandleClose(bar, late) {
   if (!bar || typeof bar.time !== "number") return;
   if (!late) state._pendingEntry = null;
 
-  if (state.position) {
-    try { _trailOnBar(bar); } catch (e) { console.error(`🚨 ${TAG} trail error: ${e.message}`); }
-    return;
-  }
+  if (state.position) return;
   if (state.dayClosed) return;
   const idx = state.candles.findIndex(c => c.time === bar.time);
   if (idx < 0) return;
@@ -965,7 +875,7 @@ function onCandleClose(bar, late) {
   evaluateEntry({ series, late: !!late }).catch(e => console.error(`🚨 ${TAG} entry-eval error: ${e.message}`));
 }
 
-// ── onTick — NIFTY 50 spot. Drives no entry; owns the per-tick exits. ────────
+// ── onTick — NIFTY 50 spot. Drives no entry; owns the per-tick profit lock. ──
 function onTick(tick) {
   if (!state.running) return;
   const price = tick && tick.ltp;
@@ -976,7 +886,6 @@ function onTick(tick) {
   _updateFormingBar(price);
   if (state.position) {
     try { _checkExits(price); } catch (e) { console.error(`🚨 ${TAG} tick exit-check error: ${e.message}`); }
-    _enforceEod();
   }
 }
 
@@ -1048,28 +957,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The PREV_ORB_SCALP-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "PREV_ORB_SCALP-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -1081,14 +968,6 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/prev-orb-scalp-paper/status");
 
   if (String(process.env.PREV_ORB_SCALP_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -1106,8 +985,8 @@ router.get("/start", async (req, res) => {
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/prev-orb-scalp-paper/status", "← Back"));
 
-  if (getISTMinutes() >= strat.getConfig().forcedExitMin) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${_forcedExitStr()} IST — Prev ORB Scalp does not trade after this`, "/prev-orb-scalp-paper/status", "← Back"));
+  if (getISTMinutes() >= strat.getConfig().entryEndMin) {
+    return res.status(400).send(_errorPage("Session Closed", `Past ${strat._fmtMins(strat.getConfig().entryEndMin)} IST — Prev ORB Scalp takes no new entries after this`, "/prev-orb-scalp-paper/status", "← Back"));
   }
   // Re-check after the awaits: a second click may have started it meanwhile.
   if (state.running) return res.redirect("/prev-orb-scalp-paper/status");
@@ -1123,7 +1002,7 @@ router.get("/start", async (req, res) => {
   log(`🟢 ${TAG} Session started — ${strat.NAME}`);
   log(`⚙️ ${TAG} Setup : ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle closes below yesterday's LOW → PE day / above yesterday's HIGH → CE day`);
   log(`⚙️ ${TAG} Entry : first ${cfg.resolutionMins}-min close beyond that candle's low/high, entered at the close · ITM ${process.env.PREV_ORB_SCALP_ITM_STEPS || "1"} strike(s)`);
-  log(`⚙️ ${TAG} Exits : SL = break candle's other end · target = its size · ${cfg.trailAfterTarget ? "at target SL → target, then trail each candle" : "exit at target"} · profit lock (global) · EOD ${_forcedExitStr()}`);
+  log(`⚙️ ${TAG} Exits : global profit lock only — no stop, target or trail`);
   log(`⚙️ ${TAG} Limits: entries until ${strat._fmtMins(cfg.entryEndMin)} · max ${_maxDailyTrades()} trade(s)/day · qty ${lotQty()}`);
 
   await preloadHistory();
@@ -1167,9 +1046,8 @@ router.get("/start", async (req, res) => {
       ``,
       `Setup     : 09:15 15m candle closes beyond yesterday's high/low`,
       `Entry     : first ${cfg.resolutionMins}m close beyond that candle (ITM)`,
-      `Stop/Tgt  : break candle's other end / its size${cfg.trailAfterTarget ? ", then trail" : ""}`,
+      `Exit      : global profit lock`,
       `Max trades: ${_maxDailyTrades()}/day · entries till ${strat._fmtMins(cfg.entryEndMin)}`,
-      `Square-off: ${_forcedExitStr()} IST`,
     ].join("\n"),
   });
 
@@ -1177,10 +1055,8 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
   if (state.position) simulateSell("Session stopped");
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopPolling();
 
@@ -1249,8 +1125,6 @@ router.get("/status/chart-data", (req, res) => {
       orLow:      lv.or && lv.or.complete ? lv.or.low : null,
       setupSide:  state.setupSide,
       entryPrice: pos ? pos.entrySpot : null,
-      stopLoss:   pos ? pos.slSpot : null,
-      target:     pos ? pos.targetSpot : null,
       spotSymbol: NIFTY_INDEX_SYMBOL,
       resMin:     cfg.resolutionMins,
     });
@@ -1306,11 +1180,10 @@ router.get("/status/data", (req, res) => {
     cfg: {
       resMin: cfg.resolutionMins, orMins: cfg.orMins,
       entryStart: strat._fmtMins(cfg.entryStartMin), entryEnd: strat._fmtMins(cfg.entryEndMin),
-      forcedExit: strat._fmtMins(cfg.forcedExitMin), trailAfterTarget: cfg.trailAfterTarget,
     },
     position: pos ? {
       side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
-      slSpot: pos.slSpot, targetSpot: pos.targetSpot, targetReached: pos.targetReached, riskPts: pos.riskPts, candleSize: pos.candleSize,
+      candleSize: pos.candleSize,
       optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
       peakPremium: pos.peakPremium, entryTime: pos.entryTime, signalStrength: pos.signalStrength,
       qty: pos.qty, currentOptLtp: state.optionLtp,
@@ -1321,7 +1194,7 @@ router.get("/status/data", (req, res) => {
 });
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getPrevOrbScalpMode() === "PREV_ORB_SCALP_LIVE";
+  const liveActive = false;
   const data = loadData();
   const pos  = state.position;
   const cfg  = strat.getConfig();
@@ -1360,7 +1233,7 @@ ${buildSidebar('prevOrbScalpPaper', liveActive)}
 <div class="main-content">
 ${bbRsiTopBar({
   title: "📐 Prev ORB Scalp — Paper",
-  metaLine: `NIFTY 50 · 09:15 ${cfg.orMins}m candle vs yesterday's high/low · first ${cfg.resolutionMins}m close beyond it enters · SL = break candle · target = its size${cfg.trailAfterTarget ? " then trail" : ""}`,
+  metaLine: `NIFTY 50 · 09:15 ${cfg.orMins}m candle vs yesterday's high/low · first ${cfg.resolutionMins}m close beyond it enters · exit = global profit lock`,
   running: state.running,
   primaryAction: { href: "/prev-orb-scalp-paper/start", label: "▶ Start", color: "#0369a1" },
   stopAction:    { href: "/prev-orb-scalp-paper/stop",  label: "■ Stop" },
@@ -1380,8 +1253,7 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
   <ul class="rule-list">
     <li><b>Setup:</b> the ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle closes below yesterday's LOW → PE day; above yesterday's HIGH → CE day. Otherwise no trade.</li>
     <li><b>Entry:</b> the first ${cfg.resolutionMins}-min candle that closes beyond the ${strat._fmtMins(cfg.sessionStartMin)} candle's low (PE) / high (CE), at its close. ITM strike. Until ${strat._fmtMins(cfg.entryEndMin)}, 1 trade a day.</li>
-    <li><b>Stop</b> = that candle's high (PE) / low (CE). <b>Target</b> = that candle's size from the entry.</li>
-    <li><b>After target:</b> ${cfg.trailAfterTarget ? `stop moves to the target, then follows each closed ${cfg.resolutionMins}-min candle's high (PE) / low (CE).` : "exit at the target."} Global profit lock applies. Square-off ${_forcedExitStr()}.</li>
+    <li><b>Exit:</b> only through the global profit lock (or a manual exit / session stop). There is no stop, target or trail.</li>
   </ul>
 </div>
 
@@ -1401,7 +1273,7 @@ ${bbRsiCurrentBar({ bar: state.formingBar, resMin: cfg.resolutionMins })}
   <div class="chart-box" style="height:420px;">
     <div id="chart" style="width:100%;height:100%;"></div>
     <div class="legend">
-      <span style="color:#3b82f6;">── Yday H/L</span><span style="color:#f59e0b;">┄ 09:15 H/L</span><span style="color:#ef4444;">── Stop</span><span style="color:#10b981;">── Target</span>
+      <span style="color:#3b82f6;">── Yday H/L</span><span style="color:#f59e0b;">┄ 09:15 H/L</span>
     </div>
   </div>
 </div>
@@ -1425,7 +1297,6 @@ async function poRefresh() {
       cells.push('<div><span class="k">Day</span><span class="po-pill ' + cls + '">' + (d.setupSide ? d.setupSide + ' day' : (d.orClose != null ? 'no trade' : 'waiting')) + '</span></div>');
       cells.push('<div><span class="k">Yday' + (d.prevDate ? ' (' + d.prevDate + ')' : '') + '</span>H ' + (d.prevHigh != null ? d.prevHigh : '—') + ' · L ' + (d.prevLow != null ? d.prevLow : '—') + '</div>');
       cells.push('<div><span class="k">09:15 candle</span>' + (d.orClose != null ? ('H ' + d.orHigh + ' · L ' + d.orLow + ' · C ' + d.orClose) : 'not closed yet') + '</div>');
-      if (d.position) cells.push('<div><span class="k">SL / Target</span>' + d.position.slSpot + ' / ' + d.position.targetSpot + (d.position.targetReached ? ' (target hit — trailing)' : '') + '</div>');
       row.innerHTML = cells.join('');
     }
     var sk = document.getElementById('po-skip');
@@ -1476,8 +1347,6 @@ setInterval(poRefresh, 4000);
       addLine(d.orHigh,   '#f59e0b', '09:15 H', LightweightCharts.LineStyle.Dashed);
       addLine(d.orLow,    '#f59e0b', '09:15 L', LightweightCharts.LineStyle.Dashed);
       addLine(d.entryPrice, '#94a3b8', 'Entry', LightweightCharts.LineStyle.Dotted);
-      addLine(d.stopLoss,   '#ef4444', 'Stop',  LightweightCharts.LineStyle.Solid);
-      addLine(d.target,     '#10b981', 'Target', LightweightCharts.LineStyle.Solid);
     } catch(e) {}
   }
   fetchChart();
@@ -1501,8 +1370,6 @@ function _positionCardHtml(pos, optLtp) {
     <div><span style="color:var(--muted-1,#8ba1c2);">Side</span> ${pos.side}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Symbol</span> ${pos.symbol}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Entry (spot)</span> ${pos.entrySpot}</div>
-    <div><span style="color:var(--muted-1,#8ba1c2);">Stop</span> ${pos.slSpot}${pos.targetReached ? " (trailing)" : ""}</div>
-    <div><span style="color:var(--muted-1,#8ba1c2);">Target</span> ${pos.targetSpot}${pos.targetReached ? " ✓" : ""}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Candle size</span> ${pos.candleSize}pt</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Live P&L</span> ₹${live}</div>
   </div>
@@ -1512,7 +1379,7 @@ function _positionCardHtml(pos, optLtp) {
 // ── History + daily-file viewers + restore + reset ────────────────────────────
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getPrevOrbScalpMode() === "PREV_ORB_SCALP_LIVE";
+  const liveActive = false;
   res.send(renderHistoryPage({
     routePrefix: "/prev-orb-scalp-paper",
     sidebarKey: "prevOrbScalpHistory",

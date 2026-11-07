@@ -816,10 +816,10 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
       // returning it; this branch returned unvalidated, so a forgotten override
       // handed the engines a symbol whose contract no longer exists. ORB and
       // TREND_PB block on `invalid`, but EMA_RSI_ST and BB_RSI entered anyway
-      // and fell back to "spot proxy" P&L — with the percentage option stop
-      // (OPT_STOP_PCT) inert, because it needs an entry premium that never
-      // arrived. A configured stop that silently does not exist is the worst
-      // outcome available here, so refuse the trade instead.
+      // and fell back to "spot proxy" P&L — with the premium-based profit lock
+      // inert, because it needs an entry premium that never arrived. An exit
+      // that silently does not exist is the worst outcome available here, so
+      // refuse the trade instead.
       //
       // We deliberately do NOT fall through to auto-detection: quietly trading a
       // DIFFERENT expiry than the one configured changes the premium, theta and

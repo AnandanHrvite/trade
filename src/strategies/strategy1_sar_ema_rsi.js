@@ -5,8 +5,8 @@
  *
  * Indicators: EMA20 (close) · EMA50 (close) · RSI(14) · SuperTrend(10,3).
  *             EMA9 (close) is computed ONLY when the triple-stack toggle is ON.
- *             EMA21 (OHLC4) is still computed but ONLY for the SL "ema" trail and the
- *             trade-record snapshot — it is NOT part of the entry decision.
+ *             EMA21 (OHLC4) is still computed but ONLY for the trade-record
+ *             snapshot — it is NOT part of the entry decision.
  *             (Parabolic SAR removed 2026-06-12 — SuperTrend is the only trend source.)
  *
  * ENTRY — BUY_CE (bullish), ALL must be true (evaluated every tick while flat):
@@ -28,11 +28,11 @@
  *   5. Not stretched (EMA_RSI_ST_MAX_EMA_DIST_PTS, default 0 = off): the signal
  *      candle close may sit at most this many points beyond the base EMA. Both sides.
  *
- * STOP LOSS (unchanged — set by the execution layer, value seeded here):
- *   CE: previous (last completed) candle LOW
- *   PE: previous (last completed) candle HIGH
- *   The execution layer trails this candle-by-candle (tighten-only) via EMA21 and adds
- *   option-stop-%, points-stop, opposite-signal and EOD exits.
+ * EXITS live in the execution layer, not here. The EMA_RSI_ST paper / live /
+ * backtest engines exit ONLY on the global profit lock (tradeGuards.checkProfitLock)
+ * plus the session teardown — they ignore `stopLoss`. getSignal() still returns the
+ * previous candle's LOW (CE) / HIGH (PE) as `stopLoss` because other callers
+ * (commodityPaper.js, the swing scanner adapters) still consume it.
  *
  * Timeframe: 5-min or 15-min (TRADE_RESOLUTION) · window 09:30–14:00 IST.
  */
@@ -41,7 +41,7 @@ const { EMA, RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 
 const NAME        = "SAR_EMA_RSI";
-const DESCRIPTION = "EMA_RSI_ST | EMA20/EMA50(close) + RSI + SuperTrend(10,3) | EMA alignment (2-EMA or 9>20>50 stack) + RSI gate + SuperTrend side | prev-candle/EMA21 trailing SL | thresholds via Settings";
+const DESCRIPTION = "EMA_RSI_ST | EMA20/EMA50(close) + RSI + SuperTrend(10,3) | EMA alignment (2-EMA or 9>20>50 stack) + RSI gate + SuperTrend side | exit = global profit lock | thresholds via Settings";
 
 // ── Trading window ────────────────────────────────────────────────────────
 function _parseMins(envKey, fallback) {
@@ -158,7 +158,7 @@ function getSignal(candles, opts) {
   var baseEma     = TRIPLE_STACK ? emaFastest : emaFast;
   var BASE_PERIOD = TRIPLE_STACK ? EMA_FASTEST : EMA_FAST;
 
-  // EMA21 (OHLC4) — retained ONLY for the SL "ema" trail + record snapshot. Not an entry input.
+  // EMA21 (OHLC4) — retained ONLY for the trade-record snapshot. Not an entry input.
   var ema21arr = EMA.calculate({ period: 21, values: ohlc4 });
   var ema21    = ema21arr.length > 0 ? ema21arr[ema21arr.length - 1] : null;
 
@@ -226,7 +226,7 @@ function getSignal(candles, opts) {
     ema50:          Math.round(emaSlow * 100) / 100,
     // EMA9 populated only when the triple-stack gate is on (record snapshot; not always an input).
     ema9:           emaFastest != null ? Math.round(emaFastest * 100) / 100 : null,
-    // EMA21 kept for SL "ema" trail + record continuity (not an entry input).
+    // EMA21 kept for record continuity (not an entry input).
     ema21:          ema21 != null ? Math.round(ema21 * 100) / 100 : null,
     rsi:            Math.round(rsi * 10) / 10,
     // SuperTrend — the only directional source.
@@ -236,8 +236,8 @@ function getSignal(candles, opts) {
     trendSource:    "SUPERTREND",
     prevCandleHigh: prevCandle.high,
     prevCandleLow:  prevCandle.low,
-    // SL seed: previous (last completed) candle low (CE) / high (PE).
-    // Set below once the side is known; null here for NONE.
+    // Previous (last completed) candle low (CE) / high (PE) — not used as a stop by
+    // the EMA_RSI_ST engines; kept for other callers. Null here for NONE.
     stopLoss:       null,
     signalStrength: "STRONG",
   };

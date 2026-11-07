@@ -25,7 +25,7 @@
  * Why deny-by-default: this repo mounts ~70 routers that each own their own
  * write paths. An allowlist that has to be extended for a new page fails
  * closed (a screen is missing from the demo); a blocklist that someone forgets
- * to extend fails open (a stakeholder can stop a live session). Only the first
+ * to extend fails open (a stakeholder can stop a running session). Only the first
  * failure mode is acceptable.
  *
  * Settings: DEMO_LOGIN_ENABLED, DEMO_LOGIN_SECRET, DEMO_SHOW_LIVE.
@@ -68,7 +68,7 @@ function token() {
   return crypto.createHash("sha256").update("demo:" + demoSecret()).digest("hex");
 }
 
-/** Are LIVE (real-money) surfaces part of this demo? Default: no. */
+/** Are real-money surfaces (manual P&L history) part of this demo? Default: no. */
 function showsLive() { return envOn("DEMO_SHOW_LIVE"); }
 
 // ── Request context ─────────────────────────────────────────────────────────
@@ -145,17 +145,16 @@ const ALLOWED_PREFIXES = [
   "/favicon",
 ];
 
-// LIVE surfaces, gated behind DEMO_SHOW_LIVE. Paper and backtest are the demo's
-// default because they carry no real-money history.
+// Real-money history (manual P&L), gated behind DEMO_SHOW_LIVE. Paper and
+// backtest are the demo's default because they carry no real-money history.
 const LIVE_PREFIXES = [
-  "/live-consolidation",
   "/pnl-history",
 ];
 
 // Strategy pages, matched by shape rather than by name so a new strategy joins
-// the demo the moment it is mounted: /{slug}-paper|live|live-harness|backtest.
+// the demo the moment it is mounted: /{slug}-paper|backtest.
 // The action segments above still apply, so /orb-paper/start stays refused.
-const STRATEGY_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-(live-harness|paper|live|backtest)(\/|$)/;
+const STRATEGY_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-(paper|backtest)(\/|$)/;
 
 /**
  * May a demo session make this request?
@@ -178,18 +177,11 @@ function allows(method, path) {
   if (ALLOWED_EXACT.has(p)) return { ok: true };
   if (ALLOWED_PREFIXES.some(a => p === a || p.startsWith(a + "/"))) return { ok: true };
 
-  const strategyMatch = STRATEGY_RE.exec(p);
-  if (strategyMatch) {
-    const isLiveSurface = strategyMatch[1] !== "paper" && strategyMatch[1] !== "backtest";
-    if (isLiveSurface && !showsLive()) {
-      return { ok: false, reason: "Live trading pages are not part of this demo." };
-    }
-    return { ok: true };
-  }
+  if (STRATEGY_RE.test(p)) return { ok: true };
   if (LIVE_PREFIXES.some(a => p === a || p.startsWith(a + "/"))) {
     return showsLive()
       ? { ok: true }
-      : { ok: false, reason: "Live trading pages are not part of this demo." };
+      : { ok: false, reason: "Real-money P&L pages are not part of this demo." };
   }
   return { ok: false, reason: "This page is not part of the demo." };
 }

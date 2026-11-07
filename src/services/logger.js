@@ -55,10 +55,10 @@ function _fastIST(nowMs) {
 // Many strategies log a bare "[PAPER] ENTRY …", so the text alone can't say
 // whose line it is — the call stack can. The first src/routes/ frame wins
 // (a guard in utils/ logging on behalf of orbPaper.js is ORB's line); else the
-// first src/ frame. "orbPaper" / "orbLive" / "orbLiveHarness" all become "orb".
+// first src/ frame. "orbPaper" / "orbBacktest" both become "orb".
 // Structured callsites (no stack-string formatting) keep this cheap.
 const SRC_RE    = /[\\/]src[\\/](routes|services|strategies|utils)[\\/]([^\\/]+)\.js$/;
-const SUFFIX_RE = /(LiveHarness|PatternBacktest|Backtest|Paper|Live)$/;
+const SUFFIX_RE = /(PatternBacktest|Backtest|Paper)$/;
 const _asCallsites = (_, cs) => cs;
 function callerSrc() {
   const prevLimit = Error.stackTraceLimit;

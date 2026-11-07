@@ -9,7 +9,6 @@ const express = require("express");
 const os      = require("os");
 const { exec } = require("child_process");
 const router  = express.Router();
-const sharedSocketState = require("../utils/sharedSocketState");
 const { resolveTheme } = require("../utils/theme");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
 const backtestCache = require("../utils/backtestCache");
@@ -125,8 +124,6 @@ router.get("/data", (_req, res) => {
 
 // ── Main UI page ────────────────────────────────────────────────────────────
 router.get("/", (_req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
-
   res.send(`<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Monitor — Trading Bot</title>
@@ -226,7 +223,7 @@ canvas { width:100%!important; height:220px!important; }
 </style>
 </head><body>
 <div class="app-shell">
-${buildSidebar("monitor", liveActive)}
+${buildSidebar("monitor", false)}
 <div class="main-content">
 
 <nav class="breadcrumb" aria-label="Breadcrumb">
@@ -482,12 +479,6 @@ ${toastJS()}
 
 // ── Action endpoints ────────────────────────────────────────────────────────
 // Let the user reclaim memory without SSHing into the box.
-function isAnyLiveActive() {
-  const s = sharedSocketState;
-  return (s.getMode && s.getMode() === "EMA_RSI_ST_LIVE")
-      || (s.getBbRsiMode && s.getBbRsiMode() === "BB_RSI_LIVE")
-      || (s.getPAMode && s.getPAMode() === "PA_LIVE");
-}
 
 router.post("/action/gc", (_req, res) => {
   const before = process.memoryUsage();
@@ -547,9 +538,6 @@ router.post("/action/clear-jobs", (_req, res) => {
 });
 
 router.post("/action/restart", (_req, res) => {
-  if (isAnyLiveActive()) {
-    return res.status(409).json({ ok: false, error: "Cannot restart: a LIVE trading mode is active. Stop it first to avoid losing an open position." });
-  }
   // PM2 will relaunch the process; respond first so the client gets a success toast.
   res.json({ ok: true, message: "Restart triggered. Page will reconnect in ~5 seconds." });
   setTimeout(() => {

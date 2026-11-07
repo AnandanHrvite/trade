@@ -1,18 +1,17 @@
 // Common Trade Rules → "Trade window (all strategies)".
 //
-// One entry window and one forced exit for every NIFTY / BANK NIFTY strategy
-// except SIMPLE_9:30 and EarlyBird, whose whole rule is the opening candle.
-// Commodity (MCX) keeps its own evening hours.
+// One entry window for every NIFTY / BANK NIFTY strategy except SIMPLE_9:30
+// and EarlyBird, whose whole rule is the opening candle. Commodity (MCX) keeps
+// its own evening hours. It only gates ENTRIES — there is no forced exit: the
+// profit lock is the only automatic exit, and an open trade runs until it
+// fires, the trader exits manually, or the session auto-stops.
 //
 // Each strategy keeps reading its own keys. While the rule is on, those keys
 // are overridden in process.env ONLY — .env and the Settings page keep the
 // strategy's own value, and it comes back the moment the rule is turned off.
-// BB_RSI and PA have no exit-time key (they square off at TRADE_STOP_TIME − 10),
-// so their EOD checks call exitCap() instead.
 
 const ENTRY_START = "10:00";
 const ENTRY_END   = "14:00";
-const FORCED_EXIT = "15:00";
 
 const ENTRY_START_KEYS = [
   "TRADE_ENTRY_START", "BB_RSI_ENTRY_START", "PA_ENTRY_START", "ORB_ENTRY_START",
@@ -30,18 +29,9 @@ const ENTRY_END_KEYS = [
   "ST_RSI_PIV_BB_ENTRY_END", "SAIL_VWAP_ST_ENTRY_END",
   "PIVOT_EMA_ST_ENTRY_END", "BN_PIVOT_EMA_ST_ENTRY_END", "SAIL_PIVOT_EMA_ST_ENTRY_END",
 ];
-const EXIT_KEYS = [
-  "EMA_RSI_ST_EOD_EXIT_TIME", "EMA9VWAP_EOD_EXIT_TIME", "ORB_FORCED_EXIT",
-  "TREND_PB_FORCED_EXIT", "TDS_FORCED_EXIT", "HA_SCALP_FORCED_EXIT",
-  "PREV_ORB_SCALP_FORCED_EXIT", "RSI_PIVOT_ST_EXIT_TIME", "BN_PIVOT_RSI_ST_EXIT_TIME",
-  "EMA_RSI_ST_V2_EOD_EXIT_TIME", "BN_EMA_RSI_ST_V2_EOD_EXIT_TIME",
-  "ST_RSI_PIV_BB_EOD_EXIT_TIME", "SAIL_VWAP_ST_EOD_EXIT_TIME",
-  "PIVOT_EMA_ST_EOD_EXIT_TIME", "BN_PIVOT_EMA_ST_EOD_EXIT_TIME", "SAIL_PIVOT_EMA_ST_EOD_EXIT_TIME",
-];
 const OVERRIDES = [
   ...ENTRY_START_KEYS.map(k => [k, ENTRY_START]),
   ...ENTRY_END_KEYS.map(k => [k, ENTRY_END]),
-  ...EXIT_KEYS.map(k => [k, FORCED_EXIT]),
 ];
 
 function _mins(hhmm) { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; }
@@ -77,7 +67,5 @@ function apply(updates = {}, deletes = []) {
 
 // Earliest entry minute, for engines whose start is not a key of their own.
 function entryStartFloor(min) { return enabled() ? Math.max(min, _mins(ENTRY_START)) : min; }
-// Forced-exit minute, for engines whose exit is not a key of their own.
-function exitCap(min) { return enabled() ? Math.min(min, _mins(FORCED_EXIT)) : min; }
 
-module.exports = { apply, enabled, entryStartFloor, exitCap, ENTRY_START, ENTRY_END, FORCED_EXIT };
+module.exports = { apply, enabled, entryStartFloor, ENTRY_START, ENTRY_END };

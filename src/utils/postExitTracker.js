@@ -1,5 +1,5 @@
 /**
- * postExitTracker.js — after a paper/live trade exits, keep watching the
+ * postExitTracker.js — after a paper trade exits, keep watching the
  * underlying's spot until 15:30 IST so we can later see what the exit left on
  * the table (or saved us from).
  *
@@ -44,7 +44,7 @@ function istParts(ms) {
 
 // Which index/stock the trade's spotAtExit is quoted in. null = not tracked.
 function spotSymbolFor(mode) {
-  const m = String(mode || "").replace(/-live$/, "");
+  const m = String(mode || "");
   if (m === "gap_runaway_stk") return null;          // many stocks, symbol varies
   if (m.startsWith("bn_"))   return BANKNIFTY;
   if (m.startsWith("sail_")) return SAIL;
@@ -100,9 +100,8 @@ function track(mode, trade) {
   if (!Number.isFinite(exitSpot) || exitSpot <= 0 || !dir || !sym) return;
   const now = Date.now();
   if (istParts(now).min >= EOD_MIN) return;          // nothing left to watch
-  const live = /-live$/.test(String(mode)) || !!trade._live;
   trackers.push({
-    mode: String(mode).replace(/-live$/, ""), live, sym, dir,
+    mode: String(mode), sym, dir,
     side: trade.side, symbol: trade.symbol || null,
     exitSpot, exitMs: now, exitTime: trade.exitTime || istParts(now).hms,
     entryTime: trade.entryTime || null, spotAtEntry: Number(trade.spotAtEntry) || null,
@@ -139,7 +138,7 @@ function summarise(k) {
   const marks = {};
   for (const m of MARKS_MIN) marks[`plus${m}m`] = k.marks[m] != null ? { spot: k.marks[m], pts: fav(k.marks[m]) } : null;
   return {
-    type: "post_exit", date: k.date, mode: k.mode, live: k.live, underlying: k.sym,
+    type: "post_exit", date: k.date, mode: k.mode, underlying: k.sym,
     side: k.side, symbol: k.symbol, entryTime: k.entryTime, spotAtEntry: k.spotAtEntry,
     exitTime: k.exitTime, spotAtExit: k.exitSpot, exitReason: k.exitReason, pnl: k.pnl,
     ticksAfterExit: k.ticks,
@@ -151,7 +150,7 @@ function summarise(k) {
 }
 
 function lineFor(rec) {
-  const tag = `[${rec.mode.toUpperCase()}-${rec.live ? "LIVE" : "PAPER"}]`;
+  const tag = `[${rec.mode.toUpperCase()}-PAPER]`;
   const head = `🔭 ${tag} AFTER EXIT — ${rec.side} exited ${rec.exitTime} at spot ${rec.spotAtExit}` +
     (rec.exitReason ? ` (${rec.exitReason})` : "") + (rec.pnl != null ? `, P&L ₹${rec.pnl}` : "");
   if (!rec.ticksAfterExit) return `${head}. No price ticks after exit (feed was off), so nothing to report.`;

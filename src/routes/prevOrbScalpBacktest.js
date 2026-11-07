@@ -2,30 +2,23 @@
  * PREV ORB SCALP BACKTEST — /prev-orb-scalp-backtest
  * ─────────────────────────────────────────────────────────────────────────────
  * Date-range backtest on 3-minute NIFTY 50 INDEX spot candles. The setup (09:15
- * 15-min candle vs yesterday's high/low), the first-break entry, the stop, the
- * target and the post-target trail all come from the SAME engine the paper
- * route uses (src/strategies/prev_orb_scalp.js). This file only walks bars and
- * re-implements paper's EXIT ORDER on bar data.
+ * 15-min candle vs yesterday's high/low) and the first-break entry come from the
+ * SAME engine the paper route uses (src/strategies/prev_orb_scalp.js). This file
+ * only walks bars and re-implements paper's exit (the global profit lock) on bar
+ * data.
  *
  *   for each closed bar (only until the day's question is settled):
  *     getSignal(yesterday + today up to this bar)  → BUY_CE / BUY_PE / NONE
  *   fill: the NEXT bar's OPEN (paper fills on the first tick after the close)
- *   exits per bar: EOD → adverse test (stop, or the profit-lock floor if armed,
- *                  whichever is tighter) → favourable test (target) → trail
+ *   exit: the global profit lock on the simulated premium, walked per bar
+ *         open → adverse extreme → favourable extreme → close; else the day's
+ *         last bar (paper's session teardown).
  *
- * CONSERVATIVE INTRA-BAR ORDERING:
- *   • the adverse level is tested on the bar's high (PE) / low (CE) BEFORE the
- *     favourable target, so a bar that did both books the loss;
- *   • a bar that OPENED beyond a level fills at the open, never the level;
- *   • a bar that reaches the target and then closes back through the new
- *     (target) stop exits at the target level — paper's tick would do the same.
- *   • a fill whose open is already through the stop is ABORTED, exactly as
- *     paper aborts an entry whose spot is already through the stop.
- *
- * PROFIT LOCK: the global premium lock (tradeGuards) is simulated on the δ
- * premium: once the bar extremes have pushed the simulated premium past the arm
- * level, the floor is converted back to a spot level and treated as a stop. It
- * is armed only from bars ALREADY closed, so it never reads the future.
+ * PROFIT LOCK (tradeGuards.checkProfitLock) is the ONLY automatic exit, as in
+ * paper — no stop, target, trail or early square-off. The peak only rises on
+ * the open and the favourable leg, so a bar never locks a gain it had not yet
+ * printed; a floor crossed on the adverse leg fills at the floor's spot level,
+ * never better than the open.
  *
  * PERFORMANCE: each getSignal call is handed only yesterday + today (≤ ~250
  * bars), and evaluation stops for the day as soon as the setup is dead, spent
@@ -94,7 +87,7 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   const o = opts || {};
   const funnel = {
     days: 0, noPrevDay: 0, incomplete: 0, insideRange: 0, peDays: 0, ceDays: 0,
-    noBreak: 0, spentLate: 0, breaks: 0, entries: 0, abortedPastStop: 0,
+    noBreak: 0, spentLate: 0, breaks: 0, entries: 0,
   };
   const empty = { trades: [], days: 0, skipped: [], funnel, exitReasons: {}, candleSizes: [] };
   if (!Array.isArray(intraday) || !intraday.length) return empty;
@@ -108,8 +101,8 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   const SLIPPAGE_PTS = parseFloat(process.env.PREV_ORB_SCALP_BT_SLIPPAGE_PTS || "1.5");
   const RES          = cfg.resolutionMins;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
-  // Every exit here is one paper takes on a tick INSIDE the bar (stop, lock, target,
-  // EOD), so it is measured from the exit bar's open. Can only bite if a second
+  // A lock exit inside the bar is measured from the exit bar's open, one at the
+  // bar's close from its close. Can only bite if a second
   // entry per day is ever allowed — today the first break settles the day.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
   const lock = o.lock || {
@@ -118,8 +111,9 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
     floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
     trailPct: tradeGuards.PROFIT_LOCK_TRAIL_PCT,
   };
-  const lockOk = !IS_FUT && lock.enabled && Number.isFinite(lock.armPct) && Number.isFinite(lock.floorPct) &&
-    lock.armPct > 0 && lock.floorPct >= 0 && lock.floorPct < lock.armPct;
+  // checkProfitLock options — an undefined key falls back to the live default.
+  const lockOpts = { enabled: !!lock.enabled, armPct: lock.armPct, floorPct: lock.floorPct, trailPct: lock.trailPct };
+  const lockTrailPct = Number.isFinite(lock.trailPct) ? lock.trailPct : tradeGuards.PROFIT_LOCK_TRAIL_PCT;
 
   const sorted = intraday.filter(c => c && typeof c.time === "number").sort((a, b) => a.time - b.time);
 
@@ -168,7 +162,7 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
       const move = pos.side === "CE" ? (spotPx - pos.entrySpot) : (pos.entrySpot - spotPx);
       return Math.max(0.05, pos.optionEntryLtp + move * DELTA - thetaCost / LOT_SIZE);
     }
-    function close(exitPx, exitTime, reason, code) {
+    function close(exitPx, exitTime, reason, code, atBarClose) {
       const raw = premAt(exitPx, exitTime);
       const exitPrem = Math.max(0.05, raw - 2 * SLIPPAGE_PTS);
       const charges = getCharges({ broker: "zerodha", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
@@ -179,10 +173,10 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
         entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),
         entryTs: pos.entryTime, exitTs: exitTime,
         ePrice: pos.entrySpot, xPrice: _r2(exitPx),
-        sl: pos.initialSl, target: pos.targetSpot,
-        riskPts: pos.riskPts, candleSize: pos.candleSize,
+        sl: null, target: null,
+        candleSize: pos.candleSize,
         prevHigh: pos.prevHigh, prevLow: pos.prevLow, orClose: pos.orClose,
-        targetReached: pos.targetReached ? "yes" : "no",
+        peakPremium: _r2(pos.peakPrem),
         exitCode: code,
         pnl, reason, entryReason: pos.entryReason,
         strength: "STRONG",
@@ -190,93 +184,54 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
         held: Math.round(Math.max(0, (exitTime - pos.entryTime) / 60 / RES)),
       });
       pos = null;
-      if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + _REENTRY_COOLDOWN_SECS;
+      if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
+    }
+
+    /** The global profit lock on one bar — options only (futures mirror spot). */
+    function lockExit(c) {
+      if (IS_FUT) return;
+      const isCE = pos.side === "CE";
+      const entry = pos.optionEntryLtp;
+      const pOpen = premAt(c.open, c.time);
+      if (pOpen > pos.peakPrem) pos.peakPrem = pOpen;
+      let msg = tradeGuards.checkProfitLock(entry, pOpen, pos.peakPrem, lockOpts);
+      if (msg) { close(c.open, c.time, `${msg} (bar opened through it — filled at the open)`, "PROFIT_LOCK"); return; }
+      msg = tradeGuards.checkProfitLock(entry, premAt(isCE ? c.low : c.high, c.time), pos.peakPrem, lockOpts);
+      if (msg) {
+        const floor = tradeGuards.profitLockFloorLtp(entry, pos.peakPrem, lock.floorPct, lockTrailPct);
+        const raw = pos.entrySpot + (isCE ? 1 : -1) * (floor - entry) / DELTA;
+        close(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), c.time, msg, "PROFIT_LOCK");
+        return;
+      }
+      const pFav = premAt(isCE ? c.high : c.low, c.time);
+      if (pFav > pos.peakPrem) pos.peakPrem = pFav;
+      msg = tradeGuards.checkProfitLock(entry, premAt(c.close, c.time), pos.peakPrem, lockOpts);
+      if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, "PROFIT_LOCK", true);
     }
 
     for (let j = 0; j < idxs.length; j++) {
       const gi = idxs[j];
       const c = sorted[gi];
-      const istMin = strat._utcSecToIstMins(c.time);
 
       // ── 1. Fill a pending entry at THIS bar's open. ─────────────────────────
       if (pending && !pos) {
         const sig = pending;
         pending = null;
         if (typeof c.open === "number" && Number.isFinite(c.open)) {
-          if (strat.stopHit(sig.side, c.open, sig.slSpot)) {
-            funnel.abortedPastStop++;
-            dayNote = `break at ${istHHMMSS(sig.signalBarTime)} but the next open ${c.open} was already through the stop ${sig.slSpot} — aborted (paper does the same)`;
-          } else {
-            pos = {
-              side: sig.side, entryTime: c.time, entrySpot: _r2(c.open),
-              optionEntryLtp: IS_FUT ? _r2(c.open) : SEED_PREMIUM,
-              slSpot: sig.slSpot, initialSl: sig.slSpot, targetSpot: sig.targetSpot,
-              riskPts: _r2(Math.abs(c.open - sig.slSpot)), candleSize: sig.candleSize,
-              targetReached: false, peakPrem: null,
-              prevHigh: sig.prevHigh, prevLow: sig.prevLow, orClose: sig.orClose,
-              signalBarTime: sig.signalBarTime, entryReason: sig.reason,
-            };
-            pos.peakPrem = pos.optionEntryLtp;
-            dayTrades++; funnel.entries++;
-          }
+          pos = {
+            side: sig.side, entryTime: c.time, entrySpot: _r2(c.open),
+            optionEntryLtp: IS_FUT ? _r2(c.open) : SEED_PREMIUM,
+            candleSize: sig.candleSize, peakPrem: null,
+            prevHigh: sig.prevHigh, prevLow: sig.prevLow, orClose: sig.orClose,
+            signalBarTime: sig.signalBarTime, entryReason: sig.reason,
+          };
+          pos.peakPrem = pos.optionEntryLtp;
+          dayTrades++; funnel.entries++;
         }
       }
 
-      // ── 2. Manage an open position on this bar. ─────────────────────────────
-      if (pos) {
-        const isCE = pos.side === "CE";
-        const dir = isCE ? 1 : -1;
-        if (istMin >= cfg.forcedExitMin) {
-          close(c.open, c.time, `EOD square-off (${strat._fmtMins(cfg.forcedExitMin)} IST)`, "EOD");
-        } else {
-          // Adverse level: the stop, or the armed profit-lock floor if tighter.
-          let lockSpot = null;
-          if (lockOk && pos.peakPrem >= pos.optionEntryLtp * (1 + lock.armPct / 100)) {
-            const floorPrem = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peakPrem, lock.floorPct, lock.trailPct);
-            lockSpot = pos.entrySpot + dir * (floorPrem - pos.optionEntryLtp) / DELTA;
-          }
-          const useLock = lockSpot != null && (lockSpot - pos.slSpot) * dir > 0;
-          const adverseLvl = useLock ? lockSpot : pos.slSpot;
-          const adverseExt = isCE ? c.low : c.high;
-          if (strat.stopHit(pos.side, adverseExt, adverseLvl)) {
-            const fill = isCE ? Math.min(c.open, adverseLvl) : Math.max(c.open, adverseLvl);
-            if (useLock) close(fill, c.time, `Profit lock +${lock.floorPct}% — simulated premium fell back to the locked floor`, "PROFIT_LOCK");
-            else close(fill, c.time, pos.targetReached ? `Trailed stop ${_r2(pos.slSpot)} hit after target` : `Stop hit — break candle ${isCE ? "low" : "high"} ${pos.slSpot}`, pos.targetReached ? "TRAIL_STOP" : "STOP");
-          } else {
-            // Favourable side: premium peak, then the target.
-            const favExt = isCE ? c.high : c.low;
-            const favPrem = premAt(favExt, c.time);
-            if (favPrem > pos.peakPrem) pos.peakPrem = favPrem;
-            if (!pos.targetReached && strat.targetHit(pos.side, favExt, pos.targetSpot)) {
-              const act = strat.onTarget(pos, { cfg });
-              if (!act || act.action === "EXIT") {
-                const fill = isCE ? Math.max(c.open, pos.targetSpot) : Math.min(c.open, pos.targetSpot);
-                close(fill, c.time, `Target ${pos.targetSpot} hit (candle size ${pos.candleSize}pt)`, "TARGET");
-              } else {
-                pos.targetReached = true;
-                pos.slSpot = act.stop;
-                // Reached the target and closed back through it — paper's tick exits at the level.
-                if (strat.stopHit(pos.side, c.close, pos.slSpot)) {
-                  close(pos.slSpot, c.time, `Target ${pos.targetSpot} reached, then price came back to it (locked)`, "TARGET_LOCK");
-                }
-              }
-            }
-            // Profit lock armed inside this bar and closed back below its floor.
-            if (pos && lockOk && pos.peakPrem >= pos.optionEntryLtp * (1 + lock.armPct / 100)) {
-              const floorPrem = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peakPrem, lock.floorPct, lock.trailPct);
-              const lvl = pos.entrySpot + dir * (floorPrem - pos.optionEntryLtp) / DELTA;
-              if ((lvl - pos.slSpot) * dir > 0 && strat.stopHit(pos.side, c.close, lvl)) {
-                close(c.close, c.time, `Profit lock +${lock.floorPct}% — armed and given back inside the bar`, "PROFIT_LOCK");
-              }
-            }
-            // Candle-close trail (only after the target).
-            if (pos) {
-              const tr = strat.trailStop(pos, c);
-              if (tr) pos.slSpot = tr.stop;
-            }
-          }
-        }
-      }
+      // ── 2. Manage an open position on this bar — the profit lock only. ──────
+      if (pos) lockExit(c);
 
       // ── 3. The entry question, on this bar's close. ─────────────────────────
       if (!pos && !pending && !settled) {
@@ -308,10 +263,11 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
       }
     }
 
-    // A position still open at the last bar is squared off at its close.
+    // A position still open at the last bar is closed there — the backtest's
+    // stand-in for paper's session teardown.
     if (pos) {
       const last = sorted[idxs[idxs.length - 1]];
-      close(last.close, last.time, "EOD (last candle of the session)", "EOD");
+      close(last.close, last.time, "Session end (last candle of the day)", "SESSION_END", true);
     }
 
     // Side tally from the engine's own levels for this day.
@@ -386,8 +342,6 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { key: "prevLow", label: "Yday L" },
       { key: "orClose", label: "09:15 C" },
       { key: "candleSize", label: "Candle pt" },
-      { key: "target", label: "Target" },
-      { key: "targetReached", label: "Tgt hit" },
       { key: "exitCode", label: "Exit" },
       { key: "held", label: "Held" },
     ],
@@ -404,7 +358,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Exit mix", value: exitMix },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `<b>Chart:</b> NIFTY 50 INDEX spot (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min. The ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle is built from those bars. <b>Setup:</b> it closes below yesterday's LOW → PE day, above yesterday's HIGH → CE day. <b>Entry:</b> the FIRST ${cfg.resolutionMins}-min close beyond that candle's low/high, filled at the NEXT bar's open (paper fills on the first tick after the close), until ${strat._fmtMins(cfg.entryEndMin)}. A fill already through the stop is aborted, as in paper. <b>Stop</b> = break candle's high (PE) / low (CE). <b>Target</b> = break candle size from its close. ${cfg.trailAfterTarget ? "At the target the stop moves to the target, then trails each closed candle's high/low." : "Exit at the target."} <b>Profit lock</b> (global, ${lockText()}) is simulated on the δ premium. Square-off ${strat._fmtMins(cfg.forcedExitMin)}. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) fetched before ${escHtml(from)} so day one has a yesterday. Conservative ordering: the adverse level is tested before the target. Premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}) seeded at ₹${escHtml(process.env.PREV_ORB_SCALP_BT_SEED_PREMIUM || "260")} with ${escHtml(process.env.PREV_ORB_SCALP_BT_SLIPPAGE_PTS || "1.5")}pt slippage each way — treat ₹ as directional. <b>Never traded live or on paper; nothing here is validated.</b>`,
+    notes: `<b>Chart:</b> NIFTY 50 INDEX spot (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min. The ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle is built from those bars. <b>Setup:</b> it closes below yesterday's LOW → PE day, above yesterday's HIGH → CE day. <b>Entry:</b> the FIRST ${cfg.resolutionMins}-min close beyond that candle's low/high, filled at the NEXT bar's open (paper fills on the first tick after the close), until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> the global profit lock (${lockText()}) is the ONLY automatic exit — no stop, target, trail or early square-off — simulated on the δ premium, each bar walked open → adverse → favourable → close; a trade still open at the day's last candle is closed there. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) fetched before ${escHtml(from)} so day one has a yesterday. Premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}) seeded at ₹${escHtml(process.env.PREV_ORB_SCALP_BT_SEED_PREMIUM || "260")} with ${escHtml(process.env.PREV_ORB_SCALP_BT_SLIPPAGE_PTS || "1.5")}pt slippage each way — treat ₹ as directional. <b>Never traded live or on paper; nothing here is validated.</b>`,
   });
   res.send(html.replace("</body>", `${MOBILE_CSS}</body>`));
 }

@@ -100,7 +100,6 @@ for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
 
 const ACTION_PATHS = [
   "/ema_rsi_st-paper/start",     // start a paper session
-  "/orb-live/stop",              // stop a LIVE session
   "/pa-paper/exit",              // exit an open position
   "/orb-paper/reset",            // wipe a session's trades
   "/settings/save",              // rewrite .env
@@ -161,8 +160,8 @@ check("every strategy's paper + backtest pages are demo-eligible by shape", () =
   }
 });
 
-check("live pages follow DEMO_SHOW_LIVE", () => {
-  const LIVE = ["/orb-live/status", "/pa-live-harness", "/live-consolidation", "/pnl-history"];
+check("real-money P&L pages follow DEMO_SHOW_LIVE", () => {
+  const LIVE = ["/pnl-history", "/pnl-history/data", "/pnl-history/manual/data"];
   withEnv({ DEMO_SHOW_LIVE: "false" }, () => {
     for (const p of LIVE) assert.strictEqual(allowed("GET", p), false, `${p} leaked with DEMO_SHOW_LIVE off`);
   });
@@ -171,10 +170,10 @@ check("live pages follow DEMO_SHOW_LIVE", () => {
   });
 });
 
-check("turning live pages ON never turns actions on", () => {
+check("turning P&L pages ON never turns actions on", () => {
   withEnv({ DEMO_SHOW_LIVE: "true" }, () => {
-    assert.strictEqual(allowed("GET", "/orb-live/start"), false);
-    assert.strictEqual(allowed("POST", "/orb-live/exit"), false);
+    assert.strictEqual(allowed("GET", "/pnl-history/manual/sync"), false);
+    assert.strictEqual(allowed("POST", "/pnl-history/manual/import"), false);
   });
 });
 

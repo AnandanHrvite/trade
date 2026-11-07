@@ -64,7 +64,7 @@ function isMaskedValue(v) {
 // ── Effect types for the info tooltip ────────────────────────────────────────
 const EFFECT = {
   INSTANT: { label: "Instant", color: "#10b981", icon: "⚡", tip: "Takes effect immediately after saving" },
-  SESSION: { label: "Session restart", color: "#f59e0b", icon: "🔄", tip: "Stop & start your Paper/Live session to apply" },
+  SESSION: { label: "Session restart", color: "#f59e0b", icon: "🔄", tip: "Stop & start your Paper session to apply" },
   SERVER:  { label: "Server restart", color: "#ef4444", icon: "🖥️", tip: "Requires full server restart (node/nodemon)" },
   BACKTEST:{ label: "Next backtest", color: "#3b82f6", icon: "🔍", tip: "Applied on next backtest run" },
 };
@@ -76,17 +76,12 @@ const SETTINGS_SCHEMA = [
     nav: "EMA_RSI_ST",
     group: "NIFTY",
     fields: [
-      { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha.", subheader: "Mode & Session" },
-      { key: "EMA_RSI_ST_LIVE_DRY_RUN", label: "EMA_RSI_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
       // Candle timeframe is GLOBAL — see TRADE_RESOLUTION in "Instrument & Backtest".
-      { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
+      { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false", subheader: "Mode & Session" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "10:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:00" },
-      { key: "EMA_RSI_ST_EOD_EXIT_TIME", label: "Exit Before Day Close", type: "time", effect: EFFECT.SESSION, desc: "Close any open position at this time (IST).", default: "14:30" },
       { key: "VIX_FILTER_ENABLED", label: "VIX Filter (EMA_RSI_ST)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", subheader: "Filters & Limits" },
       { key: "VIX_MAX_ENTRY", label: "EMA_RSI_ST VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
-      { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "3000" },
-      { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "5" },
       // ── Entry rule (all 3 must be true): EMA alignment + RSI gate + SuperTrend side ──
       { key: "EMA_RSI_ST_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA period.", default: "20", subheader: "Entry Signal" },
       { key: "EMA_RSI_ST_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Slow EMA period.", default: "50" },
@@ -104,16 +99,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "SuperTrend ATR period.", default: "10" },
       { key: "EMA_RSI_ST_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "SuperTrend band width multiplier.", default: "3" },
       // ── Stops & exits ──
-      { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if option premium drops this fraction.", default: "0.25", subheader: "Exits & Cooldowns" },
-      { key: "EMA_RSI_ST_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Max loss per trade in points (0 = off).", default: "25" },
-      { key: "EMA_RSI_ST_MAX_CONSEC_LOSSES", label: "Chop Guard (consec losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Stop for the day after this many losses in a row (0 = off).", default: "0" },
-      { key: "EMA_RSI_ST_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Exit if still losing after this many candles (0 = off).", default: "2" },
-      { key: "EMA_RSI_ST_INITIAL_SL_MODE", label: "Initial Stop — Prev Candle or EMA21", type: "select", options: [{ value: "prev_candle", label: "Previous candle low/high (default)" }, { value: "ema21", label: "EMA21 (same line the trail rides)" }], effect: EFFECT.INSTANT, desc: "Where the stop sits the moment you enter. Previous candle = today's rule: the stop is the last completed candle's low (CE) / high (PE) — structural, but often only a few points from the fill, so ordinary noise stops the trade out within seconds. EMA21 = seed the stop on the SAME EMA21 line the trail already rides, so entry protection and trail protection are one line. EMA21 usually sits further from price, which means fewer instant stop-outs but a bigger loss when it is hit. Applied only when EMA21 is on the protective side of the fill (below entry for CE, above for PE); otherwise the previous-candle stop is kept.", default: "prev_candle" },
-      { key: "EMA_RSI_ST_EMA_EXIT_MODE", label: "EMA21 Exit — Touch or Cross &amp; Close", type: "select", options: [{ value: "touch", label: "Touch (legacy — a wick reaching EMA21 exits)" }, { value: "close", label: "Cross &amp; close (only a close beyond EMA21 exits)" }], effect: EFFECT.INSTANT, desc: "How the EMA21 line ends a trade. Touch = today's rule: the candle only has to REACH EMA21, and EMA21 is also the tick-by-tick stop, so a single wick closes the trade. Cross &amp; close = wicks through the line are held and the trade exits only when a candle CLOSES beyond EMA21 (CE on a close below it, PE on a close above). In cross &amp; close mode EMA21 stops being the tick stop — otherwise the first wick would stop you out anyway — so keep the Candle Trail on (or a points Stop Loss) to hold the hard stop.", default: "touch" },
-      { key: "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add a candle-based trailing stop.", default: "true" },
-      { key: "EMA_RSI_ST_CANDLE_TRAIL_BARS", label: "Candle Trail (candles)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Candles looked back for the trailing stop.", default: "3" },
-      { key: "EMA_RSI_ST_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause the same side this many candles after a stop (0 = off).", default: "2" },
-      { key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true" },
+      { key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true", subheader: "Exits & Cooldowns" },
       { key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Opposite-side cooldown length in candles.", default: "2" },
     ],
   },
@@ -123,8 +109,7 @@ const SETTINGS_SCHEMA = [
     nav: "BB_RSI",
     group: "NIFTY",
     fields: [
-      { key: "BB_RSI_ENABLED", label: "BB_RSI Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode, Session & VIX" },
-      { key: "BB_RSI_EXPIRY_DAY_ONLY", label: "BB_RSI Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
+      { key: "BB_RSI_EXPIRY_DAY_ONLY", label: "BB_RSI Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false", subheader: "Mode, Session & VIX" },
       { key: "BB_RSI_VIX_ENABLED", label: "VIX Filter (BB_RSI)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", default: "false" },
       { key: "BB_RSI_VIX_MAX_ENTRY", label: "BB_RSI VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
       { key: "BB_RSI_VIX_STRONG_ONLY", label: "BB_RSI VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX, allow only strong signals.", default: "16" },
@@ -158,25 +143,8 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_DIVERGENCE_ENABLED", label: "Divergence Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require price/RSI divergence: CE = lower low with a higher RSI low, PE = higher high with a lower RSI high.", default: "false", subheader: "Divergence" },
       { key: "BB_RSI_DIV_LOOKBACK", label: "Divergence Lookback (candles)", type: "number", min: 5, max: 60, step: 1, effect: EFFECT.SESSION, desc: "How far back to hunt for the prior swing to compare against.", default: "20" },
       { key: "BB_RSI_DIV_PIVOT_BARS", label: "Divergence Pivot Bars", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Bars either side needed to confirm a swing pivot (higher = stricter, slower).", default: "2" },
-      // ── Exits ──
-      { key: "BB_RSI_TARGET_MIDDLE_BAND", label: "Target the BB Middle Band", type: "toggle", effect: EFFECT.SESSION, desc: "Take profit when price reverts to the mean (the middle band). Ignored in breakout mode — the mean is behind the entry there.", default: "true", subheader: "Exits" },
-      { key: "BB_RSI_OPP_CANDLE_SL_ENABLED", label: "Opposite-Candle Stop", type: "toggle", effect: EFFECT.SESSION, desc: "Exit after N consecutive candles closing against the trade.", default: "true" },
-      { key: "BB_RSI_OPP_CANDLE_SL_COUNT", label: "Opposite Candles → Stop", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "How many consecutive opposite candles trigger the stop.", default: "2" },
-      { key: "BB_RSI_OPP_CANDLE_TRAIL_ENABLED", label: "Opposite-Candle Trail", type: "toggle", effect: EFFECT.SESSION, desc: "Once in profit, take over from the stop with its own opposite-candle count.", default: "true" },
-      { key: "BB_RSI_OPP_CANDLE_TRAIL_COUNT", label: "Opposite Candles → Trail", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "How many consecutive opposite candles trigger the trail exit.", default: "2" },
-      { key: "BB_RSI_TRAIL_ARM_PTS", label: "Trail Arm (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Favourable spot points before the trail takes over from the stop (0 = immediately).", default: "10" },
-      { key: "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Optional extra upside cap — arm after this many points gained (0 = off).", default: "0" },
-      { key: "BB_RSI_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit if profit falls below this % of its peak.", default: "50" },
-      { key: "BB_RSI_STOP_LOSS_PTS", label: "Hard Stop (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Per-tick catastrophic cap under the candle stop, which only fires on a close (0 = off).", default: "30" },
       // ── Risk management ──
-      // The live stop is the two-opposite-candle rule above; the SL line recorded at
-      // entry is the signal candle's own extreme, kept for sizing and display only.
       { key: "BB_RSI_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage per side, in points.", default: "1.5", subheader: "Risk & Pauses" },
-      { key: "BB_RSI_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "30" },
-      { key: "BB_RSI_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "4000" },
-      { key: "BB_RSI_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause this many candles after a stop.", default: "3" },
-      { key: "BB_RSI_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Extra pause candles per repeated stop.", default: "2" },
-      { key: "BB_RSI_PER_SIDE_PAUSE", label: "Per-Side SL Pause", type: "toggle", effect: EFFECT.SESSION, desc: "A stop pauses only that side (CE or PE).", default: "true" },
     ],
   },
   {
@@ -185,8 +153,7 @@ const SETTINGS_SCHEMA = [
     nav: "Price Action",
     group: "NIFTY",
     fields: [
-      { key: "PA_ENABLED", label: "PA Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode & Session" },
-      { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
+      { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false", subheader: "Mode & Session" },
       { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", default: "false" },
       { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
       { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:20" },
@@ -202,14 +169,7 @@ const SETTINGS_SCHEMA = [
       { key: "PA_SL_BUFFER_PTS", label: "Stop Buffer (pts)", type: "number", min: 0, max: 20, step: 0.5, effect: EFFECT.INSTANT, desc: "Stop sits this far beyond the block, in spot points.", default: "3", subheader: "Exits & Risk" },
       { key: "PA_MIN_SL_PTS", label: "Min Stop (pts)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "The stop is never closer than this, in spot points.", default: "8" },
       { key: "PA_MAX_SL_PTS", label: "Max Stop (pts)", type: "number", min: 5, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Skip the trade when the stop would be wider than this, in spot points.", default: "25" },
-      { key: "PA_SMC_TRAIL_ENABLED", label: "Swing Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Also tighten the stop to each new swing. Off = the setup's own stop and target only.", default: "false" },
-      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Move stop to breakeven after this much profit (₹, 0 = off).", default: "300" },
-      { key: "PA_BREAKEVEN_BUFFER", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Cushion above/below entry for the breakeven stop, in points.", default: "1" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest, in points.", default: "0" },
-      { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "30" },
-      { key: "PA_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "2000" },
-      { key: "PA_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause this many candles after a stop.", default: "2" },
-      { key: "PA_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Extra pause candles per repeated stop.", default: "2" },
     ],
   },
   {
@@ -218,11 +178,9 @@ const SETTINGS_SCHEMA = [
     nav: "ORB",
     group: "NIFTY",
     fields: [
-      { key: "ORB_LIVE_ENABLED", label: "ORB Live Orders (gates /orb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live ORB orders via Fyers.", default: "false", subheader: "Mode & Entry" },
-      { key: "ORB_LIVE_DRY_RUN", label: "ORB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep ORB simulated even when live is on.", default: "false" },
 
       // ── Entry: session window + day sanity + breakout quality ──────────
-      { key: "ORB_RANGE_START", label: "OR Window Start", type: "time", effect: EFFECT.SESSION, desc: "Opening-range start time (IST).", default: "09:15" },
+      { key: "ORB_RANGE_START", label: "OR Window Start", type: "time", effect: EFFECT.SESSION, desc: "Opening-range start time (IST).", default: "09:15", subheader: "Mode & Entry" },
       { key: "ORB_RANGE_END", label: "OR Window End", type: "time", effect: EFFECT.SESSION, desc: "Opening-range end time (IST).", default: "09:30" },
       { key: "ORB_ENTRY_START", label: "Earliest Entry Time", type: "time", effect: EFFECT.SESSION, desc: "No breakout candle is even looked at before this (blank/09:30 = start hunting the moment the range freezes). Skips the 09:35-type entries — but MEASURE IT FIRST: on the Jul–Aug 2026 export the early trades lost less than the late ones (−₹2,372 over 9 before 09:50 vs −₹4,213 over 8 after) and a delay deletes the sample's two best trades.", default: "09:30" },
       { key: "ORB_ENTRY_END", label: "Latest Entry Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "11:30" },
@@ -236,10 +194,6 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_BUFFER_MIN_PTS", label: "Breakout — Buffer Floor (pts)", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Absolute floor on the breakout buffer. Set all three buffer fields to 0 for a plain close past the line.", default: "0" },
       { key: "ORB_VWAP_FILTER_ENABLED", label: "Breakout — Require Correct Side of VWAP", type: "toggle", effect: EFFECT.INSTANT, desc: "Measured worthless here: it removed 0 of 36 breakouts on the Mar–Apr 2026 sample. Off costs nothing and skips the VWAP maths.", default: "false" },
       { key: "ORB_CONFIRM_MODE", label: "Confirmation — Rule", type: "select", options: ["extend", "close"], effect: EFFECT.INSTANT, desc: "extend = next candle needs a higher high AND higher close beyond the edge. close = it only has to close beyond the breakout candle's close.", default: "close" },
-      { key: "ORB_SL_SOURCE", label: "Stop — Anchor", type: "select", options: ["entry", "breakout", "lookback", "supertrend"], effect: EFFECT.INSTANT, desc: "Where the initial stop sits: under the entry candle, under the first candle that closed past the range edge, under the extreme of the last N candles ending at the entry candle (lookback, N below), or on the SuperTrend line (supertrend — period and multiplier below, and the one anchor the SuperTrend trail can then keep moving).", default: "breakout" },
-      { key: "ORB_SL_LOOKBACK_CANDLES", label: "Stop — Lookback Candles (anchor = lookback)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Only read when the anchor is 'lookback'. 2 = the entry candle and the one before it — the stop clears the recent swing instead of a single bar. Ignored by the other two anchors.", default: "2" },
-      { key: "ORB_SL_ST_PERIOD", label: "Stop — SuperTrend Period (anchor / trail)", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "ATR period of the SuperTrend used as the STOP — read by the 'supertrend' anchor above and by the SuperTrend trail below. Separate from the entry gate's SuperTrend on purpose: a direction filter wants a slower band, a stop wants a tighter one.", default: "10" },
-      { key: "ORB_SL_ST_MULT", label: "Stop — SuperTrend Multiplier (anchor / trail)", type: "number", min: 0.5, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "ATR multiplier of the stop SuperTrend. Lower = the line rides closer to price, so the stop is tighter and trails faster. 2 with period 10 is the classic intraday stop setting.", default: "2" },
       { key: "ORB_RSI_ENABLED", label: "Entry — RSI Momentum Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "CE needs RSI at or above the CE floor, PE at or below the PE ceiling, read on the candle being bought. Off = no RSI check.", default: "true" },
       { key: "ORB_RSI_PERIOD", label: "Entry — RSI Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "RSI lookback on 5-min closes.", default: "14" },
       { key: "ORB_RSI_CE_MIN", label: "Entry — RSI Floor for CE", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "CE entries need RSI at or above this.", default: "51" },
@@ -250,24 +204,7 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_BREAKOUT_RESCAN", label: "Breakout — Skip Weak Poke, Keep Hunting", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF = the first close beyond the range is final, even if it fails the body filter (old behaviour).", default: "true" },
       { key: "ORB_RETEST_MAX_WAIT", label: "Retest / Resume Window (candles)", type: "number", min: 0, max: 12, step: 1, effect: EFFECT.INSTANT, desc: "Candles to wait for a retest or resume (0 = off).", default: "6" },
 
-      // ── Exits (all owned by src/strategies/orbExits.js — one engine for
-      //    paper, live, backtest and scripts/orbValidate.js) ──────────────
-      { key: "ORB_SL_ATR_MULT", label: "Initial Stop — \u00d7 ATR(5m) (0 = off)", type: "number", min: 0, max: 3, step: 0.1, effect: EFFECT.INSTANT, desc: "Initial stop width as a multiple of ATR.", default: "0", subheader: "Exits" },
-      { key: "ORB_BREAKEVEN_PTS", label: "Exit — Breakeven After (pts)", type: "number", min: 0, max: 60, step: 5, effect: EFFECT.INSTANT, desc: "Move stop to entry after this many points profit (0 = off).", default: "0" },
-      { key: "ORB_BREAKEVEN_OR_MULT", label: "Exit — Breakeven × OR Width", type: "number", min: 0, max: 1.5, step: 0.1, effect: EFFECT.INSTANT, desc: "Scale the breakeven trigger by range width (0 = off).", default: "0" },
-      { key: "ORB_TRAIL_EMA", label: "Exit — EMA Trail Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Trail exit: leave when price closes back across this EMA.", default: "20" },
-      { key: "ORB_TRAIL_ARM_PTS", label: "Exit — Arm EMA Trail Only After (pts, 0 = at once)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.INSTANT, desc: "The trail cannot exit until the trade is this many points in profit; only the hard stop and the ₹ cap apply before that. Entry is the confirmation candle's close, so price is often already extended and the next candle pulls back through the EMA. UNPROVEN — measure with scripts/orbSweep.js before moving it off 0.", default: "0" },
-      { key: "ORB_TRAIL_CONFIRM_CLOSES", label: "Exit — Closes Needed to Break the Trail", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "How many closes in a row on the wrong side of the EMA before exiting. 1 = today's rule. 2 rides out one noise candle but gives back a bar when the move is really over.", default: "1" },
-      { key: "ORB_CANDLE_TRAIL_ENABLED", label: "Exit — Candle Trail (ratchet SL behind candles)", type: "toggle", effect: EFFECT.INSTANT, desc: "Once a candle closes in profit, move the hard stop to the extreme of the last N candles, and keep moving it up candle by candle. Tighten-only — a pullback never widens it. Runs alongside the EMA trail; whichever ends the trade first wins. UNPROVEN — measure with scripts/orbSweep.js.", default: "false" },
-      { key: "ORB_CANDLE_TRAIL_CANDLES", label: "Exit — Candle Trail Lookback (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "How many candles the trailing stop must clear. 1 = the just-closed candle's low/high (tightest). 2 = that candle and the one before it, matching the 'lookback' initial stop.", default: "2" },
-      { key: "ORB_ST_TRAIL_ENABLED", label: "Exit — SuperTrend Trail (ratchet SL onto the ST line)", type: "toggle", effect: EFFECT.INSTANT, desc: "On every candle close, move the hard stop onto the SuperTrend line set by the two Stop — SuperTrend fields above (10 / 2 by default), while SuperTrend agrees with the trade. Tighten-only — a widening band never pushes the stop back out — and never placed at the close itself. Because it moves the HARD stop it exits intrabar, not on a close. Set the stop anchor to 'supertrend' as well and the initial stop and the trail are the same line. Runs alongside the EMA and candle trails; whichever ends the trade first wins. IMPORTANT: turn the Candle Trail OFF when you use this — a 2-candle low sits much nearer price than a 2xATR band, so with both on the candle trail wins nearly every ratchet and this one almost never binds. UNPROVEN — measure with scripts/orbSweep.js.", default: "false" },
-      { key: "ORB_OPP_CANDLE_EXIT", label: "Exit — Strong Opposite Candle", type: "toggle", effect: EFFECT.INSTANT, desc: "Exit on a strong reversal candle.", default: "false" },
-      { key: "ORB_OPP_CANDLE_BODY_MULT", label: "Opposite-Candle Body × Range", type: "number", min: 0.1, max: 1, step: 0.05, effect: EFFECT.INSTANT, desc: "Reversal candle body vs range width to trigger the exit.", default: "0.3" },
-      { key: "ORB_MAX_TRADE_LOSS", label: "Exit — Max Loss per Trade (₹, 0 = off)", type: "number", min: 0, max: 10000, step: 250, effect: EFFECT.INSTANT, desc: "Ships OFF so the structural stop is the real stop. When set it clamps the placed SL, which is tighter than the strategy's own level on most trades — use Max Daily Loss for risk control instead.", default: "0" },
-      { key: "ORB_PREMIUM_STOP_PCT", label: "Exit — Premium Disaster Stop (%)", type: "number", min: 0, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Exit if the option premium drops this % (0 = off).", default: "35" },
-      { key: "ORB_FORCED_EXIT", label: "Forced Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard end-of-day exit time (IST).", default: "15:15" },
-
-      // ── Option selection + tradability gates (paper/live only — the
+      // ── Option selection + tradability gates (paper only — the
       //    backtest has no option chain) ───────────────────────────────────
       { key: "ORB_ITM_STEPS", label: "Slightly-ITM Strike Steps", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Strikes in-the-money to trade (0 = ATM).", default: "1", subheader: "Option Selection" },
       { key: "ORB_PREMIUM_GATE_ENABLED", label: "Premium-Range Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "Skip entries when the option price is out of range.", default: "false" },
@@ -276,13 +213,7 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_MAX_SPREAD_PTS", label: "Max Option Bid-Ask Spread (pts)", type: "number", min: 0.5, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Skip entry if the bid-ask spread is wider than this.", default: "2" },
 
       // ── Risk / regime ────────────────────────────────────────────────
-      { key: "ORB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "1", subheader: "Risk & Regime" },
-      { key: "ORB_REENTRY_AFTER_SL", label: "Re-entries After a Stop-Out (0 = off)", type: "number", min: 0, max: 2, step: 1, effect: EFFECT.INSTANT, desc: "Extra attempts allowed after the breakout is STOPPED OUT, on top of Max Trades/Day. The hunt re-arms past the stop candle, so only a genuinely fresh close beyond the same range edge can re-enter (2026-08-03 would re-enter 10:45, 2026-07-29 at 10:05). An EMA-trail or EOD exit never re-arms — that means the move ended, not that the breakout was wrong. UNPROVEN: measure with scripts/orbSweep.js before leaving it on.", default: "0" },
-      { key: "ORB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop taking NEW entries once the day is down this much. It cannot close a trade that is already open, and with Max Trades/Day = 1 the budget is spent anyway — raise Max Trades/Day for it to bite.", default: "3000" },
-      { key: "ORB_RISK_THROTTLE_ENABLED", label: "Risk Breaker (weekly loss / losing streak)", type: "toggle", effect: EFFECT.INSTANT, desc: "Pause after a bad week or a losing streak.", default: "true" },
-      { key: "ORB_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the week after this much loss (0 = off).", default: "9000" },
-      { key: "ORB_LOSS_STREAK_SKIP", label: "Skip After N Losing Days", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Skip a day after this many losing days (0 = off).", default: "4" },
-      { key: "ORB_EXPIRY_DAY_ONLY", label: "ORB Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
+      { key: "ORB_EXPIRY_DAY_ONLY", label: "ORB Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false", subheader: "Risk & Regime" },
       { key: "ORB_VIX_ENABLED", label: "VIX Filter (ORB)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", default: "false" },
       { key: "ORB_VIX_MAX_ENTRY", label: "ORB VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "22" },
       { key: "ORB_VIX_STRONG_ONLY", label: "ORB VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX, allow only strong signals.", default: "18" },
@@ -301,12 +232,9 @@ const SETTINGS_SCHEMA = [
     nav: "EMA9 + VWAP",
     group: "NIFTY",
     fields: [
-      { key: "EMA9VWAP_LIVE_ENABLED", label: "EMA9+VWAP Live Orders (gates /ema9vwap-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha.", default: "false", subheader: "Mode & Session" },
-      { key: "EMA9VWAP_LIVE_DRY_RUN", label: "EMA9+VWAP Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
-      { key: "EMA9VWAP_VWAP_SESSION_START", label: "VWAP Session Anchor", type: "time", effect: EFFECT.SESSION, desc: "Time VWAP resets each day (IST).", default: "09:15" },
+      { key: "EMA9VWAP_VWAP_SESSION_START", label: "VWAP Session Anchor", type: "time", effect: EFFECT.SESSION, desc: "Time VWAP resets each day (IST).", default: "09:15", subheader: "Mode & Session" },
       { key: "EMA9VWAP_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST).", default: "10:30" },
       { key: "EMA9VWAP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
-      { key: "EMA9VWAP_EOD_EXIT_TIME", label: "EOD Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST).", default: "15:15" },
       { key: "EMA9VWAP_STOP_TIME", label: "Engine Auto-Stop", type: "time", effect: EFFECT.SESSION, desc: "Time the engine stops for the day (IST).", default: "15:30" },
       // ── Entry signal ──
       { key: "EMA9VWAP_BAND_MULT", label: "VWAP Band σ Multiplier", type: "number", min: 0, max: 4, step: 0.5, effect: EFFECT.INSTANT, desc: "VWAP band width (σ multiplier).", default: "1", subheader: "Entry Signal" },
@@ -315,26 +243,14 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_INTRACANDLE_ENTRY", label: "Intra-Candle Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow entries mid-candle instead of on close.", default: "false" },
       { key: "EMA9VWAP_STRENGTH_FILTER", label: "Drop WEAK Band Breaks", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade breaks that clear the band edge.", default: "false" },
       { key: "EMA9VWAP_STRONG_MIN_SIGMA", label: "STRONG Break Threshold (σ)", type: "number", min: 0, max: 2, step: 0.05, effect: EFFECT.INSTANT, desc: "How far past the band edge counts as strong (σ).", default: "0.25" },
-      // ── Exits ──
-      { key: "EMA9VWAP_OPT_STOP_PCT", label: "Safety Option-Premium Stop (fraction)", type: "number", min: 0, max: 0.5, step: 0.05, effect: EFFECT.INSTANT, desc: "Exit if option premium drops this fraction (0 = off).", default: "0", subheader: "Exits" },
-      { key: "EMA9VWAP_STOP_LOSS_PTS", label: "Safety Spot-Points Stop", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Max loss per trade in points (0 = off).", default: "0" },
-      { key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", label: "2-Candle Reversal Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Exit on a strong reversal candle.", default: "true" },
-      { key: "EMA9VWAP_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Exit if still losing after this many candles (0 = off).", default: "0" },
-      { key: "EMA9VWAP_CANDLE_TRAIL_ENABLED", label: "N-Bar Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add a candle-based trailing stop.", default: "false" },
-      { key: "EMA9VWAP_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Candles used for the trailing stop.", default: "3" },
-      { key: "EMA9VWAP_SL_MODE", label: "SL Mode", type: "select", options: ["ema", "candle"], effect: EFFECT.INSTANT, desc: "Exit style: signal-only or candle time-stop.", default: "ema" },
       // ── Risk & filters ──
       // M5: keys that were live in code but invisible here (and therefore absent
       // from the per-day settings snapshot). All defaults are BLANK/current so a
       // Settings save writes nothing that changes behaviour.
-      { key: "EMA9VWAP_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "20", subheader: "Risk & Filters" },
-      { key: "EMA9VWAP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "5000" },
-      { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "VIX filter (blank = use the global setting).", default: "" },
+      { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "VIX filter (blank = use the global setting).", default: "", subheader: "Risk & Filters" },
       { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block entries above this VIX (blank = use global).", default: "" },
-      { key: "EMA9VWAP_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause the same side this many candles after a stop.", default: "3" },
       { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true" },
       { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Opposite-side cooldown length in candles.", default: "3" },
-      { key: "EMA9VWAP_MAX_CONSEC_LOSSES", label: "Chop Guard (consecutive losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Stop for the day after this many losses in a row (0 = off).", default: "0" },
     ],
   },
   {
@@ -343,10 +259,8 @@ const SETTINGS_SCHEMA = [
     nav: "Trend Pullback",
     group: "NIFTY",
     fields: [
-      { key: "TREND_PB_LIVE_ENABLED", label: "Trend Pullback Live Orders (gates /trend-pb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode & Entry" },
-      { key: "TREND_PB_LIVE_DRY_RUN", label: "Trend Pullback Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
       // ── Entry (15m bias + 5m pullback/resumption) ──
-      { key: "TREND_PB_SWING_LOOKBACK", label: "Swing Pivot Lookback (15m bars)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Bars each side that define a swing point.", default: "2" },
+      { key: "TREND_PB_SWING_LOOKBACK", label: "Swing Pivot Lookback (15m bars)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Bars each side that define a swing point.", default: "2", subheader: "Mode & Entry" },
       { key: "TREND_PB_BODY_ATR_MULT", label: "Resumption Body ≥ ×ATR5", type: "number", min: 0, max: 2, step: 0.1, effect: EFFECT.INSTANT, desc: "Resumption candle body vs ATR (conviction).", default: "0.5" },
       { key: "TREND_PB_PULLBACK_MAX_ATR", label: "Max Pullback Depth (×ATR5 below EMA20)", type: "number", min: 0.5, max: 4, step: 0.25, effect: EFFECT.INSTANT, desc: "Reject pullbacks deeper than this.", default: "1.5" },
       { key: "TREND_PB_PULLBACK_WINDOW", label: "Pullback Lookback Window (5m bars)", type: "number", min: 3, max: 12, step: 1, effect: EFFECT.INSTANT, desc: "Bars counted as the pullback.", default: "6" },
@@ -355,24 +269,12 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       { key: "TREND_PB_ATR_FLOOR_PTS", label: "ATR5 Floor (skip if below, pts)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.INSTANT, desc: "Skip when volatility is below this (0 = off).", default: "0" },
       // ── Exit (highest priority — right-tail via spot trailing) ──
-      { key: "TREND_PB_STOP_CLAMP_MIN", label: "Initial Stop Clamp — Min (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Smallest allowed stop distance, in points.", default: "8", subheader: "Exits" },
-      { key: "TREND_PB_STOP_CLAMP_MAX", label: "Initial Stop Clamp — Max (pts)", type: "number", min: 10, max: 80, step: 1, effect: EFFECT.INSTANT, desc: "Largest allowed stop distance, in points.", default: "30" },
-      { key: "TREND_PB_BREAKEVEN_R", label: "Breakeven Trigger (× initial risk)", type: "number", min: 0, max: 3, step: 0.25, effect: EFFECT.INSTANT, desc: "Move stop to entry after this much gain (× risk, 0 = off).", default: "1.0" },
-      { key: "TREND_PB_TRAIL_ATR_MULT", label: "ATR Chandelier Trail (× ATR5)", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "Trailing stop distance as a multiple of ATR.", default: "2.5" },
-      { key: "TREND_PB_EMA_EXIT_ENABLED", label: "Trend-Failure EMA Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Exit when a 5m candle closes back across the EMA. Off = only stop/trail/time-stop close the trade.", default: "true" },
-      { key: "TREND_PB_TRAIL_EMA", label: "Trend-Failure EMA (5m period)", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Exit when price closes back across this EMA.", default: "20" },
-      { key: "TREND_PB_ATR_PERIOD", label: "ATR Period (5m)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR period.", default: "14" },
-      { key: "TREND_PB_TIME_STOP_CANDLES", label: "Time Stop (flat candles)", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Exit if flat after this many candles (0 = off).", default: "6" },
-      { key: "TREND_PB_PREMIUM_STOP_PCT", label: "Premium Disaster Stop (%)", type: "number", min: 0, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Exit if the option premium drops this % (0 = off).", default: "35" },
-      { key: "TREND_PB_FORCED_EXIT", label: "EOD Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST).", default: "15:15" },
+      { key: "TREND_PB_ATR_PERIOD", label: "ATR Period (5m)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR period.", default: "14", subheader: "Exits" },
       // ── Option selection + risk ──
       { key: "TREND_PB_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM).", default: "1", subheader: "Option & Risk" },
       { key: "TREND_PB_PREMIUM_MIN", label: "Min Option Premium (₹)", type: "number", min: 0, max: 1000, step: 10, effect: EFFECT.INSTANT, desc: "Skip entry if the option price is below this (₹).", default: "120" },
       { key: "TREND_PB_PREMIUM_MAX", label: "Max Option Premium (₹)", type: "number", min: 0, max: 2000, step: 10, effect: EFFECT.INSTANT, desc: "Skip entry if the option price is above this (₹).", default: "400" },
       { key: "TREND_PB_MAX_SPREAD_PTS", label: "Max Bid-Ask Spread (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Skip entry if the bid-ask spread is wider than this.", default: "2" },
-      { key: "TREND_PB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "3" },
-      { key: "TREND_PB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "5000" },
-      { key: "TREND_PB_LOSS_STREAK_SKIP", label: "Consecutive-Loss Cool-Off", type: "number", min: 0, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Pause for the day after this many losses in a row (0 = off).", default: "3" },
       { key: "TREND_PB_VIX_ENABLED", label: "VIX Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is out of range.", default: "false" },
       { key: "TREND_PB_VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 8, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "22" },
       { key: "TREND_PB_OI_ENABLED", label: "OI Buildup Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries fighting an OI buildup.", default: "false" },
@@ -386,10 +288,8 @@ const SETTINGS_SCHEMA = [
     nav: "TREND DAY SCALP",
     group: "NIFTY",
     fields: [
-      // ── Enable / live gating ──
-      { key: "TDS_PAPER_ENABLED", label: "Trend Day Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Trend Day Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
-      { key: "TDS_LIVE_ENABLED", label: "Trend Day Scalp Live Orders (gates /trend-day-scalp-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers. NEVER traded — paper-validate first.", default: "false" },
-      { key: "TDS_LIVE_DRY_RUN", label: "Trend Day Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+      // ── Enable ──
+      { key: "TDS_PAPER_ENABLED", label: "Trend Day Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Trend Day Scalp paper sessions.", default: "true", subheader: "Mode" },
 
       // ── The day gate (decided once, then frozen) ──
       { key: "TDS_GATE_TIME", label: "Day Gate Time", type: "time", effect: EFFECT.SESSION, desc: "The one moment the day is judged trendable (IST). Decided once, then frozen.", default: "10:15", subheader: "Day Gate (decided once, then frozen)" },
@@ -404,25 +304,14 @@ const SETTINGS_SCHEMA = [
       { key: "TDS_BODY_ATR_MULT", label: "Reclaim Body (× ATR)", type: "number", min: 0, max: 3, step: 0.05, effect: EFFECT.SESSION, desc: "The reclaim candle's body must be at least this × ATR — the conviction gate.", default: "0.4" },
       { key: "TDS_PULLBACK_WINDOW", label: "Pullback Lookback (bars)", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "How many recent bars can supply the pullback touch. A wick counts.", default: "3" },
       { key: "TDS_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:00" },
-      { key: "TDS_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST).", default: "15:10" },
       { key: "TDS_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "10", "15", "30", "60"], effect: EFFECT.SESSION, desc: "Signal + exit candle timeframe.", default: "5" },
 
       // ── Risk (the part that makes the result steady) ──
-      { key: "TDS_MIN_SL_PTS", label: "Min Stop Distance (pts)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A tighter structural stop is widened to this — never tightened inside the structure.", default: "12", subheader: "Risk (fixed stop, fixed target)" },
-      { key: "TDS_MAX_SL_PTS", label: "Max Stop Distance (pts)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A wider structural stop SKIPS the trade entirely. MEASURED: real pullback stops are median 35pt, so the old 18 skipped 48 of 53 setups and kept only the shallowest. 40pt covers ~p60. Note ~35pt ≈ ₹1,400 premium risk on 1 lot.", default: "40" },
-      { key: "TDS_TARGET_R", label: "Target (× risk)", type: "number", min: 0.5, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "Fixed target as a multiple of the stop distance. Taken, never trailed past.", default: "2.5" },
-      { key: "TDS_BREAKEVEN_R", label: "Breakeven Arms At (× risk)", type: "number", min: 0, max: 5, step: 0.1, effect: EFFECT.SESSION, desc: "Favourable move at which the stop makes its ONE jump.", default: "1" },
-      { key: "TDS_BREAKEVEN_BUFFER_PTS", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Where the stop lands on that jump: entry ± this. It never moves again.", default: "3" },
-      { key: "TDS_TIME_STOP_MINS", label: "Time Stop (min)", type: "number", min: 0, max: 375, step: 5, effect: EFFECT.SESSION, desc: "Flat if breakeven has not armed within this long (0 = off). A stalled option only pays theta.", default: "25" },
-      { key: "TDS_PREMIUM_STOP_PCT", label: "Premium Stop (%)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Exit if the option itself drops this % (0 = off). Catches an IV crush the spot stop cannot see.", default: "25" },
+      { key: "TDS_MAX_SL_PTS", label: "Max Stop Distance (pts)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A wider structural stop SKIPS the trade entirely. MEASURED: real pullback stops are median 35pt, so the old 18 skipped 48 of 53 setups and kept only the shallowest. 40pt covers ~p60. Note ~35pt ≈ ₹1,400 premium risk on 1 lot.", default: "40", subheader: "Risk (fixed stop, fixed target)" },
 
       // ── Sizing & day-level breakers ──
       { key: "TDS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1", subheader: "Sizing & Day Breakers" },
-      { key: "TDS_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day. Friction is per-trade, so fewer is usually better.", default: "2" },
-      { key: "TDS_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many REAL stop-outs (0 = off). Breakeven and time-stop exits do not count.", default: "2" },
-      { key: "TDS_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off). Raised with the stop cap — at 1500 a single 40pt stop-out ends the day, making the trade budget a dead letter.", default: "3000" },
       { key: "TDS_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off). Giving profit back is what wrecks a steady curve.", default: "3000" },
-      { key: "TDS_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
 
       // ── Backtest ──
       { key: "TDS_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
@@ -435,10 +324,8 @@ const SETTINGS_SCHEMA = [
     nav: "HA SCALP",
     group: "NIFTY",
     fields: [
-      // ── Enable / live gating ──
-      { key: "HA_SCALP_PAPER_ENABLED", label: "HA Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new HA Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
-      { key: "HA_SCALP_LIVE_ENABLED", label: "HA Scalp Live Orders (gates /ha-scalp-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
-      { key: "HA_SCALP_LIVE_DRY_RUN", label: "HA Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+      // ── Enable ──
+      { key: "HA_SCALP_PAPER_ENABLED", label: "HA Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new HA Scalp paper sessions.", default: "true", subheader: "Mode" },
 
       // ── The chart ──
       { key: "HA_SCALP_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["3", "5", "10", "15", "30", "60"], effect: EFFECT.SESSION, desc: "The chart the rules were read off. 15 minutes is the strategy as specified — the repo-wide 5-min default does not apply here.", default: "15", subheader: "The chart (Heikin Ashi, NIFTY 50 spot)" },
@@ -455,34 +342,19 @@ const SETTINGS_SCHEMA = [
       { key: "HA_SCALP_MIN_BODY_PTS", label: "Minimum Candle Body (pts)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A body smaller than this is not a strength candle. Without it, a flat candle satisfies \"no wick\" trivially.", default: "5" },
 
       // ── Exits ──
-      { key: "HA_SCALP_EXIT_ON_DOJI", label: "Exit on a Doji Candle", type: "toggle", effect: EFFECT.SESSION, desc: "A doji warns of a trend reversal — close the trade. Colour is irrelevant: a doji ends the trend question either way.", default: "true", subheader: "Exits (there is NO fixed target)" },
-      { key: "HA_SCALP_DOJI_BODY_PCT", label: "Doji Body (% of range or less)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A candle whose body is this small a share of its range counts as a doji.", default: "20" },
-      { key: "HA_SCALP_EXIT_ON_WEAK", label: "Exit on a Weak or Opposite Candle", type: "toggle", effect: EFFECT.SESSION, desc: "The trend is fading — close the trade. Covers both an opposite-coloured candle and a same-coloured one whose body has shrunk.", default: "true" },
-      { key: "HA_SCALP_WEAK_BODY_PCT", label: "Weak Body (% of range)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A same-direction candle with a body below this share of its range is weak. Must sit above the doji threshold to mean anything separate.", default: "40" },
+      { key: "HA_SCALP_DOJI_BODY_PCT", label: "Doji Body (% of range or less)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A candle whose body is this small a share of its range counts as a doji.", default: "20", subheader: "Exits (there is NO fixed target)" },
 
       // ── Window ──
       { key: "HA_SCALP_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "Where the session's bars start being counted (IST).", default: "09:15", subheader: "Session window" },
       { key: "HA_SCALP_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST).", default: "09:30" },
       { key: "HA_SCALP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "15:00" },
-      { key: "HA_SCALP_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST). A trade no candle rule has closed is closed here.", default: "15:15" },
 
       // ── Risk ──
-      { key: "HA_SCALP_SL_BUFFER_PTS", label: "Stop Buffer Beyond the Candle Extreme (pts)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop sits this far past the signal candle's raw high/low, so a one-tick poke does not take it out. 0 = exactly on the candle's extreme, as the rule states. Default 15: paper trades with a 6–18pt stop were hit by normal noise within minutes.", default: "15", subheader: "Risk" },
-      { key: "HA_SCALP_MAX_SL_PTS", label: "Max Stop Distance (pts, 0 = off)", type: "number", min: 0, max: 500, step: 5, effect: EFFECT.SESSION, desc: "Skip the setup when the signal candle's extreme is further away than this. OFF by default: the rule says that candle IS the stop, however wide.", default: "0" },
-      { key: "HA_SCALP_MAX_MA_DIST_PTS", label: "Max Distance From the MA (pts, 0 = off)", type: "number", min: 0, max: 1000, step: 10, effect: EFFECT.SESSION, desc: "Skip the setup when the raw close is further than this from the trend MA — the move is already stretched. Default 150: every paper entry 150–220pt from the 50 SMA lost.", default: "150" },
-      { key: "HA_SCALP_TRAIL_ENABLED", label: "Breakeven + Trailing Stop", type: "boolean", effect: EFFECT.SESSION, desc: "Move the stop up as the trade goes your way, instead of leaving it frozen on the signal candle. Turn OFF for the original rule where the stop never moves.", default: "true", subheader: "Breakeven + Trail" },
-      { key: "HA_SCALP_BREAKEVEN_PTS", label: "Breakeven After (pts, 0 = off)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "Once spot has moved this far your way, the stop jumps to your entry — the trade can no longer become a full loss.", default: "20" },
-      { key: "HA_SCALP_PREMIUM_BREAKEVEN_ENABLED", label: "Use the Global +% Premium Breakeven", type: "boolean", effect: EFFECT.SESSION, desc: "Also apply the all-strategies premium breakeven (Security & Safety → Breakeven Stop). OFF by default: at +5% it armed on noise and turned 7 HA Scalp trades into ~Rs80 charge-only losses; this strategy's own spot breakeven above covers it.", default: "false" },
-      { key: "HA_SCALP_TRAIL_START_PTS", label: "Start Trailing After (pts)", type: "number", min: 0, max: 300, step: 1, effect: EFFECT.SESSION, desc: "Once spot has moved this far your way, the stop starts following the best price instead of sitting at breakeven.", default: "25" },
-      { key: "HA_SCALP_TRAIL_PTS", label: "Trail Distance (pts, 0 = off)", type: "number", min: 0, max: 300, step: 1, effect: EFFECT.SESSION, desc: "How far behind the best spot the trailing stop sits. Smaller locks in more but gets hit sooner.", default: "20" },
+      { key: "HA_SCALP_MAX_MA_DIST_PTS", label: "Max Distance From the MA (pts, 0 = off)", type: "number", min: 0, max: 1000, step: 10, effect: EFFECT.SESSION, desc: "Skip the setup when the raw close is further than this from the trend MA — the move is already stretched. Default 150: every paper entry 150–220pt from the 50 SMA lost.", default: "150", subheader: "Risk" },
 
       // ── Sizing & day-level breakers ──
       { key: "HA_SCALP_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1", subheader: "Sizing & Day Breakers" },
-      { key: "HA_SCALP_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "3" },
-      { key: "HA_SCALP_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many stop-outs (0 = off).", default: "2" },
-      { key: "HA_SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off).", default: "3000" },
       { key: "HA_SCALP_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
-      { key: "HA_SCALP_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
 
       // ── Data plumbing ──
       { key: "HA_SCALP_POLL_MS", label: "Option Premium Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option premium is refreshed while a trade is open. Spot comes from the shared tick socket, so nothing else is polled.", default: "2000", subheader: "Data plumbing" },
@@ -499,10 +371,8 @@ const SETTINGS_SCHEMA = [
     nav: "PREV ORB SCALP",
     group: "NIFTY",
     fields: [
-      // ── Enable / live gating ──
-      { key: "PREV_ORB_SCALP_PAPER_ENABLED", label: "Prev ORB Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Prev ORB Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
-      { key: "PREV_ORB_SCALP_LIVE_ENABLED", label: "Prev ORB Scalp Live Orders (gates /prev-orb-scalp-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
-      { key: "PREV_ORB_SCALP_LIVE_DRY_RUN", label: "Prev ORB Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+      // ── Enable ──
+      { key: "PREV_ORB_SCALP_PAPER_ENABLED", label: "Prev ORB Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Prev ORB Scalp paper sessions.", default: "true", subheader: "Mode" },
 
       // ── The chart ──
       { key: "PREV_ORB_SCALP_RESOLUTION", label: "Entry Candle Timeframe (min)", type: "select", options: ["1", "3", "5"], effect: EFFECT.SESSION, desc: "The small candle used to spot the breakout and to trail the stop. 3 minutes is the strategy as specified.", default: "3", subheader: "The chart (NIFTY 50 spot)" },
@@ -512,14 +382,9 @@ const SETTINGS_SCHEMA = [
       // ── Window ──
       { key: "PREV_ORB_SCALP_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "Where the opening candle starts (IST).", default: "09:15", subheader: "Session window" },
       { key: "PREV_ORB_SCALP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
-      { key: "PREV_ORB_SCALP_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST). A trade still open is closed here.", default: "15:15" },
-
-      // ── Exits ──
-      { key: "PREV_ORB_SCALP_TRAIL_AFTER_TARGET", label: "Trail After Target", type: "boolean", effect: EFFECT.SESSION, desc: "ON = when the target is hit, the stop moves up to the target and then follows each closed candle's low (CE) or high (PE), so a big move can keep running. OFF = exit right at the target.", default: "true", subheader: "Exits" },
 
       // ── Sizing & breakers ──
       { key: "PREV_ORB_SCALP_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1", subheader: "Sizing & Breakers" },
-      { key: "PREV_ORB_SCALP_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
 
       // ── Data plumbing ──
       { key: "PREV_ORB_SCALP_POLL_MS", label: "Option Premium Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option premium is refreshed while a trade is open. Spot comes from the shared tick socket, so nothing else is polled.", default: "2000", subheader: "Data plumbing" },
@@ -536,10 +401,8 @@ const SETTINGS_SCHEMA = [
     nav: "EARLYBIRD",
     group: "NIFTY",
     fields: [
-      // ── Enable / live gating ──
-      { key: "EARLYBIRD_PAPER_ENABLED", label: "EarlyBird Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EarlyBird paper sessions.", default: "true", subheader: "Mode & Live" },
-      { key: "EARLYBIRD_LIVE_ENABLED", label: "EarlyBird Live Orders (gates /early-bird-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live CASH EQUITY orders via Fyers. NEVER traded — paper-validate first, then diff a recorded session in /replay.", default: "false" },
-      { key: "EARLYBIRD_LIVE_DRY_RUN", label: "EarlyBird Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+      // ── Enable ──
+      { key: "EARLYBIRD_PAPER_ENABLED", label: "EarlyBird Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EarlyBird paper sessions.", default: "true", subheader: "Mode" },
 
       // ── The signal candle ──
       // ── What to trade ──
@@ -559,23 +422,16 @@ const SETTINGS_SCHEMA = [
 
       // ── Entry / stop / target ──
       { key: "EARLYBIRD_ENTRY_BUFFER_PTS", label: "Entry / Stop Buffer (₹)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "How far past the signal candle the pending order and the stop sit — \"a little above the breakout candle\". Applied to BOTH ends: entry beyond the extreme, stop beyond the other extreme.", default: "5", subheader: "Entry, stop and target" },
-      { key: "EARLYBIRD_TARGET_RR", label: "Target Reward:Risk", type: "number", min: 0.1, max: 20, step: 0.5, effect: EFFECT.SESSION, desc: "Book profit at this multiple of the actual risk. 2 = the 1:2 in the rules; set 1 for the 1:1 the rules also allow.", default: "2" },
-      { key: "EARLYBIRD_MAX_SL_PTS", label: "Big-Candle Threshold (₹, 0 = off)", type: "number", min: 0, max: 1000, step: 5, effect: EFFECT.SESSION, desc: "When the wick-to-wick risk is wider than this, the stop moves off the wick and onto the candle's BODY edge (open/close) instead — the \"if the breakout candle is too big, ignore the wick\" rule. It can only ever tighten the stop.", default: "60" },
 
       // ── Session window ──
       { key: "EARLYBIRD_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "Where the day's first candle begins (IST). This is the signal candle.", default: "09:15", subheader: "Session window" },
       { key: "EARLYBIRD_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST) — the signal candle has just closed.", default: "09:30" },
       { key: "EARLYBIRD_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST). The rule is 10:45; a pending order not triggered by then is cancelled.", default: "10:45" },
-      { key: "EARLYBIRD_FORCED_EXIT", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off (IST). The rule is \"exit at 1 pm\" — anything still open closes at market here.", default: "13:00" },
 
       // ── Sizing & day breakers ──
       { leg: "stock", key: "EARLYBIRD_QTY", label: "Quantity per Stock (shares)", type: "number", min: 1, max: 100000, step: 1, effect: EFFECT.INSTANT, desc: "Shares per position. This is CASH EQUITY, not options — there are no lots.", default: "100", subheader: "Sizing & Day Breakers" },
       { leg: "stock", key: "EARLYBIRD_MAX_CONCURRENT", label: "Max Positions At Once", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many stocks may be held simultaneously. When more confirm than this, the tightest-stop names are taken first.", default: "5" },
-      { key: "EARLYBIRD_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day across all stocks.", default: "5" },
-      { key: "EARLYBIRD_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many stop-outs (0 = off).", default: "3" },
-      { key: "EARLYBIRD_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off). Note 100 shares of a ₹3,000 stock is a ₹300,000 position — size this deliberately.", default: "5000" },
       { key: "EARLYBIRD_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
-      { key: "EARLYBIRD_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 500000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
 
       // ── Data plumbing ──
       { key: "EARLYBIRD_POLL_MS", label: "Stock Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the shortlisted stocks' prices are refreshed while setups are pending or positions are open.", default: "2000", subheader: "Data plumbing" },
@@ -600,7 +456,7 @@ const SETTINGS_SCHEMA = [
       { key: "EARLYBIRD_BT_CONCURRENCY", label: "Backtest Fetch Concurrency", type: "number", min: 1, max: 16, step: 1, effect: EFFECT.BACKTEST, desc: "How many symbols' history are fetched in parallel during a backtest. Higher is faster but risks Fyers rate limits.", default: "4" },
       { key: "EARLYBIRD_BT_RPS", label: "Backtest Fetch Rate (per second)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Fyers meters history requests per second. Lower this if a wide-range run starts failing.", default: "8" },
       { key: "EARLYBIRD_BT_RPM", label: "Backtest Fetch Rate (per minute)", type: "number", min: 1, max: 2000, step: 10, effect: EFFECT.BACKTEST, desc: "The second Fyers history window. Both this and the per-second cap are honoured.", default: "180" },
-      { key: "EARLYBIRD_BT_MAX_SYMBOL_DAYS", label: "Backtest Memory Ceiling (symbol-days)", type: "number", min: 100, max: 2000000, step: 1000, effect: EFFECT.BACKTEST, desc: "Largest run allowed, measured as symbols × trading days. The backtest holds every symbol's candles in memory at once, and this process runs with a 620 MB heap shared with live sessions — an oversized run would make PM2 restart the whole bot. 60000 ≈ one year of the full FNO universe (~186 MB of candles) or ~4 years of NIFTY50. Raise it only on a larger machine.", default: "60000" },
+      { key: "EARLYBIRD_BT_MAX_SYMBOL_DAYS", label: "Backtest Memory Ceiling (symbol-days)", type: "number", min: 100, max: 2000000, step: 1000, effect: EFFECT.BACKTEST, desc: "Largest run allowed, measured as symbols × trading days. The backtest holds every symbol's candles in memory at once, and this process runs with a 620 MB heap shared with running sessions — an oversized run would make PM2 restart the whole bot. 60000 ≈ one year of the full FNO universe (~186 MB of candles) or ~4 years of NIFTY50. Raise it only on a larger machine.", default: "60000" },
       { key: "EARLYBIRD_BT_CACHE_DAYS", label: "Backtest Cache Retention (days)", type: "number", min: 1, max: 365, step: 1, effect: EFFECT.BACKTEST, desc: "How long a cached history file survives before it is re-fetched.", default: "30" },
       { key: "EARLYBIRD_BT_DAILY_LOOKBACK_DAYS", label: "Backtest prevClose Lookback (days)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.BACKTEST, desc: "How far back the daily series is pulled so every simulated day has a previous close for the gap rule, even after a long holiday.", default: "10" },
 
@@ -622,10 +478,8 @@ const SETTINGS_SCHEMA = [
     nav: "SIMPLE 9:30",
     group: "NIFTY",
     fields: [
-      // ── Enable / live gating ──
-      { key: "SIMPLE930_PAPER_ENABLED", label: "SIMPLE_9:30 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new SIMPLE_9:30 paper sessions.", default: "true", subheader: "Mode & Live" },
-      { key: "SIMPLE930_LIVE_ENABLED", label: "SIMPLE_9:30 Live Orders (gates /simple930-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded, paper or live — paper-validate first, then diff a recorded session in /replay.", default: "false" },
-      { key: "SIMPLE930_LIVE_DRY_RUN", label: "SIMPLE_9:30 Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+      // ── Enable ──
+      { key: "SIMPLE930_PAPER_ENABLED", label: "SIMPLE_9:30 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new SIMPLE_9:30 paper sessions.", default: "true", subheader: "Mode" },
 
       // ── The 09:25 pick ──
       { key: "SIMPLE930_SELECTION_TIME", label: "Selection Time (the chain is quoted once)", type: "time", effect: EFFECT.SESSION, desc: "The single instant (IST) the ITM ladder is quoted and the day's two candidates — one CE, one PE — are frozen. It never re-picks: a watchlist that drifts with spot could not be re-derived by Replay.", default: "09:25", subheader: "The 09:25 pick" },
@@ -638,23 +492,9 @@ const SETTINGS_SCHEMA = [
       { key: "SIMPLE930_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "If neither watchlist leg has cleared the trigger by this time (IST) there is no trade today — nothing re-arms later in the session.", default: "09:35" },
       { key: "SIMPLE930_SUSTAIN_POLLS", label: "Quotes Above the Trigger Before Entering", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "1 = enter on the first quote above the trigger, which is the rule as written. Higher demands that many CONSECUTIVE quotes above it before buying — fewer one-print fakeouts, but every extra quote costs a poll interval of the move.", default: "1" },
 
-      // ── Risk ──
-      { key: "SIMPLE930_SL_PTS", label: "Stop Distance off the Fill (pts)", type: "number", min: 0.5, max: 500, step: 0.5, effect: EFFECT.SESSION, desc: "A DISTANCE below the ACTUAL fill, not a fixed level: filled at 181 gives a stop at 161, filled at 186 gives 166. Anchoring it to the trigger instead would hand a slipped fill a wider stop than the rule allows.", default: "20" },
-      { key: "SIMPLE930_TRAIL_ENABLED", label: "Trail the Stop", type: "toggle", effect: EFFECT.SESSION, desc: "Ratchet the stop up behind the highest premium seen since entry. Off leaves the initial stop where it was placed for the life of the trade.", default: "true" },
-      { key: "SIMPLE930_TRAIL_PTS", label: "Trail Distance Behind the Peak (pts)", type: "number", min: 0.5, max: 500, step: 0.5, effect: EFFECT.SESSION, desc: "How far under the highest premium seen since entry the trail sits: peak 200 gives a stop at 180. It only ever ratchets UP and never drops below the initial stop.", default: "20" },
-      { key: "SIMPLE930_TRAIL_ARM_AT_BAND_UP", label: "Arm the Trail Only at the Box Top", type: "toggle", effect: EFFECT.SESSION, desc: "Keep the trail parked until the premium actually touches the top of the sideways box (Trigger + Band Up Offset). Until then the flat stop is the only risk. Off makes the trail live from the fill, which turns a 20pt stop into a much tighter one on the first rupee of noise.", default: "true" },
-      { key: "SIMPLE930_SIDEWAYS_CHECK", label: "Sideways Check Time", type: "time", effect: EFFECT.SESSION, desc: "At this time (IST) a trade still boxed inside the band below is closed at market, whatever the P&L — it spent the whole move going nowhere. A trade that already left the box is left alone and the trail owns it from there.", default: "09:45" },
-      { key: "SIMPLE930_BAND_UP_OFFSET", label: "Sideways Band — Upper Offset (pts above trigger)", type: "number", min: 0, max: 2000, step: 5, effect: EFFECT.SESSION, desc: "Upper edge of the box, resolved as trigger + this — 220 at the defaults. Touching it counts as leaving the box, so the 09:45 exit stops applying. Setting it to 0 puts the box top ON the trigger, and since every fill is above the trigger the trade counts as expanded immediately — that DISABLES the 09:45 sideways exit entirely. Use 0 only if that is what you want.", default: "40" },
-      { key: "SIMPLE930_BAND_DOWN_OFFSET", label: "Sideways Band — Lower Offset (pts below trigger)", type: "number", min: 0, max: 2000, step: 5, effect: EFFECT.SESSION, desc: "Lower edge of the box, resolved as trigger − this — 160 at the defaults. Honest caveat: with a 20pt stop the trade is already out at fill−20 long before the premium can fall this far, so this edge is unreachable in practice. It becomes live only once the stop is widened past the offset.", default: "20" },
-      { key: "SIMPLE930_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST) for a trade that expanded out of the box and that the trail never took out.", default: "15:15" },
-
       // ── Optional guards. Both default to 0 = OFF so the engine ships doing exactly what the rule says. ──
       { key: "SIMPLE930_MAX_PREMIUM_DIST", label: "Max Premium Distance from the Trigger (₹, 0 = off)", type: "number", min: 0, max: 5000, step: 5, effect: EFFECT.SESSION, desc: "0 = off, the default. When set, a side whose nearest strike is further than this from the trigger is not watched at all that day — no contract on that side is close enough for a break of the level to mean anything.", default: "0", subheader: "Optional guards (all OFF by default)" },
       { key: "SIMPLE930_MIN_PREMIUM", label: "Minimum Candidate Premium (₹, 0 = off)", type: "number", min: 0, max: 5000, step: 5, effect: EFFECT.SESSION, desc: "0 = off, the default. Rungs quoting cheaper than this are thrown out of the 09:25 ladder before the pick is made, so a near-worthless contract cannot win the search on a thin quote.", default: "0" },
-
-      // ── Sizing & day-level breakers ──
-      { key: "SIMPLE930_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "The rule is one trade a day — the entry window shuts at 09:35 and nothing re-arms after it, so raising this only bites if the window is widened too.", default: "1", subheader: "Sizing & Day Breakers" },
-      { key: "SIMPLE930_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off).", default: "0" },
 
       // ── Data plumbing ──
       { key: "SIMPLE930_POLL_MS", label: "Option Premium Poll (ms)", type: "number", min: 250, max: 15000, step: 250, effect: EFFECT.SESSION, desc: "How often the two watchlist premiums are fetched. This is the granularity the trigger AND every exit are checked at — the shared tick socket carries the INDEX, and every decision this strategy makes is read off an option premium.", default: "1000", subheader: "Data plumbing" },
@@ -670,10 +510,8 @@ const SETTINGS_SCHEMA = [
     nav: "RSI PIVOT ST",
     group: "NIFTY",
     fields: [
-      // ── Enable / live gating ──
-      { key: "RSI_PIVOT_ST_PAPER_ENABLED", label: "RSI Pivot ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new RSI Pivot ST paper sessions.", default: "true", subheader: "Mode & Live" },
-      { key: "RSI_PIVOT_ST_LIVE_ENABLED", label: "RSI Pivot ST Live Orders (gates /rsi-pivot-st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
-      { key: "RSI_PIVOT_ST_LIVE_DRY_RUN", label: "RSI Pivot ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on — the broker call is logged but no real order is sent.", default: "false" },
+      // ── Enable ──
+      { key: "RSI_PIVOT_ST_PAPER_ENABLED", label: "RSI Pivot ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new RSI Pivot ST paper sessions.", default: "true", subheader: "Mode" },
 
       // ── The entry rule ──
       { key: "RSI_PIVOT_ST_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "15"], effect: EFFECT.SESSION, desc: "Which candle decides. Entries are taken only on a CLOSED candle of this size — 5-min is the rule as written.", default: "5", subheader: "Signal (RSI + Pivot cross)" },
@@ -687,7 +525,6 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_PIVOT_ST_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "When the strategy starts watching candles for the day (IST).", default: "09:15", subheader: "Session window" },
       { key: "RSI_PIVOT_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST). The first candles of the day are noisy and often break a pivot for no reason.", default: "09:30" },
       { key: "RSI_PIVOT_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST) — too late in the day for a fresh trade to work out.", default: "15:00" },
-      { key: "RSI_PIVOT_ST_EXIT_TIME", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Everything still open is closed at this time (IST). Nothing is carried overnight.", default: "15:15" },
 
       // ── Strike ──
       { key: "RSI_PIVOT_ST_STRIKE_MODE", label: "Which Strike to Buy", type: "select", options: ["ATM", "ITM", "OTM"], effect: EFFECT.SESSION, desc: "Which strike to buy. ATM = nearest to spot. OTM = 1% of spot away from the money (cheaper, needs a bigger move). ITM = 1% into the money (costlier, moves more with spot).", default: "OTM", subheader: "Strike" },
@@ -697,13 +534,6 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_PIVOT_ST_ST_PERIOD", label: "SuperTrend Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.", default: "10", subheader: "Stops" },
       { key: "RSI_PIVOT_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.", default: "2" },
       { key: "RSI_PIVOT_ST_ST_SIDES", label: "SuperTrend Stop Applies To", type: "select", options: [{ value: "CE", label: "CE only (original rule)" }, { value: "BOTH", label: "Both CE and PE" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no SuperTrend stop)" }], effect: EFFECT.SESSION, desc: "Which side uses the SuperTrend line as its stop and trail, on top of the premium stop. CE is the original rule. On PE the line is mirrored: it sits ABOVE price and a flip to bullish is the exit. A side that uses it also gains the \"SuperTrend must be on the right side of price\" entry check, so it takes FEWER trades; a side without it relies on the premium stop alone.", default: "CE" },
-      { key: "RSI_PIVOT_ST_PREMIUM_SL_PCT", label: "Premium Stop (% of option price)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Exit when the option price falls this far below its best price so far. 25 means: bought at 100, exit at 75; if it runs to 140, the exit rises to 105. Which sides use it is set by the toggle below.", default: "25" },
-      { key: "RSI_PIVOT_ST_PREMIUM_SL_SIDES", label: "Premium Stop Applies To", type: "select", options: [{ value: "BOTH", label: "Both CE and PE" }, { value: "CE", label: "CE only" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no premium stop)" }], effect: EFFECT.SESSION, desc: "Which side carries the premium stop. WARNING: PE has no other stop — it never uses the SuperTrend — so choosing \"CE only\" or \"Neither\" leaves every PE trade with NO stop at all, and the 15:15 square-off becomes its only exit. The same is true for CE if you also switch the SuperTrend stop off above. The engine still takes those trades but warns loudly in the log.", default: "BOTH" },
-
-      // ── Sizing & day-level breakers ──
-      { key: "RSI_PIVOT_ST_MAX_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day. The pivot levels are fixed all day, so a handful of crosses is all this rule can honestly produce.", default: "5", subheader: "Sizing & Day Breakers" },
-      { key: "RSI_PIVOT_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the day after this much loss (0 = off).", default: "5000" },
-      { key: "RSI_PIVOT_ST_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the week after this much loss across Mon–today (0 = off). Read from the day files, so it survives a restart.", default: "0" },
 
       // ── Backtest ──
       { key: "RSI_PIVOT_ST_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "2", subheader: "Backtest" },
@@ -722,10 +552,8 @@ const SETTINGS_SCHEMA = [
       // to both. The index-level constants (strike grid, lot size, expiry)
       // are NOT here — they live in the NIFTY BANK block of
       // Instrument & Backtest, shared by every NIFTY BANK strategy.
-      // ── Enable / live gating ──
-      { key: "BN_PIVOT_RSI_ST_PAPER_ENABLED", label: "BN Pivot RSI ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new BN Pivot RSI ST paper sessions.", default: "true", subheader: "Mode & Live" },
-      { key: "BN_PIVOT_RSI_ST_LIVE_ENABLED", label: "BN Pivot RSI ST Live Orders (gates /bn-pivot-rsi-st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
-      { key: "BN_PIVOT_RSI_ST_LIVE_DRY_RUN", label: "BN Pivot RSI ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on — the broker call is logged but no real order is sent.", default: "false" },
+      // ── Enable ──
+      { key: "BN_PIVOT_RSI_ST_PAPER_ENABLED", label: "BN Pivot RSI ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new BN Pivot RSI ST paper sessions.", default: "true", subheader: "Mode" },
 
       // ── The entry rule ──
       { key: "BN_PIVOT_RSI_ST_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "15"], effect: EFFECT.SESSION, desc: "Which candle decides. Entries are taken only on a CLOSED candle of this size — 5-min is the rule as written.", default: "5", subheader: "Signal (RSI + Pivot cross)" },
@@ -739,7 +567,6 @@ const SETTINGS_SCHEMA = [
       { key: "BN_PIVOT_RSI_ST_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "When the strategy starts watching candles for the day (IST).", default: "09:15", subheader: "Session window" },
       { key: "BN_PIVOT_RSI_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST). The first candles of the day are noisy and often break a pivot for no reason.", default: "09:30" },
       { key: "BN_PIVOT_RSI_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST) — too late in the day for a fresh trade to work out.", default: "15:00" },
-      { key: "BN_PIVOT_RSI_ST_EXIT_TIME", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Everything still open is closed at this time (IST). Nothing is carried overnight.", default: "15:15" },
 
       // ── Strike ──
       { key: "BN_PIVOT_RSI_ST_STRIKE_MODE", label: "Which Strike to Buy", type: "select", options: ["ATM", "ITM", "OTM"], effect: EFFECT.SESSION, desc: "Which strike to buy. ATM = nearest to spot. OTM = 1% of spot away from the money (cheaper, needs a bigger move). ITM = 1% into the money (costlier, moves more with spot).", default: "OTM", subheader: "Strike" },
@@ -749,13 +576,6 @@ const SETTINGS_SCHEMA = [
       { key: "BN_PIVOT_RSI_ST_ST_PERIOD", label: "SuperTrend Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.", default: "10", subheader: "Stops" },
       { key: "BN_PIVOT_RSI_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.", default: "2" },
       { key: "BN_PIVOT_RSI_ST_ST_SIDES", label: "SuperTrend Stop Applies To", type: "select", options: [{ value: "CE", label: "CE only (original rule)" }, { value: "BOTH", label: "Both CE and PE" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no SuperTrend stop)" }], effect: EFFECT.SESSION, desc: "Which side uses the SuperTrend line as its stop and trail, on top of the premium stop. CE is the original rule. On PE the line is mirrored: it sits ABOVE price and a flip to bullish is the exit. A side that uses it also gains the \"SuperTrend must be on the right side of price\" entry check, so it takes FEWER trades; a side without it relies on the premium stop alone.", default: "CE" },
-      { key: "BN_PIVOT_RSI_ST_PREMIUM_SL_PCT", label: "Premium Stop (% of option price)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Exit when the option price falls this far below its best price so far. 25 means: bought at 100, exit at 75; if it runs to 140, the exit rises to 105. Which sides use it is set by the toggle below.", default: "25" },
-      { key: "BN_PIVOT_RSI_ST_PREMIUM_SL_SIDES", label: "Premium Stop Applies To", type: "select", options: [{ value: "BOTH", label: "Both CE and PE" }, { value: "CE", label: "CE only" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no premium stop)" }], effect: EFFECT.SESSION, desc: "Which side carries the premium stop. WARNING: PE has no other stop — it never uses the SuperTrend — so choosing \"CE only\" or \"Neither\" leaves every PE trade with NO stop at all, and the 15:15 square-off becomes its only exit. The same is true for CE if you also switch the SuperTrend stop off above. The engine still takes those trades but warns loudly in the log.", default: "BOTH" },
-
-      // ── Sizing & day-level breakers ──
-      { key: "BN_PIVOT_RSI_ST_MAX_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day. The pivot levels are fixed all day, so a handful of crosses is all this rule can honestly produce.", default: "5", subheader: "Sizing & Day Breakers" },
-      { key: "BN_PIVOT_RSI_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the day after this much loss (0 = off).", default: "5000" },
-      { key: "BN_PIVOT_RSI_ST_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the week after this much loss across Mon–today (0 = off). Read from the day files, so it survives a restart.", default: "0" },
 
       // ── Backtest ──
       { key: "BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "2", subheader: "Backtest" },
@@ -776,13 +596,11 @@ const SETTINGS_SCHEMA = [
       //
       // Everything here ships OFF. V2 is unproven: turn the Mode toggle on,
       // paper it for a stretch of sessions, and only then think about live.
-      // ── Enable / live gating ──
+      // ── Enable ──
       // The master EMA_RSI_ST_V2_MODE_ENABLED toggle (which hides this whole
       // section) lives in MENU VISIBILITY with every other strategy's, so all
       // the master switches sit together.
-      { key: "EMA_RSI_ST_V2_PAPER_ENABLED", label: "EMA_RSI_ST_V2 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EMA_RSI_ST_V2 paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode & Live" },
-      { key: "EMA_RSI_ST_V2_LIVE_ENABLED", label: "EMA_RSI_ST_V2 Live Orders (gates /ema_rsi_st_v2-live-harness/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false" },
-      { key: "EMA_RSI_ST_V2_LIVE_DRY_RUN", label: "EMA_RSI_ST_V2 Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep V2 simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+      { key: "EMA_RSI_ST_V2_PAPER_ENABLED", label: "EMA_RSI_ST_V2 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EMA_RSI_ST_V2 paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode" },
 
       // ── The entry rule: EMA alignment + RSI gate, on a closed candle ──
       { key: "EMA_RSI_ST_V2_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "The faster of the two moving averages. A CE needs it ABOVE the slow one, a PE below. Smaller reacts to a turn sooner and gives more (and noisier) signals; larger waits for a clearer trend.", default: "20", subheader: "Signal (EMA + RSI)" },
@@ -799,15 +617,10 @@ const SETTINGS_SCHEMA = [
       // ── Session window ──
       { key: "EMA_RSI_ST_V2_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST). V2 deliberately skips the open — the first hour is noisy and its crosses reverse. Move it earlier for more trades and more false starts.", default: "10:30", subheader: "Session window" },
       { key: "EMA_RSI_ST_V2_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries after this time (IST). A trade opened later has too little of the day left to work, and theta is eating it. A position already open is not affected.", default: "13:00" },
-      { key: "EMA_RSI_ST_V2_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight. Note V2 squares off at 14:00 — much earlier than most strategies — which caps both the loss and the run.", default: "14:00" },
       { key: "EMA_RSI_ST_V2_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so the EMAs, RSI and SuperTrend start the day already settled. Too few and the first signals are computed from half-formed indicators.", default: "5" },
 
       // ── Day-level guards ──
-      { key: "EMA_RSI_ST_V2_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day. 2 is deliberately tight — V2 is meant to take a couple of good crosses, not grind the session.", default: "2", subheader: "Day guards" },
-      { key: "EMA_RSI_ST_V2_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Raise it and a bad day can run further; lower it and one ordinary loser can end the session.", default: "1000" },
-      { key: "EMA_RSI_ST_V2_MAX_CONSEC_LOSSES", label: "Chop Guard (consecutive losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Halt for the day after this many losing trades back to back (0 = off) — the usual sign the market is chopping and every cross is a fake. Lower reacts sooner but also quits on ordinary bad luck.", default: "2" },
-      { key: "EMA_RSI_ST_V2_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After a stop-out, refuse the SAME side for this many candles (0 = off). Stops the engine re-buying the identical failed signal a minute later.", default: "2" },
-      { key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.", default: "true" },
+      { key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.", default: "true", subheader: "Day guards" },
       { key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "How many candles the opposite-side pause lasts. Longer means a genuine reversal is missed; shorter means whipsaw flips get through. Ignored when the toggle above is off.", default: "2" },
 
       // ── Backtest ──
@@ -829,9 +642,7 @@ const SETTINGS_SCHEMA = [
       //
       // Ships OFF and unproven: turn the Mode toggle on (MENU VISIBILITY) and
       // paper it for a stretch of sessions before thinking about live.
-      { key: "ST_RSI_PIV_BB_PAPER_ENABLED", label: "ST_RSI_PIV_BB Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new ST_RSI_PIV_BB paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode & Live" },
-      { key: "ST_RSI_PIV_BB_LIVE_ENABLED", label: "ST_RSI_PIV_BB Live Orders (gates /st_rsi_piv_bb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false" },
-      { key: "ST_RSI_PIV_BB_LIVE_DRY_RUN", label: "ST_RSI_PIV_BB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+      { key: "ST_RSI_PIV_BB_PAPER_ENABLED", label: "ST_RSI_PIV_BB Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new ST_RSI_PIV_BB paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode" },
 
       // ── Timeframe ──
       { key: "ST_RSI_PIV_BB_ENTRY_TF", label: "Entry Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min chart only" }, { value: "5", label: "5 — 5-min chart only" }, { value: "BOTH", label: "BOTH — 3-min AND the latest closed 5-min (default)" }], effect: EFFECT.SESSION, desc: "Which chart the four conditions are read on. 3 = the 3-min chart only. 5 = the 5-min chart only. BOTH = the 3-min candle must show 4/4 AND the latest closed 5-min candle must also show 4/4 for the same side — e.g. a 3-min candle closing at 09:48 is checked against the 5-min candle that closed at 09:45. The exit always runs on the trade chart: 3-min for 3 and BOTH, 5-min for 5. Takes effect at the next Start.", default: "BOTH", subheader: "Timeframe" },
@@ -848,12 +659,7 @@ const SETTINGS_SCHEMA = [
       // ── Session window ──
       { key: "ST_RSI_PIV_BB_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a candle that closes before this time (IST). The pivots are fixed before the open, so nothing else needs to settle — this only skips the opening noise.", default: "09:30", subheader: "Session window" },
       { key: "ST_RSI_PIV_BB_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a candle that closes after this time (IST). A position already open is not affected.", default: "15:00" },
-      { key: "ST_RSI_PIV_BB_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:15" },
       { key: "ST_RSI_PIV_BB_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so RSI, SuperTrend and the bands start the day settled. The engine needs about 25 candles on each chart it reads — 75 minutes of 3-min bars, 125 minutes of 5-min bars — so without warm-up the first signals would not come until late morning.", default: "3" },
-
-      // ── Day-level guards ──
-      { key: "ST_RSI_PIV_BB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3", subheader: "Day guards" },
-      { key: "ST_RSI_PIV_BB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.", default: "5000" },
     ],
   },
   {
@@ -873,9 +679,7 @@ const SETTINGS_SCHEMA = [
       //
       // Ships OFF and unproven: turn the Mode toggle on (MENU VISIBILITY) and
       // paper it for a stretch of sessions before thinking about live.
-      { key: "SAIL_VWAP_ST_PAPER_ENABLED", label: "SAIL_VWAP_ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new SAIL_VWAP_ST paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode & Live" },
-      { key: "SAIL_VWAP_ST_LIVE_ENABLED", label: "SAIL_VWAP_ST Live Orders (gates /sail_vwap_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real SAIL option orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false" },
-      { key: "SAIL_VWAP_ST_LIVE_DRY_RUN", label: "SAIL_VWAP_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+      { key: "SAIL_VWAP_ST_PAPER_ENABLED", label: "SAIL_VWAP_ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new SAIL_VWAP_ST paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode" },
 
       // ── Chart & signal ──
       { key: "SAIL_VWAP_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles" }, { value: "5", label: "5 — 5-min candles (default)" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which SAIL candle the whole strategy reads — the VWAP cross, the breakout and the SuperTrend stop all run on this one chart. Example: at 5, a cross candle closing at 10:05 can be confirmed by the 10:10, 10:15 or 10:20 candle. Takes effect at the next Start.", default: "5", subheader: "Chart & signal" },
@@ -886,14 +690,10 @@ const SETTINGS_SCHEMA = [
       // ── Session window ──
       { key: "SAIL_VWAP_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). Skips the opening minutes, when the day's VWAP is built from only a few candles.", default: "09:30", subheader: "Session window" },
       { key: "SAIL_VWAP_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:30" },
-      { key: "SAIL_VWAP_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is sold at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:15" },
       { key: "SAIL_VWAP_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of SAIL candles are loaded before the session so the SuperTrend starts the day settled (VWAP restarts every day and needs no warm-up). Example: at 2, a 09:15 start already has two full days of 5-min candles behind it and can trade from the first close.", default: "2" },
 
       // ── Size & day guards ──
       { key: "SAIL_VWAP_ST_LOTS", label: "Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.", default: "1", subheader: "Size & day guards" },
-      { key: "SAIL_VWAP_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day. The rule is one trade a day — after the first exit, the strategy waits for tomorrow.", default: "1" },
-      { key: "SAIL_VWAP_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, a loss of ₹1.10 per share on 4,700 shares (₹5,170) ends the day.", default: "5000" },
-      { key: "SAIL_VWAP_ST_OPT_STOP_PCT", label: "Option Premium Stop (fraction)", type: "number", min: 0, max: 0.9, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium falls this fraction below entry; 0 = off. Example: at 0.25, an option bought at ₹5.00 is sold if it drops to ₹3.75, even if the SuperTrend stop has not been hit.", default: "0.25" },
 
       // ── Backtest ── SAIL-scaled on purpose: the global BACKTEST_DELTA /
       // BACKTEST_THETA_DAY are sized for NIFTY and are nonsense on a ₹5 SAIL option.
@@ -915,9 +715,7 @@ const SETTINGS_SCHEMA = [
       // trailed on candle close only. Pivots = yesterday's daily H/L/C
       // (Traditional). Every key is its own PIVOT_EMA_ST_* key and every default
       // below equals the engine's code default (src/strategies/pivot_ema_st.js).
-      // Paper + Live harness only — no backtest page, not replayable.
-      { key: "PIVOT_EMA_ST_LIVE_ENABLED", label: "PIVOT_EMA_ST Live Orders (gates /pivot_ema_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false", subheader: "Live" },
-      { key: "PIVOT_EMA_ST_LIVE_DRY_RUN", label: "PIVOT_EMA_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+      // Paper only — no backtest page, not replayable.
 
       // ── Chart & signal ──
       { key: "PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which NIFTY candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
@@ -929,12 +727,7 @@ const SETTINGS_SCHEMA = [
       // ── Session window ──
       { key: "PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
       { key: "PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
-      { key: "PIVOT_EMA_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:00" },
       { key: "PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
-
-      // ── Day guards ──
-      { key: "PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3", subheader: "Day guards" },
-      { key: "PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.", default: "5000" },
     ],
   },
   {
@@ -946,9 +739,7 @@ const SETTINGS_SCHEMA = [
       // NIFTY BANK copy of PIVOT_EMA_ST — the same rules (src/strategies/pivot_ema_st.js)
       // on NSE:NIFTYBANK-INDEX, with its own BN_PIVOT_EMA_ST_* keys and its own
       // position, so it runs side by side with the NIFTY one.
-      // Paper + Live harness only — no backtest page, not replayable.
-      { key: "BN_PIVOT_EMA_ST_LIVE_ENABLED", label: "BN_PIVOT_EMA_ST Live Orders (gates /bn_pivot_ema_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real BANK NIFTY option orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false", subheader: "Live" },
-      { key: "BN_PIVOT_EMA_ST_LIVE_DRY_RUN", label: "BN_PIVOT_EMA_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+      // Paper only — no backtest page, not replayable.
 
       // ── Chart & signal ──
       { key: "BN_PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which NIFTY BANK candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
@@ -960,12 +751,7 @@ const SETTINGS_SCHEMA = [
       // ── Session window ──
       { key: "BN_PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
       { key: "BN_PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
-      { key: "BN_PIVOT_EMA_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:00" },
       { key: "BN_PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
-
-      // ── Day guards ──
-      { key: "BN_PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3", subheader: "Day guards" },
-      { key: "BN_PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.", default: "5000" },
     ],
   },
   {
@@ -978,9 +764,7 @@ const SETTINGS_SCHEMA = [
       // rules (src/strategies/pivot_ema_st.js) with their own SAIL_PIVOT_EMA_ST_*
       // keys. The SAIL contract itself (strike grid, lot size, expiry) lives in
       // Common → PER-INDEX CONFIGURATION → SAIL.
-      // Paper + Live harness only — no backtest page, not replayable.
-      { key: "SAIL_PIVOT_EMA_ST_LIVE_ENABLED", label: "SAIL_PIVOT_EMA_ST Live Orders (gates /sail_pivot_ema_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real SAIL option orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false", subheader: "Live" },
-      { key: "SAIL_PIVOT_EMA_ST_LIVE_DRY_RUN", label: "SAIL_PIVOT_EMA_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+      // Paper only — no backtest page, not replayable.
 
       // ── Chart & signal ──
       { key: "SAIL_PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which SAIL candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
@@ -992,13 +776,10 @@ const SETTINGS_SCHEMA = [
       // ── Session window ──
       { key: "SAIL_PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
       { key: "SAIL_PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
-      { key: "SAIL_PIVOT_EMA_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is sold at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:00" },
       { key: "SAIL_PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of SAIL candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
 
       // ── Size & day guards ──
       { key: "SAIL_PIVOT_EMA_ST_LOTS", label: "Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares, capped by MAX_LOT_MULTIPLIER. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.", default: "1", subheader: "Size & day guards" },
-      { key: "SAIL_PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3" },
-      { key: "SAIL_PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, a loss of ₹1.10 per share on 4,700 shares (₹5,170) ends the day.", default: "5000" },
     ],
   },
   {
@@ -1013,9 +794,7 @@ const SETTINGS_SCHEMA = [
       // Every key is its own GAP_RUNAWAY_* key; NO common rule applies (no profit
       // lock, breakeven, cooldown, spread check, trade window, lot multiplier or
       // capital pool). Defaults equal the engine's (src/strategies/gap_runaway.js).
-      // Paper + Live harness only — no backtest page, not replayable.
-      { key: "GAP_RUNAWAY_LIVE_ENABLED", label: "GAP_RUNAWAY Live Orders (gates /gap_runaway-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the live harness refuses to start in real-order mode.", default: "false" },
-      { key: "GAP_RUNAWAY_LIVE_DRY_RUN", label: "GAP_RUNAWAY Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order goes out.", default: "false" },
+      // Paper only — no backtest page, not replayable.
       { key: "GAP_RUNAWAY_REFERENCE_URL", label: "Reference Video", type: "text", effect: EFFECT.INSTANT, desc: "The YouTube video this strategy comes from — kept here to refer back to. Shown as a link on the NIFTY page. Changes nothing in the rules.", default: "https://www.youtube.com/watch?v=uLTaXTyDxiI", subheader: "Reference" },
 
       // ── Daily setup (yesterday's closed bar) ──
@@ -1028,9 +807,6 @@ const SETTINGS_SCHEMA = [
       // ── Entry & exits ──
       { key: "GAP_RUNAWAY_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "The day's one decision is made from this time (IST), once today's open is known.", default: "09:15", subheader: "Entry & exits" },
       { key: "GAP_RUNAWAY_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No entry after this time (IST). If the fill keeps failing until then, there is no trade today.", default: "09:30" },
-      { key: "GAP_RUNAWAY_EXIT_TF", label: "Trail Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles" }, { value: "5", label: "5 — 5-min candles (default)" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Candles the EMA trail is checked on. The trade exits when one of these candles CLOSES back through the trail EMA (CE: close below, PE: close above). Applies on the next Start.", default: "5" },
-      { key: "GAP_RUNAWAY_TRAIL_EMA_LENGTH", label: "Trail EMA Length", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "The trailing EMA on the trail candles. Separate from the daily EMA above, so changing the RSI smoothing never moves the trail.", default: "21" },
-      { key: "GAP_RUNAWAY_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "15:15" },
 
       // ── Size & capital (its own — the common ones do not apply) ──
       { key: "GAP_RUNAWAY_LOTS", label: "Lots", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "NIFTY lots per trade. This strategy's own count — the common Lot Multiplier does not apply. Example: 1 lot = 65 qty.", default: "1", subheader: "Size & capital" },
@@ -1058,9 +834,6 @@ const SETTINGS_SCHEMA = [
       // ── Entry & exits ──
       { key: "GAP_RUNAWAY_STK_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "The day's one decision is made from this time (IST), once today's open is known.", default: "09:15", subheader: "Entry & exits" },
       { key: "GAP_RUNAWAY_STK_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No entry after this time (IST). If the fill keeps failing until then, there is no trade today.", default: "09:30" },
-      { key: "GAP_RUNAWAY_STK_EXIT_TF", label: "Trail Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles" }, { value: "5", label: "5 — 5-min candles (default)" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Candles the EMA trail is checked on. The trade exits when one of these candles CLOSES back through the trail EMA (long: close below, short: close above). Applies on the next Start.", default: "5" },
-      { key: "GAP_RUNAWAY_STK_TRAIL_EMA_LENGTH", label: "Trail EMA Length", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "The trailing EMA on the trail candles. Separate from the daily EMA above, so changing the RSI smoothing never moves the trail.", default: "21" },
-      { key: "GAP_RUNAWAY_STK_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "15:15" },
 
       // ── Universe & size ──
       { key: "GAP_RUNAWAY_STK_UNIVERSE", label: "Stock List", type: "select", options: ["FNO", "NIFTY100", "NIFTY50"], effect: EFFECT.SESSION, desc: "Which stocks are scanned before 09:15. FNO = all F&O stocks (~220, about 75 s to scan). Lists can be edited in ~/trading-data/swing_scanner_universe.json.", default: "FNO", subheader: "Universe & size" },
@@ -1100,12 +873,10 @@ const SETTINGS_SCHEMA = [
       //
       // Everything here ships OFF. Turn the Mode toggle on, paper it for a run
       // of sessions, and only then think about live.
-      // ── Enable / live gating ──
+      // ── Enable ──
       // The master BN_EMA_RSI_ST_V2_MODE_ENABLED toggle (which hides this whole
       // section) lives in MENU VISIBILITY with every other strategy's.
-      { key: "BN_EMA_RSI_ST_V2_PAPER_ENABLED", label: "BN_EMA_RSI_ST_V2 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new NIFTY BANK paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode & Live" },
-      { key: "BN_EMA_RSI_ST_V2_LIVE_ENABLED", label: "BN_EMA_RSI_ST_V2 Live Orders (gates /bn_ema_rsi_st_v2-live-harness/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false" },
-      { key: "BN_EMA_RSI_ST_V2_LIVE_DRY_RUN", label: "BN_EMA_RSI_ST_V2 Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+      { key: "BN_EMA_RSI_ST_V2_PAPER_ENABLED", label: "BN_EMA_RSI_ST_V2 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new NIFTY BANK paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode" },
 
       // ── The entry rule: EMA alignment + RSI gate, on a closed candle ──
       { key: "BN_EMA_RSI_ST_V2_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "The faster of the two moving averages. A CE needs it ABOVE the slow one, a PE below. Smaller reacts to a turn sooner and gives more (and noisier) signals; larger waits for a clearer trend.", default: "20", subheader: "Signal (EMA + RSI)" },
@@ -1122,15 +893,10 @@ const SETTINGS_SCHEMA = [
       // ── Session window ──
       { key: "BN_EMA_RSI_ST_V2_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST). The open is deliberately skipped — the first hour is noisy and its crosses reverse, and BANKNIFTY's opening swing is the widest of the day. Move it earlier for more trades and more false starts.", default: "10:30", subheader: "Session window" },
       { key: "BN_EMA_RSI_ST_V2_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries after this time (IST). A trade opened later has too little of the day left to work. A position already open is not affected.", default: "13:00" },
-      { key: "BN_EMA_RSI_ST_V2_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight — which matters more here, because a monthly BANKNIFTY option held over a gap can move a long way before you can act on it.", default: "14:00" },
       { key: "BN_EMA_RSI_ST_V2_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so the EMAs, RSI and SuperTrend start the day already settled. Too few and the first signals are computed from half-formed indicators.", default: "5" },
 
       // ── Day-level guards ──
-      { key: "BN_EMA_RSI_ST_V2_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day. 2 is deliberately tight — the idea is a couple of good crosses, not grinding the session.", default: "2", subheader: "Day guards" },
-      { key: "BN_EMA_RSI_ST_V2_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Read this one carefully: ₹1,000 is the same number the NIFTY version uses, but BANKNIFTY swings about twice as far in a day, so the same ₹1,000 is hit by a much smaller move against you. Expect it to end sessions earlier here.", default: "1000" },
-      { key: "BN_EMA_RSI_ST_V2_MAX_CONSEC_LOSSES", label: "Chop Guard (consecutive losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Halt for the day after this many losing trades back to back (0 = off) — the usual sign the market is chopping and every cross is a fake. Lower reacts sooner but also quits on ordinary bad luck.", default: "2" },
-      { key: "BN_EMA_RSI_ST_V2_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After a stop-out, refuse the SAME side for this many candles (0 = off). Stops the engine re-buying the identical failed signal a minute later.", default: "2" },
-      { key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.", default: "true" },
+      { key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.", default: "true", subheader: "Day guards" },
       { key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "How many candles the opposite-side pause lasts. Longer means a genuine reversal is missed; shorter means whipsaw flips get through. Ignored when the toggle above is off.", default: "2" },
 
       // ── Backtest ──
@@ -1161,11 +927,7 @@ const SETTINGS_SCHEMA = [
       { key: "CMX_MIN_EMA_GAP_PCT", label: "Min EMA20–EMA50 Gap (% of price)", type: "number", min: 0, max: 1, step: 0.01, effect: EFFECT.INSTANT, desc: "Skip a signal when EMA20 and EMA50 are closer than this % of the price — they are almost touching, so there is no real trend. 0.03% ≈ 3 points on crude, 45 on gold. In Oct 2026 these trades won 4 of 27 and lost ₹17.9k. 0 = off.", default: "0.03", subheader: "Trend filter (every commodity page)" },
       { key: "CMX_RSI_CE_MAX", label: "Skip CE when RSI ≥", type: "number", min: 50, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Skip a CE signal when RSI is already this high — the move has run and the entry is late. 100 = off.", default: "63" },
       { key: "CMX_RSI_PE_MIN", label: "Skip PE when RSI ≤", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Skip a PE signal when RSI is already this low — the move has run and the entry is late. 0 = off.", default: "37" },
-      { key: "CMX_OPT_STOP_PCT", label: "Option Stop (% of premium)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Sell when the option premium falls this % below the buy price, on every commodity page (EMA_RSI_ST and V2). Example: bought at ₹200, 10% → out at ₹180. In Oct 2026 crude V2 losers ran to −20% before the SuperTrend stop. 0 = off.", default: "10", subheader: "Risk (every commodity page)" },
-      { key: "CMX_OPT_ROLL_DAYS", label: "Roll to Next Month (days before expiry)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Trade next month's options once this month's expire in this many days or fewer — premium melts fastest in the last days. Example: 2 → crude options expiring 15 Oct are dropped from 13 Oct. 0 = only skip expiry day. Takes effect on the next Start.", default: "2" },
-      { key: "CMX_CRUDE_MAX_DAILY_LOSS", label: "Crude Oil — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Extra daily loss cap for each Crude Oil page. The tighter of this and the strategy's Max Daily Loss applies. Crude lost ₹33k of the ₹37k Oct 2026 commodity loss. 0 = use the strategy cap only.", default: "1500" },
-      { key: "CMX_GOLD_MAX_DAILY_LOSS", label: "Gold — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Extra daily loss cap for each Gold page. The tighter of this and the strategy's Max Daily Loss applies. 0 = use the strategy cap only.", default: "0" },
-      { key: "CMX_SILVER_MAX_DAILY_LOSS", label: "Silver — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Extra daily loss cap for each Silver page. The tighter of this and the strategy's Max Daily Loss applies. 0 = use the strategy cap only.", default: "0" },
+      { key: "CMX_OPT_ROLL_DAYS", label: "Roll to Next Month (days before expiry)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Trade next month's options once this month's expire in this many days or fewer — premium melts fastest in the last days. Example: 2 → crude options expiring 15 Oct are dropped from 13 Oct. 0 = only skip expiry day. Takes effect on the next Start.", default: "2", subheader: "Risk (every commodity page)" },
     ],
   },
   {
@@ -1179,9 +941,6 @@ const SETTINGS_SCHEMA = [
       { key: "CMX_EMA_RSI_ST_LOTS", label: "EMA_RSI_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
       { key: "CMX_EMA_RSI_ST_ENTRY_START", label: "EMA_RSI_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
       { key: "CMX_EMA_RSI_ST_ENTRY_END", label: "EMA_RSI_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
-      { key: "CMX_EMA_RSI_ST_EOD_EXIT_TIME", label: "EMA_RSI_ST — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
-      { key: "CMX_EMA_RSI_ST_MAX_DAILY_TRADES", label: "EMA_RSI_ST — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day, on each commodity page.", default: "3" },
-      { key: "CMX_EMA_RSI_ST_MAX_DAILY_LOSS", label: "EMA_RSI_ST — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.", default: "5000" },
     ],
   },
   {
@@ -1195,9 +954,6 @@ const SETTINGS_SCHEMA = [
       { key: "CMX_EMA_RSI_ST_V2_LOTS", label: "EMA_RSI_ST_V2 — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
       { key: "CMX_EMA_RSI_ST_V2_ENTRY_START", label: "EMA_RSI_ST_V2 — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
       { key: "CMX_EMA_RSI_ST_V2_ENTRY_END", label: "EMA_RSI_ST_V2 — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
-      { key: "CMX_EMA_RSI_ST_V2_EOD_EXIT_TIME", label: "EMA_RSI_ST_V2 — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
-      { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_TRADES", label: "EMA_RSI_ST_V2 — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day, on each commodity page.", default: "3" },
-      { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_LOSS", label: "EMA_RSI_ST_V2 — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.", default: "5000" },
     ],
   },
   {
@@ -1213,9 +969,6 @@ const SETTINGS_SCHEMA = [
       { key: "CMX_PIVOT_EMA_ST_LOTS", label: "PIVOT_EMA_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
       { key: "CMX_PIVOT_EMA_ST_ENTRY_START", label: "PIVOT_EMA_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
       { key: "CMX_PIVOT_EMA_ST_ENTRY_END", label: "PIVOT_EMA_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
-      { key: "CMX_PIVOT_EMA_ST_EOD_EXIT_TIME", label: "PIVOT_EMA_ST — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
-      { key: "CMX_PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "PIVOT_EMA_ST — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day, on each commodity page.", default: "3" },
-      { key: "CMX_PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "PIVOT_EMA_ST — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.", default: "5000" },
     ],
   },
   {
@@ -1228,7 +981,6 @@ const SETTINGS_SCHEMA = [
     group: "Trading",
     fields: [
       { key: "PROFIT_LOCK_ENABLED", label: "Profit Lock (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail.", default: "true", subheader: "Rules (on / off)" },
-      { key: "BREAKEVEN_STOP_ENABLED", label: "Breakeven Stop (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Once the option premium has risen by the arm %, never let the trade be sold below the entry premium — a winner cannot round-trip into a loss. Catches what the Profit Lock misses: a move that goes +5% and dies arms this but never arms an +8% lock. Measured on 321 trades: lock alone +Rs32,110, lock plus this +Rs44,973. It killed only 6 real winners (Rs499 total), because 66 of the 72 winners that dipped had dipped BEFORE arming. Note a breakeven exit still pays ~Rs71 of charges.", default: "true" },
       { key: "EXIT_REENTRY_COOLDOWN_ENABLED", label: "Wait after any exit (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "After a trade closes, take no new trade for the number of candles set in \"Wait after any exit (candles)\". Off = a new trade can start on the very next signal.", default: "true" },
       { key: "MAX_BID_ASK_SPREAD_ENABLED", label: "Bid-Ask Spread Check (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Skip an entry when the option's bid-ask gap is wider than \"Max Bid-Ask Spread (pts)\". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap.", default: "true" },
       { key: "COMMON_TRADE_WINDOW_ENABLED", label: "Trade Window 10:00–14:00, exit 15:00 (all strategies)", type: "toggle", effect: EFFECT.SESSION, desc: "Every NIFTY / BANK NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle) and not Commodity (MCX hours). Overrides each strategy's own Entry Start / Entry End / Forced Exit; the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.", default: "true" },
@@ -1241,7 +993,6 @@ const SETTINGS_SCHEMA = [
       { key: "PROFIT_LOCK_FLOOR_PCT", label: "Locked floor (% premium gain)", type: "number", min: 0, max: 99, step: 1, effect: EFFECT.INSTANT, desc: "Once armed, the trade is closed if premium falls back to entry + this %. Replaying 344 trades at arm 8 / floor 5 changed 72 exits and turned the active book from -Rs6,028 to +Rs32,110 — treat that as a hypothesis to confirm in paper, not a promise.", default: "5" },
       { key: "PROFIT_LOCK_TRAIL_PCT", label: "Trail — keep % of best gain", type: "number", min: 0, max: 95, step: 5, effect: EFFECT.INSTANT, desc: "Once the lock is armed, its floor rises with the peak: the trade is closed if premium falls below entry + this % of its best gain so far. Example at 70: entry 142.75, peak 330 → floor 273.82. Only moves up. 0 = off (fixed floor only).", default: "70" },
       { key: "PROFIT_LOCK_TRAIL_TIERS", label: "Trail tiers — tighter on small peaks", type: "text", effect: EFFECT.INSTANT, desc: "Keep more of a small gain, less of a big one. Format \"peak%:keep%\" pairs. Default 20:85,40:80 — below +20% keep 85% of the gain, below +40% keep 80%, above that the trail % above. Example: entry 100, peak 110 → floor 108.5; peak 150 → floor 135. The floor never drops as the peak rises. Blank = flat trail only.", default: "20:85,40:80" },
-      { key: "BREAKEVEN_ARM_PCT", label: "Arm at (% premium gain)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "The breakeven arms once premium touches entry + this %. Lower scores better in replay (+Rs81,100 at +2%) but that is the overfitting trap and it fires on noise — 5 is the conservative default.", default: "5", subheader: "Breakeven Stop" },
       { key: "EXIT_REENTRY_COOLDOWN_CANDLES", label: "Wait after any exit (candles)", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "One rule for EVERY strategy: after a trade closes for any reason (stop, target, breakeven, profit lock, signal), take no new trade on either side for this many of the strategy's own candles. Example on 5-min candles with 2: exit at 10:48 → no new trade until 10:58. Manual entries are not blocked. 0 = off.", default: "2", subheader: "Wait & Spread" },
       { key: "MAX_BID_ASK_SPREAD_PTS", label: "Max Bid-Ask Spread (pts)", type: "number", min: 0, max: 20, step: 0.5, effect: EFFECT.SESSION, desc: "Reject entries when the spread is wider than this.", default: "2" },
     ],
@@ -1343,28 +1094,13 @@ const SETTINGS_SCHEMA = [
       { key: "OPTION_SOCKET_FRESH_MS", label: "Streamed Price Max Age (ms)", type: "number", min: 500, max: 60000, step: 500, effect: EFFECT.INSTANT, desc: "Older than this and the strategy falls back to a REST poll.", default: "4000" },
       { key: "OPTION_SOCKET_LEASE_MS", label: "Option Subscription Lease (ms)", type: "number", min: 5000, max: 120000, step: 1000, effect: EFFECT.INSTANT, desc: "A contract is unsubscribed this long after the last strategy stops asking for it.", default: "15000" },
       { key: "OPTION_SOCKET_RECORD_MS", label: "Streamed Price Record Interval (ms)", type: "number", min: 100, max: 10000, step: 100, effect: EFFECT.INSTANT, desc: "How often streamed option prices are written to the replay recording.", default: "1000" },
-      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "Global switch: log live orders but place none.", default: "true", subheader: "Live Safety" },
-      { key: "LIVE_EXIT_WAIT_MS", label: "Live Exit Wait Ceiling (ms)", type: "number", min: 0, max: 120000, step: 1000, effect: EFFECT.INSTANT, desc: "How long to wait on a live exit before alerting (ms).", default: "20000" },
-      { key: "PA_LIVE_ENABLED", label: "PA — allow real orders", type: "toggle", effect: EFFECT.SESSION, desc: "Second gate for PA Live. Off = PA stays simulated even with the global switch off.", default: "false" },
-      { key: "BB_RSI_LIVE_ENABLED", label: "BB_RSI — allow real orders", type: "toggle", effect: EFFECT.SESSION, desc: "Second gate for BB_RSI Live. Off = BB_RSI stays simulated even with the global switch off.", default: "false" },
-      { key: "PA_LIVE_DRY_RUN", label: "PA Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep PA simulated even when live is on.", default: "false" },
-      { key: "BB_RSI_LIVE_DRY_RUN", label: "BB_RSI Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep BB_RSI simulated even when live is on.", default: "false" },
-      { key: "HARNESS_EXCHANGE_SL_ENABLED", label: "Harness Exchange SL", type: "toggle", effect: EFFECT.SESSION, desc: "Leave a stop-loss order at the exchange for harness-run strategies (Trend PB, EMA9+VWAP, TDS). Off = the stop only lives in this process and dies with it.", default: "false" },
-      { key: "HARNESS_SL_PCT", label: "Harness Exchange SL (% of premium)", type: "number", min: 0.05, max: 0.95, step: 0.05, effect: EFFECT.SESSION, desc: "How far below the entry premium that stop sits. 0.5 = trigger at half the premium paid.", default: "0.5" },
       { key: "BACKTEST_OPTION_SIM", label: "Option Simulation (legacy bar-based BT only)", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L in the legacy backtest.", subheader: "Backtest Simulation" },
       { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation." },
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees." },
       { key: "BACKTEST_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Simulated slippage per side, in points.", default: "0" },
       { key: "LTP_STALE_THRESHOLD_SEC", label: "LTP Stale Alert (sec)", type: "number", min: 5, max: 60, step: 5, effect: EFFECT.INSTANT, desc: "Warn if the option price hasn't updated for this long (sec).", default: "15", subheader: "Execution Guards" },
       { key: "LTP_STALE_FALLBACK_SEC", label: "LTP Stale Fallback (sec)", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Use candle close if the option price is older than this (sec).", default: "5" },
-      { key: "GAP_THRESHOLD_PTS", label: "Gap Threshold (pts)", type: "number", min: 10, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip the first candle on a big overnight gap.", default: "50" },
-      { key: "TIME_STOP_CANDLES", label: "Time-Stop Candles (default)", type: "number", min: 2, max: 12, step: 1, effect: EFFECT.SESSION, desc: "Default time-stop window, in candles.", default: "4" },
-      { key: "TIME_STOP_FLAT_PTS", label: "Time-Stop Flat (pts, default)", type: "number", min: 5, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Flat-P&L band that triggers the time-stop.", default: "20" },
       { key: "VIX_LOG_ENABLED", label: "Record VIX on every trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Keep polling India VIX purely so each trade record carries the VIX at entry and exit, even when no strategy filters on it. Changes no decision. Off = vixAtEntry/vixAtExit are blank, and you cannot ask afterwards whether a strategy only works in a calm market.", default: "true" },
-      { key: "EMA_RSI_ST_BREAKEVEN_ENABLED", label: "EMA_RSI_ST Spot Breakeven", type: "toggle", effect: EFFECT.INSTANT, desc: "EMA_RSI_ST's own older breakeven: at candle close, once the trade is this many SPOT points in profit, lift the stop to entry. Separate from the global premium breakeven below and largely superseded by it (on the recorded trades the global one armed on 74 trades vs 33, and caught every trade this would have). Kept for the spot-stop geometry; ships off.", default: "false" },
-      { key: "EMA_RSI_ST_BREAKEVEN_PTS", label: "EMA_RSI_ST Spot Breakeven (pts)", type: "number", min: 5, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Spot points of profit at candle close before the stop is lifted to entry.", default: "25" },
-      { key: "HARD_SL_ENABLED", label: "Hard SL (Exchange)", type: "toggle", effect: EFFECT.SESSION, desc: "Place a stop-loss order at the exchange on entry.", default: "false" },
-      { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta used to convert the spot stop to a premium trigger.", default: "0.5" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST, subheader: "Backtest Capital" },
     ],
   },
@@ -1600,7 +1336,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_DASHBOARD_ANALYTICS_PANEL", label: "Dashboard analytics panel", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the analytics panel on the Dashboard.", default: "true" },
       { key: "UI_SHOW_REPLAY",         label: "Show Replay",               type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Replay menu.", default: "false" },
       { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Paper Traded History menu.", default: "true" },
-      { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Live Traded History menu.", default: "true" },
       { key: "UI_SHOW_EDGE_ANALYTICS", label: "Show Consolidation Report", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Consolidation Report menu.", default: "true" },
       { key: "UI_SHOW_LOSSES_ANALYZER", label: "Show Losses Analyzer",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Losses Analyzer menu — every losing trade with its full signal, entry, exit and indicator record, and a verdict on why it lost.", default: "true" },
       { key: "UI_SHOW_ADVISOR",        label: "Show Settings Advisor",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Settings Advisor menu.", default: "true" },
@@ -1626,7 +1361,7 @@ const SETTINGS_SCHEMA = [
       { key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN EMA_RSI_ST_V2 menu and settings. The same rules as EMA_RSI_ST_V2 but traded on NIFTY BANK, with its own settings and its own position — the two can run side by side. Ships OFF and unproven.", default: "false" },
       { key: "ST_RSI_PIV_BB_MODE_ENABLED", label: "ST_RSI_PIV_BB Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ST_RSI_PIV_BB menu and settings — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle. Ships OFF because it is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "SAIL_VWAP_ST_MODE_ENABLED", label: "SAIL_VWAP_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven — turn it on to backtest and paper-trade it.", default: "false" },
-      { key: "PIVOT_EMA_ST_MODE_ENABLED", label: "PIVOT_EMA_ST Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper + Live harness only. On by default; unproven — never traded.", default: "true" },
+      { key: "PIVOT_EMA_ST_MODE_ENABLED", label: "PIVOT_EMA_ST Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper only. On by default; unproven — never traded.", default: "true" },
       { key: "BN_PIVOT_EMA_ST_MODE_ENABLED", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN_PIVOT_EMA_ST menu (under BANK NIFTY) and its settings, and include it in Start All. The PIVOT_EMA_ST rules on NIFTY BANK, with its own settings and position. On by default; unproven — never traded.", default: "true" },
       { key: "GAP_RUNAWAY_MODE_ENABLED", label: "GAP_runAway__Kirubakaran Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close.", default: "true" },
       { key: "GAP_RUNAWAY_STK_MODE_ENABLED", label: "GAP_runAway Stock Scanner Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY SCANNER menu (under STOCKS) and its settings, and include it in Start All. Same rules over F&O stocks, paper-traded as intraday shares.", default: "true" },
@@ -1647,122 +1382,95 @@ const SETTINGS_SCHEMA = [
       // ── EMA_RSI_ST submenu ──
       { key: "UI_SHOW_EMA_RSI_ST_BACKTEST", label: "EMA_RSI_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA_RSI_ST.", default: "false", subheader: "EMA_RSI_ST sub-menus" },
       { key: "UI_SHOW_EMA_RSI_ST_PAPER",    label: "EMA_RSI_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA_RSI_ST.",    default: "true" },
-      { key: "UI_SHOW_EMA_RSI_ST_LIVE",     label: "EMA_RSI_ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EMA_RSI_ST.",     default: "true" },
-      { key: "UI_SHOW_EMA_RSI_ST_LIVE_HARNESS", label: "EMA_RSI_ST → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under EMA_RSI_ST.", default: "false" },
 
       // ── BB_RSI submenu ──
       { key: "UI_SHOW_BB_RSI_BACKTEST", label: "BB_RSI → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BB_RSI.", default: "false", subheader: "BB_RSI sub-menus" },
       { key: "UI_SHOW_BB_RSI_PAPER",    label: "BB_RSI → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BB_RSI.",    default: "true" },
-      { key: "UI_SHOW_BB_RSI_LIVE",     label: "BB_RSI → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under BB_RSI.",     default: "true" },
-      { key: "UI_SHOW_BB_RSI_LIVE_HARNESS", label: "BB_RSI → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under BB_RSI.", default: "false" },
 
       // ── Price Action submenu ──
       { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Price Action.",     default: "false", subheader: "Price Action sub-menus" },
       { key: "UI_SHOW_PA_PATTERN_BACKTEST", label: "PA → Pattern Test",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Pattern Test under Price Action.", default: "false" },
       { key: "UI_SHOW_PA_PAPER",            label: "PA → Paper",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Price Action.",        default: "true" },
-      { key: "UI_SHOW_PA_LIVE",             label: "PA → Live (legacy)",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show the legacy Live under Price Action.", default: "true" },
-      { key: "UI_SHOW_PA_LIVE_HARNESS",     label: "PA → Live (Harness)",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under Price Action.", default: "false" },
 
       // ── ORB submenu ──
       { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under ORB.", default: "false", subheader: "ORB sub-menus" },
       { key: "UI_SHOW_ORB_PAPER",    label: "ORB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ORB.", default: "true" },
-      { key: "UI_SHOW_ORB_LIVE",     label: "ORB → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under ORB.", default: "true" },
-      { key: "UI_SHOW_ORB_LIVE_HARNESS", label: "ORB → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under ORB.", default: "false" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ORB.", default: "true" },
 
       // ── EMA9+VWAP submenu ──
       { key: "UI_SHOW_EMA9VWAP_BACKTEST", label: "EMA9+VWAP → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA9+VWAP.", default: "false", subheader: "EMA9+VWAP sub-menus" },
       { key: "UI_SHOW_EMA9VWAP_PAPER",    label: "EMA9+VWAP → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA9+VWAP.", default: "true" },
-      { key: "UI_SHOW_EMA9VWAP_LIVE",     label: "EMA9+VWAP → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EMA9+VWAP.", default: "true" },
       { key: "UI_SHOW_EMA9VWAP_HISTORY",  label: "EMA9+VWAP → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA9+VWAP.", default: "true" },
 
-      // ── Trend Pullback submenu (Paper + History ship in Phase A; Backtest/Live default off until built) ──
+      // ── Trend Pullback submenu ──
       { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Pullback.", default: "false", subheader: "Trend Pullback sub-menus" },
       { key: "UI_SHOW_TREND_PB_PAPER",    label: "Trend Pullback → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Pullback.", default: "true" },
-      { key: "UI_SHOW_TREND_PB_LIVE",     label: "Trend Pullback → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Trend Pullback.", default: "true" },
       { key: "UI_SHOW_TREND_PB_HISTORY",  label: "Trend Pullback → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Pullback.", default: "true" },
 
       // ── Trend Day Scalp submenu ──
       { key: "UI_SHOW_TDS_BACKTEST", label: "Trend Day Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Day Scalp.", default: "false", subheader: "Trend Day Scalp sub-menus" },
       { key: "UI_SHOW_TDS_PAPER",    label: "Trend Day Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Day Scalp.", default: "true" },
-      { key: "UI_SHOW_TDS_LIVE",     label: "Trend Day Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Trend Day Scalp.", default: "true" },
       { key: "UI_SHOW_TDS_HISTORY",  label: "Trend Day Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Day Scalp.", default: "true" },
 
       // ── HA Scalp submenu ──
       { key: "UI_SHOW_HA_SCALP_BACKTEST", label: "HA Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under HA Scalp.", default: "false", subheader: "HA Scalp sub-menus" },
       { key: "UI_SHOW_HA_SCALP_PAPER",    label: "HA Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under HA Scalp.", default: "true" },
-      { key: "UI_SHOW_HA_SCALP_LIVE",     label: "HA Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_HISTORY",  label: "HA Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under HA Scalp.", default: "true" },
       // ── Prev ORB Scalp submenu ──
       { key: "UI_SHOW_PREV_ORB_SCALP_BACKTEST", label: "Prev ORB Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Prev ORB Scalp.", default: "false", subheader: "Prev ORB Scalp sub-menus" },
       { key: "UI_SHOW_PREV_ORB_SCALP_PAPER",    label: "Prev ORB Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Prev ORB Scalp.", default: "true" },
-      { key: "UI_SHOW_PREV_ORB_SCALP_LIVE",     label: "Prev ORB Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_PREV_ORB_SCALP_HISTORY",  label: "Prev ORB Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_BACKTEST", label: "EarlyBird → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EarlyBird.", default: "false", subheader: "EarlyBird sub-menus" },
       { key: "UI_SHOW_EARLYBIRD_PAPER",    label: "EarlyBird → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EarlyBird.", default: "true" },
-      { key: "UI_SHOW_EARLYBIRD_LIVE",     label: "EarlyBird → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EarlyBird.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_HISTORY",  label: "EarlyBird → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EarlyBird.", default: "true" },
 
       // ── SIMPLE_9:30 submenu ──
       { key: "UI_SHOW_SIMPLE930_BACKTEST", label: "SIMPLE_9:30 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SIMPLE_9:30.", default: "false", subheader: "SIMPLE_9:30 sub-menus" },
       { key: "UI_SHOW_SIMPLE930_PAPER",    label: "SIMPLE_9:30 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SIMPLE_9:30.", default: "true" },
-      { key: "UI_SHOW_SIMPLE930_LIVE",     label: "SIMPLE_9:30 → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under SIMPLE_9:30.", default: "true" },
       { key: "UI_SHOW_SIMPLE930_HISTORY",  label: "SIMPLE_9:30 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SIMPLE_9:30.", default: "true" },
 
 
       // ── RSI Pivot ST submenu ──
       { key: "UI_SHOW_RSI_PIVOT_ST_BACKTEST", label: "RSI Pivot ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under RSI Pivot ST.", default: "false", subheader: "RSI Pivot ST sub-menus" },
       { key: "UI_SHOW_RSI_PIVOT_ST_PAPER",    label: "RSI Pivot ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under RSI Pivot ST.", default: "true" },
-      { key: "UI_SHOW_RSI_PIVOT_ST_LIVE",     label: "RSI Pivot ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under RSI Pivot ST.", default: "true" },
       { key: "UI_SHOW_RSI_PIVOT_ST_HISTORY",  label: "RSI Pivot ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under RSI Pivot ST.", default: "true" },
 
       // ── BN Pivot RSI ST submenu (NIFTY BANK) ──
       { key: "UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST", label: "BN Pivot RSI ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BN Pivot RSI ST.", default: "false", subheader: "BN Pivot RSI ST sub-menus" },
       { key: "UI_SHOW_BN_PIVOT_RSI_ST_PAPER",    label: "BN Pivot RSI ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN Pivot RSI ST.", default: "true" },
-      { key: "UI_SHOW_BN_PIVOT_RSI_ST_LIVE",     label: "BN Pivot RSI ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under BN Pivot RSI ST.", default: "true" },
       { key: "UI_SHOW_BN_PIVOT_RSI_ST_HISTORY",  label: "BN Pivot RSI ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN Pivot RSI ST.", default: "true" },
 
       // ── EMA_RSI_ST_V2 submenu ── all OFF: V2 is unproven, so nothing appears
       // in the sidebar until you deliberately switch each page on.
       { key: "UI_SHOW_EMA_RSI_ST_V2_BACKTEST", label: "EMA_RSI_ST_V2 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA_RSI_ST_V2.", default: "false", subheader: "EMA_RSI_ST_V2 sub-menus" },
       { key: "UI_SHOW_EMA_RSI_ST_V2_PAPER",    label: "EMA_RSI_ST_V2 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA_RSI_ST_V2.", default: "false" },
-      // V2 has no legacy /ema_rsi_st_v2-live route — its only live page IS the
-      // paper-wrapping harness, so the key is _LIVE_HARNESS (what sharedNav reads).
-      { key: "UI_SHOW_EMA_RSI_ST_V2_LIVE_HARNESS", label: "EMA_RSI_ST_V2 → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness) under EMA_RSI_ST_V2.", default: "false" },
       { key: "UI_SHOW_EMA_RSI_ST_V2_HISTORY",  label: "EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA_RSI_ST_V2.", default: "false" },
       // ── BN EMA_RSI_ST_V2 submenu ── all OFF for the same reason: unproven, so
       // nothing appears until it is asked for.
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_BACKTEST", label: "BN EMA_RSI_ST_V2 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false", subheader: "BN EMA_RSI_ST_V2 sub-menus" },
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_PAPER",    label: "BN EMA_RSI_ST_V2 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
-      { key: "UI_SHOW_BN_EMA_RSI_ST_V2_LIVE_HARNESS", label: "BN EMA_RSI_ST_V2 → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness) under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_HISTORY",  label: "BN EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
       // ── ST_RSI_PIV_BB submenu ── defaults match what sharedNav falls back to
-      // (Paper/History on, Live off); the whole group stays hidden
+      // (Paper/History on); the whole group stays hidden
       // until ST_RSI_PIV_BB_MODE_ENABLED is switched on.
       { key: "UI_SHOW_ST_RSI_PIV_BB_PAPER",    label: "ST_RSI_PIV_BB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ST_RSI_PIV_BB.", default: "true" },
-      { key: "UI_SHOW_ST_RSI_PIV_BB_LIVE_HARNESS", label: "ST_RSI_PIV_BB → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /st_rsi_piv_bb-live) under ST_RSI_PIV_BB.", default: "false" },
       { key: "UI_SHOW_ST_RSI_PIV_BB_HISTORY",  label: "ST_RSI_PIV_BB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ST_RSI_PIV_BB.", default: "true" },
       // ── SAIL_VWAP_ST submenu (STOCKS) ── defaults match what sharedNav falls
-      // back to (Backtest/Paper/History on, Live off); the whole group stays
+      // back to (Backtest/Paper/History on); the whole group stays
       // hidden until SAIL_VWAP_ST_MODE_ENABLED is switched on.
       { key: "UI_SHOW_SAIL_VWAP_ST_BACKTEST", label: "SAIL_VWAP_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SAIL VWAP+ST.", default: "false", subheader: "SAIL_VWAP_ST sub-menus" },
       { key: "UI_SHOW_SAIL_VWAP_ST_PAPER",    label: "SAIL_VWAP_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL VWAP+ST.", default: "true" },
-      { key: "UI_SHOW_SAIL_VWAP_ST_LIVE_HARNESS", label: "SAIL_VWAP_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /sail_vwap_st-live) under SAIL VWAP+ST.", default: "false" },
       { key: "UI_SHOW_SAIL_VWAP_ST_HISTORY",  label: "SAIL_VWAP_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL VWAP+ST.", default: "true" },
       // ── PIVOT_EMA_ST family submenus (NIFTY / BANK NIFTY / STOCKS) ── no
       // Backtest (none exists); defaults match what sharedNav falls back to.
       { key: "UI_SHOW_PIVOT_EMA_ST_PAPER",    label: "PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under PIVOT_EMA_ST.", default: "true", subheader: "PIVOT_EMA_ST sub-menus" },
-      { key: "UI_SHOW_PIVOT_EMA_ST_LIVE_HARNESS", label: "PIVOT_EMA_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /pivot_ema_st-live) under PIVOT_EMA_ST.", default: "false" },
       { key: "UI_SHOW_PIVOT_EMA_ST_HISTORY",  label: "PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under PIVOT_EMA_ST.", default: "true" },
       { key: "UI_SHOW_BN_PIVOT_EMA_ST_PAPER",    label: "BN_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN PIVOT_EMA_ST (NIFTY BANK).", default: "true" },
-      { key: "UI_SHOW_BN_PIVOT_EMA_ST_LIVE_HARNESS", label: "BN_PIVOT_EMA_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /bn_pivot_ema_st-live) under BN PIVOT_EMA_ST (NIFTY BANK).", default: "false" },
       { key: "UI_SHOW_BN_PIVOT_EMA_ST_HISTORY",  label: "BN_PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN PIVOT_EMA_ST (NIFTY BANK).", default: "true" },
       { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_PAPER",    label: "SAIL_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL PIVOT_EMA_ST.", default: "true" },
-      { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_LIVE_HARNESS", label: "SAIL_PIVOT_EMA_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /sail_pivot_ema_st-live) under SAIL PIVOT_EMA_ST.", default: "false" },
-      // ── GAP_RUNAWAY submenus (NIFTY + STOCKS) ── no Backtest (none exists), and
-      // the stock scanner has no Live page; defaults match sharedNav's fall-backs.
+      // ── GAP_RUNAWAY submenus (NIFTY + STOCKS) ── no Backtest (none exists);
+      // defaults match sharedNav's fall-backs.
       { key: "UI_SHOW_GAP_RUNAWAY_PAPER",        label: "GAP_RUNAWAY → Paper",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under GAP_RUNAWAY (NIFTY).", default: "true", subheader: "GAP_RUNAWAY sub-menus" },
-      { key: "UI_SHOW_GAP_RUNAWAY_LIVE_HARNESS", label: "GAP_RUNAWAY → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /gap_runaway-live) under GAP_RUNAWAY.", default: "false" },
       { key: "UI_SHOW_GAP_RUNAWAY_HISTORY",      label: "GAP_RUNAWAY → History",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under GAP_RUNAWAY (NIFTY).", default: "true" },
       { key: "UI_SHOW_GAP_RUNAWAY_STK_PAPER",    label: "GAP_RUNAWAY SCANNER → Paper", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's Paper page under STOCKS.", default: "true" },
       { key: "UI_SHOW_GAP_RUNAWAY_STK_HISTORY",  label: "GAP_RUNAWAY SCANNER → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's History under STOCKS.", default: "true" },
@@ -1795,7 +1503,7 @@ const SETTINGS_SCHEMA = [
       // ── Demo login (read-only stakeholder session) ──────────────────────────
       { key: "DEMO_LOGIN_ENABLED", label: "Demo Login", type: "toggle", effect: EFFECT.INSTANT, desc: "Accept a second, read-only password on the login page. Needs a Login Password set, and a Demo Password different from it.", default: "false", subheader: "Demo Login (read-only)" },
       { key: "DEMO_LOGIN_SECRET",  label: "Demo Password", type: "password", effect: EFFECT.INSTANT, desc: "Password that opens the read-only demo session. Every action route is refused for it: no start/stop/exit, no settings, no downloads, no broker login." },
-      { key: "DEMO_SHOW_LIVE",     label: "Demo: Include Live Pages", type: "toggle", effect: EFFECT.INSTANT, desc: "Let the demo see Live and Live (Harness) pages plus Live Traded History and P&L History. OFF = paper, backtest and monitors only.", default: "false" },
+      { key: "DEMO_SHOW_LIVE",     label: "Demo: Include P&L History", type: "toggle", effect: EFFECT.INSTANT, desc: "Let the demo see the P&L History page (real-money history). OFF = paper, backtest and monitors only.", default: "false" },
 
       // ── Write rate limit (POST/PUT/DELETE/PATCH per IP) ─────────────────────
       { key: "WRITE_RATE_PER_MIN", label: "Write Rate (req/min/IP)", type: "number", min: 0,   max: 6000, step: 10, effect: EFFECT.INSTANT, desc: "Max state-changing requests per minute per IP (0 = off).", default: "120", subheader: "Rate Limits" },
@@ -1936,15 +1644,13 @@ function parseEnvFile() {
 // ── Classify which settings take effect immediately vs need restart ──────────
 // These are read from process.env at runtime (not cached at module load)
 const IMMEDIATE_KEYS = new Set([
-  "EMA_RSI_ST_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY",
+  "TRADE_EXPIRY_DAY_ONLY",
   "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY", "VIX_FAIL_MODE",
   "BB_RSI_VIX_MAX_ENTRY", "BB_RSI_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
   "OI_FILTER_ENABLED", "EMA_RSI_ST_OI_ENABLED", "BB_RSI_OI_ENABLED", "PA_OI_ENABLED", "ORB_OI_ENABLED",
   "EMA9VWAP_OI_ENABLED", "EMA9VWAP_VIX_ENABLED", "EMA9VWAP_VIX_MAX_ENTRY",
-  "EMA9VWAP_MAX_CONSEC_LOSSES", "EMA9VWAP_NEG_CANDLE_LIMIT", "EMA9VWAP_CANDLE_TRAIL_ENABLED",
-  "EMA9VWAP_CANDLE_TRAIL_BARS", "EMA9VWAP_SL_MODE", "EMA9VWAP_STRENGTH_FILTER",
+  "EMA9VWAP_STRENGTH_FILTER",
   "EMA9VWAP_STRONG_MIN_SIGMA", "EMA9VWAP_BAND_MULT", "EMA9VWAP_EMA_PERIOD",
-  "EMA9VWAP_REVERSAL_EXIT_ENABLED", "EMA9VWAP_OPT_STOP_PCT", "EMA9VWAP_STOP_LOSS_PTS",
   "OI_LOOKBACK_CANDLES", "OI_MIN_DELTA_PCT", "OI_FAIL_MODE",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "NIFTY_FUTURES_MARGIN_PCT", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
@@ -1958,7 +1664,7 @@ const IMMEDIATE_KEYS = new Set([
   "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "ZERODHA_INV_AMOUNT", "FYERS_INV_AMOUNT",
   "PAPER_CAPITAL_GATE_ENABLED", "PAPER_CAPITAL_EST_PREMIUM",
-  "PA_ENABLED",
+  
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "TG_ENABLED",
   "TG_EMA_RSI_ST_STARTED", "TG_BB_RSI_STARTED", "TG_PA_STARTED",
@@ -1968,7 +1674,7 @@ const IMMEDIATE_KEYS = new Set([
   "TG_EMA_RSI_ST_DAYREPORT", "TG_BB_RSI_DAYREPORT", "TG_PA_DAYREPORT",
   "TG_DAYREPORT_CONSOLIDATED", "TG_EOD_CHARTS",
   "NIFTY_SPOT_FALLBACK", "CACHE_MAX_DAYS",
-  "BB_RSI_ENABLED", "BB_RSI_MODE_ENABLED", "BB_RSI_VIX_ENABLED", "BB_RSI_EXPIRY_DAY_ONLY",
+  "BB_RSI_MODE_ENABLED", "BB_RSI_VIX_ENABLED", "BB_RSI_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "LOGIN_OTP_MOBILE", "UI_THEME",
   "DEMO_LOGIN_ENABLED", "DEMO_LOGIN_SECRET", "DEMO_SHOW_LIVE",
   "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
@@ -1976,19 +1682,15 @@ const IMMEDIATE_KEYS = new Set([
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",
   "EMA_RSI_ST_EMA_FAST", "EMA_RSI_ST_EMA_SLOW", "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED", "EMA_RSI_ST_EMA_FASTEST",
   "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED", "EMA_RSI_ST_MAX_EMA_DIST_PTS", "EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED",
-  "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", "EMA_RSI_ST_CANDLE_TRAIL_BARS", "EMA_RSI_ST_EMA_EXIT_MODE",
-  "EMA_RSI_ST_INITIAL_SL_MODE",
   "EMA_RSI_ST_SUPERTREND_PERIOD", "EMA_RSI_ST_SUPERTREND_MULT",
-  "EMA_RSI_ST_STOP_LOSS_PTS", "EMA_RSI_ST_MAX_CONSEC_LOSSES", "EMA_RSI_ST_NEG_CANDLE_LIMIT",
   // Confirmation-candle gates — read live from process.env on every candle/tick
   "EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_ON_CLOSE",
 ]);
 
 // These are cached as const at module load — need session stop+start
 const SESSION_RESTART_KEYS = new Set([
-  "MAX_DAILY_LOSS", "MAX_DAILY_TRADES", "OPT_STOP_PCT",
-  "EMA_RSI_ST_SL_PAUSE_CANDLES", "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES",
-  "EMA_RSI_ST_EOD_EXIT_TIME", "EMA_RSI_ST_LIVE_DRY_RUN",
+  "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES",
+  
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
   "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END", "BB_RSI_RESOLUTION",
@@ -2002,16 +1704,9 @@ const SESSION_RESTART_KEYS = new Set([
   "BB_RSI_RSI_RANGE_ENABLED", "BB_RSI_RSI_RANGE_LOOKBACK", "BB_RSI_RSI_RANGE_MIN",
   "BB_RSI_ADX_ENABLED", "BB_RSI_ADX_MAX",
   "BB_RSI_DIVERGENCE_ENABLED", "BB_RSI_DIV_LOOKBACK", "BB_RSI_DIV_PIVOT_BARS",
-  "BB_RSI_TARGET_MIDDLE_BAND",
-  "BB_RSI_OPP_CANDLE_SL_ENABLED", "BB_RSI_OPP_CANDLE_SL_COUNT",
-  "BB_RSI_OPP_CANDLE_TRAIL_ENABLED", "BB_RSI_OPP_CANDLE_TRAIL_COUNT", "BB_RSI_TRAIL_ARM_PTS",
-  "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "BB_RSI_PROFIT_LOCK_PCT", "BB_RSI_STOP_LOSS_PTS",
-  "BB_RSI_MAX_DAILY_TRADES", "BB_RSI_MAX_DAILY_LOSS",
-  "BB_RSI_SL_PAUSE_CANDLES", "BB_RSI_CONSEC_SL_EXTRA_PAUSE", "BB_RSI_PER_SIDE_PAUSE",
   "BB_RSI_SLIPPAGE_PTS",
-  // Live-engine guards — read inside live loops, but constants in tradeGuards are cached at require()
-  "GAP_THRESHOLD_PTS", "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
-  "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS",
+  // Execution guards — constants in tradeGuards are cached at require()
+  "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
 ]);
 
 // Schema-derived restart set: every field marked EFFECT.SESSION or EFFECT.SERVER
@@ -2028,18 +1723,14 @@ for (const section of SETTINGS_SCHEMA) {
   }
 }
 
-// Every running trading session (any sharedSocketState slot) plus any installed
-// live harness. Used to refuse a restart / warn on a mid-session save.
+// Every running trading session (any sharedSocketState slot). Used to refuse a
+// restart / warn on a mid-session save.
 function _activeSessions() {
   const out = [];
   for (const [name, fn] of Object.entries(sharedSocketState)) {
     if (!/^get[A-Za-z0-9]*Mode$/.test(name) || typeof fn !== "function") continue;
     try { const m = fn(); if (m && !out.includes(m)) out.push(m); } catch (_) {}
   }
-  try {
-    const h = require("../services/liveHarness");
-    if (h.isInstalled() && !out.length) out.push("live harness");
-  } catch (_) {}
   return out;
 }
 
@@ -2428,8 +2119,8 @@ router.post("/audit-restore", (req, res) => {
 
 // ── POST /settings/restart — Restart the server process ─────────────────────
 router.post("/restart", (req, res) => {
-  // A restart mid-session kills every running engine (and, for live ones, the
-  // square-off path). Refuse unless the caller explicitly forces it.
+  // A restart mid-session kills every running engine. Refuse unless the caller
+  // explicitly forces it.
   const active = _activeSessions();
   const force = req.body && (req.body.force === true || req.body.force === "true");
   if (active.length && !force) {
@@ -2444,7 +2135,7 @@ router.post("/restart", (req, res) => {
   res.json({ success: true, message: "Restarting server..." });
 
   // Give time for the response to be sent, then SIGTERM ourselves so app.js
-  // gracefulShutdown() runs (stops sessions, squares off live positions)
+  // gracefulShutdown() runs (stops sessions)
   // instead of a bare process.exit(). nodemon/PM2 restart the process after.
   setTimeout(() => {
     console.log("[settings] 🔄 Sending SIGTERM for restart...");
@@ -2558,7 +2249,6 @@ router.get("/", (req, res) => {
   // App Secret gate — if API_SECRET is set, require it to access settings
   const appSecret = process.env.API_SECRET;
   if (appSecret && req.query.secret !== appSecret) {
-    const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
     // The viewport meta is what keeps this page on the phone's own width. Without
     // it Chrome/Safari lay the document out at their 980px desktop fallback and
     // then zoom the whole thing out to ~40%, which is how the App Secret gate
@@ -2579,7 +2269,7 @@ router.get("/", (req, res) => {
       .auth-err{color:#ef4444;font-size:0.72rem;margin-top:8px;display:none;}
       </style></head><body>
       <div class="app-shell">
-      ${buildSidebar('settings', liveActive)}
+      ${buildSidebar('settings', false)}
       <div class="main-content" style="display:flex;align-items:center;justify-content:center;">
       <div class="auth-box">
         <h2>\uD83D\uDD12 App Secret Required</h2>
@@ -2598,7 +2288,6 @@ router.get("/", (req, res) => {
       </script></body></html>`);
   }
 
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const envData    = parseEnvFile();
 
   // ── Determine which fields should be frozen (disabled but values kept) ──
@@ -2767,13 +2456,13 @@ router.get("/", (req, res) => {
   }
 
   // ── Menu Visibility as one grid ────────────────────────────────────────────
-  // 15 strategies × 5 sub-menus as 20+ tabs was unreadable. Instead: one row per
+  // 15 strategies × 4 sub-menus as 20+ tabs was unreadable. Instead: one row per
   // strategy (its *_MODE_ENABLED master + its UI_SHOW_{P}_{COL} page toggles),
   // then the non-strategy toggles as plain lists. Same data-key inputs, so save,
   // defaults and search work unchanged.
   const MV_COLS = [
     ["BACKTEST", "Backtest"], ["PATTERN_BACKTEST", "Pattern Test"], ["PAPER", "Paper"],
-    ["LIVE", "Live"], ["LIVE_HARNESS", "Live Harness"], ["HISTORY", "History"],
+    ["HISTORY", "History"],
   ];
   function renderMenuVisibility(fields) {
     const byKey = new Map(fields.map(f => [f.key, f]));
@@ -3201,8 +2890,8 @@ router.get("/", (req, res) => {
     .mv-title { padding: 14px 18px 6px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
     .mv-title span { text-transform: none; letter-spacing: 0; font-weight: 400; }
     .mv-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .mv-grid { min-width: 640px; }
-    .mv-row { display: grid; grid-template-columns: minmax(150px, 1.6fr) repeat(7, minmax(64px, 1fr)); align-items: center; border-bottom: 1px solid var(--border); }
+    .mv-grid { min-width: 480px; }
+    .mv-row { display: grid; grid-template-columns: minmax(150px, 1.6fr) repeat(5, minmax(64px, 1fr)); align-items: center; border-bottom: 1px solid var(--border); }
     .mv-row:hover { background: rgba(59,130,246,0.04); }
     .mv-head { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
     .mv-head .mv-cell, .mv-head .mv-name { padding-top: 10px; padding-bottom: 10px; }
@@ -3614,7 +3303,7 @@ router.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-  ${buildSidebar('settings', liveActive)}
+  ${buildSidebar('settings', false)}
 
   <div class="main-content">
     <div class="top-bar">
@@ -4820,7 +4509,7 @@ async function _postRestart() {
   if (res.status !== 409) return true;
   var msg = (res.data && res.data.error) || 'Restart refused — sessions are running.';
   showToast(msg, 'error');
-  if (!confirm(msg + '\\n\\nForce the restart anyway? Running sessions will be stopped (live positions squared off).')) return false;
+  if (!confirm(msg + '\\n\\nForce the restart anyway? Running sessions will be stopped.')) return false;
   res = await post(true);
   if (res.status === 409) { showToast('Restart still refused', 'error'); return false; }
   return true;
@@ -5680,7 +5369,6 @@ router.get("/audit", (req, res) => {
   if (filterSource) entries = entries.filter(e => (e.source || "").includes(filterSource));
 
   // Group by timestamp+source for display
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const escapeHtml = s => String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -5756,7 +5444,7 @@ tr:last-child td{border-bottom:none;}
 tr:hover td{background:#0a1528;}
 .empty{text-align:center;padding:40px;color:var(--muted-1,#8ba1c2);font-size:0.8rem;}
 </style></head><body>
-<div class="app-shell">${buildSidebar('settings', liveActive, false)}
+<div class="app-shell">${buildSidebar('settings', false, false)}
 <div class="audit-main">
   <div class="audit-header">
     <div>

@@ -208,7 +208,10 @@ function requestCancel() {
 // v18: profit-lock trail (PROFIT_LOCK_TRAIL_PCT) — forced 0 for recordings that lack it.
 // v19: tiered trail (PROFIT_LOCK_TRAIL_TIERS) — forced blank (flat trail) for recordings that lack it.
 // v20: wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES) — forced 0 for recordings that lack it.
-const REPLAY_CACHE_VERSION = 20;
+// v21: the profit lock is the only automatic exit — every stop, trail, target,
+//      breakeven, time stop, signal exit, per-strategy EOD and daily-loss limit
+//      was removed from the engines, so results cached under the old exits are stale.
+const REPLAY_CACHE_VERSION = 21;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -1098,14 +1101,14 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // it needs its own pair here — and its mutators are named …Mode, not …Active.
     ss_setEmaRsiStV2Mode:      sharedSocketState.setEmaRsiStV2Mode,
     ss_clearEmaRsiStV2Mode:    sharedSocketState.clearEmaRsiStV2Mode,
-    // ST_RSI_PIV_BB is not replayable (paper + live only), but a replay must
+    // ST_RSI_PIV_BB is not replayable (paper only), but a replay must
     // still never touch its REAL mutex slot.
     ss_setStRsiPivBbMode:      sharedSocketState.setStRsiPivBbMode,
     ss_clearStRsiPivBbMode:    sharedSocketState.clearStRsiPivBbMode,
     // SAIL_VWAP_ST keeps its OWN mutex slot — a replay must never touch the real one.
     ss_setSailVwapStMode:      sharedSocketState.setSailVwapStMode,
     ss_clearSailVwapStMode:    sharedSocketState.clearSailVwapStMode,
-    // PIVOT_EMA_ST family is not replayable (paper + live only), but a replay
+    // PIVOT_EMA_ST family is not replayable (paper only), but a replay
     // must still never touch its REAL mutex slots.
     ss_setPivotEmaStMode:        sharedSocketState.setPivotEmaStMode,
     ss_clearPivotEmaStMode:      sharedSocketState.clearPivotEmaStMode,
@@ -2068,8 +2071,6 @@ const MODE_TO_MODULE = {
   // SAIL stock options — fed ONLY NSE:SAIL-EQ ticks (_MODE_TO_SPOT_INDEX).
   "sail_vwap_st-paper":    "../routes/sailVwapStPaper",
   "simple930-paper":       "../routes/simple930Paper",
-  // Live modes are NOT supported for replay (they place real orders). If a
-  // live session was recorded, replay it as the matching paper mode.
 };
 
 // Every NIFTY / BANK NIFTY strategy sizes off the one common LOT_MULTIPLIER, so
@@ -2319,19 +2320,17 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // they actually took. Force the toggle OFF for any confirmation key the
       // snapshot doesn't pin, so pre-feature recordings reproduce exactly.
       const _snapSettings = Object.assign({}, data.sessionStart.settings || {});
-      // Same rule for the global guards added 2026-09-19 (profit lock, breakeven
-      // stop): both default ON, so a day recorded before they existed would replay
-      // with exits the paper session never had and could not match it.
+      // Same rule for the global profit lock added 2026-09-19: it defaults ON,
+      // so a day recorded before it existed would replay with an exit the paper
+      // session never had and could not match it.
       for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED"]) {
         if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
       }
       // Date-gated, not absence-gated: a snapshot only holds keys that were SET
       // in env, so on a later day an absent key means "default ON", not "did not
-      // exist". Only days before the guards shipped are forced off.
+      // exist". Only days before the lock shipped are forced off.
       if (date < "2026-09-19") {
-        for (const _k of ["PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
-          if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
-        }
+        if (!("PROFIT_LOCK_ENABLED" in _snapSettings)) _snapSettings.PROFIT_LOCK_ENABLED = "false";
       }
       // Profit-lock trail (default 70). The recorder writes this key on every
       // recording made since it shipped, so an ABSENT key means a recording made

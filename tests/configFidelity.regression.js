@@ -19,11 +19,6 @@
  *            proxy" P&L — with the percentage option stop inert, because it needs an
  *            entry premium that never arrived. A configured stop that silently does
  *            not exist is the worst outcome available, hence: refuse the trade.
- *
- *   GROUP 2  The back-to-back-loss breaker fired at a HARDCODED 3 while
- *            {STRATEGY}_MAX_CONSEC_LOSSES was set to 0, which Settings labels
- *            "OFF". Three losses paused entries for 20 minutes on a strategy whose
- *            streak breaker the operator had explicitly disabled.
  */
 
 const assert = require("assert");
@@ -248,55 +243,6 @@ check("manual-entry routes refuse an unresolvable symbol, like the automatic pat
   }
 });
 
-// ── GROUP 2 — the consecutive-loss breaker honours its config key ───────────
-section("Consecutive-loss breaker is configuration-driven");
-
-// Every engine that owns a copy of the breaker, and the key each one must read.
-const STREAK_ENGINES = [
-  { file: "routes/emaRsiStPaper.js",   key: "EMA_RSI_ST_MAX_CONSEC_LOSSES" },
-  { file: "routes/emaRsiStLive.js",    key: "EMA_RSI_ST_MAX_CONSEC_LOSSES" },
-  { file: "routes/ema9vwapPaper.js",   key: "EMA9VWAP_MAX_CONSEC_LOSSES"   },
-  { file: "services/backtestEngine.js", key: "EMA_RSI_ST_MAX_CONSEC_LOSSES" },
-];
-
-check("no engine still triggers the breaker at a hardcoded 3", () => {
-  const offenders = [];
-  for (const { file } of STREAK_ENGINES) {
-    if (/_consecutiveLosses\s*>=\s*3\b/.test(decomment(read(file)))) offenders.push(file);
-  }
-  assert.deepStrictEqual(offenders, [],
-    `hardcoded 3-loss breaker survives in: ${offenders.join(", ")} — a configured 0 ("OFF") would still pause entries`);
-});
-
-for (const { file, key } of STREAK_ENGINES) {
-  check(`${path.basename(file)}: the breaker reads ${key}`, () => {
-    const src = decomment(read(file));
-    assert.ok(src.includes(key), `${file} never reads ${key}`);
-    // 0 must be a real OFF, not "trigger on the very first loss".
-    assert.ok(/_streakMax\s*>\s*0\s*&&/.test(src) || /_streakMax\s*>\s*0\s*\)/.test(src),
-      `${file}: the breaker does not guard on a positive limit — 0 would fire immediately or not at all by accident`);
-  });
-}
-
-check("the paper/live status payload exposes the limit so the UI cannot invent one", () => {
-  for (const f of ["routes/emaRsiStPaper.js", "routes/emaRsiStLive.js", "routes/ema9vwapPaper.js"]) {
-    const src = decomment(read(f));
-    assert.ok(/consecStreakLimit/.test(src),
-      `${f}: status payload has no consecStreakLimit — the client falls back to a hardcoded denominator`);
-  }
-});
-
-check("no Loss Streak card renders a literal '/ 3'", () => {
-  // The card used to read "2 / 3 ⚠️ 1 more = pause" while the breaker was disabled.
-  const offenders = [];
-  for (const f of ["routes/emaRsiStPaper.js", "routes/emaRsiStLive.js", "routes/ema9vwapPaper.js"]) {
-    if (/['"` ]\/ 3['"`<]/.test(decomment(read(f)))) offenders.push(f);
-  }
-  assert.deepStrictEqual(offenders, [],
-    `hardcoded "/ 3" denominator still rendered in: ${offenders.join(", ")}`);
-});
-
-
 // ── GROUP 3 — a date range must mean the same day the data was stamped with ──
 // The Dashboard's range filter reads a session's `date`, which is not written in
 // one format: normally the ISO instant from Start, but after a mid-session
@@ -355,7 +301,7 @@ check("the Dashboard's range select offers Today and Yesterday, and opens on Tod
 
 check("no surface reads a session date by slicing it", () => {
   const offenders = [];
-  for (const f of ["routes/consolidation.js", "routes/liveConsolidation.js",
+  for (const f of ["routes/consolidation.js",
                    "routes/consolidationReport.js", "routes/edgeAnalytics.js",
                    "utils/paperHistoryUI.js"]) {
     if (/s\.date[^\n]*\.slice\(0, ?10\)/.test(decomment(read(f)))) offenders.push(f);

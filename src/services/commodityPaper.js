@@ -18,31 +18,25 @@
  *   • its own files under ~/trading-data/cmx/ — no shared trade logs
  *   • the one exception: money comes from the shared FYERS capital pool
  *     (FYERS_INV_AMOUNT), so a commodity loss shrinks what NIFTY can spend
- *   • the strategy RULES are the originals, called read-only:
+ *   • the strategy ENTRY rules are the originals, called read-only:
  *       V1 → strategy1_sar_ema_rsi.getSignal (EMA_RSI_ST_* settings)
- *       V2 → ema_rsi_st_v2.getSignal / trailStop (EMA_RSI_ST_V2_* settings)
- *       PIVOT → pivot_ema_st.getSignal / exitCheck / trailStop (PIVOT_EMA_ST_* settings;
- *               no trend filter, no confirm candle, future stop on candle close only)
- *     so the signal is the same strategy; only timing, sizing and day guards
- *     are commodity-specific (CMX_* keys).
+ *       V2 → ema_rsi_st_v2.getSignal (EMA_RSI_ST_V2_* settings)
+ *       PIVOT → pivot_ema_st.getSignal (PIVOT_EMA_ST_* settings;
+ *               no trend filter, no confirm candle)
+ *     so the signal is the same strategy; only timing and sizing are
+ *     commodity-specific (CMX_* keys).
  *
  * Commodity-only additions on top of the NIFTY rules, all on every page:
  *   • a trend filter on entries (CMX_MIN_EMA_GAP_PCT, CMX_RSI_CE_MAX /
  *     CMX_RSI_PE_MIN) — see trendBlock();
- *   • the global breakeven stop on V2 too (NIFTY V2 has none), so every page
- *     shares breakeven → profit lock → profit-lock trail;
- *   • a premium stop (CMX_OPT_STOP_PCT) on V1 and V2 alike — V2's SuperTrend
- *     stop alone let crude losers run to −20%+ of premium;
- *   • a per-commodity daily loss cap (CMX_<COMMODITY>_MAX_DAILY_LOSS) on top of
- *     the per-strategy one, so crude can be held tighter than gold/silver;
  *   • the option series rolls to next month CMX_OPT_ROLL_DAYS before expiry.
  *
- * Exits otherwise mirror the NIFTY paper routes at their defaults. Left out on purpose:
- * the NIFTY-points features (EMA_RSI_ST_STOP_LOSS_PTS, EMA_RSI_ST_BREAKEVEN_PTS,
- * EMA_RSI_ST_MAX_EMA_DIST_PTS — switched off via getSignal's maxEmaDistPts: 0)
- * because a NIFTY point is not a crude or gold rupee, and the VIX / OI / spread gates,
- * which read NSE data. The per-tick stop is checked on each poll
- * (CMX_POLL_SECONDS), not on every tick.
+ * EXITS — the global profit lock (tradeGuards.checkProfitLock, on the option
+ * premium, checked each poll — CMX_POLL_SECONDS) is the ONLY automatic exit.
+ * Besides it a trade closes only by hand (/exit), at session teardown (/stop or
+ * CMX_SESSION_END) or when the prices go dead (CMX_FEED_KILL_SECONDS). No stop
+ * loss, trail, target, signal exit, early square-off or daily loss / trade cap.
+ * Left out on purpose: the VIX / OI / spread gates, which read NSE data.
  */
 
 const fs   = require("fs");
@@ -62,9 +56,6 @@ const { trackPath } = require("../utils/tradePath");
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
 const MAX_CANDLES = 400;
 const LOG_MAX = 3000;   // a full MCX day of per-candle detail (~6 lines × ~170 candles); full copy via /status/log
-// Per-commodity daily loss cap defaults. Crude lost ₹33k of the ₹37k Oct 2026
-// commodity paper loss, at up to ₹4k a trade, so it is held tighter by default.
-const CMX_MAX_LOSS_DEFAULT = { CRUDE: 1500, GOLD: 0, SILVER: 0 };
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function _mins(raw, def) {
@@ -82,7 +73,6 @@ function istDow(ms = Date.now()) { return new Date(ms + 19800000).getUTCDay(); }
 function istClock(ms = Date.now()) { return new Date(ms + 19800000).toISOString().slice(11, 19); }
 function fmtMins(m) { return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
 function r2(n) { return Math.round(n * 100) / 100; }
-function _tighterCap(a, b) { return a > 0 && b > 0 ? Math.min(a, b) : (a || b); }
 
 // Telegram — plain sendTelegram, NOT notifyEntry/notifyExit: those also fire the
 // NIFTY live-order hooks, and a commodity paper trade must never reach them.
@@ -181,53 +171,8 @@ const ADAPTERS = {
     signal(candles) {
       return require("../strategies/strategy1_sar_ema_rsi").getSignal(candles, { silent: true, skipTimeCheck: true, maxEmaDistPts: 0 });
     },
-    slPauseCandles: () => _int(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES, 3),
     oppCooldownOn:  () => _bool(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED, "true"),
     oppCooldownCandles: () => _int(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES, 3),
-    consecLimit:    () => Math.max(0, _int(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES, 0)),
-    // Initial stop seed: prev-candle (default) or EMA21 when protective.
-    seedStop(side, price, sig) {
-      let seed = sig.stopLoss != null ? sig.stopLoss : null;
-      if ((process.env.EMA_RSI_ST_INITIAL_SL_MODE || "prev_candle").toLowerCase() === "ema21" && seed != null && sig.ema21 != null) {
-        const protective = side === "CE" ? sig.ema21 < price : sig.ema21 > price;
-        if (protective) seed = r2(sig.ema21);
-      }
-      return seed;
-    },
-    // Candle-close rules for an open position. Returns an exit reason or null.
-    onClose(eng, pos, bar, sig) {
-      // Negative-candle stop — still red after N candles → out.
-      const negLimit = _int(process.env.EMA_RSI_ST_NEG_CANDLE_LIMIT, 2);
-      const pnlPts = (pos.optionEntryLtp && eng.state.optLtp)
-        ? eng.state.optLtp - pos.optionEntryLtp
-        : (bar.close - pos.spotAtEntry) * (pos.side === "CE" ? 1 : -1);
-      if (negLimit > 0 && pnlPts < 0 && pos.candlesHeld >= negLimit) return `Negative ${negLimit}-candle stop`;
-
-      // EMA21 trail (+ optional N-bar candle trail), tighten-only.
-      const closeMode = (process.env.EMA_RSI_ST_EMA_EXIT_MODE || "touch").toLowerCase() === "close";
-      let newSL = null, tag = "";
-      if (sig.ema21 != null && !closeMode) { newSL = sig.ema21; tag = "EMA21"; }
-      const ctOn = _bool(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED, "false");
-      const ctBars = Math.max(1, _int(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS, 3));
-      const c = eng.state.candles;
-      if (ctOn && c.length >= ctBars) {
-        const bars = c.slice(-ctBars);
-        const lvl = pos.side === "CE" ? Math.min(...bars.map((b) => b.low)) : Math.max(...bars.map((b) => b.high));
-        if (newSL == null || (pos.side === "CE" ? lvl > newSL : lvl < newSL)) { newSL = lvl; tag = `${ctBars}-bar ${pos.side === "CE" ? "low" : "high"}`; }
-      }
-      if (newSL != null && (pos.stopLoss == null || (pos.side === "CE" ? newSL > pos.stopLoss : newSL < pos.stopLoss))) {
-        eng.log(`📐 SL trail ${pos.side}: ${pos.stopLoss} → ${r2(newSL)} (${tag})`);
-        pos.stopLoss = r2(newSL);
-      }
-      // EMA21 touch-back / close-through exit (never on the entry bar).
-      if (sig.ema21 != null && bar.time !== pos.entryBarTime) {
-        const flip = closeMode
-          ? (pos.side === "CE" ? bar.close < sig.ema21 : bar.close > sig.ema21)
-          : (bar.low <= sig.ema21 && bar.high >= sig.ema21);
-        if (flip) return closeMode ? "EMA close-through exit" : "EMA touch-back exit";
-      }
-      return null;
-    },
     // Chart overlays — the same periods the V1 rules read.
     chartCfg: () => ({
       emaFast: _int(process.env.EMA_RSI_ST_EMA_FAST, 20), emaSlow: _int(process.env.EMA_RSI_ST_EMA_SLOW, 50),
@@ -241,21 +186,8 @@ const ADAPTERS = {
     signal(candles) {
       return require("../strategies/ema_rsi_st_v2").getSignal(candles, { prefix: "EMA_RSI_ST_V2", silent: true, skipTimeCheck: true });
     },
-    slPauseCandles: () => _int(process.env.EMA_RSI_ST_V2_SL_PAUSE_CANDLES, 2),
     oppCooldownOn:  () => _bool(process.env.EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED, "true"),
     oppCooldownCandles: () => _int(process.env.EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES, 2),
-    consecLimit:    () => Math.max(0, _int(process.env.EMA_RSI_ST_V2_MAX_CONSEC_LOSSES, 2)),
-    seedStop(side, price, sig) { return Number.isFinite(sig.stopLoss) ? sig.stopLoss : null; },
-    // SuperTrend trail is V2's stop on the future; no candle-close exits of its own.
-    onClose(eng, pos) {
-      const eng2 = require("../strategies/ema_rsi_st_v2");
-      const t = eng2.trailStop(eng.state.candles, pos.side, pos.stopLoss, eng2.getConfig("EMA_RSI_ST_V2"));
-      if (t && t.changed && Number.isFinite(t.stop)) {
-        eng.log(`📐 SL trail ${pos.side}: ${pos.stopLoss} → ${t.stop} (SuperTrend)`);
-        pos.stopLoss = t.stop;
-      }
-      return null;
-    },
     chartCfg: () => {
       const k = require("../strategies/ema_rsi_st_v2").getConfig("EMA_RSI_ST_V2");
       return { emaFast: k.EMA_FAST, emaSlow: k.EMA_SLOW, stPeriod: k.ST_PERIOD, stMult: k.ST_MULT, rsiCeMin: k.RSI_CE_MIN, rsiPeMax: k.RSI_PE_MAX };
@@ -277,10 +209,6 @@ const ADAPTERS = {
     // The commodity trend filter (CMX_MIN_EMA_GAP_PCT / CMX_RSI_*) is a rule
     // filter the user did not ask for on PIVOT_EMA_ST — not applied. V1/V2 keep it.
     noTrendFilter: true,
-    // Exits on the future are on CANDLE CLOSE only (exitCheck + trailStop in
-    // onClose). The per-poll future-stop test in onPrice is skipped; the
-    // premium-based common rules (option stop, breakeven, profit lock) still run per poll.
-    candleCloseStopOnly: true,
     // Previous MCX day's daily H/L/C of the traded future — see ensurePivots().
     needsPivots: true,
     signal(candles, ctx) {
@@ -291,31 +219,10 @@ const ADAPTERS = {
       if (ctx && Number.isFinite(ctx.res)) k.TF = ctx.res;
       return E.getSignal(candles, { prefix: "PIVOT_EMA_ST", cfg: k, pivots: (ctx && ctx.pivots) || null, silent: true, skipTimeCheck: true });
     },
-    // SL pause, opposite-side cooldown and the consecutive-loss stop are V1/V2
-    // rule keys (EMA_RSI_ST_*), not commodity-wide — PIVOT_EMA_ST has none.
-    slPauseCandles: () => 0,
+    // The opposite-side cooldown is a V1/V2 rule key (EMA_RSI_ST_*), not
+    // commodity-wide — PIVOT_EMA_ST has none.
     oppCooldownOn:  () => false,
     oppCooldownCandles: () => 0,
-    consecLimit:    () => 0,
-    // Initial stop = the SuperTrend on the signal candle.
-    seedStop(side, price, sig) { return Number.isFinite(sig.stopLoss) ? sig.stopLoss : null; },
-    // The ONLY future-price exit: engine.exitCheck on this closed candle against
-    // the stop in force before it, then engine.trailStop tighten-only.
-    onClose(eng, pos, bar) {
-      const E = require("../strategies/pivot_ema_st");
-      const k = E.getConfig("PIVOT_EMA_ST");
-      const candles = eng.state.candles;
-      const st = E.computeSeries(candles, k).supertrend;
-      const stBar = st[candles.length - 1] || null;
-      const x = E.exitCheck(pos.side, bar, stBar, pos.stopLoss);
-      if (x.exit) return x.reason;
-      const t = E.trailStop(candles, pos.side, pos.stopLoss, k);
-      if (t && t.changed && Number.isFinite(t.stop)) {
-        eng.log(`📐 SL trail ${pos.side}: ${pos.stopLoss} → ${t.stop} (SuperTrend)`);
-        pos.stopLoss = t.stop;
-      }
-      return null;
-    },
     // Chart overlays come from engine.computeSeries — the exact numbers the signal read.
     chartCfg: () => {
       const k = require("../strategies/pivot_ema_st").getConfig("PIVOT_EMA_ST");
@@ -361,13 +268,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     lots:       Math.max(1, _int(process.env[`${prefix}_LOTS`], 1)),
     entryStart: _mins(process.env[`${prefix}_ENTRY_START`], "10:00"),
     entryEnd:   _mins(process.env[`${prefix}_ENTRY_END`], "22:30"),
-    eodExit:    _mins(process.env[`${prefix}_EOD_EXIT_TIME`], "23:00"),
-    maxTrades:  Math.max(1, _int(process.env[`${prefix}_MAX_DAILY_TRADES`], 3)),
-    // Tighter of the per-strategy and per-commodity caps (0 = that cap off).
-    maxLoss:    _tighterCap(
-      Math.max(0, _num(process.env[`${prefix}_MAX_DAILY_LOSS`], 5000)),
-      Math.max(0, _num(process.env[`CMX_${commodity}_MAX_DAILY_LOSS`], CMX_MAX_LOSS_DEFAULT[commodity] || 0))),
-    optStopPct: Math.max(0, _num(process.env.CMX_OPT_STOP_PCT, 10)),
     rollDays:   Math.max(0, _int(process.env.CMX_OPT_ROLL_DAYS, 2)),
     sessStart:  _mins(process.env.CMX_SESSION_START, "09:00"),
     sessEnd:    _mins(process.env.CMX_SESSION_END, "23:30"),
@@ -383,8 +283,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   const state = {
     running: false, starting: false, res: null, day: null, series: null, candles: [], lastBarTime: null,
     futLtp: null, optLtp: null, lastQuoteAt: null, nextCandleAt: 0, formingBar: null,
-    position: null, armed: null, trades: [], sessionPnl: 0,
-    consecLosses: 0, halted: null, slPauseUntil: { CE: 0, PE: 0 }, oppCooldown: null,
+    position: null, armed: null, trades: [], sessionPnl: 0, oppCooldown: null,
     lastSignal: null, lastError: null, logs: [], seenQuoteAt: 0, manualStopDay: null,
     pivots: null, pivotsError: null, pivotsTryAt: 0, lastChecks: null,   // PIVOT adapter only
   };
@@ -435,9 +334,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const today = loadBook().days?.[d];
     state.trades = today ? today.trades : [];
     state.sessionPnl = r2(state.trades.reduce((s, t) => s + (t.pnl || 0), 0));
-    state.consecLosses = 0;
-    for (let i = state.trades.length - 1; i >= 0 && state.trades[i].pnl < 0; i--) state.consecLosses++;
-    state.halted = null; state.slPauseUntil = { CE: 0, PE: 0 }; state.oppCooldown = null; state.armed = null;
+    state.oppCooldown = null; state.armed = null;
     state._reentryBlockUntil = 0;
   }
 
@@ -524,13 +421,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
   // ── guards ─────────────────────────────────────────────────────────────────
   function entryBlock(side) {
-    const c = cfg();
-    if (state.halted) return state.halted;
-    if (state.trades.length >= c.maxTrades) return `max ${c.maxTrades} trades/day reached`;
-    if (c.maxLoss > 0 && state.sessionPnl <= -c.maxLoss) { state.halted = `daily loss ₹${c.maxLoss} reached — done for today`; return state.halted; }
-    const lim = A.consecLimit();
-    if (lim > 0 && state.consecLosses >= lim) { state.halted = `${state.consecLosses} losses in a row — done for today`; return state.halted; }
-    if (state.slPauseUntil[side] > Date.now()) return `${side} paused after a stop-out`;
     const oc = state.oppCooldown;
     if (oc && oc.side !== side && oc.until > Date.now()) return `opposite-side cooldown after ${oc.side} exit`;
     return null;
@@ -561,7 +451,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   }
 
   // ── entry / exit ───────────────────────────────────────────────────────────
-  async function enter(side, spot, sig, beforeTime, entryBarTime, how) {
+  async function enter(side, spot, sig, entryBarTime, how) {
     const c = cfg();
     const block = entryBlock(side);
     if (block) { log(`⏸️ ${side} skipped — ${block}`); return; }
@@ -574,14 +464,8 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       }
       return;
     }
-    if (istNowMinutes() >= c.eodExit) { log(`⏸️ ${side} skipped — past the ${fmtMins(c.eodExit)} exit time`); return; }
     const opt = mcx.atmOption(state.series, side, spot);
     if (!opt) { log(`❌ ${side} skipped — no listed ${side} strike near ${spot}`); return; }
-
-    const seed = A.seedStop(side, spot, sig);
-    const fix = tradeGuards.resolveProtectiveStop({ side, entryPrice: spot, stopLoss: seed, candles: state.candles, beforeTime });
-    if (seed != null && fix.stopLoss == null) { log(`🚫 ${side} skipped — ${fix.reason}`); return; }
-    if (fix.repaired) log(`🛡️ Initial SL corrected — ${fix.reason}`);
 
     let premium = null;
     try { premium = (await quotes([opt.symbol]))[opt.symbol] || null; } catch (err) { noteError(err.message); }
@@ -596,7 +480,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     state.position = {
       side, symbol: opt.symbol, strike: opt.strike, expiry: opt.expiry,
       lots: c.lots, multiplier: u.multiplier,
-      spotAtEntry: spot, stopLoss: fix.stopLoss, initialStopLoss: fix.stopLoss,
+      spotAtEntry: spot,
       optionEntryLtp: premium, bestOptionLtp: premium, bestPrice: spot,
       entryTime: new Date().toISOString(), entryBarTime, candlesHeld: 0,
       // For the first-move/path log: ±0.015% of the future, the same share of
@@ -613,7 +497,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     capitalPool.block(id, cost, { side, symbol: opt.symbol, qty: u.multiplier * c.lots, premium });
     persistPosition();
     hubNeed(id, [state.series.future, opt.symbol], true);
-    log(`✅ BUY ${side} ${opt.symbol} @ ₹${premium} × ${c.lots} lot (${u.multiplier * c.lots} units) | fut ${spot} | SL ${fix.stopLoss} | ${how}`);
+    log(`✅ BUY ${side} ${opt.symbol} @ ₹${premium} × ${c.lots} lot (${u.multiplier * c.lots} units) | fut ${spot} | ${how}`);
     if (modeOn()) tg("TG_CMX_ENTRY", [
       `🛢 ${label} PAPER — ENTRY`, ``,
       side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)",
@@ -621,13 +505,12 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       `Strike: ${opt.strike}  |  Expiry: ${opt.expiry || "—"}`, ``,
       `Future @ Entry : ₹${spot}`,
       `Option Premium : ₹${premium}`,
-      `Stop Loss      : ${fix.stopLoss != null ? "₹" + fix.stopLoss : "—"}`,
       `Qty / Lots     : ${u.multiplier * c.lots} (${c.lots} lot)`, ``,
       `Reason : ${state.position.reason || "—"}`,
     ]);
   }
 
-  async function exit(reason, spotExit, { slHit = false } = {}) {
+  async function exit(reason, spotExit) {
     const pos = state.position;
     if (!pos) return;
     let prem = state.optLtp;
@@ -644,7 +527,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     };
     state.trades.push(trade);
     state.sessionPnl = r2(state.sessionPnl + pnl);
-    state.consecLosses = pnl < 0 ? state.consecLosses + 1 : 0;
     state.position = null;
     persistPosition();
     saveDayTrades();
@@ -652,15 +534,14 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     capitalPool.release(id);
 
     const resMs = c.res * 60000;
-    if (slHit && A.slPauseCandles() > 0) state.slPauseUntil[pos.side] = Date.now() + A.slPauseCandles() * resMs;
     if (A.oppCooldownOn() && A.oppCooldownCandles() > 0
-        && !/opposite signal|eod|day close|market closed|auto-stop|manual|session/i.test(reason)) {
+        && !/market closed|auto-stop|manual|session/i.test(reason)) {
       state.oppCooldown = { side: pos.side, until: Date.now() + A.oppCooldownCandles() * resMs };
     }
     // Global wait-after-any-exit cooldown — no entry on either side for N candles.
     state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), c.res);
     log(`${pnl >= 0 ? "💰" : "🔻"} EXIT ${pos.side} ${pos.symbol} @ ₹${prem} | ${reason} | P&L ₹${pnl} (gross ₹${gross}) | day ₹${state.sessionPnl}`);
-    log(`   Trade detail: fut ${pos.spotAtEntry} → ${spotExit} | premium ₹${pos.optionEntryLtp} → ₹${prem} (best ₹${pos.bestOptionLtp}) | MFE=${r2(pos.mfe || 0)} MAE=${r2(pos.mae || 0)} | held ${pos.candlesHeld} candles | SL ${pos.initialStopLoss} → ${pos.stopLoss} | lock ${pos.lockArmedAt ? "armed" : "never armed"}`);
+    log(`   Trade detail: fut ${pos.spotAtEntry} → ${spotExit} | premium ₹${pos.optionEntryLtp} → ₹${prem} (best ₹${pos.bestOptionLtp}) | MFE=${r2(pos.mfe || 0)} MAE=${r2(pos.mae || 0)} | held ${pos.candlesHeld} candles | lock ${pos.lockArmedAt ? "armed" : "never armed"}`);
     if (modeOn()) tg("TG_CMX_EXIT", [
       `🛢 ${label} PAPER — EXIT`, ``,
       pos.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)",
@@ -693,14 +574,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const pos = state.position;
     if (pos) {
       pos.candlesHeld++;
-      const why = A.onClose({ state, log }, pos, bar, sig);
       persistPosition();
-      if (why) { await exit(why, bar.close); }
-      else if (winOk && sig.signal === (pos.side === "CE" ? "BUY_PE" : "BUY_CE")) { await exit("Opposite signal exit", bar.close); }
-    }
-    if (state.position && istNowMinutes() >= c.eodExit) {
-      await exit(`Exit before day close ${fmtMins(c.eodExit)}`, bar.close);
-      return;
     }
 
     if (!state.position && winOk && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")) {
@@ -715,21 +589,17 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
         hubUrgent();
         log(`🎯 ${sig.signal} signal candle closed — ARMED; next candle must cross ${bar.close} | ${sig.reason || ""}`);
       } else {
-        await enter(side, bar.close, sig, bar.time + c.res * 60, bar.time + c.res * 60, "candle close");
+        await enter(side, bar.close, sig, bar.time + c.res * 60, "candle close");
       }
     }
   }
 
-  // Profit-lock / breakeven state of an open position, for the logs.
+  // Profit-lock state of an open position, for the logs.
   function lockStatus(pos) {
     const e = pos.optionEntryLtp, best = pos.bestOptionLtp;
     if (!e || !tradeGuards.PROFIT_LOCK_ENABLED) return "lock off";
     const armLtp = r2(e * (1 + tradeGuards.PROFIT_LOCK_ARM_PCT / 100));
-    if (!best || best < armLtp) {
-      const be = tradeGuards.BREAKEVEN_STOP_ENABLED
-        && best >= e * (1 + tradeGuards.BREAKEVEN_ARM_PCT / 100) ? " | breakeven armed @ ₹" + e : "";
-      return `lock not armed (arms at ₹${armLtp}, +${tradeGuards.PROFIT_LOCK_ARM_PCT}%)${be}`;
-    }
+    if (!best || best < armLtp) return `lock not armed (arms at ₹${armLtp}, +${tradeGuards.PROFIT_LOCK_ARM_PCT}%)`;
     const floor = tradeGuards.profitLockFloorLtp(e, best, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
     const kept = best > e ? Math.round((floor - e) / (best - e) * 100) : 0;
     return `lock ARMED — floor ₹${floor} (keeps ${kept}% of gain)`;
@@ -743,16 +613,14 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     log(`📊 ──── Candle ${istClock(bar.time * 1000).slice(0, 5)}–${istClock((bar.time + resSec) * 1000).slice(0, 5)} closed ────`);
     log(`   OHLC: O=${bar.open} H=${bar.high} L=${bar.low} C=${bar.close} | body=${f(Math.abs(bar.close - bar.open))}`);
     log(A.candleLine ? A.candleLine(sig, f) : `   EMA20=${f(sig.ema20)} EMA50=${f(sig.ema50)} | RSI=${f(sig.rsi)} | ST=${f(sig.supertrend)}(${sig.stTrend || "?"})`);
-    // Only where onBarClose would check it anyway — entryBlock can latch state.halted.
+    // Only where onBarClose would check it anyway.
     const sigSide = sig.signal === "BUY_CE" ? "CE" : "PE";
     const blockNote = winOk && !state.position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
       ? (entryBlock(sigSide) || (A.noTrendFilter ? null : trendBlock(sigSide, sig, bar.close)) || "") : "";
     log(`   Signal: ${sig.signal || "NONE"}${winOk ? "" : " | outside entry window"}${blockNote ? " | blocked: " + blockNote : ""} | ${sig.reason || "—"}`);
     const pos = state.position;
     if (pos) {
-      const dir = pos.side === "CE" ? 1 : -1;
-      const gap = Number.isFinite(pos.stopLoss) ? f((bar.close - pos.stopLoss) * dir) : "?";
-      log(`   Open ${pos.side} @ fut ${pos.spotAtEntry} | SL=${pos.stopLoss} (gap=${gap}) | best fut=${pos.bestPrice} | MFE=${f(pos.mfe || 0)} MAE=${f(pos.mae || 0)} | held ${pos.candlesHeld} candles`);
+      log(`   Open ${pos.side} @ fut ${pos.spotAtEntry} | best fut=${pos.bestPrice} | MFE=${f(pos.mfe || 0)} MAE=${f(pos.mae || 0)} | held ${pos.candlesHeld} candles`);
       if (state.optLtp) {
         const units = pos.multiplier * pos.lots;
         const d = r2(state.optLtp - pos.optionEntryLtp);
@@ -773,7 +641,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     if (a && !state.position) {
       if (confirmCandle.isNextBar(bucket, a.armedBarTime, c.res)) {
         if (confirmCandle.crossed(a.side, fut, a.triggerLevel)) {
-          await enter(a.side, fut, a.sig, bucket, bucket, `confirmed cross of ${a.triggerLevel}`);
+          await enter(a.side, fut, a.sig, bucket, `confirmed cross of ${a.triggerLevel}`);
         }
       } else if (bucket > a.armedBarTime + c.res * 60) {
         log(`⌛ Armed ${a.side} expired — next candle never crossed ${a.triggerLevel}`);
@@ -795,20 +663,10 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       log(`🔒 Profit lock ARMED — premium ₹${pos.bestOptionLtp} ≥ +${tradeGuards.PROFIT_LOCK_ARM_PCT}% of entry ₹${pos.optionEntryLtp} | ${lockStatus(pos)}`);
     }
 
+    // The global profit lock on the option premium — the ONLY automatic exit.
     if (state.optLtp) {
-      const lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp)
-        || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp);
-      if (lock) { await exit(lock, fut); return; }
-      const pct = cfg().optStopPct;
-      if (pct > 0 && state.optLtp <= r2(pos.optionEntryLtp * (1 - pct / 100))) {
-        await exit(`Option stop ${pct}% @ opt ₹${state.optLtp}`, fut, { slHit: true });
-        return;
-      }
-    }
-    // PIVOT_EMA_ST: the future stop is tested on candle close only (A.onClose), never per poll.
-    if (!A.candleCloseStopOnly && Number.isFinite(pos.stopLoss) && (pos.side === "CE" ? fut <= pos.stopLoss : fut >= pos.stopLoss)) {
-      const kind = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.01 ? "Trail" : "Initial";
-      await exit(`${kind} SL hit @ ${pos.stopLoss}`, fut, { slHit: true });
+      const lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp);
+      if (lock) await exit(lock, fut);
     }
   }
 
@@ -823,7 +681,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       const nowMin = istNowMinutes();
 
       if (nowMin >= c.sessEnd) { await stop(`market closed ${fmtMins(c.sessEnd)}`); return; }
-      if (state.position && nowMin >= c.eodExit) await exit(`Exit before day close ${fmtMins(c.eodExit)}`, state.futLtp || state.position.spotAtEntry);
 
       // A bar is due once the one after the last closed bar has itself closed.
       const nowSec = Math.floor(Date.now() / 1000);
@@ -846,7 +703,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       hubNeed(id, [state.series.future, state.position && state.position.symbol], !!(state.position || state.armed));
       const fq = hub.last[state.series.future];
       if (state.position) { const oq = hub.last[state.position.symbol]; if (oq) state.optLtp = oq.lp; }
-      // No fresh price for this long → the stops are blind, so close at the last price we have.
+      // No fresh price for this long → the profit lock is blind, so close at the last price we have.
       if (state.position && nowMin >= c.sessStart) {
         const pos = state.position, oq = hub.last[pos.symbol];
         const blind = staleFeed(c.feedKillSec, Date.now(), Math.max(pos.entryTimeMs || 0, Date.parse(state.startedAt) || 0), fq && fq.at, oq && oq.at);
@@ -939,14 +796,14 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     state.manualStopDay = null;
     state.startedAt = new Date().toISOString();
     persistRunning();
-    log(`▶️ ${resumed ? "Resumed" : "Started"} ${label} — signal ${state.series.future} (${c.res}m, ${state.candles.length} warm-up candles) · options expire ${state.series.optionExpiry} · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · exit ${fmtMins(c.eodExit)}`);
+    log(`▶️ ${resumed ? "Resumed" : "Started"} ${label} — signal ${state.series.future} (${c.res}m, ${state.candles.length} warm-up candles) · options expire ${state.series.optionExpiry} · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · session ends ${fmtMins(c.sessEnd)}`);
     timer = setInterval(loop, 1000);
     if (modeOn()) tg("TG_CMX_STARTED", [
       `🛢 ${label} PAPER — ${resumed ? "RESUMED" : "STARTED"}`, ``,
       `Signal  : ${state.series.future} (${c.res}m)`,
       `Options : expire ${state.series.optionExpiry}`,
-      `Entries : ${fmtMins(c.entryStart)} → ${fmtMins(c.entryEnd)} IST · exit ${fmtMins(c.eodExit)}`,
-      `Max Loss: ₹${c.maxLoss} | Max Trades: ${c.maxTrades} | Lots: ${c.lots}`,
+      `Entries : ${fmtMins(c.entryStart)} → ${fmtMins(c.entryEnd)} IST · session ends ${fmtMins(c.sessEnd)}`,
+      `Lots    : ${c.lots}`,
       state.position ? `Open    : ${state.position.side} ${state.position.symbol} (restored)` : null,
     ]);
     return { ok: true };
@@ -1007,11 +864,11 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       running: state.running, series: state.series ? { future: state.series.future, futureExpiry: state.series.futureExpiry, optionExpiry: state.series.optionExpiry } : null,
       futLtp: state.futLtp, optLtp: state.optLtp, lastQuoteAt: state.lastQuoteAt,
       position: state.position, armed: state.armed ? { side: state.armed.side, triggerLevel: state.armed.triggerLevel } : null,
-      trades: state.trades, sessionPnl: state.sessionPnl, halted: state.halted,
+      trades: state.trades, sessionPnl: state.sessionPnl,
       lastSignal: state.lastSignal, lastError: state.lastError, candles: state.candles.length,
       prevBar: state.candles.length ? state.candles[state.candles.length - 1] : null,
       formingBar: state.running ? state.formingBar : null,
-      consecLosses: state.consecLosses, consecLimit: A.consecLimit(), startedAt: state.startedAt || null,
+      startedAt: state.startedAt || null,
       logs: state.logs.slice(-300), logTotal: state.logs.length, history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
       allTime,
       // PIVOT adapter only — spreads nothing for V1/V2.
@@ -1022,8 +879,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   function manualExit() { if (state.position) return exit("Manual exit", state.futLtp || state.position.spotAtEntry); }
 
   // Manual CE / PE — a paper entry at the current future price, same guards,
-  // sizing and exits as a signal entry. The stop starts at the last closed
-  // candle's low (CE) / high (PE); the strategy's own trail takes over after.
+  // sizing and exits as a signal entry.
   async function manualEntry(side) {
     if (side !== "CE" && side !== "PE") return { ok: false, reason: "side must be CE or PE" };
     if (!state.running) return { ok: false, reason: "start the page first" };
@@ -1032,9 +888,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const c = cfg();
     const nowSec = Math.floor(Date.now() / 1000);
     const bucket = Math.floor(nowSec / (c.res * 60)) * c.res * 60;
-    const last = state.candles[state.candles.length - 1];
-    const seed = last ? (side === "CE" ? last.low : last.high) : null;
-    await enter(side, state.futLtp, { stopLoss: seed }, bucket, bucket, "manual entry");
+    await enter(side, state.futLtp, {}, bucket, "manual entry");
     return state.position ? { ok: true } : { ok: false, reason: "not entered — see the activity log" };
   }
 
@@ -1068,7 +922,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       return {
         candles, emaFast: aligned(ser.emaFast), emaSlow: aligned(ser.emaSlow), emaFastLen: k.emaFast, emaSlowLen: k.emaSlow,
         rsi: [], rsiCeMin: null, rsiPeMax: null, supertrend, markers,
-        stopLoss: p && Number.isFinite(p.stopLoss) ? p.stopLoss : null, entry: p ? p.spotAtEntry : null,
+        entry: p ? p.spotAtEntry : null,
         armed: null,
         pivots: pv ? { pp: pv.pp, r1: pv.r1, s1: pv.s1, from: pv.from } : null,
       };
@@ -1077,7 +931,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       candles, emaFast: ema(k.emaFast), emaSlow: ema(k.emaSlow), emaFastLen: k.emaFast, emaSlowLen: k.emaSlow,
       rsi: candles.length > 15 ? line(RSI.calculate({ period: 14, values: closes })) : [],
       rsiCeMin: k.rsiCeMin, rsiPeMax: k.rsiPeMax, supertrend, markers,
-      stopLoss: p && Number.isFinite(p.stopLoss) ? p.stopLoss : null, entry: p ? p.spotAtEntry : null,
+      entry: p ? p.spotAtEntry : null,
       armed: state.armed ? state.armed.triggerLevel : null,
     };
   }
@@ -1104,7 +958,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     if (String(process.env.CMX_AUTO_START || "false").toLowerCase() !== "true") return;
     if (state.manualStopDay === istDay() || Date.now() - lastAutoTry < 300000) return;
     const c = cfg(), m = istNowMinutes(), dow = istDow();
-    if (dow === 0 || dow === 6 || m < c.sessStart || m >= c.eodExit) return;
+    if (dow === 0 || dow === 6 || m < c.sessStart || m >= c.sessEnd) return;
     // A weekday MCX holiday was detected → quiet until the next session open.
     // Within the first bars after an open, wait: too early to tell a holiday.
     if (Date.now() < closedUntil) return;

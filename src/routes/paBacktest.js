@@ -16,7 +16,6 @@ const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngi
 const paStrategy    = require("../strategies/price_action");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const { saveResult }   = require("../utils/resultStore");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
@@ -26,7 +25,6 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const backtestJobs = require("../utils/backtestJobManager");
 const tradeGuards = require("../utils/tradeGuards");
-const commonTradeWindow = require("../utils/commonTradeWindow");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -82,22 +80,14 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const _btResMins  = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : PA_RES;
   const CANDLES_PER_DAY = Math.max(1, Math.round(390 / _btResMins));
 
-  // PA config
-  const PA_MAX_TRADES    = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
-  const PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
-  const PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
-
   // Slippage simulation (pts added against you on entry & exit)
   // Realistic default (was 0 = frictionless, which overstated edge). 1.5pt each
   // way. Set PA_SLIPPAGE_PTS=0 to restore the old frictionless fills.
   const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "1.5");
 
-  // Breakeven config — lift SL to entry+buffer once peak profit clears the trigger
-  const PA_BE_TRIGGER = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300"); // ₹ (0 = off)
-  const PA_BE_BUFFER  = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");    // spot pts
-
-  // Common profit lock + breakeven, in spot points because a backtest has no live
-  // premium — the same conversion backtestEngine uses (200 seed premium, delta).
+  // Common profit lock — the only automatic exit, as in paper. In spot points because
+  // a backtest has no live premium — the same conversion backtestEngine uses (200
+  // seed premium, delta).
   const _PL_ARM_PCT   = tradeGuards.PROFIT_LOCK_ARM_PCT;
   const _PL_FLOOR_PCT = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
   const _PL_TRAIL_PCT = tradeGuards.PROFIT_LOCK_TRAIL_PCT;
@@ -107,10 +97,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
                      && _PL_ARM_PCT > 0 && _PL_FLOOR_PCT >= 0 && _PL_FLOOR_PCT < _PL_ARM_PCT;
   const _PL_ARM_PTS   = _PL_VALID ? (_PL_ARM_PCT   / 100 * 200) / DELTA : 0;
   const _PL_FLOOR_PTS = _PL_VALID ? (_PL_FLOOR_PCT / 100 * 200) / DELTA : 0;
-  const _BE_ARM_PCT   = tradeGuards.BREAKEVEN_ARM_PCT;
-  const _BE_VALID     = !isFutures && tradeGuards.BREAKEVEN_STOP_ENABLED && DELTA > 0
-                     && Number.isFinite(_BE_ARM_PCT) && _BE_ARM_PCT > 0;
-  const _BE_ARM_PTS   = _BE_VALID ? (_BE_ARM_PCT / 100 * 200) / DELTA : 0;
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -154,32 +140,23 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 PRICE ACTION BACKTEST — ${paStrategy.NAME}`);
-  console.log(`   Candles: ${candles.length} | Order-block retest entry | Stop + target exit`);
-  console.log(`   MaxTrades: ${PA_MAX_TRADES}/day | MaxLoss: ₹${PA_MAX_LOSS}/day`);
-  console.log(`   SL: beyond the block | Breakeven ₹${PA_BE_TRIGGER} ${process.env.PA_SMC_TRAIL_ENABLED === "true" ? "then swing trail" : "+ target"} | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Candles: ${candles.length} | Order-block retest entry | Profit-lock exit, else session end`);
+  console.log(`   Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
-  const PA_CONSEC_EXTRA = parseInt(process.env.PA_CONSEC_SL_EXTRA_PAUSE || "2", 10);
-
   const window = candles.slice(0, 30);
-  let _slPauseUntilTs = 0;
-  let _consecSLs = 0;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
   // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(PA_RES) / 1000;
   let _reentryBlockUntilTs = 0;
   let _dailyTradeCount = 0;
-  let _dailyPnl = 0;
   let _prevDate = null;
   let _loggedReason = null;
   const _rejectCounts = {};
   const _btStartMin = (() => { const v = process.env.PA_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
   const _btEndMin   = (() => { const v = process.env.PA_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
-  // EOD square-off = TRADE_STOP_TIME − 10, mirroring paPaper (_STOP_MINS − 10) so a
-  // Settings change to TRADE_STOP_TIME moves the backtest exit too (was hardcoded 3:20).
-  const _eodMin     = commonTradeWindow.exitCap((() => { const v = process.env.TRADE_STOP_TIME || "15:30"; const p = v.split(":"); return parseInt(p[0],10)*60+(parseInt(p[1],10)||0) - 10; })());
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
@@ -198,9 +175,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     // New day reset
     if (_prevDate && candleDate !== _prevDate) {
       _dailyTradeCount = 0;
-      _dailyPnl = 0;
-      _slPauseUntilTs = 0;
-      _consecSLs = 0;
       _reentryBlockUntilTs = 0;
       pendingSignal = null; // discard overnight pending signals
     }
@@ -209,34 +183,22 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     window.push(candle);
     if (window.length > 100) window.shift();
 
-    const isEOD = candleMin >= _eodMin; // TRADE_STOP_TIME − 10 (mirrors paPaper EOD square-off)
+    // Last bar of this day's session: paper's session auto-stop (TRADE_STOP_TIME)
+    // closes any position still open, so the backtest closes it at this bar's close.
+    const isSessionEnd = i === candles.length - 1 || getISTDateStr(candles[i + 1].time) !== candleDate;
 
     // ── EXECUTE PENDING SIGNAL on this candle's open ────────────────────────
-    if (pendingSignal && !position && !isEOD) {
+    if (pendingSignal && !position) {
       const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
-      // Skip if open gapped past the raw SL (entry would be instant loss)
-      const gapBad = (pendingSignal.side === "CE" && entryPrice <= pendingSignal.rawSL)
-                  || (pendingSignal.side === "PE" && entryPrice >= pendingSignal.rawSL);
-      if (gapBad) { pendingSignal = null; }
-    }
-    if (pendingSignal && !position && !isEOD) {
-      const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
-      // Paper keeps the engine's stop level as is, so the backtest does too.
-      const sl = pendingSignal.rawSL;
       position = {
         side:           pendingSignal.side,
         entryPrice:     entryPrice,
         entryTs:        candle.time,
-        stopLoss:       sl,
-        initialStopLoss: sl,
-        slSource:       pendingSignal.slSource,
         entryReason:    pendingSignal.reason || "",
-        target:         pendingSignal.target != null ? pendingSignal.target : null,
         candlesHeld:    0,
-        peakPnl:        0,
       };
       pendingSignal = null;
-    } else if (pendingSignal && (position || isEOD)) {
+    } else if (pendingSignal && position) {
       pendingSignal = null; // can't enter, discard
     }
 
@@ -256,106 +218,29 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         ? (position.side === "CE" ? candle.high : candle.low)
         : (position.side === "CE" ? Math.max(position.bestPrice, candle.high) : Math.min(position.bestPrice, candle.low));
 
-      // ── Helper: calculate running PNL at a given spot price ──
-      // Use flat charge estimate for running PnL (exact charges applied at exit)
-      const _estCharges = getCharges({ broker: "fyers", isFutures, exitPremium: null, entryPremium: null, qty: LOT_SIZE });
-      const _runPnl = (spotExit) => {
-        const pts = (spotExit - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-        if (OPTION_SIM) {
-          const thetaCost = (THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY;
-          return (pts * DELTA * LOT_SIZE) - thetaCost - _estCharges;
-        }
-        return pts - _estCharges / LOT_SIZE;
-      };
-
-      // ── Track peak PNL for breakeven trigger ──
-      const bestSpot = position.side === "CE" ? candle.high : candle.low;
-      const bestPnl  = _runPnl(bestSpot);
-      if (!position.peakPnl || bestPnl > position.peakPnl) {
-        position.peakPnl = bestPnl;
-      }
-
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: common lock, common breakeven, SL, target, own breakeven, trail, EOD
+      // EXIT: the common profit lock (paper's only automatic exit), else the
+      // session end. Armed on an earlier bar's peak only.
       // ──────────────────────────────────────────────────────────────────────
 
       const _dirMul = position.side === "CE" ? 1 : -1;
       const _bestFav = _bestPrevBar != null ? (_bestPrevBar - position.entryPrice) * _dirMul : 0;
 
-      // Paper checks these before the stop on every tick. A level only comes first when it
-      // is nearer price than the stop, which a raised stop can reverse.
-      const _beforeStop = (lvl) => (position.side === "CE" ? lvl > position.stopLoss : lvl < position.stopLoss);
-
-      // 1. Common profit lock (armed on an earlier bar's peak)
-      if (!exitReason && _PL_VALID && _bestPrevBar != null && _bestFav >= _PL_ARM_PTS) {
+      if (_PL_VALID && _bestPrevBar != null && _bestFav >= _PL_ARM_PTS) {
         const _bestPremPct = _bestFav * DELTA / 200 * 100;
         const _trailPts = _bestFav * tradeGuards.profitLockTrailKeepPct(_bestPremPct, _PL_TRAIL_PCT, _PL_TIERS) / 100;
         const _floorPts = Math.max(_PL_FLOOR_PTS, _trailPts);
         const _floorLvl = position.entryPrice + _floorPts * _dirMul;
-        if (_beforeStop(_floorLvl) && (position.side === "CE" ? candle.low <= _floorLvl : candle.high >= _floorLvl)) {
+        if (position.side === "CE" ? candle.low <= _floorLvl : candle.high >= _floorLvl) {
           const _gapped = position.side === "CE" ? candle.open < _floorLvl : candle.open > _floorLvl;
           exitReason = `Profit lock (≈${_floorPts.toFixed(0)}pt spot kept of ${_bestFav.toFixed(0)}pt)`;
           exitPrice  = parseFloat(((_gapped ? candle.open : _floorLvl) - SLIPPAGE_PTS * _dirMul).toFixed(2));
         }
       }
 
-      // 2. Common breakeven stop (the fallback for a trade the lock never armed on)
-      if (!exitReason && _BE_VALID && _bestPrevBar != null && _bestFav >= _BE_ARM_PTS && _beforeStop(position.entryPrice)
-          && (position.side === "CE" ? candle.low <= position.entryPrice : candle.high >= position.entryPrice)) {
-        const _beGapped = position.side === "CE" ? candle.open < position.entryPrice : candle.open > position.entryPrice;
-        exitReason = `Breakeven stop (armed at +${_BE_ARM_PCT}%, ≈${_BE_ARM_PTS.toFixed(0)}pt spot)`;
-        exitPrice  = parseFloat(((_beGapped ? candle.open : position.entryPrice) - SLIPPAGE_PTS * _dirMul).toFixed(2));
-      }
-
-      // 3. SL hit (initial or swing-trailed)
-      if (exitReason) {
-        // the lock or breakeven above already closed it
-      } else if (position.side === "CE" && candle.low <= position.stopLoss) {
-        // Gap-through: fill at the open if the bar gapped below the stop (worse).
-        const _fill = candle.open < position.stopLoss ? candle.open : position.stopLoss;
-        exitPrice  = parseFloat((_fill - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
-        const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        const _src = position.slSource || "Swing";
-        exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
-      } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-        const _fill = candle.open > position.stopLoss ? candle.open : position.stopLoss;
-        exitPrice  = parseFloat((_fill + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
-        const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        const _src = position.slSource || "Swing";
-        exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
-      }
-
-      // 4. Target — after the stops: within one bar, assume the worse came first.
-      if (!exitReason && position.target != null
-          && (position.side === "CE" ? candle.high >= position.target : candle.low <= position.target)) {
-        exitReason = "Target hit";
-        exitPrice  = parseFloat((position.target - SLIPPAGE_PTS * _dirMul).toFixed(2));
-      }
-
-      // 5. BREAKEVEN — lift SL to entry+buffer once peak profit clears the trigger
-      if (!exitReason && PA_BE_TRIGGER > 0 && !position.breakevenArmed && position.peakPnl >= PA_BE_TRIGGER) {
-        const beLevel = position.side === "CE" ? position.entryPrice + PA_BE_BUFFER : position.entryPrice - PA_BE_BUFFER;
-        const better = position.side === "CE" ? beLevel > position.stopLoss : beLevel < position.stopLoss;
-        if (better) {
-          position.stopLoss = parseFloat(beLevel.toFixed(2));
-          position.slSource = "Breakeven";
-        }
-        position.breakevenArmed = true;
-      }
-
-      // 6. Structure trail SL (swing-based, tighten only)
-      if (!exitReason) {
-        const trailResult = paStrategy.updateTrailingSL(window, position.stopLoss, position.side);
-        if (trailResult.sl !== position.stopLoss) {
-          position.stopLoss = trailResult.sl;
-          if (trailResult.source) position.slSource = trailResult.source;
-        }
-      }
-
-      // 7. EOD
-      if (!exitReason && isEOD) {
-        exitReason = "EOD square-off";
-        _exitAtClose = true;
+      if (!exitReason && isSessionEnd) {
+        exitReason = "Session end";
+        _exitAtClose = true; // exitPrice stays at this bar's close
       }
 
       if (exitReason) {
@@ -381,9 +266,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
           exitTime:     toIST(candle.time),
           entryTs:      position.entryTs,
           exitTs:       candle.time,
-          stopLoss:     position.stopLoss,
-          initialStopLoss: position.initialStopLoss,
-          target:       position.target != null ? position.target : null,
           pnl,
           spotPnlPts:   parseFloat(spotPnlPts.toFixed(2)),
           candlesHeld:  position.candlesHeld,
@@ -392,17 +274,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
           pnlMode:      OPTION_SIM ? "option sim" : "raw pts",
         });
 
-        _dailyPnl += pnl;
         _dailyTradeCount++;
-        if (exitReason.includes("SL")) {
-          _consecSLs++;
-          const pauseCandles = _consecSLs >= 2
-            ? PA_PAUSE_CANDLES + PA_CONSEC_EXTRA * (_consecSLs - 1)
-            : PA_PAUSE_CANDLES;
-          _slPauseUntilTs = candle.time + (pauseCandles * PA_RES * 60);
-        } else if (pnl > 0) {
-          _consecSLs = 0;
-        }
         // Wait-after-any-exit cooldown — every exit reason, both sides.
         if (_REENTRY_COOLDOWN_SECS > 0) {
           _reentryBlockUntilTs = candle.time + (_exitAtClose ? PA_RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
@@ -410,17 +282,15 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         position = null;
       }
       // Still holding: no entry check. Flat again: paper checks at this candle's close,
-      // and the pause and cooldown gates below still apply.
+      // and the cooldown gate below still applies.
       if (position) continue;
     }
 
     // ── ENTRY LOGIC ─────────────────────────────────────────────────────────
-    if (isEOD) continue;
+    // A signal on the session's last bar would fill on the next day's open.
+    if (isSessionEnd) continue;
     // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
     if (expiryDates && !expiryDates.has(candleDate)) continue;
-    if (_dailyTradeCount >= PA_MAX_TRADES) continue;
-    if (_dailyPnl <= -PA_MAX_LOSS) continue;
-    if (candle.time < _slPauseUntilTs) continue;
     // Wait-after-any-exit cooldown: skip both sides. Checked on the SIGNAL bar —
     // paper would enter at its close (the backtest fills at the next open).
     if (_reentryBlockUntilTs > 0 && candle.time < _reentryBlockUntilTs) continue;
@@ -459,9 +329,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
     pendingSignal = {
       side,
-      rawSL:    result.stopLoss, // absolute SL level from strategy
-      slSource: result.slSource || "Swing",
-      target:   result.target != null ? result.target : null,
       signalTs: candle.time,
       reason:   result.reason || `${side} signal`,
     };
@@ -575,7 +442,6 @@ router.get("/idle", (req, res) => {
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
@@ -585,38 +451,6 @@ router.get("/", async (req, res) => {
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";
-
-  if (liveActive) {
-    res.setHeader("Content-Type", "text/html");
-    return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-      <meta name="viewport" content="width=device-width,initial-scale=1"/>
-      <title>Price Action Backtest blocked — Live trade active</title>
-      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
-      ${sidebarCSS()}
-      ${modalCSS()}
-      </style>
-      </head><body>
-<div class="app-shell">
-${buildSidebar('paBacktest', true)}
-<div class="main-content">
-      <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
-        <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
-          <div style="font-size:2.5rem;margin-bottom:16px;">🔒</div>
-          <h2 style="color:#ef4444;margin-bottom:12px;font-size:1.1rem;">Price Action Backtest blocked</h2>
-          <p style="font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;">
-            Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
-            Stop the live trade first, then run your backtest.
-          </p>
-          <a href="/ema_rsi_st-live/status" style="background:#dc2626;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
-        </div>
-      </div>
-      </div></div>
-<script>
-${modalJS()}
-${clearCacheJS()}
-</script>
-</body></html>`);
-  }
 
   if (!process.env.ACCESS_TOKEN) {
     return res.status(401).send(errorPage("Not Authenticated", "Login with Fyers first."));
@@ -836,7 +670,7 @@ ${clearCacheJS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('paBacktest', liveActive)}
+${buildSidebar('paBacktest', false)}
 <div class="main-content">
 
 <div class="page">

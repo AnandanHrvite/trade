@@ -2,8 +2,8 @@
  * Losses Analyzer — every losing trade, one expandable row each, with the full
  * signal / entry / exit / indicator picture behind it.
  *
- * Read-only. Loads the same per-strategy session files that /consolidation (paper)
- * and /live-consolidation (live) use — but unlike /edge-analytics, which reduces
+ * Read-only. Loads the same per-strategy paper session files that /consolidation
+ * uses — but unlike /edge-analytics, which reduces
  * each trade to the handful of numbers its metrics need, this page keeps the whole
  * record: entry + exit reason, spot/premium legs, stop levels, excursions and every
  * *AtEntry / *AtExit indicator each engine chose to write. Only losses are kept, so
@@ -26,7 +26,7 @@
  * baked into the verdict — a 5-point floor means something different on BANKNIFTY
  * than on NIFTY, and the reader can see and move it.
  *
- * Everything computes client-side from an embedded array, so the Book / Strategy /
+ * Everything computes client-side from an embedded array, so the Strategy /
  * Range / Side / Reason / Verdict filters recompute with no server round-trip —
  * matching /consolidation-report, whose toolbar this page mirrors.
  *
@@ -45,7 +45,7 @@ const { istDayFromAny } = require("../utils/tradeUtils");
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
-// Mirror the source maps used by consolidation.js (paper) + liveConsolidation.js (live).
+// Mirror the source map used by consolidation.js (paper).
 const PAPER_SOURCES = [
   { mode: "EMA_RSI_ST",       file: "ema_rsi_st_paper_trades.json" },
   { mode: "EMA_RSI_ST_V2",    file: "ema_rsi_st_v2_paper_trades.json" },
@@ -70,9 +70,6 @@ const PAPER_SOURCES = [
   { mode: "SIMPLE930",        file: "simple930_paper_trades.json" },
   { mode: "EARLYBIRD",        file: "early_bird_paper_trades.json" },
 ];
-const LIVE_SOURCES = PAPER_SOURCES.map(s => ({
-  mode: s.mode, file: s.file.replace("_paper_trades.json", "_live_trades.json"),
-}));
 
 function safeRead(p) {
   try {
@@ -193,7 +190,7 @@ let _cache = null;
 let _sig   = null;
 function _sourcesSig() {
   let sig = "";
-  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES]) {
+  for (const src of PAPER_SOURCES) {
     try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
     catch (_) { sig += `${src.mode}:0|`; }
   }
@@ -202,7 +199,7 @@ function _sourcesSig() {
 function loadAllLosses() {
   const sig = _sourcesSig();
   if (_cache && sig === _sig) return _cache;
-  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"));
+  const trades = loadBook(PAPER_SOURCES, "paper");
   trades.sort((a, b) => (b.date || "").localeCompare(a.date || "")); // newest first
   // A row id has to be unique for the detail drawer to open the right trade. Two
   // losses from one strategy can share date, time and amount, so the id is a
@@ -435,12 +432,6 @@ ${multiSelectCSS()}
     <p class="page-sub">Every losing trade with its full signal, entry, exit and indicator record — and a verdict on <em>why</em> it lost. Tap a row to open it.</p>
 
     <div class="tbar">
-      <label>Book</label>
-      <div class="seg" id="segBook">
-        <button data-book="paper" class="on">Paper</button>
-        <button data-book="live">Live</button>
-        <button data-book="all">Both</button>
-      </div>
       <label>Strategy</label>
       ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.mode })), 'All strategies')}
       <label>Range</label>
@@ -553,7 +544,7 @@ function verdictText(t, j, mfeFloor, gbRs){
 }
 
 function currentFilter(){
-  const book = document.querySelector('#segBook button.on').dataset.book;
+  const book = 'paper';
   const side = document.querySelector('#segSide button.on').dataset.side;
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
@@ -564,7 +555,6 @@ function currentFilter(){
 }
 function applyFilter(f){
   return ALL.filter(t=>{
-    if(f.book!=='all' && t.book!==f.book) return false;
     if(f.side!=='all' && t.side!==f.side) return false;
     if(f.modes.indexOf(t.mode)===-1) return false;
     if(f.reasons.indexOf(t.exitReason||'—')===-1) return false;
@@ -651,7 +641,7 @@ function render(){
   const arr=applyFilter(f);
   const C=document.getElementById('content');
 
-  if(!arr.length){ C.innerHTML='<div class="empty">No losing trades for this filter. Try widening the range or switching Book.</div>'; return; }
+  if(!arr.length){ C.innerHTML='<div class="empty">No losing trades for this filter. Try widening the range.</div>'; return; }
 
   // Cards: the loss bill, then the split that tells you where to spend your time.
   // Judge once per trade and keep it — the cards, the breakdown and the rows all
@@ -880,7 +870,7 @@ function wireSeg(id){
     b.classList.add('on'); render();
   }));
 }
-wireSeg('segBook'); wireSeg('segSide');
+wireSeg('segSide');
 msInit('fMode', render); msInit('fReason', render); msInit('fVerdict', render);
 document.getElementById('fRange').addEventListener('change',()=>{
   const range=document.getElementById('fRange').value;

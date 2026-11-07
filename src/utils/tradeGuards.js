@@ -1,5 +1,6 @@
-// Shared live/paper-trade guards: bid-ask spread filter at entry, time-stop at exit.
-// Keeps paper and live engines aligned on real-market frictions the backtest ignores.
+// Shared paper-trade guards: bid-ask spread filter at entry, the global
+// profit lock (the only automatic exit in every strategy) and the re-entry
+// cooldown after an exit. Keeps paper and backtest engines aligned.
 
 const tickRecorder = require("./tickRecorder");
 
@@ -16,8 +17,6 @@ function _numOr(raw, def) {
 function liveMaxSpreadPts()      { return _numOr(parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2"), 2); }
 // Common Trade Rules on/off (Settings). Unset = on, so old .env files keep today's behaviour.
 function liveSpreadCheckEnabled() { return String(process.env.MAX_BID_ASK_SPREAD_ENABLED ?? "true").toLowerCase() !== "false"; }
-function liveTimeStopCandles()   { return _numOr(parseInt(process.env.TIME_STOP_CANDLES || "4", 10), 4); }
-function liveTimeStopFlatPts()   { return _numOr(parseFloat(process.env.TIME_STOP_FLAT_PTS || "20"), 20); }
 
 async function fetchOptionQuote(fyers, symbol) {
   try {
@@ -42,7 +41,7 @@ async function fetchOptionQuote(fyers, symbol) {
 }
 
 // Returns { ok, spread, reason }. Fails OPEN (ok=true) if bid/ask unavailable —
-// we don't want to starve live trading when the broker snapshot lacks depth fields.
+// we don't want to starve trading when the broker snapshot lacks depth fields.
 function checkSpread(bid, ask, maxSpreadPts = liveMaxSpreadPts()) {
   if (!bid || !ask || ask <= 0 || bid <= 0 || ask < bid) {
     return { ok: true, spread: null, reason: "no-quote" };
@@ -70,109 +69,6 @@ function checkSpread(bid, ask, maxSpreadPts = liveMaxSpreadPts()) {
 // three are therefore NOT equal in length — they are equal in OUTPUT, which is
 // what parity requires and what the measurement above verifies.
 const INDICATOR_HISTORY_CANDLES = 400;
-
-// ── Protective-stop resolver (shared by EMA_RSI_ST paper / live / backtest) ──
-// The strategy seeds the initial stop from the SIGNAL candle's predecessor
-// (prev-candle low for CE / high for PE). With the confirmation candle ON,
-// entry happens one bar later at the cross of the signal candle's close, so
-// that level can end up on the WRONG side of the actual fill — e.g. CE filled
-// at 24267.25 with a "stop" at 24276.10, which stops out on the next tick.
-//
-// This resolver keeps the strategy's structure-based stop exactly as-is
-// whenever it is already protective (the overwhelmingly common case) and, only
-// when it is not, falls back to the NEAREST-IN-TIME structural extreme that IS
-// protective — still a real candle low/high from the same candle series, never
-// an ATR / points / percentage / EMA substitute.
-//
-// Search order (most recent first) is what makes it "nearest structure": the
-// newest candle considered is the SIGNAL candle.
-//
-// SEARCH BOUND — the candle history the caller hands in, nothing invented. That
-// is the same rolling series the strategy itself reasons over, so the repair can
-// never see a level getSignal could not see. Lengths differ by engine (see
-// INDICATOR_HISTORY_CANDLES above: paper/live ~1,125, backtest 400) but the scan
-// exits on its first iteration in every realistic case, so depth is irrelevant
-// to the result — see the `beforeTime` note.
-//
-// `beforeTime` (unix seconds, optional) — RACE GUARD. Paper and live call this
-// from an async continuation after the option-symbol lookup, so a candle can
-// close between the entry decision and this call, appending the ENTRY bar to the
-// series. Passing the entry bar's time makes the scan ignore any candle at or
-// after it, so the resolver deterministically sees the same candles the entry
-// decision saw — the signal candle and older — no matter when it runs. The
-// backtest passes the same thing, which is what makes all three identical.
-//
-// Given that guard, iteration 1 always succeeds when the confirmation candle is
-// ON: entry is strictly beyond the signal candle's close, and that candle's
-// low (CE) / high (PE) is at or beyond its own close, so it qualifies.
-//
-// Returns { stopLoss, repaired, reason }.
-//   stopLoss null + repaired true → no protective structure exists anywhere in
-//   the supplied history. Callers MUST treat that as "cannot open a protected
-//   position" rather than opening an unstopped one (see M1 handling in the
-//   engines); it is unreachable with the confirmation candle ON.
-
-function isProtectiveStop(side, stopLoss, entryPrice) {
-  if (stopLoss == null || entryPrice == null) return false;
-  return side === "CE" ? stopLoss < entryPrice : stopLoss > entryPrice;
-}
-
-function resolveProtectiveStop({ side, entryPrice, stopLoss, candles, beforeTime }) {
-  // No stop seeded → leave it null. Adding one here would be a behaviour change.
-  if (stopLoss == null) return { stopLoss: null, repaired: false, reason: null };
-  if (!Number.isFinite(entryPrice)) return { stopLoss, repaired: false, reason: null };
-  if (isProtectiveStop(side, stopLoss, entryPrice)) {
-    return { stopLoss, repaired: false, reason: null };
-  }
-
-  const series = Array.isArray(candles) ? candles : [];
-  const cutoff = Number.isFinite(beforeTime) ? beforeTime : null;
-  const limit  = series.length; // the strategy's own window — see note above
-  for (let i = 1; i <= limit; i++) {
-    const c = series[series.length - i];
-    if (!c) continue;
-    // Race guard: never consider the entry bar or anything after it.
-    // FAIL CLOSED — a candle we cannot timestamp cannot be PROVEN to predate the
-    // entry bar, so it must not be used as structure. (It previously fell through
-    // and was accepted, which would have let the entry bar itself become the stop:
-    // look-ahead in the backtest, wrong candle in paper/live.)
-    if (cutoff != null && (c.time == null || !Number.isFinite(c.time) || c.time >= cutoff)) continue;
-    const level = side === "CE" ? c.low : c.high;
-    if (level == null || !Number.isFinite(level)) continue;
-    if (isProtectiveStop(side, level, entryPrice)) {
-      const fixed = parseFloat(level.toFixed(2));
-      return {
-        stopLoss: fixed,
-        repaired: true,
-        reason: `initial SL ₹${stopLoss} was not protective for ${side} @ ₹${entryPrice} — using nearest structural ${side === "CE" ? "low" : "high"} ₹${fixed} (${i} candle${i > 1 ? "s" : ""} back)`,
-      };
-    }
-  }
-
-  return {
-    stopLoss: null,
-    repaired: true,
-    reason: `initial SL ₹${stopLoss} was not protective for ${side} @ ₹${entryPrice} and no protective structural level exists in the strategy's ${limit}-candle history — entering with no initial structural stop`,
-  };
-}
-
-// Returns an exit-reason string if the time-stop should fire, else null.
-// Fires only when the trade has been held >= maxCandles AND option-premium PnL
-// is still within ±flatPts (i.e., no meaningful move — pure theta bleed risk).
-function checkTimeStop(candlesHeld, pnlPts, {
-  maxCandles = liveTimeStopCandles(),
-  flatPts    = liveTimeStopFlatPts(),
-} = {}) {
-  // Per-mode overrides (PA_TIME_STOP_* etc.) are parsed by the caller; a garbled
-  // one arrives as NaN and would make the comparisons below always false.
-  if (!Number.isFinite(maxCandles)) maxCandles = liveTimeStopCandles();
-  if (!Number.isFinite(flatPts))    flatPts    = liveTimeStopFlatPts();
-  if (!Number.isFinite(candlesHeld) || candlesHeld < maxCandles) return null;
-  if (!Number.isFinite(pnlPts))                                 return null;
-  if (Math.abs(pnlPts) >= flatPts)                              return null;
-  const sign = pnlPts >= 0 ? "+" : "";
-  return `Time-stop — flat after ${candlesHeld} candles (${sign}${pnlPts.toFixed(1)}pt)`;
-}
 
 // ── Global profit lock (ratchet) ──────────────────────────────────────────
 //
@@ -292,67 +188,16 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, {
   return `Profit lock +${floorPct}% — premium Rs${currentLtp} fell to the locked floor Rs${floorLtp} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
 }
 
-// ── Global breakeven stop ─────────────────────────────────────────────────
-//
-// The same shape as the profit lock, one step earlier: once premium has risen
-// by BREAKEVEN_ARM_PCT, the trade may not be sold below the entry premium. It
-// catches the trades the lock never reaches — a move that goes +5% and dies
-// arms this but never arms an +8% lock.
-//
-// WHY — measured on the same 321 active-strategy trades. Lock alone (8/5) nets
-// +Rs32,110; adding breakeven at +5% takes it to +Rs47,006. The obvious worry
-// is that it kills winners by stopping them flat on a dip: 72 winners did trade
-// back through entry after arming, but 66 of those dipped BEFORE their peak —
-// the breakeven was not armed yet, so they survive. Only 6 winners actually
-// dipped after peaking, worth Rs499 in total. So it risks ~Rs500 of real profit
-// to save ~Rs15,000.
-//
-// A LOWER arm scores better in replay (+Rs81,100 at +2%) — that is the
-// overfitting trap, and it also fires on noise, so the default is the more
-// conservative +5%.
-//
-// NOT FREE — a breakeven exit still pays ~Rs71 of charges, so a trade that
-// would have lost Rs50 costs more after this. It wins on the trades that were
-// heading for a real loss, not on the small ones.
-//
-// RELATIONSHIP TO THE LOCK — both may be armed at once. The lock's floor sits
-// ABOVE entry, so when both are armed the lock is strictly the tighter of the
-// two and should be checked first; this is the fallback for trades that never
-// reached the lock's arm level.
-//
-// CALLER CONTRACT — identical to checkProfitLock: per tick, option premium
-// only, never spot. Returns an exit-reason string, else null.
-function liveBreakevenArmPct() { return parseFloat(process.env.BREAKEVEN_ARM_PCT || "5"); }
-function liveBreakevenEnabled() {
-  return String(process.env.BREAKEVEN_STOP_ENABLED ?? "true").toLowerCase() === "true";
-}
-
-function checkBreakevenStop(entryLtp, currentLtp, bestLtp, {
-  armPct  = liveBreakevenArmPct(),
-  enabled = liveBreakevenEnabled(),
-} = {}) {
-  if (!enabled) return null;
-  if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
-  if (!Number.isFinite(currentLtp) || currentLtp <= 0) return null;
-  if (!Number.isFinite(bestLtp) || bestLtp <= 0)       return null;
-  if (!Number.isFinite(armPct) || armPct <= 0)         return null;
-
-  if (bestLtp < entryLtp * (1 + armPct / 100)) return null;  // never armed
-  if (currentLtp > entryLtp) return null;                    // still above entry
-
-  return `Breakeven stop — premium Rs${currentLtp} fell back to the entry Rs${parseFloat(entryLtp.toFixed(2))} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%)`;
-}
-
 // ── Re-entry cooldown after ANY exit (all strategies) ───────────────────────
-// Once a position closes — stop, target, breakeven, profit lock, signal, any
-// reason — no new entry on EITHER side until EXIT_REENTRY_COOLDOWN_CANDLES of
+// Once a position closes — profit lock, manual exit, session end, any reason —
+// no new entry on EITHER side until EXIT_REENTRY_COOLDOWN_CANDLES of
 // the strategy's own candles have passed. Stops the bot re-buying on the very
-// next candle after it was just shaken out (23 Oct: breakeven exit 10:48, same
-// PE re-entered 10:50, breakeven again 10:53). 0 = off.
+// next candle after it was just shaken out (23 Oct: exit 10:48, same PE
+// re-entered 10:50, out again 10:53). 0 = off.
 //
-// Measured from the EXIT time, like the per-strategy SL pauses: exit 10:48:49 on
-// 5-min candles with 2 → blocked until 10:58:49. Backtests stand in the exit
-// bar's open time for a tick stop and its close time for a candle-close exit.
+// Measured from the EXIT time: exit 10:48:49 on 5-min candles with 2 → blocked
+// until 10:58:49. Backtests stand in the exit bar's open time for a tick exit
+// and its close time for a candle-close exit.
 // Manual entries bypass it.
 function liveReentryCooldownCandles() {
   if (String(process.env.EXIT_REENTRY_COOLDOWN_ENABLED ?? "true").toLowerCase() === "false") return 0;
@@ -374,26 +219,18 @@ function reentryCooldownUntil(exitMs, resMin) {
 module.exports = {
   fetchOptionQuote,
   checkSpread,
-  checkTimeStop,
   checkProfitLock,
   profitLockFloorLtp,
   profitLockTrailKeepPct,
-  checkBreakevenStop,
   reentryCooldownMs,
   reentryCooldownUntil,
-  isProtectiveStop,
-  resolveProtectiveStop,
   INDICATOR_HISTORY_CANDLES,
   // Live getters (kept under the old names for callers that read them for display).
   get DEFAULT_MAX_SPREAD_PTS()     { return liveMaxSpreadPts(); },
-  get DEFAULT_TIME_STOP_CANDLES()  { return liveTimeStopCandles(); },
-  get DEFAULT_TIME_STOP_FLAT_PTS() { return liveTimeStopFlatPts(); },
   get PROFIT_LOCK_ENABLED()        { return liveProfitLockEnabled(); },
   get PROFIT_LOCK_ARM_PCT()        { return liveProfitLockArmPct(); },
   get PROFIT_LOCK_FLOOR_PCT()      { return liveProfitLockFloorPct(); },
   get PROFIT_LOCK_TRAIL_PCT()      { return liveProfitLockTrailPct(); },
   get PROFIT_LOCK_TRAIL_TIERS()    { return liveProfitLockTrailTiers(); },
-  get BREAKEVEN_STOP_ENABLED()     { return liveBreakevenEnabled(); },
-  get BREAKEVEN_ARM_PCT()          { return liveBreakevenArmPct(); },
   get EXIT_REENTRY_COOLDOWN_CANDLES() { return liveReentryCooldownCandles(); },
 };

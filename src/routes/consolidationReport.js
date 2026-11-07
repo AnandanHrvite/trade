@@ -1,15 +1,15 @@
 /**
  * Consolidation Report — a printable, DAILY consolidated report of every recorded
- * trade (paper + live), rendered as one table per market (NIFTY, BANK NIFTY,
+ * paper trade, rendered as one table per market (NIFTY, BANK NIFTY,
  * COMMODITY) with a row per trading day.
  *
  * Mirrors the Telegram "CONSOLIDATED DAY REPORT" layout (per-strategy trades + P&L,
  * then Total / Wins / Losses / Win rate / Net P&L) but for every day at once, in a
- * table you can filter (Book + the shared sharedNav date range) and export to PDF.
+ * table you can filter (Market, Strategy + the shared sharedNav date range) and export to PDF.
  *
  * A sidebar menu item; the "📈 Edge Analytics" button in its toolbar crosses over to
  * the deeper metrics page. Read-only: loads the same per-strategy session
- * files that /consolidation (paper) + /live-consolidation (live) use, flattens them,
+ * files that /consolidation (paper) uses, flattens them,
  * embeds the trade array, and computes everything client-side so filters recompute
  * instantly with no server round-trip.
  *
@@ -92,7 +92,7 @@ async function loadVixByDate(fromDate, toDate) {
   // Today's daily bar is not always stamped while the session is still running, so
   // fill the current day from the live quote. Uses getQuotes directly (not
   // vixFilter.fetchLiveVix) so a page view never writes a VIX tick into the
-  // recorder — replay must see only the poll cadence the live engines produced.
+  // recorder — replay must see only the poll cadence the running engines produced.
   const today = istTodayCR();
   if (map[today] == null && toDate >= today) {
     try {
@@ -110,7 +110,7 @@ async function loadVixByDate(fromDate, toDate) {
   return { map, note };
 }
 
-// Mirror the source maps used by consolidation.js (paper) + liveConsolidation.js (live).
+// Mirror the source map used by consolidation.js (paper).
 const PAPER_SOURCES = [
   { mode: "EMA_RSI_ST", file: "ema_rsi_st_paper_trades.json" },
   { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_paper_trades.json" },
@@ -135,35 +135,10 @@ const PAPER_SOURCES = [
   { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
   { mode: "EARLYBIRD",  file: "early_bird_paper_trades.json" },
 ];
-const LIVE_SOURCES = [
-  { mode: "EMA_RSI_ST", file: "ema_rsi_st_live_trades.json" },
-  { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_live_trades.json" },
-  { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_live_trades.json" },
-  { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_live_trades.json" },
-  { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_live_trades.json" },
-  { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_live_trades.json" },
-  { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_live_trades.json" },
-  { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_live_trades.json" },
-  { mode: "GAP_RUNAWAY", file: "gap_runaway_live_trades.json" },
-  { mode: "BB_RSI",     file: "bb_rsi_live_trades.json" },
-  { mode: "PA",         file: "pa_live_trades.json" },
-  { mode: "ORB",        file: "orb_live_trades.json" },
-  { mode: "EMA9VWAP",   file: "ema9vwap_live_trades.json" },
-  { mode: "TREND_PB",   file: "trend_pb_live_trades.json" },
-  { mode: "TDS",        file: "trend_day_scalp_live_trades.json" },
-  { mode: "HA_SCALP",   file: "ha_scalp_live_trades.json" },
-  { mode: "PREV_ORB_SCALP", file: "prev_orb_scalp_live_trades.json" },
-  { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_live_trades.json" },
-  { mode: "BN_PIVOT_RSI_ST", file: "bn_pivot_rsi_st_live_trades.json" },
-  { mode: "SIMPLE930", file: "simple930_live_trades.json" },
-  { mode: "EARLYBIRD",  file: "early_bird_live_trades.json" },
-];
 
 // Mode → the strategy's Paper Trade History page. Clicking a per-strategy P&L cell
 // in the Daily Breakdown opens that page in a new tab, deep-linked to the day
 // (?date=YYYY-MM-DD) so the matching session card is expanded on arrival.
-// Paper only: no strategy serves a /history page for its live book, so a Live-only
-// cell stays plain text rather than linking to trades it doesn't show.
 const PAPER_HISTORY_PATH = {
   EMA_RSI_ST:        "/ema_rsi_st-paper/history",
   EMA_RSI_ST_V2:     "/ema_rsi_st_v2-paper/history",
@@ -275,7 +250,7 @@ let _cache = null;
 let _sig   = null;
 function _sourcesSig() {
   let sig = "";
-  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES, ...CMX_SOURCES]) {
+  for (const src of [...PAPER_SOURCES, ...CMX_SOURCES]) {
     try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
     catch (_) { sig += `${src.mode}:0|`; }
   }
@@ -284,7 +259,7 @@ function _sourcesSig() {
 function loadAllTrades() {
   const sig = _sourcesSig();
   if (_cache && sig === _sig) return _cache;
-  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"), loadCmxBook());
+  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadCmxBook());
   trades.sort((a, b) => (a.date || "").localeCompare(b.date || "")); // oldest → newest
   _cache = trades;
   _sig   = sig;
@@ -501,15 +476,9 @@ ${multiSelectCSS()}
   ${buildSidebar('consolidationReport', false)}
   <div class="main-content">
     <h1 class="page-title">📑 Consolidation Report</h1>
-    <p class="page-sub">What every strategy made or lost, day by day. Pick a book, market and period — the totals come first, then one table per market.</p>
+    <p class="page-sub">What every strategy made or lost, day by day. Pick a market and period — the totals come first, then one table per market.</p>
 
     <div class="tbar">
-      <label>Book</label>
-      <div class="seg" id="segBook">
-        <button data-book="paper" class="on">Paper</button>
-        <button data-book="live">Live</button>
-        <button data-book="all">Both</button>
-      </div>
       <label>Market</label>
       <div class="seg" id="segMkt">
         <button data-mkt="all" class="on">All</button>
@@ -612,7 +581,7 @@ function rangeLabelFor(range, from, to){
 }
 
 function currentFilter(){
-  const book = document.querySelector('#segBook button.on').dataset.book;
+  const book = 'paper';
   const mkt  = document.querySelector('#segMkt button.on').dataset.mkt;
   // ticked strategies ([] = none ticked), narrowed to the chosen market
   const modes = msValues('fMode').filter(m => mkt==='all' || GROUP_OF[m]===mkt);
@@ -622,7 +591,7 @@ function currentFilter(){
 }
 function applyFilter(f){
   return ALL.filter(t=>{
-    if(f.book!=='all' && t.book!==f.book) return false;
+    if(t.book!==f.book) return false;
     if(f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
@@ -708,8 +677,7 @@ function dayTable(title, gModes, gArr, showVix){
       const c=g.modes[mo];
       if(!c || !c.n){ row+='<td class="muted'+(firstOf[mo]?' grp-first':'')+'">—</td>'; continue; }
       const cell='<span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span>';
-      // Only a cell that actually holds paper trades gets the deep link — a Live-only
-      // cell would otherwise open a paper page showing different trades.
+      // Only a cell that actually holds paper trades gets the deep link.
       const hp=HIST_PATH[mo];
       const tk=g.date+'|'+mo; TIP_LIST[tk]=c.list;
       const tipAttr=' data-tip="'+esc(tk)+'"';
@@ -750,7 +718,7 @@ function render(){
   const C=document.getElementById('content');
   TIP_LIST={}; hideTip();
 
-  const bookLabel = f.book==='all'?'Paper + Live':(f.book==='live'?'Live':'Paper');
+  const bookLabel = 'Paper';
   const gen = new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
   const days = byDay(arr);
 
@@ -840,10 +808,6 @@ function render(){
 }
 
 // wire controls
-document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('click',()=>{
-  document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); render();
-}));
 document.querySelectorAll('#segMkt button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#segMkt button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); render();

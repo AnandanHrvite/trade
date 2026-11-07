@@ -13,30 +13,6 @@ const { fetchCandlesWithCache, fetchCandlesSmartCache } = require("../utils/back
 const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards   = require("../utils/tradeGuards");
 
-// EMA_RSI_ST_INITIAL_SL_MODE — mirrors emaRsiStPaper.simulateBuy() / emaRsiStLive
-// ._applyInitialSLCap(). Paper is canonical; this is a straight copy so the three
-// engines cannot drift. "prev_candle" (default) keeps the seeded prev-candle
-// low/high; "ema21" seeds the stop on the same EMA21 line the trail rides, but
-// only when that level is protective for the side. runBacktest() is the
-// EMA_RSI_ST backtest only, so reading the key here scopes to that strategy.
-// getSignal() bakes "SL=prevLow <level>" into the reason string before the mode
-// is applied, so under mode "ema21" that label names a level the trade never
-// used. Append the level actually armed rather than rewriting the strategy's own
-// text — the prev-candle level stays visible as the structural reference.
-function _emaRsiStSLLabel(reason, seededSL, actualSL) {
-  if (actualSL == null || seededSL == null) return reason;
-  if (Math.abs(actualSL - seededSL) < 0.01) return reason;
-  return `${reason} | SL=EMA21 ${actualSL}`;
-}
-
-function _emaRsiStSeedSL(seededSL, entryPrice, side, ema21) {
-  if (seededSL == null) return null;
-  const mode = (process.env.EMA_RSI_ST_INITIAL_SL_MODE || "prev_candle").toLowerCase();
-  if (mode !== "ema21" || ema21 == null) return seededSL;
-  const protective = side === "CE" ? ema21 < entryPrice : ema21 > entryPrice;
-  return protective ? quantize(ema21, 2) : seededSL;
-}
-
 
 function maxDaysForResolution(resolution) {
   // Fyers rejects a day/week/month request wider than 366 days with
@@ -177,18 +153,12 @@ function getISTHHMM(unixSec) {
  * For EMA_RSI_ST (redefined 2026-05-27) the entry/exit model is:
  *   ENTRY  : strategy.getSignal(window) returns BUY_CE/BUY_PE (EMA alignment + RSI + SuperTrend rules).
  *            Entry price = candle.close (candle-granularity proxy for live intra-candle entry).
- *   STOP   : initial SL = previous completed candle low (CE) / high (PE), from getSignal.
- *            Trails EMA21, tighten-only. When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low/high
- *            candle trail is layered on and the tighter of the two wins. With
- *            EMA_RSI_ST_EMA_EXIT_MODE=close the EMA21 line is a candle-close exit only and
- *            stops being the trailed SL (the candle trail / pts cap own the stop instead).
- *   EXIT   : trail SL hit · EMA21 touch-back (or cross-and-close) · option-premium stop (OPT_STOP_PCT,
- *            approximated via an adverse spot move in backtest) · opposite signal · EOD.
- *   RISK   : same-side SL cooldown (EMA_RSI_ST_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS,
- *            3-consecutive-loss pause.
- *
- * Other strategies that reuse this engine keep their getSignal-driven behaviour; the
- * 50%-rule pause scaffolding is retained for them but EMA_RSI_ST no longer triggers it.
+ *   EXIT   : the global profit lock (tradeGuards) is the ONLY automatic exit — no SL, trail,
+ *            target, breakeven, time-stop or signal exit. A position still open at the end of
+ *            a day's session (last bar of the day / TRADE_STOP_TIME) is squared off there,
+ *            mirroring paper's session teardown.
+ *   GUARDS : VIX gate, entry window, opposite-side cooldown, one-trade-per-move,
+ *            wait-after-exit cooldown (entry filters only — no loss-based day limits).
  */
 async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress, activeFromTs = 0) {
   const trades    = [];
@@ -248,49 +218,20 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // BACKTEST_SLIPPAGE_PTS=0 to restore the old frictionless behaviour.
   const SLIPPAGE_PTS = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "1.5");
 
-  // ── EMA_RSI_ST (redefined): exit/stop model ───────────────────────────────────
-  //   Initial SL  : previous completed candle's low (CE) / high (PE) — from getSignal.
-  //   Trail       : EMA21, tighten-only; optional N-bar candle-trail overlay
-  //                 (EMA_RSI_ST_CANDLE_TRAIL_*) — tighter wins. EMA_RSI_ST_EMA_EXIT_MODE=close
-  //                 takes EMA21 out of the trail and leaves it a candle-close exit.
-  //   Option stop : exit if the (simulated) option premium drops OPT_STOP_PCT from entry.
-  //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
-  const EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
-  const OPT_STOP_PCT           = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-  // Per-trade catastrophic spot-points cap (mirrors BB_RSI_STOP_LOSS_PTS). 0 = off.
-  const _EMA_RSI_ST_STOP_LOSS_PTS   = parseFloat(process.env.EMA_RSI_ST_STOP_LOSS_PTS || "0");
-  // Negative-candle stop: square off a trade still in the RED after N candles (cut losers
-  // fast, let winners ride the EMA trail). 0 = off. Default 2 (added 2026-06-19).
-  const _EMA_RSI_ST_NEG_CANDLE_LIMIT = parseInt(process.env.EMA_RSI_ST_NEG_CANDLE_LIMIT || "2", 10);
-  // Chop guard: halt new entries for the rest of the day after N consecutive losing
-  // trades (any win resets the streak). Mirrors paper/live. 0 = off.
-  const _EMA_RSI_ST_MAX_CONSEC_LOSSES = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10);
-  // EMA21 exit mode (EMA_RSI_ST_EMA_EXIT_MODE) — mirrors emaRsiStPaper exactly.
-  // "touch" (default): the candle range reaching EMA21 is an exit AND EMA21 is the
-  // trailed stop. "close" (cross & close): exit only on a candle CLOSING the wrong side
-  // of EMA21 (CE below / PE above), and EMA21 no longer seeds the stop — paper drops it
-  // there too, because a stop sitting on EMA21 is hit by the first wick and would make
-  // the two modes identical. The stop is then the candle trail / initial SL / pts cap.
-  const _EMA_RSI_ST_EMA_EXIT_CLOSE = (process.env.EMA_RSI_ST_EMA_EXIT_MODE || "touch").toLowerCase() === "close";
-  // Opposite-side (flip) cooldown — block opposite-side entry for N candles after non-flip exit.
+  // Opposite-side (flip) cooldown — block opposite-side entry for N candles after a non-EOD exit.
   const OPP_COOLDOWN_ENABLED   = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   const OPP_COOLDOWN_CANDLES   = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
   // One trade per move — after an exit, that side waits for a SuperTrend flip (mirrors paper).
   const MOVE_LOCK_ENABLED      = (process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED || "true").toLowerCase() === "true";
-  // Backtest has no live option LTP — approximate the premium stop as an adverse
-  // SPOT move: optStopSpotPts = (OPT_STOP_PCT × estEntryPremium) / DELTA. estEntryPremium
-  // is the same 200 constant the PnL sim uses, so the two stay internally consistent.
-  const _OPT_STOP_SPOT_PTS = (!isFutures && OPT_STOP_PCT > 0 && DELTA > 0) ? (OPT_STOP_PCT * 200) / DELTA : 0;
 
-  // ── Global profit lock, in spot-point terms ───────────────────────────────
+  // ── Global profit lock, in spot-point terms — the ONLY automatic exit ─────
   // The lock is defined on option premium, and this engine has no live LTP — it
-  // models premium as spot × DELTA − theta. So convert both thresholds the same
-  // way _OPT_STOP_SPOT_PTS does, against the same 200 estimated entry premium,
-  // and the backtest stays internally consistent with its own P&L model.
+  // models premium as 200 (the estimated entry premium the P&L sim uses) +
+  // spot × DELTA − theta. So convert both thresholds against that same 200 seed
+  // via DELTA, and the backtest stays internally consistent with its own P&L model.
   //
   // This is an APPROXIMATION of what paper does per tick: paper arms on the real
-  // premium, which also moves with IV and theta, not with spot alone. It is the
-  // same approximation the option stop above already accepts, and it is far
+  // premium, which also moves with IV and theta, not with spot alone. It is far
   // closer to paper than having no lock at all (which would leave every backtest
   // reporting exits paper would never take).
   const _PL_ENABLED   = !isFutures && tradeGuards.PROFIT_LOCK_ENABLED;
@@ -303,13 +244,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                      && _PL_ARM_PCT > 0 && _PL_FLOOR_PCT >= 0 && _PL_FLOOR_PCT < _PL_ARM_PCT;
   const _PL_ARM_SPOT_PTS   = _PL_VALID ? (_PL_ARM_PCT   / 100 * 200) / DELTA : 0;
   const _PL_FLOOR_SPOT_PTS = _PL_VALID ? (_PL_FLOOR_PCT / 100 * 200) / DELTA : 0;
-
-  // Global breakeven stop, same spot-equivalent conversion. Floor is ENTRY, so
-  // there is no floor distance to convert — only the arm.
-  const _BE_ARM_PCT  = tradeGuards.BREAKEVEN_ARM_PCT;
-  const _BE_VALID    = !isFutures && tradeGuards.BREAKEVEN_STOP_ENABLED && DELTA > 0
-                    && Number.isFinite(_BE_ARM_PCT) && _BE_ARM_PCT > 0;
-  const _BE_ARM_SPOT_PTS = _BE_VALID ? (_BE_ARM_PCT / 100 * 200) / DELTA : 0;
 
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
@@ -326,14 +260,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BACKTEST — ${strategy.NAME}`);
   console.log(`   Entry : signal from strategy at candle close`);
-  console.log(`   Exit  : trail SL + ${_EMA_RSI_ST_EMA_EXIT_CLOSE ? "EMA21 cross-and-close" : "EMA21 touch-back"} + opposite signal + EOD/day`);
+  console.log(`   Exit  : global profit lock only (${_PL_VALID ? `arm +${_PL_ARM_PCT}% / floor +${_PL_FLOOR_PCT}%` : "OFF"}) + session-end square-off each day`);
   console.log(`   Charges : dynamic (STT + exchange + GST + stamp + ₹40 brok) — see Settings`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
   console.log(`   VIX filter : ${vixFilter.VIX_ENABLED ? `ON (max=${vixFilter.VIX_MAX_ENTRY}, strong-only=${vixFilter.VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
   console.log("══════════════════════════════════════════════");
 
-  // ── Optimisation: cache the SL from the previous candle's getSignal ──────────
-  // Instead of calling getSignal(prevWindow) on every iteration (O(n²) total),
   // ── Optimisation: push/pop window trick (mirrors paper/live onTick) ──────────
   // candles.slice(0, i+1) allocates a new array every iteration — O(n) alloc × n iters = O(n²) mem.
   // Instead: maintain a 'window' array and push/pop the current candle in and out.
@@ -346,27 +278,17 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   let _dbgBlockCount  = 0;
 
   // Derive candle resolution in minutes from first two candle timestamps.
-  // Used for 50%-rule pause duration. Fallback 15 if fewer than 2 candles.
+  // Used for cooldown durations. Fallback 15 if fewer than 2 candles.
   const candleResolutionMins = candles.length >= 2
     ? Math.round((candles[1].time - candles[0].time) / 60)
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
-  console.log(`   EMA_RSI_ST(redefined): EMA+RSI+SuperTrend | ${_EMA_RSI_ST_EMA_EXIT_CLOSE ? "EMA21 cross-and-close exit (not the tick stop)" : "EMA21 trail + touch-back"}${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
+  console.log(`   EMA_RSI_ST(redefined): EMA+RSI+SuperTrend entries | exit = profit lock only`);
 
-  // 50%-rule exit pause: retained for non-EMA_RSI_ST strategies that use this engine.
-  // Stored as unix seconds (candle.time units). Reset per day in the loop.
-  let _fiftyPctPauseUntilTs = 0;
-
-  // ── Risk controls (mirrors paper trade exactly) ─────────────────────────────
-  const MAX_DAILY_LOSS      = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
-  const MAX_DAILY_TRADES    = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
-  let _dailyPnl             = 0;       // running PnL for current day (reset each day)
-  let _dailyTradeCount      = 0;       // trades taken today (reset each day)
-  let _dailyLossHit         = false;   // latched true when daily loss >= MAX_DAILY_LOSS
-  let _consecutiveLosses    = 0;       // back-to-back losses (reset on win or new day)
-  let _consecPauseUntilTs   = 0;       // unix seconds — block entries until this time
-  let _chopConsecLosses     = 0;       // chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES), reset on win or new day
-  const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
+  // Per-day tallies — for the verbose DAY CLOSE log only, never an entry gate.
+  let _dailyPnl        = 0;
+  let _dailyTradeCount = 0;
+  // ── Entry guards (non-loss filters only) ────────────────────────────────────
   let _oppositeCooldownUntilTs   = 0;     // opposite-side cooldown (unix secs), reset per day
   let _oppositeCooldownLastSide  = null;  // last exited side
   let _moveLockSide              = null;  // one trade per move: side waiting for a SuperTrend flip
@@ -377,28 +299,20 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(candleResolutionMins) / 1000;
   let _reentryBlockUntilTs       = 0;
   // Confirmation candle (cross & close, EMA_RSI_ST only — EMA_RSI_ST_CONFIRM_CANDLE_ENABLED).
-  // { side, armedBarTime, triggerLevel, signalSL, reason, strength } | null.
+  // { side, armedBarTime, triggerLevel, reason, strength } | null.
   let _armedSwing = null;
   // Arm decided at THIS candle's close, published at the top of the next candle —
   // see the CONFIRMATION ARM block below for why it is staged rather than set live.
   let _pendingArm = null;
-  // EMA21 trail base from the PRIOR candle's close. Paper arms the EMA21 trail at a
-  // candle's close and enforces it on the NEXT candle's ticks; using this candle's own
-  // EMA21 to update the SL and then testing this candle's low/high against it is
-  // look-ahead. We carry last candle's EMA21 forward and trail on it instead.
-  let _prevEma21 = null;
-  console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
-  // EOD times — mirror emaRsiStPaper EXACTLY so backtest squares off / blocks entries at
-  // the same IST minutes as paper (not a hardcoded 3:20). Paper has TWO distinct times:
-  // entry cutoff = TRADE_STOP_TIME − 10 (paper's _ENTRY_STOP_MINS, ~15:20) and exit
-  // square-off = EMA_RSI_ST_EOD_EXIT_TIME (~15:15). Collapsing both into one 3:20 made the
-  // backtest hold ~5 min past paper's square-off.
+  // Session times — mirror emaRsiStPaper: entry cutoff = TRADE_STOP_TIME − 10
+  // (paper's _ENTRY_STOP_MINS) and the session auto-stop at TRADE_STOP_TIME, where
+  // paper's teardown squares off any open position. The backtest closes at the
+  // close of the bar that ends at/after TRADE_STOP_TIME, or the day's last bar.
   const _stopMins     = (() => { const v = (process.env.TRADE_STOP_TIME || "15:30").split(":"); return parseInt(v[0], 10) * 60 + (parseInt(v[1], 10) || 0); })();
   const _entryStopMin = _stopMins - 10;
-  const _eodExitMin   = (() => { const v = (process.env.EMA_RSI_ST_EOD_EXIT_TIME || "15:15").split(":"); const h = parseInt(v[0], 10); return isNaN(h) ? _stopMins : (h * 60 + (parseInt(v[1], 10) || 0)); })();
-  const _eodLabel     = String(Math.floor(_eodExitMin / 60)).padStart(2, "0") + ":" + String(_eodExitMin % 60).padStart(2, "0");
+  const _stopLabel    = String(Math.floor(_stopMins / 60)).padStart(2, "0") + ":" + String(_stopMins % 60).padStart(2, "0");
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
@@ -427,34 +341,22 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // A candle is the last of its trading day if the NEXT candle is a different
     // IST date OR there is no next candle (final candle of entire run).
     const candleDate = getISTDateStr(candle.time);
-    // Reset 50%-rule pause at start of each new trading day
+    // Reset per-day state at the start of each new trading day
     if (i > 30) {
       const prevCandleDate = getISTDateStr(candles[i - 1].time);
       if (candleDate !== prevCandleDate) {
-        _fiftyPctPauseUntilTs = 0;
-        // Reset daily risk controls for new day
+        if (_verbose && _dailyTradeCount > 0) {
+          console.log(`\n  📅 DAY CLOSE [${prevCandleDate}]: ${_dailyTradeCount} trades | PnL=${_dailyPnl.toFixed(1)}`);
+        }
         _dailyPnl           = 0;
         _dailyTradeCount    = 0;
-        _dailyLossHit       = false;
-        _consecutiveLosses  = 0;
-        _consecPauseUntilTs = 0;
-        _chopConsecLosses   = 0;
-        _slPauseUntilBySide.CE = 0;
-        _slPauseUntilBySide.PE = 0;
         _oppositeCooldownUntilTs  = 0;
         _oppositeCooldownLastSide = null;
         _moveLockSide             = null;
         _reentryBlockUntilTs      = 0;
         _armedSwing               = null; // drop any arm across the day boundary
         _pendingArm               = null; // ...including one staged at yesterday's close
-        if (_verbose) {
-          // Count trades for previous day for the daily log
-          // Use _dailyTradeCount (already tracked) instead of expensive trades.filter()
-          if (_dailyTradeCount > 0) {
-            console.log(`\n  📅 DAY CLOSE [${prevCandleDate}]: ${_dailyTradeCount} trades | PnL=${_dailyPnl.toFixed(1)}pts`);
-          }
-          console.log(`\n  ──── NEW DAY: ${candleDate} ────`);
-        }
+        if (_verbose) console.log(`\n  ──── NEW DAY: ${candleDate} ────`);
       }
     }
     // Publish the arm staged at the previous candle's close, and drop anything older
@@ -468,13 +370,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     const nextDate   = nextCandle ? getISTDateStr(nextCandle.time) : null;
     const isLastCandleOfDay = !nextCandle || nextDate !== candleDate;
 
-    // Also check time — force EOD at 3:20 PM regardless
-    const candleMin     = getISTHHMM(candle.time);
-    // Two distinct times, mirroring emaRsiStPaper: exit square-off at EMA_RSI_ST_EOD_EXIT_TIME
-    // (~15:15) vs entry cutoff at TRADE_STOP_TIME − 10 (~15:20). Last candle of the
-    // day forces both. (Previously a single 3:20 served both, holding 5 min too long.)
-    const isEodExit      = isLastCandleOfDay || candleMin >= _eodExitMin;
-    const isEntryBlocked = isLastCandleOfDay || candleMin >= _entryStopMin;
+    // Session end: square off at the close of the bar that ends at/after
+    // TRADE_STOP_TIME (paper's auto-stop teardown), or the day's last bar. Entry
+    // cutoff at TRADE_STOP_TIME − 10, mirroring paper's _ENTRY_STOP_MINS.
+    const candleMin      = getISTHHMM(candle.time);
+    const isSessionEnd   = isLastCandleOfDay || candleMin + candleResolutionMins >= _stopMins;
+    // A bar that squares off at session end can never open a trade either.
+    const isEntryBlocked = isSessionEnd || candleMin >= _entryStopMin;
 
     // ── Get signal from current window (entry candle included) ────────────────
     // window already contains candles[0..i] — no slice needed.
@@ -490,7 +392,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     if (_sig.stTrendInt != null) _lastStTrendInt = _sig.stTrendInt;
     const signal = _sig.signal;
     const reason = _sig.reason;
-    const signalSL = _sig.stopLoss;
     const signalStrength = _sig.signalStrength;
 
     // Debug: log first few signal evaluations so 0-trade runs are diagnosable
@@ -509,62 +410,15 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       _rejectCounts[rKey] = (_rejectCounts[rKey] || 0) + 1;
     }
 
-    // ── TRAILING STOP (EMA21 base + optional candle-trail overlay) ──────────────
-    // Base SL source (tighten-only) at each candle close is EMA21 — a candle touching
-    // back EMA21 is an explicit exit. When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low (CE)
-    // / high (PE) trail is layered on and the TIGHTER of the two wins. The window ends at
-    // the prior bar (i-1) to mirror paper's "SL from prior bars enforced on this bar" timing.
-    // The EMA exit itself is wired below in the EXIT CHECK block.
+    // ── Peak tracking for the profit lock ───────────────────────────────────────
     if (position) {
-      let trailRef = null;
-      // Use the PRIOR candle's EMA21 (armed at the last close), not this candle's —
-      // mirrors paper's "SL from prior bars enforced on this bar" timing (no look-ahead).
-      // Skipped entirely in cross-and-close mode: paper does not put the stop on EMA21
-      // there, so neither may this engine (it would re-introduce the wick stop-out).
-      if (_prevEma21 != null && !_EMA_RSI_ST_EMA_EXIT_CLOSE) trailRef = _prevEma21;
-      // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of EMA21 vs candle.
-      const _ctOn   = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-      const _ctBars = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
-      if (_ctOn && i >= _ctBars) {
-        const _bars = candles.slice(i - _ctBars, i);
-        const _candleLvl = position.side === "CE"
-          ? Math.min(..._bars.map(c => c.low))
-          : Math.max(..._bars.map(c => c.high));
-        if (trailRef == null) trailRef = _candleLvl;
-        else if (position.side === "CE" && _candleLvl > trailRef) trailRef = _candleLvl;
-        else if (position.side === "PE" && _candleLvl < trailRef) trailRef = _candleLvl;
-      }
-      if (trailRef != null) {
-        if (position.side === "CE") {
-          if (position.stopLoss == null || trailRef > position.stopLoss) {
-            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE → ${trailRef} (was ${position.stopLoss})`);
-            position.stopLoss = quantize(trailRef, 2);
-          }
-        } else {
-          if (position.stopLoss == null || trailRef < position.stopLoss) {
-            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE → ${trailRef} (was ${position.stopLoss})`);
-            position.stopLoss = quantize(trailRef, 2);
-          }
-        }
-      }
-      // Breakeven floor (default OFF) — mirrors emaRsiStPaper. Once >= BE pts in
-      // profit at candle close, raise the stop to entry (tighten-only).
-      if ((process.env.EMA_RSI_ST_BREAKEVEN_ENABLED || "false").toLowerCase() === "true") {
-        const _bePts = parseFloat(process.env.EMA_RSI_ST_BREAKEVEN_PTS || "25");
-        const _profit = position.side === "CE" ? (candle.close - position.entryPrice) : (position.entryPrice - candle.close);
-        if (_profit >= _bePts) {
-          const _be = quantize(position.entryPrice, 2);
-          if (position.side === "CE" && (position.stopLoss == null || position.stopLoss < _be)) position.stopLoss = _be;
-          else if (position.side === "PE" && (position.stopLoss == null || position.stopLoss > _be)) position.stopLoss = _be;
-        }
-      }
       // Snapshot the peak as of the PREVIOUS completed bar before folding this
       // bar into it. The profit lock arms off this snapshot so it can never arm
       // and fire within one candle — inside a bar we know the high and the low
       // but not their order, and assuming up-then-down would manufacture exits
       // paper could not take.
       position.bestPricePrevBar = position.bestPrice;
-      // Track favourable extreme (best price seen, for analysis)
+      // Track favourable extreme (best price seen) — the lock's peak.
       if (position.side === "CE") {
         if (!position.bestPrice || candle.high > position.bestPrice) position.bestPrice = candle.high;
       } else {
@@ -572,57 +426,27 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       }
     }
 
-    // Advance the EMA21 trail base for the NEXT candle: THIS candle's close-computed
-    // EMA21 becomes the SL reference enforced on the next candle (matches paper timing).
-    // Runs every candle (flat or in a position) and before any exit/entry `continue`.
-    _prevEma21 = _sig.ema21;
-
     // candlesHeld is NOT incremented here. It is incremented inside runExitChecks
-    // at the exact point emaRsiStPaper increments it — see the note there.
+    // at the bar-close point, where emaRsiStPaper increments it.
 
     // ── EXIT CHECK ────────────────────────────────────────────────────────────
-    // H1 — SAME-BAR EXIT PARITY.
-    // Paper and live enforce the tick-level stops from the moment of entry, so a
-    // position opened at 11:05 inside the 11:05 bar can stop out inside that same
-    // bar. This engine used to create the position at the BOTTOM of the iteration,
-    // so its first exit check was the NEXT candle — it could never reproduce a
-    // same-bar stop-out, which was 20 of the user's 65 recorded paper trades.
+    // Two exits only: the global profit lock (paper's per-tick exit) and the
+    // session-end square-off (paper's TRADE_STOP_TIME teardown).
     //
-    // Fix: the whole exit evaluation lives in this per-candle closure so it can be
-    // invoked twice — once for a position carried in from an earlier candle
-    // (entryBar=false, unchanged), and once immediately after an INTRA-BAR confirm
-    // fill on THIS candle (entryBar=true). It only ever reads `candle`; no future
-    // candle is touched, so no look-ahead is introduced. The candle-CLOSE entry
-    // path deliberately does NOT call it — see the note at that entry site.
+    // SAME-BAR EXIT PARITY: the whole exit evaluation lives in this per-candle
+    // closure so it can be invoked twice — once for a position carried in from an
+    // earlier candle (entryBar=false), and once immediately after an INTRA-BAR
+    // confirm fill on THIS candle (entryBar=true). It only ever reads `candle`; no
+    // future candle is touched, so no look-ahead is introduced. On an entry bar the
+    // lock is a no-op (bestPricePrevBar is null), and the gap-through fill is skipped
+    // (the bar's OPEN happened before we entered).
     //
-    // On the entry bar the rule set matches paper's ordering exactly:
-    //   run  — structural/trail SL, points cap, option-premium stop (paper's
-    //          per-tick stops, which fire before the bar closes), then opposite
-    //          signal and EOD (paper's candle-close rules, which do run on the
-    //          entry bar).
-    //   skip — EMA21 touch-back: paper explicitly skips it on the entry bar.
-    //   run  — negative-candle stop: ungated on purpose. candlesHeld becomes 1 at
-    //          the bar-close point below, exactly as paper's onCandleClose does on
-    //          the entry bar, so with the default LIMIT=2 it cannot fire — and if
-    //          LIMIT were 1, paper would fire it there too. Parity, not luck.
-    // Gap-through fill is also skipped on the entry bar: the bar's OPEN happened
-    // before we entered, so filling there would be fiction.
-    // ── Per-candle parity flags (mirror emaRsiStPaper's onCandleClose control flow) ──
     // _openAtCandleClose: a position was STILL OPEN when this bar closed — i.e. it
-    //   survived the intra-bar tick stops. Paper's confirmation-arm block sits ABOVE
-    //   all of its candle-close exit rules and is gated on `!ptState.position`, so a
-    //   trade that exits AT this close (negative-candle / touch-back / opposite /
-    //   EOD) still blocks arming on its own exit candle. This engine evaluates entry
-    //   after the exit, so without this flag it would arm on that candle and enter a
-    //   full bar earlier than paper. A trade that exited on a TICK stop leaves the
-    //   flag false — paper's arm block does run in that case.
-    // _blockEntryAfterExit: paper `return`s out of onCandleClose after a
-    //   negative-candle stop and after an EOD square-off, so no entry can follow on
-    //   that same candle. It falls THROUGH after a touch-back or opposite-signal
-    //   exit, so those still allow one. Only reachable with the confirmation candle
-    //   OFF (the candle-close entry path); harmless otherwise.
-    let _openAtCandleClose   = false;
-    let _blockEntryAfterExit = false;
+    //   survived the intra-bar profit lock. Paper's confirmation-arm block is gated on
+    //   `!ptState.position`, so a trade that exits AT this close (session end) still
+    //   blocks arming on its own exit candle. A trade that exited on the tick lock
+    //   leaves the flag false — paper's arm block does run in that case.
+    let _openAtCandleClose = false;
 
     const runExitChecks = (opts) => {
       const entryBar = !!(opts && opts.entryBar);
@@ -630,81 +454,17 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       let exitReason = null;
       let exitPrice  = candle.close;
 
-      // Rule 1: SL or trail SL (uses candle low/high as intra-candle proxy)
-      if (position.stopLoss !== null && position.stopLoss !== undefined) {
-        // Determine SL type for clear labeling
-        const _isTrailSL = position.initialStopLoss != null &&
-                           Math.abs(position.stopLoss - position.initialStopLoss) > 1;
-        const _slLabel = _isTrailSL ? "Trail SL" : "Initial SL";
-
-        // Gap-through fill: if the candle OPENED beyond the stop, the stop could
-        // only have filled at the (worse) open, not at the stop level. Modelling
-        // the fill at the exact stop understates losses on gap/spike candles —
-        // exactly the trades that hurt live. Use the worse of (stop, open).
-        // Not applicable on the entry bar (its open precedes our fill).
-        if (position.side === "CE" && candle.low <= position.stopLoss) {
-          exitPrice  = (!entryBar && candle.open < position.stopLoss) ? candle.open : position.stopLoss;
-          exitReason = `${_slLabel} hit — low ${candle.low} <= SL ${position.stopLoss}${exitPrice < position.stopLoss ? ` (gap fill @ ${exitPrice})` : ""}`;
-        } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-          exitPrice  = (!entryBar && candle.open > position.stopLoss) ? candle.open : position.stopLoss;
-          exitReason = `${_slLabel} hit — high ${candle.high} >= SL ${position.stopLoss}${exitPrice > position.stopLoss ? ` (gap fill @ ${exitPrice})` : ""}`;
-        }
-      }
-
-      // Rule 1a: per-trade points stop (EMA_RSI_ST_STOP_LOSS_PTS) — catastrophic spot cap.
-      // Mirrors BB_RSI_STOP_LOSS_PTS. Use the tighter of (structural SL, cap level):
-      // whichever sits closer to entry is hit first intra-candle. 0 = disabled.
-      if (_EMA_RSI_ST_STOP_LOSS_PTS > 0) {
-        const adverse = position.side === "CE"
-          ? (position.entryPrice - candle.low)
-          : (candle.high - position.entryPrice);
-        if (adverse >= _EMA_RSI_ST_STOP_LOSS_PTS) {
-          const _capLvl = position.side === "CE"
-            ? quantize(position.entryPrice - _EMA_RSI_ST_STOP_LOSS_PTS, 2)
-            : quantize(position.entryPrice + _EMA_RSI_ST_STOP_LOSS_PTS, 2);
-          // Override only if no structural SL fired, or the cap is tighter (closer to entry).
-          const _capTighter = !exitReason || (position.side === "CE" ? _capLvl > exitPrice : _capLvl < exitPrice);
-          if (_capTighter) {
-            exitReason = `SL (${_EMA_RSI_ST_STOP_LOSS_PTS}pts)`;
-            exitPrice  = _capLvl;
-          }
-        }
-      }
-
-      // Rule 1b: Option premium stop — exit if premium drops OPT_STOP_PCT from entry.
-      // Backtest has no live LTP, so approximate via an adverse SPOT move
-      // (_OPT_STOP_SPOT_PTS = OPT_STOP_PCT × est-premium / delta). Usually wider than
-      // the prev-candle SL, so it only binds on a sharp adverse gap.
-      if (!exitReason && _OPT_STOP_SPOT_PTS > 0) {
-        const adverse = position.side === "CE"
-          ? (position.entryPrice - candle.low)
-          : (candle.high - position.entryPrice);
-        if (adverse >= _OPT_STOP_SPOT_PTS) {
-          exitReason = `Option stop ${(OPT_STOP_PCT * 100).toFixed(0)}% (≈${_OPT_STOP_SPOT_PTS.toFixed(0)}pt adverse spot)`;
-          exitPrice  = position.side === "CE"
-            ? quantize(position.entryPrice - _OPT_STOP_SPOT_PTS, 2)
-            : quantize(position.entryPrice + _OPT_STOP_SPOT_PTS, 2);
-        }
-      }
-
-      // Rule 1c: Global profit lock — the same ratchet paper applies per tick
+      // Global profit lock — the same ratchet paper applies per tick
       // (see tradeGuards.checkProfitLock), expressed in spot points because this
       // engine has no live premium. Once the favourable excursion has reached the
       // arm distance, the trade may not be given back past the floor distance.
-      //
-      // Ordering note: this sits with the other per-TICK stops (1 / 1a / 1b) and
-      // BEFORE every candle-close rule, matching paper — paper checks the lock on
-      // each tick, ahead of its own stops.
       // Arm ONLY on a peak set by a COMPLETED EARLIER bar (bestPricePrevBar,
       // snapshotted in the main loop before this bar is folded in). Within a
       // single bar we know the high and the low but not their order, so arming on
       // this bar's own high and then exiting on this bar's low would assume the
       // sequence went up-then-down — a look-ahead that manufactures profitable
-      // exits paper could not take. It is null on an entry bar
-      // (runExitChecks({entryBar:true})), which correctly makes the lock a no-op
-      // there, mirroring how the trail rules here refuse to fire on the bar that
-      // sets them.
-      if (!exitReason && _PL_VALID && position.bestPricePrevBar != null) {
+      // exits paper could not take. It is null on an entry bar.
+      if (_PL_VALID && position.bestPricePrevBar != null) {
         const bestFav = position.side === "CE"
           ? (position.bestPricePrevBar - position.entryPrice)
           : (position.entryPrice - position.bestPricePrevBar);
@@ -724,50 +484,18 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
             exitReason = floorPts > _PL_FLOOR_SPOT_PTS
               ? `Profit lock trail ${Math.round(floorPts / bestFav * 100)}% (≈${floorPts.toFixed(0)}pt spot kept of ${bestFav.toFixed(0)}pt best)`
               : `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
-            // A bar that OPENS past the floor fills at the open, like the SL rule
-            // above — the trailed floor sits close to price, so gaps are common.
-            const gapped = position.side === "CE" ? candle.open < floorLvl : candle.open > floorLvl;
+            // A bar that OPENS past the floor fills at the open — the trailed
+            // floor sits close to price, so gaps are common. Not on the entry bar.
+            const gapped = !entryBar && (position.side === "CE" ? candle.open < floorLvl : candle.open > floorLvl);
             exitPrice  = quantize(gapped ? candle.open : floorLvl, 2);
           }
         }
       }
 
-      // Rule 1d: Global breakeven stop — the fallback for a trade that never
-      // reached the lock's arm level. Same previous-bar arming discipline as 1c
-      // (a bar's high and low have no known order), and the same spot-equivalent
-      // conversion. Exits at ENTRY, so it is not a stop-out: it must not arm the
-      // SL pause, and the reason string deliberately avoids "SL hit" so the
-      // classifier below does not read it as one.
-      if (!exitReason && _BE_VALID && position.bestPricePrevBar != null) {
-        const beFav = position.side === "CE"
-          ? (position.bestPricePrevBar - position.entryPrice)
-          : (position.entryPrice - position.bestPricePrevBar);
-        if (beFav >= _BE_ARM_SPOT_PTS) {
-          const beTouched = position.side === "CE"
-            ? candle.low  <= position.entryPrice
-            : candle.high >= position.entryPrice;
-          if (beTouched) {
-            exitReason = `Breakeven stop (armed at +${_BE_ARM_PCT}%, \u2248${_BE_ARM_SPOT_PTS.toFixed(0)}pt spot)`;
-            exitPrice  = quantize(position.entryPrice, 2);
-          }
-        }
-      }
-
       // ── BAR CLOSE ───────────────────────────────────────────────────────────
-      // Everything above (rules 1 / 1a / 1b / 1c) is a per-TICK stop: paper
-      // enforces those continuously while the bar is still forming. Everything
-      // below is a candle-CLOSE rule that paper evaluates inside onCandleClose.
-      //
-      // emaRsiStPaper increments candlesHeld at the TOP of onCandleClose — after
-      // the bar's ticks, before every candle-close rule. That placement matters:
-      // paper tests the negative-candle stop IMMEDIATELY after incrementing, on
-      // the same bar. This engine used to increment at the top of the candle loop
-      // instead, so at any given bar its counter was one lower than paper's at the
-      // moment the rule was tested, and the 2-candle negative stop fired a full
-      // candle LATE (paper: close of entry+1, backtest: close of entry+2).
-      //
-      // Skipped when a tick stop already fired: paper's position is closed before
-      // onCandleClose runs, so paper never increments on that bar either.
+      // The lock above is a per-TICK exit. emaRsiStPaper increments candlesHeld at
+      // the TOP of onCandleClose — after the bar's ticks. Skipped when the lock
+      // already fired: paper's position is closed before onCandleClose runs.
       const _exitedOnTick = !!exitReason;
       if (!exitReason) {
         position.candlesHeld = (position.candlesHeld || 0) + 1;
@@ -776,63 +504,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _openAtCandleClose = true;
       }
 
-      // Rule 1c: EMA21 exit — touch-back, or cross-and-close when
-      // EMA_RSI_ST_EMA_EXIT_MODE=close. Paper skips it on the entry bar (the entry
-      // condition trivially satisfies it) in both modes, so we do too.
-      if (!exitReason && !entryBar && _sig.ema21 != null) {
-        const _emaHit = _EMA_RSI_ST_EMA_EXIT_CLOSE
-          ? (position.side === "CE" ? candle.close < _sig.ema21 : candle.close > _sig.ema21)
-          : (candle.low <= _sig.ema21 && candle.high >= _sig.ema21);
-        if (_emaHit) {
-          exitReason = _EMA_RSI_ST_EMA_EXIT_CLOSE ? "EMA close-through exit" : "EMA touch-back exit";
-          exitPrice  = candle.close;
-        }
-      }
-
-      // Paper measures "red" in OPTION PREMIUM points (curOpt − entryOpt), not spot
-      // points, for both rules below. There is no option chain here, so use the same
-      // δ+θ premium model the P&L sim uses: a trade that is flat on spot but bleeding
-      // theta reads as red here exactly as paper sees it. Without this the backtest
-      // held losers paper had already cut.
-      // THETA_PER_DAY / CANDLES_PER_DAY is premium POINTS per candle here — the same
-      // units the booked P&L below uses (netPremiumPts = premiumMovePts − thetaDecay,
-      // multiplied by LOT_SIZE only at the end), so no lot-size conversion.
-      const _spotPnlPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-      const _premPnlPts = OPTION_SIM
-        ? (_spotPnlPts * DELTA) - ((THETA_PER_DAY / CANDLES_PER_DAY) * (position.candlesHeld ?? 1))
-        : _spotPnlPts;
-
-      // Rule 1c-2: legacy time-stop — only when EMA_RSI_ST_SL_MODE=candle (default
-      // "ema" leaves the EMA21 trail owning the SL, so this is inert at defaults).
-      // Paper runs it immediately before the negative-candle stop; mirrored here so
-      // flipping SL_MODE does not silently change what the backtest reports.
-      if (!exitReason && (process.env.EMA_RSI_ST_SL_MODE || "ema").toLowerCase() === "candle") {
-        const _tsReason = tradeGuards.checkTimeStop(position.candlesHeld, _premPnlPts);
-        if (_tsReason) {
-          exitReason = _tsReason;
-          exitPrice  = candle.close;
-        }
-      }
-
-      // Rule 1d: Negative-candle stop — if the trade is still in the RED at this
-      // candle close after N candles held, square off (asymmetric loss-cut; winners
-      // keep riding the EMA trail above).
-      if (!exitReason && _EMA_RSI_ST_NEG_CANDLE_LIMIT > 0 && (position.candlesHeld || 0) >= _EMA_RSI_ST_NEG_CANDLE_LIMIT) {
-        if (_premPnlPts < 0) {
-          exitReason = `Negative ${_EMA_RSI_ST_NEG_CANDLE_LIMIT}-candle stop`;
-          exitPrice  = candle.close;
-        }
-      }
-
-      // Rule 2: Opposite signal
-      if (!exitReason && signal === (position.side === "CE" ? "BUY_PE" : "BUY_CE")) {
-        exitReason = "Opposite signal exit";
-        exitPrice  = candle.close;
-      }
-
-      // Rule 3: EOD square-off — PER DAY at EMA_RSI_ST_EOD_EXIT_TIME (mirrors emaRsiStPaper)
-      if (!exitReason && isEodExit) {
-        exitReason = `EOD square-off ${candleMin >= _eodExitMin ? _eodLabel : "(last candle of day)"}`;
+      // Session-end square-off — paper's TRADE_STOP_TIME teardown (or the day's
+      // last bar), so every trade's P&L is defined within its own day.
+      if (!exitReason && isSessionEnd) {
+        exitReason = `EOD square-off ${isLastCandleOfDay ? "(last candle of day)" : `(session end ${_stopLabel})`}`;
         exitPrice  = candle.close;
       }
 
@@ -886,8 +561,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           exitTs:         candle.time,
           entryPrice:     position.entryPrice,
           exitPrice,
-          stopLoss:        position.stopLoss || "N/A",
-          initialStopLoss: position.initialStopLoss || position.stopLoss || "N/A",
           bestPrice:       position.bestPrice || null,
           candlesHeld:     position.candlesHeld ?? 1,   // 0 on a same-bar exit — see theta note
           spotPnlPts,           // raw NIFTY point move (for display in UI)
@@ -906,64 +579,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           console.log(`     Held: ${toIST(position.entryTime)} → ${toIST(candle.time)} | ${position.candlesHeld || 1} candles | Entry=${position.entryPrice}`);
         }
 
-        // ── 50%-rule exit → set pause for 2 candles ────────────────────────
-        // 50% rule firing = price reversed immediately = choppy market.
-        // Block re-entry for 2 candles (TRADE_RES * 2 * 60 seconds).
-        if (exitReason.toLowerCase().includes('50% rule')) {
-          const pauseSecs = 2 * candleResolutionMins * 60;
-          _fiftyPctPauseUntilTs = candle.time + pauseSecs;
-          if (_verbose) console.log(`  ⏸ 50%-rule pause set: no entry until ${toIST(_fiftyPctPauseUntilTs)}`);
-        }
-
-        // ── Risk controls ─────────────────────────────────────────────────────
         _dailyPnl += pnlRupees;
         _dailyTradeCount++;
 
-        // Daily-loss kill switch — LATCH once the day's loss reaches the cap so a
-        // later win can't unblock it (mirrors paper's session latch). Enforced at
-        // the entry gate via _dailyLossHit (below).
-        if (_dailyPnl <= -MAX_DAILY_LOSS) _dailyLossHit = true;
-
-        // Consecutive-loss breaker — mirror paper EXACTLY:
-        //   15-min: limit reached = done for the day (latch _dailyLossHit).
-        //   5-min:  pause 4 candles then resume, and reset the counter.
-        // The limit is EMA_RSI_ST_MAX_CONSEC_LOSSES (0 = OFF), the SAME key the
-        // chop guard below uses. It was hardcoded to 3 here and in paper/live, so a
-        // configured 0 ("OFF") still paused entries — the backtest inherited that
-        // and would now over-report pauses paper no longer takes.
-        const _streakMax = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10) > 0
-          ? parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES, 10)
-          : 0;
-        if (pnlRupees < 0) {
-          _consecutiveLosses++;
-          if (_streakMax > 0 && _consecutiveLosses >= _streakMax) {
-            if (candleResolutionMins >= 15) {
-              _dailyLossHit = true; // keep the counter at the limit (KILLED state)
-            } else {
-              _consecPauseUntilTs = candle.time + (4 * candleResolutionMins * 60);
-              _consecutiveLosses  = 0;
-            }
-          }
-        } else {
-          _consecutiveLosses = 0;
-        }
-        // Chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES) — independent of the escalating
-        // pause above so it survives until a win or a new day (mirrors paper/live).
-        if (pnlRupees > 0)      { _chopConsecLosses = 0; }
-        else if (pnlRupees < 0) { _chopConsecLosses++; }
-
-        // Same-side SL cooldown: after an SL hit, block new entries on THAT side
-        // for EMA_RSI_ST_SL_PAUSE_CANDLES candles (mirrors BB_RSI per-side pause).
-        const isSLExit = exitReason.toLowerCase().includes("sl hit");
-        if (isSLExit) {
-          _slPauseUntilBySide[position.side] = candle.time + (EMA_RSI_ST_SL_PAUSE_CANDLES * candleResolutionMins * 60);
-          if (_verbose) console.log(`  ⏸️ ${position.side} SL pause — no ${position.side} entries for ${EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
-        }
-
-        // Opposite-side (flip) cooldown: after non-flip exit, block opposite-side entries.
-        // Skip on opposite-signal exits (legit strategy flip) and EOD square-offs.
-        if (OPP_COOLDOWN_ENABLED && OPP_COOLDOWN_CANDLES > 0
-            && !/opposite signal|eod/i.test(exitReason)) {
+        // Opposite-side (flip) cooldown: after a non-EOD exit, block opposite-side entries.
+        if (OPP_COOLDOWN_ENABLED && OPP_COOLDOWN_CANDLES > 0 && !/eod/i.test(exitReason)) {
           _oppositeCooldownUntilTs  = candle.time + (OPP_COOLDOWN_CANDLES * candleResolutionMins * 60);
           _oppositeCooldownLastSide = position.side;
           if (_verbose) console.log(`  🔁 Opposite-side cooldown — no ${position.side === "CE" ? "PE" : "CE"} entries for ${OPP_COOLDOWN_CANDLES} candles`);
@@ -977,15 +597,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           _reentryBlockUntilTs = candle.time + (_exitedOnTick ? 0 : candleResolutionMins * 60) + _REENTRY_COOLDOWN_SECS;
         }
 
-        // Paper `return`s out of onCandleClose after these two, so no entry can
-        // follow on the same candle; it falls through after touch-back / opposite.
-        if (/negative \d+-candle stop|eod/i.test(exitReason)) _blockEntryAfterExit = true;
-
-        // ── Notify strategy: optional exit callbacks
-        const exitedSide = position.side;
+        // ── Notify strategy: optional exit callback
         position = null;
         if (typeof strategy.onTradeClosed === "function") strategy.onTradeClosed();
-        if (isSLExit && typeof strategy.onStopLossHit === "function") strategy.onStopLossHit(exitedSide);
       }
     };
 
@@ -993,25 +607,18 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     runExitChecks({ entryBar: false });
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────
-    // Gate checks: same-side SL cooldown, consecutive-loss pause, daily loss limit
+    // Gate checks: entry filters only (cooldowns, one-trade-per-move, VIX, window)
     const _sigSide = signal === "BUY_CE" ? "CE" : signal === "BUY_PE" ? "PE" : null;
     // Per-SIDE, not per-signal: the confirmation fill enters the ARMED side, which is
     // the previous candle's signal and need not equal this candle's _sigSide. Paper
-    // applies both cooldowns inside simulateBuy() against the side actually being
-    // bought, so every entry path gets them; this engine's fill path used to skip
-    // them entirely (masked before, because arming was itself blocked while paused).
-    const _sidePaused = (s) => !!s && _slPauseUntilBySide[s] > 0 && candle.time < _slPauseUntilBySide[s];
+    // applies the cooldowns inside simulateBuy() against the side actually being
+    // bought, so every entry path gets them.
     const _oppPaused  = (s) => !!(OPP_COOLDOWN_ENABLED && s && _oppositeCooldownLastSide
                                   && s !== _oppositeCooldownLastSide
                                   && candle.time < _oppositeCooldownUntilTs);
     const _reentryBlocked = _reentryBlockUntilTs > 0 && candle.time < _reentryBlockUntilTs;
     const _moveLocked = (s) => !!(MOVE_LOCK_ENABLED && s && s === _moveLockSide);
-    const isSideCoolingDown     = _sidePaused(_sigSide);
     const isOppositeCoolingDown = _oppPaused(_sigSide);
-    const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
-    const isChopHalted   = _EMA_RSI_ST_MAX_CONSEC_LOSSES > 0 && _chopConsecLosses >= _EMA_RSI_ST_MAX_CONSEC_LOSSES;
-    const isDailyLossHit = _dailyLossHit; // latched: daily-loss cap OR 3-consec-loss (15-min)
-    const isMaxTradesHit = _dailyTradeCount >= MAX_DAILY_TRADES;
 
     // Warm-up gate: candles before activeFromTs only build indicators (EMA/RSI/SAR),
     // they never open a trade. This lets a single-day (or any) range be evaluated
@@ -1021,12 +628,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
     // ── CONFIRMATION ARM (paper parity) ───────────────────────────────────────
     // emaRsiStPaper arms at candle close gated ONLY on "flat + valid signal". Every
-    // risk guard — same-side SL pause, opposite-side cooldown, consecutive-loss
-    // pause, chop halt, daily-loss latch, max-trades, VIX, OI — is evaluated LATER,
-    // at fill time in onTick. This engine used to arm INSIDE its guard-gated entry
-    // block, so a signal printing on the LAST candle of a pause never armed at all,
-    // and the entry paper takes on the very next candle (pause now expired) was
-    // silently absent from every backtest.
+    // entry guard — opposite-side cooldown, wait-after-exit, VIX, OI — is evaluated
+    // LATER, at fill time in onTick, so a signal printing on the LAST candle of a
+    // cooldown still arms and can fill on the next candle.
     //
     // Staged into _pendingArm rather than assigned live: this candle's fill attempt
     // below still has to consume the arm made at the PREVIOUS close, and writing
@@ -1041,16 +645,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         && !(expiryDates && !expiryDates.has(candleDate))) {
       _pendingArm = {
         side: _sigSide, armedBarTime: candle.time, triggerLevel: candle.close,
-        signalSL, reason, strength: signalStrength || "STRONG",
-        // Signal-candle EMA21 — the seed EMA_RSI_ST_INITIAL_SL_MODE="ema21" uses
-        // on the fill. Paper stamps ema21AtEntry from the signal bar's
-        // indicators, so carrying it on the arm keeps the two identical.
-        ema21: _sig.ema21 != null ? _sig.ema21 : null,
+        reason, strength: signalStrength || "STRONG",
       };
       if (_verbose) console.log(`  🎯 ARM ${_sigSide} @ close ${candle.close} [${toIST(candle.time)}] — await next-candle cross`);
     }
 
-    if (!position && !_blockEntryAfterExit && !_isWarmupOnly && !isEntryBlocked && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit) {
+    if (!position && !_isWarmupOnly && !isEntryBlocked) {
       const _confirmSwing = confirmCandle.enabled("EMA_RSI_ST");
 
       // ── Confirmation candle (cross & close): fill an armed signal when THIS
@@ -1065,8 +665,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // above, so a rejection burns it exactly as paper burns _armedSignal
         // before its async order call. Keyed on _a.side, not _sigSide — the armed
         // side is the PREVIOUS candle's signal and the two can differ.
-        if (_sidePaused(_a.side) || _oppPaused(_a.side) || _reentryBlocked || _moveLocked(_a.side)) {
-          if (_verbose) console.log(`  ⏸️ CONFIRM ${_a.side} rejected — ${_sidePaused(_a.side) ? "same-side SL" : _oppPaused(_a.side) ? "opposite-side" : _reentryBlocked ? "wait-after-exit" : "one-trade-per-move"} cooldown active [${toIST(candle.time)}]`);
+        if (_oppPaused(_a.side) || _reentryBlocked || _moveLocked(_a.side)) {
+          if (_verbose) console.log(`  ⏸️ CONFIRM ${_a.side} rejected — ${_oppPaused(_a.side) ? "opposite-side" : _reentryBlocked ? "wait-after-exit" : "one-trade-per-move"} cooldown active [${toIST(candle.time)}]`);
           continue;
         }
         // VIX gate — same reason as the cooldowns above. emaRsiStPaper runs
@@ -1105,53 +705,21 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                 ? quantize(entryPrice + SLIPPAGE_PTS, 2)
                 : quantize(entryPrice - SLIPPAGE_PTS, 2);
             }
-            // Protective-stop correction — same shared helper as paper/live.
-            // `window` already holds THIS confirmation candle, so drop the last
-            // element: the resolver must see exactly what the live engines see,
-            // i.e. newest element = the SIGNAL candle. Dropping it also keeps the
-            // backtest free of look-ahead into the still-forming entry bar. The
-            // remainder IS the strategy's own 200-candle window — the search
-            // bound is that history, not a separate constant.
-            const _seedConfirm = _a.signalSL != null ? quantize(_a.signalSL, 2) : null;
-            const _slFixConfirm = tradeGuards.resolveProtectiveStop({
-              side:       _a.side,
-              entryPrice,
-              stopLoss:   _emaRsiStSeedSL(
-                _seedConfirm,
-                entryPrice, _a.side, _a.ema21 != null ? _a.ema21 : null),
-              candles:    window,
-              // `beforeTime` (not a manual slice) excludes THIS confirmation
-              // candle, so the resolver sees the signal candle and older — the
-              // identical view paper/live get, and no look-ahead into the bar
-              // we are filling on.
-              beforeTime: candle.time,
-            });
-            if (_a.signalSL != null && _slFixConfirm.stopLoss == null) {
-              // M1 — no protective structure anywhere; do not open the position.
-              if (_verbose) console.log(`  🚫 ENTRY ABORTED — ${_slFixConfirm.reason}`);
-              continue;
-            }
-            const initSL = _slFixConfirm.stopLoss;
-            if (_verbose && _slFixConfirm.repaired) console.log(`  🛡️ Initial SL corrected — ${_slFixConfirm.reason}`);
             position = {
               side:            _a.side,
               entryPrice,
               entryTime:       candle.time,
-              entryReason:     _emaRsiStSLLabel(
-                `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`,
-                _seedConfirm, initSL),
-              stopLoss:        initSL,
-              initialStopLoss: initSL,
+              entryReason:     `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`,
               bestPrice:       null,
               signalStrength:  _a.strength,
               candlesHeld:     0,
             };
-            if (_verbose) console.log(`  ✅ CONFIRM ENTER ${_a.side} @ ${entryPrice} [${toIST(candle.time)}] x-over ${_a.triggerLevel} SL=${initSL}`);
-            // H1: paper/live can stop out inside the entry bar — so must we.
+            if (_verbose) console.log(`  ✅ CONFIRM ENTER ${_a.side} @ ${entryPrice} [${toIST(candle.time)}] x-over ${_a.triggerLevel}`);
+            // Same-bar exit parity: run this bar's close-time rules (session end).
             runExitChecks({ entryBar: true });
             // Paper's arm block sits at this close and is gated on `!ptState.position`.
             // Still holding → it would not arm, so drop the arm staged above. But if the
-            // entry bar's own TICK stop already closed us out, paper is flat by then and
+            // entry bar's own tick exit already closed us out, paper is flat by then and
             // does arm — so in that case the staged arm stands.
             if (position || _openAtCandleClose) _pendingArm = null;
             continue;
@@ -1163,8 +731,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (_sigSide) {
         // Expiry-day-only filter: skip entry on non-expiry days
         if (expiryDates && !expiryDates.has(candleDate)) continue;
-        // Same-side SL cooldown: skip this side until the pause expires
-        if (isSideCoolingDown) continue;
         // Opposite-side cooldown: skip opposite side within cooldown window
         if (isOppositeCoolingDown) continue;
         // Wait-after-any-exit cooldown: skip both sides
@@ -1204,43 +770,17 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
             : quantize(entryPrice - SLIPPAGE_PTS, 2);
         }
 
-        // Initial SL = previous completed candle's low (CE) / high (PE), from getSignal.
-        // Protective-stop correction — same shared helper as paper/live. Here the
-        // signal candle IS this candle and `window` already ends with it, matching
-        // emaRsiStPaper's candle-close entry path exactly.
-        const _seedClose = signalSL != null ? quantize(signalSL, 2) : null;
-        const _slFixClose = tradeGuards.resolveProtectiveStop({
-          side,
-          entryPrice,
-          stopLoss: _emaRsiStSeedSL(
-            _seedClose,
-            entryPrice, side, _sig.ema21 != null ? _sig.ema21 : null),
-          candles:  window,
-          // Entry is at THIS candle's close, so it is fully closed structure and
-          // must be visible; the next bar is the one still forming.
-          beforeTime: candle.time + candleResolutionMins * 60,
-        });
-        if (signalSL != null && _slFixClose.stopLoss == null) {
-          // M1 — no protective structure anywhere; do not open the position.
-          if (_verbose) console.log(`  🚫 ENTRY ABORTED — ${_slFixClose.reason}`);
-          continue;
-        }
-        const initSL = _slFixClose.stopLoss;
-        if (_verbose && _slFixClose.repaired) console.log(`  🛡️ Initial SL corrected — ${_slFixClose.reason}`);
-
         position = {
           side,
           entryPrice,
           entryTime:       candle.time,
-          entryReason:     _emaRsiStSLLabel(reason, _seedClose, initSL),
-          stopLoss:        initSL,
-          initialStopLoss: initSL,
+          entryReason:     reason,
           bestPrice:       null,
           signalStrength:  strength,
           candlesHeld:     0,
         };
         if (_verbose) {
-          console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL(prev-candle)=${initSL}`);
+          console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]`);
           console.log(`     Reason: ${reason}`);
         }
         // NO entry-bar exit check on this path — and that is deliberate.
@@ -1249,10 +789,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // .enabled(...)` branch at the bottom of onCandleClose) runs AFTER every
         // exit rule for that bar, and paper's next tick already belongs to the
         // next bar — so paper cannot exit on its own candle-close entry bar.
-        // Calling runExitChecks here would also test the stop against a low/high
-        // that was printed BEFORE the close we filled at. The intra-bar confirm
-        // fill above is different: it enters mid-bar, so paper really can stop
-        // out inside that bar, which is why only that path checks.
+        // (Entry is already blocked on a session-end bar via isEntryBlocked.)
       }
     }
   }
@@ -1295,8 +832,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       exitTs:      lastCandle.time,
       entryPrice:  position.entryPrice,
       exitPrice:   _finalExit,
-      stopLoss:         position.stopLoss || "N/A",
-      initialStopLoss:  position.initialStopLoss || position.stopLoss || "N/A",
       bestPrice:        position.bestPrice || null,
       candlesHeld:      position.candlesHeld || 1,
       spotPnlPts,
@@ -1363,7 +898,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
   const exitGroups = {};
   trades.forEach(t => {
-    const label = t.exitReason.includes('50% rule') ? '50% rule' : t.exitReason.includes('SL hit') ? 'SL hit' : t.exitReason.includes('Opposite') ? 'Opposite signal' : t.exitReason.includes('EOD') ? 'EOD square-off' : 'Other';
+    const label = t.exitReason.includes('Profit lock') ? 'Profit lock' : t.exitReason.includes('EOD') ? 'EOD square-off' : 'Other';
     if (!exitGroups[label]) exitGroups[label] = { count:0, wins:0, pnl:0 };
     exitGroups[label].count++;
     if (t.pnl > 0) exitGroups[label].wins++;

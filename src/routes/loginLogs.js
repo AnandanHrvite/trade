@@ -8,7 +8,6 @@
 
 const express = require("express");
 const router  = express.Router();
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const loginLogStore = require("../utils/loginLogStore");
 
@@ -42,7 +41,6 @@ router.post("/clear", (req, res) => {
 
 // ── UI page ─────────────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   // Embedded mode: rendered inside an <iframe> on the Logs (/trade-logs) page as a tab.
   const embed = req.query.embed === "1" || req.query.embed === "true";
 
@@ -163,7 +161,7 @@ router.get("/", (req, res) => {
 <body>
 ${embed ? '<style>.main-content{margin-left:0 !important;} .top-bar{display:none !important;}</style>' : ''}
 <div class="app-shell">
-${embed ? '' : buildSidebar('tradeLogs', liveActive)}
+${embed ? '' : buildSidebar('tradeLogs', false)}
 <div class="main-content">
 
 <div class="top-bar">

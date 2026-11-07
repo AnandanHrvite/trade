@@ -19,7 +19,6 @@ const router  = express.Router();
 const fyers   = require("../config/fyers");
 const { sendTelegram } = require("../utils/notify");
 const { buildSidebar, sidebarCSS, toastJS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
-const sharedSocketState = require("../utils/sharedSocketState");
 
 // Trailing config (mirrors the EMA_RSI_ST strategy): prev-candle trail + breakeven.
 function _bePts()   { return parseFloat(process.env.BREAKEVEN_PTS || "25"); }
@@ -325,7 +324,7 @@ router.get("/status", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar("emaRsiStTracker", sharedSocketState.getMode()==="EMA_RSI_ST_LIVE", !!pos, {
+${buildSidebar("emaRsiStTracker", false, !!pos, {
   showExitBtn: !!pos, exitBtnJs: "handleExit(this)", exitLabel: "🛑 Stop Tracking",
   statusLabel: pos ? "TRACKING" : tracker.status === "sl_hit" ? "SL HIT" : "IDLE",
 })}

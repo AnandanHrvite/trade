@@ -120,7 +120,6 @@ check("the two engines reach the SAME decision on the same candles", () => {
     assert.strictEqual(b.side || null, a.side || null, `side differs at bar ${n}`);
     if (a.signal && b.signal) {
       assert.strictEqual(b.entrySpot, a.entrySpot, `entry differs at bar ${n}`);
-      assert.strictEqual(b.slSpot ?? null, a.slSpot ?? null, `stop differs at bar ${n}`);
     }
   }
 });
@@ -500,7 +499,7 @@ check("a multi-index bail-out drops option contracts before it drops an index, a
   }
 });
 
-check("shared-feed guards: pre-connect subscribe, supervisor NIFTY top-up, stopped Live, replay /start", () => {
+check("shared-feed guards: pre-connect subscribe, supervisor NIFTY top-up, replay /start", () => {
   const sm = read("utils/socketManager.js");
   const errAt = sm.indexOf("skt.on('error'");
   const body = sm.slice(errAt, sm.indexOf("skt.on('close'", errAt));
@@ -510,9 +509,6 @@ check("shared-feed guards: pre-connect subscribe, supervisor NIFTY top-up, stopp
   const sup = read("utils/spotFeedSupervisor.js");
   assert.ok(!/sym === SPOT_SYMBOL \|\| have\.has\(sym\)/.test(sup),
     "the supervisor must not assume NIFTY 50 is on the wire — a BANKNIFTY-opened socket never gets it back");
-  const live = read("routes/emaRsiStLive.js");
-  assert.ok(/function onSpotTick\(tick\) \{\s*if \(!tick \|\| !tick\.ltp\) return;[\s\S]{0,400}?if \(!tradeState\.running\) return;/.test(live),
-    "EMA_RSI_ST Live's primary handler survives /stop — without a running guard it keeps placing real entries");
   const app = read("app.js");
   assert.ok(/isReplayInProgress\(\)[\s\S]{0,200}?status\(409\)/.test(app),
     "strategy /start must be refused while a replay has the shared feed patched");
@@ -520,9 +516,9 @@ check("shared-feed guards: pre-connect subscribe, supervisor NIFTY top-up, stopp
 
 check("no route overwrites the NIFTY primary handler by calling start() on a running socket", () => {
   // start() on a running same-symbol socket REPLACES the primary handler, which
-  // EMA_RSI_ST (V1) owns. Only V1's own paper/live routes may call it unguarded;
+  // EMA_RSI_ST (V1) owns. Only V1's own paper route may call it unguarded;
   // a NIFTY route that did so silenced V1 from 2026-09-05 (EMA_RSI_ST_V2).
-  const V1_OWNERS = new Set(["emaRsiStPaper.js", "emaRsiStLive.js"]);
+  const V1_OWNERS = new Set(["emaRsiStPaper.js"]);
   const BN_ROUTES = /^bn[A-Z]/;   // start(BANKNIFTY) never touches the NIFTY slot
   const dir = path.join(__dirname, "..", "src", "routes");
   const offenders = [];

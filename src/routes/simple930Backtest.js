@@ -7,10 +7,10 @@
  * number below is a price Fyers actually printed for the contract the rule
  * would have picked.
  *
- * The selection, the ₹180 trigger, the stop/trail geometry and the 09:45 box
- * all come from the SAME engine the paper route uses
- * (src/strategies/simple930.js) — no rule is re-implemented here. This file
- * only re-implements paper's EXITS on bar data, because paper is canonical.
+ * The selection and the ₹180 trigger come from the SAME engine the paper route
+ * uses (src/strategies/simple930.js) — no rule is re-implemented here. The only
+ * exit is paper's: the global profit lock (tradeGuards.checkProfitLock), applied
+ * here to the option premium on bar data, because paper is canonical.
  *
  * ── WHAT CAN AND CANNOT BE BACKTESTED ───────────────────────────────────────
  * A NIFTY weekly option is DELISTED the moment it expires, and Fyers then
@@ -29,17 +29,17 @@
  *  4. Entry: walk minute by minute across the entry window, both legs together.
  *     A bar whose HIGH is above the trigger fills at max(open, trigger) — the
  *     trigger level on an intrabar cross, the open when the bar started above.
- *  5. Exits, per bar, in this exact order (conservative throughout):
- *        a. EOD reached                 → fill at the bar OPEN
- *        b. bar OPEN already ≤ stop     → fill at the bar OPEN (gapped through)
- *        c. 09:45 reached and the trade never left the box → fill at the OPEN
- *           (the box is judged on everything BEFORE this bar, which is what the
- *            live route sees when it checks at 09:45:00)
- *        d. bar LOW ≤ stop              → fill at the STOP
- *        e. otherwise fold the bar's high into the peak, ratchet the trail
- *     The adverse test always runs before the favourable one, and the entry bar
- *     is tested the same way as any other — its low is assumed to come after the
- *     fill, never before.
+ *  5. Exit — the global profit lock is the ONLY one. Per bar, in this exact
+ *     order (conservative throughout), against the peak premium seen so far:
+ *        a. session end (TRADE_STOP_TIME) reached → fill at the bar OPEN — the
+ *           paper session's auto-stop teardown
+ *        b. bar OPEN already at/below the lock floor → fill at the OPEN
+ *        c. bar LOW at/below the lock floor          → fill at the FLOOR
+ *        d. fold the bar's HIGH into the peak, then test the bar CLOSE against
+ *           the (possibly raised) floor → fill at the CLOSE
+ *     The adverse test always runs before the favourable one. On the entry bar
+ *     the open printed BEFORE the fill, so the fill stands in for it. A trade the
+ *     lock never closes is closed on the day's last printed bar.
  *  6. SIMPLE930_BT_SLIPPAGE_PTS is charged EACH way (paid up on entry, given up
  *     on exit). Without it a backtest of option BUYING always flatters.
  *     Statutory charges come from the repo's own charges.js on the ZERODHA
@@ -93,6 +93,11 @@ function _ts(unixSec) { return `${_ddmmyyyy(unixSec)}, ${_hhmmss(unixSec)}`; }
 function _todayStr() { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
 function escHtml(x) {
   return String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Paper's session auto-stop (global TRADE_STOP_TIME) as IST minutes-of-day. */
+function _sessionEndMin() {
+  return strategy._parseHHMM(process.env.TRADE_STOP_TIME, 15 * 60 + 30);
 }
 
 /** Backtest slippage, charged on BOTH sides. */
@@ -208,7 +213,7 @@ function simulateDay(day, cfg, qty) {
 
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES) — a no-op
   // here BY CONSTRUCTION: this page books at most ONE trade a session, so no entry
-  // can ever follow an exit (paper's default 1-trade budget closes the day too).
+  // can ever follow an exit (paper's one-trade-a-day rule closes the day too).
   // Read only so the rule's reach stays universal; if a second trade is ever
   // modelled, refuse entry bars with time < exitTs + this, on these 1-min bars.
   const _reentryCooldownSecs = tradeGuards.reentryCooldownMs(RES) / 1000;
@@ -224,7 +229,7 @@ function simulateDay(day, cfg, qty) {
       const b = barAtMinute(leg.bars, m);
       // Both ends are needed: the HIGH decides whether the level broke, the OPEN
       // prices the fill. A bar with no usable open would fill at NaN, and a NaN
-      // fill computes NO stop at all — an entry with the risk switched off.
+      // fill poisons every P&L and profit-lock comparison after it.
       if (!b || !strategy._px(b.high) || !strategy._px(b.open)) continue;
       if (!(b.high > cfg.triggerPremium)) continue;
       // The trigger level on an intrabar cross; the open when the bar started
@@ -260,15 +265,22 @@ function simulateDay(day, cfg, qty) {
   const leg       = fill.leg;
   const entryBar  = fill.bar;
   const entryPx   = strategy._r2(fill.px + slip);          // slippage paid UP on a buy
-  const initStop  = strategy.computeInitialStop(entryPx, cfg);
 
-  let stop     = initStop;
   let peak     = entryPx;
   let trough   = entryPx;
-  let expanded = false;
-  let trailMoves = 0;
 
-  const entryMin = _istMins(entryBar.time);
+  // The global profit lock — paper's ONLY exit — read live from tradeGuards.
+  const lockOpts = {
+    enabled:  tradeGuards.PROFIT_LOCK_ENABLED,
+    armPct:   tradeGuards.PROFIT_LOCK_ARM_PCT,
+    floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
+    trailPct: tradeGuards.PROFIT_LOCK_TRAIL_PCT,
+    tiers:    tradeGuards.PROFIT_LOCK_TRAIL_TIERS,
+  };
+  const lockAt = (px) => (strategy._px(px) ? tradeGuards.checkProfitLock(entryPx, px, peak, lockOpts) : null);
+  const lockFloor = () => tradeGuards.profitLockFloorLtp(entryPx, peak, lockOpts.floorPct, lockOpts.trailPct, lockOpts.tiers);
+  const sessionEndMin = _sessionEndMin();
+
   const bars = leg.bars.filter(b => b.time >= entryBar.time).sort((a, b) => a.time - b.time);
   let exitPx = null, exitReason = null, exitKind = null, exitTime = null;
 
@@ -276,69 +288,61 @@ function simulateDay(day, cfg, qty) {
     const m = _istMins(b.time);
     // The price an open-filled exit books. On the ENTRY bar the open printed
     // BEFORE the fill — it is not a price this trade could ever have exited at —
-    // so the fill itself stands in for it, and the gap-through test below is left
-    // to the bar LOW (which fills at the stop, the honest worst case). `_px` is
-    // then what keeps a null open out of every comparison: `null <= stop` is
-    // `0 <= stop`, which would square the trade off at ₹0.
-    const openPx  = b.time === entryBar.time ? fill.px : b.open;
+    // so the fill itself stands in for it. `_px` is then what keeps a null open
+    // out of every comparison.
+    const isEntryBar = b.time === entryBar.time;
+    const openPx  = isEntryBar ? fill.px : b.open;
     const hasOpen = strategy._px(openPx);
 
-    // a. EOD
-    if (hasOpen && m >= cfg.forcedExitMin) {
-      exitPx = openPx; exitKind = "EOD";
-      exitReason = `EOD square-off (${strategy._fmtMins(cfg.forcedExitMin)} IST) — premium ₹${strategy._r2(openPx)}`;
+    // a. the session's auto-stop teardown
+    if (hasOpen && m >= sessionEndMin) {
+      exitPx = openPx; exitKind = "SESSION_END";
+      exitReason = `Session end (${strategy._fmtMins(sessionEndMin)} IST auto-stop) — premium ₹${strategy._r2(openPx)}`;
       exitTime = b.time; break;
     }
-    // b. gapped through the stop
-    if (hasOpen && strategy._num(stop) && openPx <= stop) {
-      exitPx = openPx; exitKind = trailMoves ? "TRAIL" : "STOP";
-      exitReason = `${trailMoves ? "Trailing stop" : "Stop"} gapped through — the bar opened at ₹${strategy._r2(openPx)}, below the ₹${strategy._r2(stop)} stop`;
+    // b. opened at/below the lock floor (gapped through it)
+    const lockOpen = !isEntryBar && hasOpen ? lockAt(openPx) : null;
+    if (lockOpen) {
+      exitPx = openPx; exitKind = "PROFIT_LOCK";
+      exitReason = `${lockOpen} — bar opened through the floor`;
       exitTime = b.time; break;
     }
-    // c. the 09:45 box, judged on everything BEFORE this bar. Mirrors the
-    //    engine's guard: a position opened at or after the check was never given
-    //    its fifteen minutes, so the box does not apply to it. Out of the box
-    //    the windows cannot overlap; both are settable.
-    if (hasOpen && m >= cfg.sidewaysMin && entryMin < cfg.sidewaysMin && !expanded) {
-      exitPx = openPx; exitKind = "SIDEWAYS";
-      exitReason = `Sideways exit at ${strategy._fmtMins(cfg.sidewaysMin)} — premium never left ₹${cfg.bandDown}–₹${cfg.bandUp} (ranged ₹${strategy._r2(trough)}–₹${strategy._r2(peak)}), closed at ₹${strategy._r2(openPx)}`;
-      exitTime = b.time; break;
-    }
-    // d. the adverse extreme, BEFORE the favourable one
+    // c. the adverse extreme, BEFORE the favourable one
     if (strategy._px(b.low) && b.low < trough) trough = strategy._r2(b.low);
-    if (strategy.isExpanded(peak, trough, cfg)) expanded = true;
-    if (strategy._num(stop) && strategy._px(b.low) && b.low <= stop) {
-      exitPx = stop; exitKind = trailMoves ? "TRAIL" : "STOP";
-      exitReason = `${trailMoves ? "Trailing stop" : "Stop"} hit — the bar traded down to ₹${strategy._r2(b.low)}, through the ₹${strategy._r2(stop)} stop`;
+    const lockLow = lockAt(b.low);
+    if (lockLow) {
+      exitPx = Math.min(lockFloor(), hasOpen ? openPx : Infinity); exitKind = "PROFIT_LOCK";
+      exitReason = lockLow;
       exitTime = b.time; break;
     }
-    // e. the favourable extreme, then ratchet
+    // d. the favourable extreme, then the close against the raised floor
     if (strategy._px(b.high) && b.high > peak) peak = strategy._r2(b.high);
-    if (strategy.isExpanded(peak, trough, cfg)) expanded = true;
-    // Disarmed until `peak` reaches the box top — same helper paper uses. No
-    // `pos` override here because a backtest has no mid-run Settings change:
-    // cfg.bandUp IS the band every trade in the run opened under.
-    const next = strategy.computeTrailStop(peak, initStop, cfg);
-    if (strategy._num(next) && next > stop) { stop = next; trailMoves++; }
+    const lockClose = lockAt(b.close);
+    if (lockClose) {
+      exitPx = b.close; exitKind = "PROFIT_LOCK";
+      exitReason = lockClose;
+      exitTime = b.time; break;
+    }
   }
 
   if (exitPx == null) {
-    // The series ran out before any exit fired — the contract stopped printing.
+    // The day's bars ran out before the lock fired — close on the last printed
+    // premium, mirroring paper's session teardown.
     const last = bars.length ? bars[bars.length - 1] : entryBar;
     // A last bar with no usable close prices the exit at the fill rather than at
     // NaN or ₹0 — one unreadable candle must not book a total loss, nor poison
     // every aggregate on the results page.
     const lastPx = strategy._px(last.close) ? last.close : entryPx;
-    exitPx = lastPx; exitKind = "DATA_END";
-    exitReason = `Option series ended at ${_hhmmss(last.time)} before any exit fired — closed on the last printed premium ₹${strategy._r2(lastPx)}`;
+    exitPx = lastPx; exitKind = "SESSION_END";
+    exitReason = `Session ended at ${_hhmmss(last.time)} before the profit lock fired — closed on the last printed premium ₹${strategy._r2(lastPx)}`;
     exitTime = last.time;
   }
 
-  // The three open-priced exit branches break BEFORE folding their bar into
+  // The open-priced exit branches break BEFORE folding their bar into
   // peak/trough, so the recorded extremes would stop one bar short of the exit —
-  // paper folds the exiting tick in. No decision reads these (the box was
-  // already judged), but MAE/MFE and bestOptionLtp/worstOptionLtp in the exports
-  // are read by the analytics screens, so record what actually happened.
+  // paper folds the exiting tick in. No decision reads these, but MAE/MFE and
+  // bestOptionLtp/worstOptionLtp in the exports are read by the analytics
+  // screens, so record what actually happened.
   if (strategy._px(exitPx)) {
     if (exitPx > peak)   peak = strategy._r2(exitPx);
     if (exitPx < trough) trough = strategy._r2(exitPx);
@@ -360,7 +364,7 @@ function simulateDay(day, cfg, qty) {
     side,
     ePrice:     entryPx,
     xPrice:     exitFilled,
-    sl:         initStop,
+    sl:         null,
     pnl,
     entryReason: `${side} ${leg.strike} (${leg.moneyness}, picked at ₹${leg.ltp}) traded above ₹${cfg.triggerPremium}`,
     reason:     exitReason,
@@ -369,10 +373,7 @@ function simulateDay(day, cfg, qty) {
     symbol:     leg.symbol,
     moneyness:  leg.moneyness,
     selLtp:     leg.ltp,
-    stop:       stop,
-    trailMoves,
     peak, trough,
-    expanded:   expanded ? "yes" : "no",
     exitKind,
     qty,
     charges,
@@ -573,8 +574,6 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { key: "moneyness",  label: "ITM/ATM" },
       { key: "selLtp",     label: "₹ @ 09:25" },
       { key: "peak",       label: "Peak ₹" },
-      { key: "trailMoves", label: "Trail ×" },
-      { key: "expanded",   label: "Left box" },
       { key: "exitKind",   label: "Exit" },
       { key: "held",       label: "Held" },
     ],
@@ -587,23 +586,20 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "No leg cleared ₹" + cfg.triggerPremium, value: counts.no_trigger || 0 },
       { label: "No watchlist formed", value: counts.no_watchlist || 0 },
       { label: "No option data",      value: (counts.no_data || 0) + (counts.skipped || 0) },
-      { label: "Stopped / trailed out", value: trades.filter(t => t.exitKind === "STOP" || t.exitKind === "TRAIL").length },
-      { label: "09:45 sideways exits", value: trades.filter(t => t.exitKind === "SIDEWAYS").length },
-      { label: "Ran to EOD",          value: trades.filter(t => t.exitKind === "EOD").length },
+      { label: "Profit-lock exits",   value: trades.filter(t => t.exitKind === "PROFIT_LOCK").length },
+      { label: "Ran to session end",  value: trades.filter(t => t.exitKind === "SESSION_END").length },
       { label: "Trade frequency",     value: meta.days ? `${(((counts.trade || 0) / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
     notes: `${coverage}<b>Premiums are REAL:</b> every price here is a 1-minute candle Fyers printed for the option contract the rule would have held — there is no delta model and no theta model, because on this strategy that would be simulating the strategy itself. ` +
       `<b>Selection:</b> at ${strategy._fmtMins(cfg.selectionMin)} the ladder is ${cfg.scanItmStrikes} ITM${cfg.scanOtmStrikes ? ` + ${cfg.scanOtmStrikes} OTM` : ""} strikes per side and the strike nearest ₹${cfg.triggerPremium} is kept on each side. ` +
       `<b>Entry:</b> the first watchlist leg whose 1-min bar trades above ₹${cfg.triggerPremium} between ${strategy._fmtMins(cfg.entryStartMin)} and ${strategy._fmtMins(cfg.entryEndMin)}, filled at max(bar open, ₹${cfg.triggerPremium}). ` +
-      `<b>Exits:</b> ${cfg.slPts}pt stop off the fill, ${strategy.describeTrail(cfg)}; at ${strategy._fmtMins(cfg.sidewaysMin)} a trade still inside ₹${cfg.bandDown}–₹${cfg.bandUp} is closed; EOD ${strategy._fmtMins(cfg.forcedExitMin)}. ` +
-      `<b>Intra-bar ordering is conservative:</b> the stop is tested on the bar low BEFORE the trail is lifted from the bar high, a bar that opened beyond the stop fills at the open, and the entry bar is tested like any other. ` +
+      `<b>Exit:</b> the global profit lock is the only one (tested on the option premium against its peak); a trade it never closes is closed at the session end (${strategy._fmtMins(_sessionEndMin())} IST or the day's last bar). ` +
+      `<b>Intra-bar ordering is conservative:</b> the lock floor is tested on the bar low BEFORE the peak is lifted from the bar high, and a bar that opened through the floor fills at the open. ` +
       (cfg.sustainPolls > 1
         ? `<b style="color:#f59e0b;">⚠ SIMPLE930_SUSTAIN_POLLS is set to ${cfg.sustainPolls}, and this page cannot model it</b> — "N consecutive quotes above the trigger" has no meaning on a 1-minute bar, so the backtest fills on the first bar that crosses and will report MORE entries than paper would take. `
         : "") +
-      (Number(process.env.SIMPLE930_MAX_DAILY_TRADES || "1") > 1
-        ? `<b style="color:#f59e0b;">⚠ SIMPLE930_MAX_DAILY_TRADES is set to ${process.env.SIMPLE930_MAX_DAILY_TRADES}, and this page takes at most ONE trade a session regardless</b> — it will report FEWER entries than paper would take. `
-        : "") +
-      `<b>The stop fill is the backtest's one systematic flattery:</b> it books exactly the stop level, while paper books the tick that breached it. The slippage haircut offsets part of that, not all of it. ` +
+      `<b>One trade a session</b>, the same as paper. ` +
+      `<b>The lock fill is the backtest's one systematic flattery:</b> a bar low through the floor books exactly the floor level, while paper books the tick that breached it. The slippage haircut offsets part of that, not all of it. ` +
       `Slippage of ${_slippagePts()}pt is charged EACH way and Zerodha statutory charges are applied on ${meta.qty} qty. ` +
       `<b>A NIFTY weekly option is delisted at expiry</b>, so sessions older than the listed contracts cannot be fetched at all — they show as "no option data", not as flat days. ` +
       `<b>This strategy has NEVER traded live or on paper. Nothing here is validated.</b>${dayNote}`,

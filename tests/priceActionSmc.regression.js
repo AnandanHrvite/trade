@@ -14,12 +14,10 @@ const path = require("path");
 const { runPABacktest } = require("../src/routes/paBacktest");
 const _silence = console.log; console.log = () => {};
 const _paPaper = require("../src/routes/paPaper");
-const _paLive = require("../src/routes/paLive");
-const _paHarness = require("../src/routes/paLiveHarness");
 console.log = _silence;
 
 const KEYS = ["PA_SMC_SWING_BARS", "PA_SMC_MAX_AGE", "PA_SMC_REACT_WAIT", "PA_SMC_MIN_RR", "PA_SMC_BLOCK_LIQUIDITY",
-  "PA_SMC_TRAIL_ENABLED", "PA_SL_BUFFER_PTS", "PA_MIN_SL_PTS", "PA_MAX_SL_PTS", "PA_PATTERN_BULL_OB", "PA_PATTERN_BEAR_OB"];
+  "PA_SL_BUFFER_PTS", "PA_MIN_SL_PTS", "PA_MAX_SL_PTS", "PA_PATTERN_BULL_OB", "PA_PATTERN_BEAR_OB"];
 KEYS.forEach(k => delete process.env[k]);
 process.env.PA_ENTRY_START = "09:20"; process.env.PA_ENTRY_END = "14:30";
 process.env.COMMON_TRADE_WINDOW_ENABLED = "false";
@@ -256,21 +254,12 @@ check("warms up instead of guessing on short history", () => {
   assert.ok(/Warming up/.test(s.reason), s.reason);
 });
 
-check("the swing trail is off by default and only tightens when on", () => {
-  const c = toCandles(bullBars().concat([[1007, 1030, 1006, 1028], [1028, 1032, 1020, 1030], [1030, 1040, 1025, 1038]]));
-  assert.strictEqual(pa.updateTrailingSL(c, 987, "CE").sl, 987);
-  withEnv({ PA_SMC_TRAIL_ENABLED: "true" }, () => {
-    assert.strictEqual(pa.updateTrailingSL(c, 987, "CE").sl, 998, "moves up to the last swing low");
-    assert.strictEqual(pa.updateTrailingSL(c, 1100, "CE").sl, 1100);
-  });
-});
-
 // ── Backtest: the real engine, end to end ───────────────────────────────────
 async function backtestAfter(extraRows, env) {
   return withEnv(Object.assign({
-    PROFIT_LOCK_ENABLED: "false", BREAKEVEN_STOP_ENABLED: "false", PA_BREAKEVEN_TRIGGER: "0",
+    PROFIT_LOCK_ENABLED: "false",
     PA_SLIPPAGE_PTS: "0", EXIT_REENTRY_COOLDOWN_ENABLED: "false", PA_VIX_ENABLED: "false",
-    BACKTEST_OPTION_SIM: "false", INSTRUMENT: "NIFTY_OPTIONS", PA_MAX_DAILY_TRADES: "30", PA_MAX_DAILY_LOSS: "2000",
+    BACKTEST_OPTION_SIM: "false", INSTRUMENT: "NIFTY_OPTIONS",
   }, env || {}), async () => {
     const log = console.log; console.log = () => {};
     try {
@@ -279,87 +268,75 @@ async function backtestAfter(extraRows, env) {
   });
 }
 
-check("backtest: fills at the NEXT open and exits at the target", async () => {
-  const { trades } = await backtestAfter([[1008, 1020, 1006, 1018], [1018, 1050, 1016, 1048]]);
+// The lock in spot points: arm 4% of a 200 premium at delta 0.55 ≈ 14.5 pts, floor 2% ≈ 7.27 pts.
+const LOCK_ENV = { PROFIT_LOCK_ENABLED: "true", PROFIT_LOCK_ARM_PCT: "4", PROFIT_LOCK_FLOOR_PCT: "2", BACKTEST_DELTA: "0.55", PROFIT_LOCK_TRAIL_PCT: "0", PROFIT_LOCK_TRAIL_TIERS: "" };
+
+check("backtest: fills at the NEXT open and, with no lock armed, closes at the day's last bar", async () => {
+  // bullBars ends on bar 98 of day 1 (bars 75-149). Entry on bar 99, then flat to the
+  // day's last bar 149, then one bar of the next day.
+  const flat = Array.from({ length: 50 }, () => [1018, 1019, 1017, 1018]);
+  const { trades } = await backtestAfter([[1008, 1020, 1006, 1018], ...flat, [1030, 1031, 1029, 1030]]);
   assert.strictEqual(trades.length, 1, JSON.stringify(trades));
   assert.strictEqual(trades[0].side, "CE");
   assert.strictEqual(trades[0].entryPrice, 1008, "entry = next candle's open, not the signal close");
-  assert.strictEqual(trades[0].exitReason, "Target hit");
-  assert.strictEqual(trades[0].exitPrice, 1045);
-  assert.strictEqual(trades[0].target, 1045);
+  assert.strictEqual(trades[0].exitReason, "Session end");
+  assert.strictEqual(trades[0].exitPrice, 1018, "closed at the day's last close, not the next day's");
 });
 
-check("backtest: the stop wins when one candle touches both stop and target", async () => {
-  const { trades } = await backtestAfter([[1008, 1050, 980, 1000]]);
+check("backtest: no stop — a candle far below entry does not close the trade", async () => {
+  const { trades } = await backtestAfter([[1008, 1010, 960, 965], [965, 1000, 960, 990]]);
   assert.strictEqual(trades.length, 1, JSON.stringify(trades));
-  assert.ok(/SL hit/.test(trades[0].exitReason), trades[0].exitReason);
+  assert.strictEqual(trades[0].exitReason, "Session end");
+  assert.strictEqual(trades[0].exitPrice, 990);
 });
 
-check("backtest: an armed lock comes before the stop on a wide candle, as in paper", async () => {
-  const env = { PROFIT_LOCK_ENABLED: "true", PROFIT_LOCK_ARM_PCT: "4", PROFIT_LOCK_FLOOR_PCT: "2", BACKTEST_DELTA: "0.55", PROFIT_LOCK_TRAIL_PCT: "0", PROFIT_LOCK_TRAIL_TIERS: "" };
-  const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 980, 985]], env);
+check("backtest: an armed lock fills at its floor, not at the candle's low", async () => {
+  const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 980, 985]], LOCK_ENV);
   assert.ok(/Profit lock/.test(trades[0].exitReason), trades[0].exitReason);
-  assert.ok(trades[0].exitPrice > 987, "must not book the full stop");
+  assert.strictEqual(trades[0].exitPrice, 1015.27);
 });
 
-check("backtest: slippage works against the target fill", async () => {
-  const { trades } = await backtestAfter([[1008, 1050, 1006, 1048]], { PA_SLIPPAGE_PTS: "2" });
+check("backtest: slippage works against the entry and the lock fill", async () => {
+  const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 980, 985]], Object.assign({ PA_SLIPPAGE_PTS: "2" }, LOCK_ENV));
   assert.strictEqual(trades[0].entryPrice, 1010);
-  assert.strictEqual(trades[0].exitPrice, 1043);
+  assert.strictEqual(trades[0].exitPrice, 1015.27, "floor 1017.27 less 2 pts");
 });
 
-check("backtest: an open already past the target exits at the target, as paper does", async () => {
-  const { trades } = await backtestAfter([[1046, 1050, 1044, 1048]]);
-  assert.strictEqual(trades.length, 1, JSON.stringify(trades));
-  assert.strictEqual(trades[0].exitReason, "Target hit");
-  assert.strictEqual(trades[0].exitPrice, 1045);
-});
-
-check("backtest: keeps the engine's stop level, like paper", async () => {
-  const { trades } = await backtestAfter([[1012, 1014, 980, 985]]);
-  assert.strictEqual(trades[0].stopLoss, 987);
-  assert.strictEqual(trades[0].initialStopLoss, 987);
-});
-
-check("backtest: a bad stop setting still gives a working stop", async () => {
-  const { trades } = await backtestAfter([[1008, 1010, 980, 985]], { PA_MIN_SL_PTS: "abc", PA_MAX_SL_PTS: "abc" });
-  assert.ok(/SL hit/.test(trades[0].exitReason), trades[0].exitReason);
-  assert.strictEqual(trades[0].exitPrice, 987);
-});
-
-check("backtest: the common breakeven fills at the open when the candle gaps through entry", async () => {
-  const env = { BREAKEVEN_STOP_ENABLED: "true", BREAKEVEN_ARM_PCT: "5", BACKTEST_DELTA: "0.55" };
-  const { trades } = await backtestAfter([[1008, 1030, 1006, 1028], [1000, 1002, 995, 998]], env);
-  assert.ok(/Breakeven/.test(trades[0].exitReason), trades[0].exitReason);
+check("backtest: a candle gapping through the lock floor fills at the open", async () => {
+  const { trades } = await backtestAfter([[1008, 1030, 1006, 1028], [1000, 1002, 995, 998]], LOCK_ENV);
+  assert.ok(/Profit lock/.test(trades[0].exitReason), trades[0].exitReason);
   assert.strictEqual(trades[0].exitPrice, 1000);
 });
 
 check("backtest: the common profit lock arms on an earlier candle, never the same one", async () => {
   // Arm 4% of a 200 premium at delta 0.55 ≈ 14.5 pts. The first bar peaks at +30 and
   // dips in the same bar: no exit (order inside a bar is unknown). The next bar exits.
-  const env = { PROFIT_LOCK_ENABLED: "true", PROFIT_LOCK_ARM_PCT: "4", PROFIT_LOCK_FLOOR_PCT: "2", BACKTEST_DELTA: "0.55", PROFIT_LOCK_TRAIL_PCT: "0", PROFIT_LOCK_TRAIL_TIERS: "" };
-  const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 1012, 1014]], env);
+  const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 1012, 1014]], LOCK_ENV);
   assert.strictEqual(trades.length, 1, JSON.stringify(trades));
   assert.ok(/Profit lock/.test(trades[0].exitReason), trades[0].exitReason);
   assert.ok(trades[0].exitTs > trades[0].entryTs, "must not exit on the entry candle");
 });
 
 // ── Wiring ───────────────────────────────────────────────────────────────────
-check("paper and live both exit at the target and run the common lock before the stop", () => {
-  for (const f of ["src/routes/paPaper.js", "src/routes/paLive.js"]) {
+check("paper exits only through the common lock", () => {
+  for (const f of ["src/routes/paPaper.js"]) {
     const src = read(f);
-    assert.ok(/"Target hit"/.test(src), `${f} has no target exit`);
-    const lock = src.indexOf("tradeGuards.checkProfitLock");
-    const be   = src.indexOf("tradeGuards.checkBreakevenStop");
-    const stop = src.indexOf('if (pos.side === "CE" && price <= pos.stopLoss)');
-    assert.ok(lock > 0 && be > 0 && stop > 0 && lock < stop && be < stop, `${f}: lock/breakeven must run before the stop`);
+    assert.ok(/tradeGuards\.checkProfitLock/.test(src), `${f} has no profit lock`);
+    for (const gone of [/"Target hit"/, /checkBreakevenStop/, /checkTimeStop/, /pos\.stopLoss/, /updateTrailingSL/, /EOD square-off/, /HardSL/, /_dailyLossHit/, /_slPauseUntil/]) {
+      assert.ok(!gone.test(src), `${f} still has ${gone}`);
+    }
     assert.ok(/!isFut && pos\.optionEntryLtp && state\.optionLtp\) \{\s*const _plMsg/.test(src), `${f}: the premium lock must not run on a futures leg`);
   }
 });
 
-check("the backtest applies the common lock only to options, like paper", () => {
-  const src = read("src/routes/paBacktest.js");
-  assert.ok(/_PL_VALID\s*=\s*!isFutures/.test(src) && /_BE_VALID\s*=\s*!isFutures/.test(src));
+check("the backtest applies the common lock only to options, like paper, and nothing else exits", () => {
+  const file = read("src/routes/paBacktest.js");
+  // The engine only: the results page still labels exit reasons of saved older runs.
+  const src = file.slice(file.indexOf("async function runPABacktest"), file.indexOf("function errorPage"));
+  assert.ok(/_PL_VALID\s*=\s*!isFutures/.test(src));
+  for (const gone of [/_BE_VALID/, /"Target hit"/, /SL hit/, /updateTrailingSL/, /EOD square-off/, /PA_MAX_DAILY/]) {
+    assert.ok(!gone.test(src), `paBacktest.js still has ${gone}`);
+  }
 });
 
 check("every setting is on the Settings page, and its default matches the engine", () => {
@@ -373,9 +350,9 @@ check("every setting is on the Settings page, and its default matches the engine
     assert.strictEqual(m[1], code[1], `${k}: Settings default ${m[1]} ≠ code default ${code[1]}`);
   }
   assert.ok(!/PA_PATTERN_DOUBLE|PA_PATTERN_ASC|PA_TREND_|PA_RETEST_/.test(src + engine), "old PA keys are still referenced");
-  // Manual entries read the same safe stop limits, so a bad value cannot mean no stop.
-  for (const f of ["src/routes/paPaper.js", "src/routes/paLive.js"]) {
-    assert.ok(/paStrategy\.stopLimits\(\)/.test(read(f)) && !/parseFloat\(process\.env\.PA_M(AX|IN)_SL_PTS/.test(read(f)), f);
+  // Manual entries place no stop, so the routes read no stop limits of their own.
+  for (const f of ["src/routes/paPaper.js"]) {
+    assert.ok(!/stopLimits|PA_M(AX|IN)_SL_PTS/.test(read(f)), f);
   }
 });
 
@@ -388,26 +365,22 @@ check("the Settings section title is the same everywhere, or daily logs lose the
 });
 
 check("every simulate path and every ready label follows the real warm-up", () => {
-  const paper = read("src/routes/paPaper.js"), live = read("src/routes/paLive.js");
+  const paper = read("src/routes/paPaper.js");
   assert.ok(!/warmupCandles: 30\b|slice\(-30\)/.test(paper), "a simulate path still warms up on 30 candles");
-  assert.ok(!/candleCount >= (15|30)|state\.candles\.length >= (15|30) \?/.test(paper + live), "a ready label still uses the old count");
+  assert.ok(!/candleCount >= (15|30)|state\.candles\.length >= (15|30) \?/.test(paper), "a ready label still uses the old count");
 });
 
-check("Start All (Paper / Live / Harness) includes Price Action, and drops it when switched off", () => {
+check("Start All includes Price Action, and drops it when switched off", () => {
   const log = console.log, warn = console.warn; console.log = console.warn = () => {};
   try {
     const express = require("express");
     const { trackMounts, startAllRoster } = require("../src/utils/startAllRoster");
     const app = express(); trackMounts(app);
     app.use("/pa-paper", _paPaper);
-    app.use("/pa-live", _paLive);
-    app.use("/pa-live-harness", _paHarness);
     process.env.PA_MODE_ENABLED = "true";
     const row = startAllRoster().find(m => m.mode === "PA");
     assert.ok(row, "PA is missing from the roster");
     assert.strictEqual(row.paper, "/pa-paper/start");
-    assert.strictEqual(row.live, "/pa-live/start");
-    assert.strictEqual(row.harness, "/pa-live-harness/start");
     process.env.PA_MODE_ENABLED = "false";
     assert.ok(!startAllRoster().find(m => m.mode === "PA"), "PA must leave the roster when off");
   } finally { process.env.PA_MODE_ENABLED = "true"; console.log = log; console.warn = warn; }

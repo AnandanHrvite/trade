@@ -2,7 +2,7 @@
  * HA SCALP PAPER — /ha-scalp-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * CANONICAL surface. Every decision / fill / exit semantic for HA_SCALP lives
- * here; the backtest and the live harness must match THIS, never the reverse
+ * here; the backtest must match THIS, never the reverse
  * (see feedback_paper_logic_untouchable).
  *
  * The day in one paragraph: the engine builds HEIKIN ASHI candles from closed
@@ -11,39 +11,31 @@
  * strength candle in that same direction. Above the MA it will only ever buy a
  * CE, and only on a BULLISH HA candle with no bottom wick. Below the MA it will
  * only ever buy a PE, and only on a BEARISH HA candle with no top wick. The
- * stop is that signal candle's own RAW high or low. The trade is then held
- * until the stop, a doji, a weak candle, or the square-off.
+ * trade is then held until the global profit lock (or a manual / session exit)
+ * closes it.
  *
  * ONE INSTRUMENT: NIFTY 50 INDEX. Every decision, level and exit is a spot
  * level read from closed 15-minute bars off the Fyers HISTORY endpoint — the
  * same endpoint the backtest and replay read, which is what makes the four
- * modes agree. The shared spot WebSocket supplies the live price used to test
- * the already-frozen stop, plus this session's heartbeat and tick count.
+ * modes agree. The shared spot WebSocket supplies the live spot price, plus
+ * this session's heartbeat and tick count.
  *
  * HEIKIN ASHI vs RAW — the distinction that matters:
- *   • DECISIONS (colour, wick, doji, weak) read the HEIKIN ASHI candle.
- *   • PRICES (entry reference, stop level) read the RAW candle.
+ *   • DECISIONS (colour, wick, doji) read the HEIKIN ASHI candle.
+ *   • PRICES (the entry reference) read the RAW candle.
  * An HA price is an average of four numbers; nothing ever traded there. Mixing
  * the two invents fills that could not have happened.
  *
- * Exits, in the order they are tested:
- *   1. stop  — the signal candle's RAW high/low, then breakeven, then trailed
- *              (HA_SCALP_TRAIL_ENABLED, default ON). Tested on every tick; the
- *              level is raised on each 15-min close and only ever tightens.
- *   2. doji  — an HA candle whose body is tiny. Tested on each 15-min close.
- *   3. weak  — an HA candle that turned the opposite colour, or whose body
- *              shrank below the weak threshold. Tested on each 15-min close.
- *   4. EOD square-off at HA_SCALP_FORCED_EXIT
- * There is deliberately NO target, NO time stop, NO premium stop and NO partial
- * booking. The trail was added 2026-09-15 after the first 14 paper trades gave
- * back every one of their open gains; set HA_SCALP_TRAIL_ENABLED=false for the
- * original frozen-stop rule.
+ * Exits: the global profit lock (tradeGuards.checkProfitLock) is the ONLY
+ * automatic exit, tested on every poll/tick. Otherwise a trade closes on the
+ * manual exit, /stop, or the global TRADE_STOP_TIME session auto-stop. There is
+ * no stop loss, trail, breakeven, target, candle exit or day-loss breaker.
  *
- * Day-level breakers: HA_SCALP_MAX_DAILY_TRADES, HA_SCALP_MAX_DAILY_LOSS,
- * HA_SCALP_DAILY_PROFIT_LOCK and HA_SCALP_MAX_DAILY_LOSSES stop-outs.
+ * Day-level breaker: HA_SCALP_DAILY_PROFIT_LOCK (stops new entries once the
+ * day's P&L reaches it).
  *
- * Signal engine: src/strategies/ha_scalp.js (shared by paper, backtest, live
- * harness and replay — no rule is re-implemented in this file).
+ * Signal engine: src/strategies/ha_scalp.js (shared by paper, backtest
+ * and replay — no rule is re-implemented in this file).
  *
  * Uses LIVE data but SIMULATES orders locally.
  * Endpoints: /start /stop /exit /status /status/data /status/chart-data
@@ -92,15 +84,8 @@ const PT_FILE  = path.join(DATA_DIR, "ha_scalp_paper_trades.json");
 
 // ── Config readers (Settings mutates process.env live — never cache) ──────────
 function _resMin() { return haStrategy.getConfig().resolutionMins; }
-function _parseMins(envKey, fallback) {
-  return haStrategy._parseHHMM(process.env[envKey], haStrategy._parseHHMM(fallback, 0));
-}
 function _envStr(key, fallback) { return String(process.env[key] || fallback); }
-function _maxDailyTrades()  { return Math.max(1, parseInt(process.env.HA_SCALP_MAX_DAILY_TRADES || "3", 10) || 3); }
-function _maxDailyLosses()  { return Math.max(0, parseInt(process.env.HA_SCALP_MAX_DAILY_LOSSES || "2", 10)); }
-function _maxDailyLoss()    { return parseFloat(process.env.HA_SCALP_MAX_DAILY_LOSS    || "3000"); }
 function _dailyProfitLock() { return parseFloat(process.env.HA_SCALP_DAILY_PROFIT_LOCK || "0"); }
-function _maxWeeklyLoss()   { return parseFloat(process.env.HA_SCALP_MAX_WEEKLY_LOSS   || "0"); }
 function _pollMs() {
   const v = parseInt(process.env.HA_SCALP_POLL_MS || "2000", 10);
   return Number.isFinite(v) && v >= 500 && v <= 30000 ? v : 2000;
@@ -170,15 +155,13 @@ function _freshState() {
     // totalPnl — the capital pool adds sessionPnl only then (see trackSession below).
     _unsaved:       false,
     tradesTaken:    0,
-    stopOuts:       0,
-    consecutiveLosses: 0,
     // SPOT bars — the decision series. Closed bars only.
     candles:        [],
     lastClosedBarTime: null,
     formingBar:     null,   // display-only: the bar being built from live ticks
     tickCount:      0,
     lastTickTime:   null,
-    lastTickPrice:  null,   // NIFTY 50 INDEX spot — what the stop is measured against
+    lastTickPrice:  null,   // NIFTY 50 INDEX spot
     position:       null,
     optionLtp:      null,
     optionLtpUpdatedAt: null,
@@ -244,10 +227,9 @@ function rehydrateSessionFromJsonl() {
     state._unsaved      = false;   // rehydrated trades are not counted: they may have been deleted from History, and the pool must not resurrect them
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
-    state.stopOuts = trades.filter(t => /Stop hit|Day (high|low) taken out/i.test(String(t.exitReason || ""))).length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ [HA-SCALP-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl}, ${state.stopOuts} stop-out(s))`);
+    console.log(`♻️ [HA-SCALP-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
     console.warn(`[HA-SCALP-PAPER] session rehydrate failed: ${err.message}`);
   }
@@ -356,10 +338,9 @@ function startPolling() {
       }
     } catch (_) {}
 
-    // Exits first (a stop must not wait on a history round-trip), then
-    // the bar-close work.
+    // Exits first (a profit-lock hit must not wait on a history round-trip),
+    // then the bar-close work.
     try { if (state.position) _checkExits(state.lastTickPrice); } catch (e) { console.error(`🚨 [HA-SCALP-PAPER] exit-check error: ${e.message}`); }
-    try { _enforceEod(); } catch (e) { console.error(`🚨 [HA-SCALP-PAPER] eod error: ${e.message}`); }
     _maybeRefreshHistory().catch(e => console.error(`🚨 [HA-SCALP-PAPER] history refresh error: ${e.message}`));
     if (!state.position && state._pendingEntry) {
       _retryPendingEntry().catch(e => console.error(`🚨 [HA-SCALP-PAPER] entry-retry error: ${e.message}`));
@@ -524,21 +505,6 @@ function _mergeBars(bars) {
   const newest = fresh[fresh.length - 1];
   state.lastClosedBarTime = newest.time;
 
-  // An OPEN position is judged on EVERY fresh bar, oldest first. When history
-  // stalls and several bars land in one poll, the doji / weak-candle exit must
-  // still see each of them — the backtest tests every bar, and a position that
-  // should have closed on the 10:00 bar cannot be allowed to survive to 10:45
-  // just because the bars arrived together. Exits only, and only while a
-  // position is open, so this stays a no-op on the normal one-bar-at-a-time path.
-  if (state.position) {
-    for (const c of fresh) {
-      if (!state.position) break;
-      if (c.time === newest.time) break;   // the newest bar is onCandleClose's job
-      try { _checkCandleExits(c.time, true); }
-      catch (e) { console.error(`🚨 [HA-SCALP-PAPER] catch-up exit error: ${e.message}`); }
-    }
-  }
-
   // ENTRY is evaluated for the newest bar only. evaluateEntry always reads the
   // LAST element of state.candles, so replaying older bars would re-evaluate the
   // same series N times — normally harmless, but if history only starts
@@ -613,32 +579,11 @@ async function simulateBuy(side, sig) {
     }
   }
 
-  // The stop is a LEVEL the engine read off the signal candle's RAW low/high.
-  // It is NOT re-anchored to the fill: the rule says "SL is the previous
-  // candle's high/low", and re-anchoring would move it off that candle. A fill
-  // that slips simply changes the risk in points, and that is what gets logged.
-  //
-  // There is no target. The trade is closed by the stop, a doji, a weak candle
-  // or the square-off — never by a price objective.
-  const slSpot = sig.slSpot;
-  if (!Number.isFinite(slSpot)) {
-    log(`🚫 [HA-SCALP-PAPER] Entry ABORTED — stop level (${slSpot}) unusable. Refusing to enter without one.`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `stop ${slSpot} unusable`, side, spot: spotPrice });
-    return;
-  }
-  // The fill may have already run past the stop while the quote round-tripped.
-  if (haStrategy.stopHit(side, spotPrice, slSpot)) {
-    log(`🚫 [HA-SCALP-PAPER] Entry ABORTED — spot ${spotPrice} is already through the stop ${slSpot}`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "fill_past_stop", reason: `spot ${spotPrice} already beyond stop ${slSpot}`, side, spot: spotPrice });
-    return;
-  }
-
   // /stop (or a stop + restart) may have run while we awaited — opening now
   // would strand an orphan position and its capital block.
   if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = haLotQty();
-  const slPts = parseFloat(Math.abs(slSpot - spotPrice).toFixed(2));
 
   // ── Capital gate — HARD: the pool must fund this position or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
@@ -672,18 +617,8 @@ async function simulateBuy(side, sig) {
     vixAtEntry:     vixFilter.getCachedVix(),   // observer-only — see VIX_LOG_ENABLED
     entryUnixSec:   Math.floor(Date.now() / 1000),
     entryBarTime:   Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
-    slSpot,
-    initialSlSpot:  slSpot,
-    slPts,
-    riskPts:        slPts,
-    // Trail anchor — best spot seen while the trade is open. Seeded with the
-    // entry so a trade that never goes green trails from the entry, not from 0.
-    bestSpot:       spotPrice,
-    trailArmed:     false,
-    breakevenArmed: false,
     // Signal context (kept on the trade record for analytics / reports)
     signalSpot:     sig.entrySpot,
-    signalSlPts:    sig.slPts,
     signalBarTime:  sig.signalBarTime,
     trend:          sig.trend,
     ma:             sig.ma,
@@ -718,15 +653,13 @@ async function simulateBuy(side, sig) {
   log(`🟢 [HA-SCALP-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spotPrice} (index ${indexSpot})${_isFut ? "" : ` optLtp=₹${optionEntryLtp}`}`);
   log(`   ├─ Trend  : ${pos.trend} — raw close ${sig.rawClose} is ${side === "CE" ? "ABOVE" : "BELOW"} the ${sig.cfg.maPeriod} ${String(pos.maType).toUpperCase()} at ${pos.ma}`);
   log(`   ├─ Candle : ${side === "CE" ? "BULLISH" : "BEARISH"} Heikin Ashi, NO ${side === "CE" ? "BOTTOM" : "TOP"} WICK (${side === "CE" ? pos.lowerWickPct : pos.upperWickPct}% of range) · body ${pos.bodyPct}% · HA ${pos.haOpen} → ${pos.haClose}`);
-  const _tcfg = sig.cfg || {};
-  log(`   ├─ Stop   : ${slSpot} = the signal candle's RAW ${side === "CE" ? "LOW" : "HIGH"} (${slPts}pt away). ${_tcfg.trailEnabled ? `Moves to breakeven at +${_tcfg.breakevenPts}pt, then trails ${_tcfg.trailPts}pt behind from +${_tcfg.trailStartPts}pt.` : "It never moves."}`);
-  log(`   └─ Exits  : stop${_tcfg.trailEnabled ? " (incl. trail)" : ""} · doji candle · weak candle · EOD ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} — there is no target`);
+  log(`   └─ Exit   : global profit lock — no stop, trail or target`);
 
   notifyEntry({
     mode: "HA-SCALP-PAPER",
     side, symbol: optInfo.symbol,
     spotAtEntry: spotPrice, optionEntryLtp,
-    qty, stopLoss: slSpot, target: null,
+    qty, stopLoss: null, target: null,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -738,26 +671,17 @@ async function simulateBuy(side, sig) {
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
       spotEntry: spotPrice, optionEntry: optionEntryLtp,
-      stopLoss: slSpot, target: null,
+      stopLoss: null, target: null,
       reason: pos.entryReason,
     });
   } catch (_) {}
 }
 
-function simulateSell(reason, opts) {
+function simulateSell(reason) {
   if (!state.position) return;
-  const o = opts || {};
   const pos = state.position;
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
-  // A CATCH-UP exit (a bar that only arrived in a late batch) is measured on
-  // THAT bar's close, not on the current tick — the trade ended when that candle
-  // closed, and marking it at a price printed minutes later would misreport
-  // where the exit happened. The option premium is still the live one: there is
-  // no historical premium to read, and o.staleSpot flags the trade so the
-  // mismatch is visible rather than silent.
-  const exitSpot   = (typeof o.exitSpot === "number" && Number.isFinite(o.exitSpot))
-    ? parseFloat(o.exitSpot.toFixed(2))
-    : (state.lastTickPrice || pos.entrySpot);
+  const exitSpot   = state.lastTickPrice || pos.entrySpot;
   const qty        = pos.qty;
   const _pnlRes    = instrumentMode.computePnl({
     side: pos.side, entrySpot: pos.entrySpot, exitSpot,
@@ -768,11 +692,6 @@ function simulateSell(reason, opts) {
   const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
-  if (pnl < 0) state.consecutiveLosses++; else if (pnl > 0) state.consecutiveLosses = 0;
-  // Only a REAL stop-out burns one of the day's allowed losses. isStopOut is set
-  // by the caller, never inferred from the sign of the P&L, so a stop that
-  // happens to net positive still counts.
-  if (o.isStopOut) state.stopOuts++;
 
   const trade = {
     side:           pos.side,
@@ -790,26 +709,18 @@ function simulateSell(reason, opts) {
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     entryBarTime:   pos.entryBarTime,
-    exitBarTime:    (typeof o.exitBarTime === "number")
-      ? o.exitBarTime
-      : Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
-    // True when the bar that triggered this exit arrived late (batched history):
-    // spot is that bar's close, but optionExitLtp is the premium at the moment
-    // the batch was processed. Flagged so analysis can exclude these fills.
-    lateBarExit:    o.lateBar === true ? true : undefined,
+    exitBarTime:    Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
     pnl,
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp} (levels measured on NIFTY 50 spot)`,
     exitReason:     reason,
     entryReason:    pos.entryReason,
-    stopLoss:       pos.slSpot,
-    initialStopLoss: pos.initialSlSpot,
+    stopLoss:       null,
     target:         null,
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
     optionEntrySymbol: pos.symbol,
     signalStrength: pos.signalStrength,
-    riskPts:        pos.riskPts,
     // HA_SCALP signal context
     trend:          pos.trend,
     ma:             pos.ma,
@@ -875,27 +786,12 @@ function simulateSell(reason, opts) {
   _applyDayBreakers();
 }
 
-/** Day-level breakers, evaluated after every exit. Each one CLOSES the day. */
+/** Day-level breaker, evaluated after every exit: the daily profit lock CLOSES the day. */
 function _applyDayBreakers() {
   if (state.dayClosed) return;
-  const maxLoss = _maxDailyLoss();
-  const lock    = _dailyProfitLock();
-  const maxOuts = _maxDailyLosses();
-
-  if (maxLoss > 0 && state.sessionPnl <= -maxLoss) {
-    _closeDay(`Daily loss cap hit (₹${state.sessionPnl} ≤ -₹${maxLoss})`);
-    return;
-  }
+  const lock = _dailyProfitLock();
   if (lock > 0 && state.sessionPnl >= lock) {
     _closeDay(`Daily profit lock hit (₹${state.sessionPnl} ≥ ₹${lock}) — banking the day`);
-    return;
-  }
-  if (maxOuts > 0 && state.stopOuts >= maxOuts) {
-    _closeDay(`${state.stopOuts} stop-out(s) ≥ ${maxOuts} — day over`);
-    return;
-  }
-  if (state.tradesTaken >= _maxDailyTrades()) {
-    _closeDay(`Daily trade budget spent (${state.tradesTaken}/${_maxDailyTrades()})`);
   }
 }
 
@@ -907,12 +803,8 @@ function _closeDay(reason) {
 }
 
 // ── Exits ────────────────────────────────────────────────────────────────────
-// The STOP is the only per-tick exit — it is a frozen spot level, so it can be
-// tested on every tick. The doji and weak-candle exits are candle-close events
-// and live in onCandleClose instead; testing them per tick would read a candle
-// that has not finished forming and would exit on a shape that never existed.
-// The level is guarded with Number.isFinite before it is compared: `price <= null`
-// is `price <= 0`, which would square the trade off on its very first quote.
+// The global profit lock is the ONLY automatic exit, tested on every poll and
+// tick. This also keeps the peak premium and the MFE/MAE bookkeeping current.
 function _checkExits(spotPrice) {
   if (!state.position) return;
   if (typeof spotPrice !== "number" || !Number.isFinite(spotPrice) || spotPrice <= 0) return;
@@ -921,12 +813,6 @@ function _checkExits(spotPrice) {
 
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
   const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  // Trail anchor. Tracked per tick (the extreme is a tick event, not a candle
-  // one) but only ACTED on at candle close, so the stop still moves on closed
-  // bars exactly like every other decision in this engine.
-  if (pos.side === "CE" ? spotPrice > pos.bestSpot : spotPrice < pos.bestSpot) {
-    pos.bestSpot = spotPrice;
-  }
   const curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
   if (favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (curPnl > (pos.mfePnl     || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
@@ -938,120 +824,11 @@ function _checkExits(spotPrice) {
   // only: the lock is defined on option premium, and in futures mode optLtp
   // mirrors the SPOT, so leaving it on would test an 8% move in NIFTY itself.
   if (!pos.isFutures && pos.optionEntryLtp && state.optionLtp) {
-    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.peakPremium)
-      // Fallback for a trade that never reached the lock's arm level. Opt-in
-      // here (HA_SCALP_PREMIUM_BREAKEVEN_ENABLED) — the spot breakeven covers it.
-      || (haStrategy.getConfig().premiumBreakeven
-        ? tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optionLtp, pos.peakPremium)
-        : null);
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.peakPremium);
     if (_plMsg) {
       log(`🔒 [HA-SCALP-PAPER] ${_plMsg}`);
       simulateSell(_plMsg);
-      return;
     }
-  }
-
-  // The only per-tick exit: the signal candle's own raw high/low was taken out.
-  if (haStrategy.stopHit(pos.side, spotPrice, pos.slSpot)) {
-    // Name the level that actually stopped it. A trailed or breakeven stop is
-    // no longer the signal candle's extreme, and calling it that in the log
-    // would hide the trail's work behind a reason string that reads like a loss.
-    const what = pos.trailArmed
-      ? `the trailed stop`
-      : pos.breakevenArmed
-        ? `the breakeven stop`
-        : `the signal candle's ${pos.side === "CE" ? "low" : "high"}`;
-    simulateSell(
-      `Stop hit — spot ${spotPrice} took out ${what} ${pos.slSpot} (${pos.riskPts}pt risk at entry)`,
-      // Still a stop-out even when the trailed level books a profit: the rule
-      // above counts the EVENT, not the sign of the P&L, and the restart
-      // recovery at _restoreSession re-derives this from the same "Stop hit"
-      // prefix — so both paths agree.
-      { isStopOut: true }
-    );
-  }
-}
-
-/**
- * The two CANDLE-CLOSE exits, evaluated once per closed 15-minute bar while a
- * position is open. Both come straight from the user's rules:
- *   • a DOJI warns of a reversal — get out.
- *   • a WEAK or opposite-coloured candle says the trend is fading — get out.
- * The engine owns both tests (haStrategy.exitSignal) so paper, backtest, live
- * and replay cannot drift apart.
- */
-function _checkCandleExits(barTime, lateBar) {
-  const pos = state.position;
-  if (!pos) return;
-  // Default to the newest HA candle; when a specific bar is named (the catch-up
-  // path in _mergeBars) test THAT bar, so a batch of bars arriving together is
-  // judged one bar at a time exactly as the backtest judges them.
-  let ha = null;
-  let raw = null;
-  if (barTime == null) {
-    const n = state.ha.length;
-    ha  = n ? state.ha[n - 1] : null;
-    raw = state.candles.length ? state.candles[state.candles.length - 1] : null;
-  } else {
-      const i = state.candles.findIndex(c => c.time === barTime);
-      ha  = i >= 0 ? state.ha[i] : null;
-      raw = i >= 0 ? state.candles[i] : null;
-  }
-  if (!ha) return;
-  // Never let the signal candle itself close the trade: the entry happens on
-  // the bar AFTER it, so the position must survive at least one new bar.
-  if (pos.signalBarTime != null && ha.time <= pos.signalBarTime) return;
-
-  // Breakeven / trail FIRST: raise the stop for the bar that is now starting.
-  // It only ever tightens, so doing it before the reversal tests below cannot
-  // rescue a trade that should exit — and the raised level is what the next
-  // tick's stopHit() compares against.
-  //
-  // On a CATCH-UP bar (several bars landing in one poll) the live bestSpot was
-  // built from ticks that happened AFTER this bar, so trailing on it would be
-  // lookahead. Use the bar's own favourable extreme instead — which is exactly
-  // what the backtest does — and let the normal path keep the tick-tracked
-  // value, where "now" and the bar's close are the same moment.
-  let trailPos = pos;
-  if (lateBar === true && raw) {
-    const fav = pos.side === "CE" ? raw.high : raw.low;
-    if (typeof fav === "number" && Number.isFinite(fav)) {
-      // Rebuild the anchor from the entry forward, bar by bar, so it can only
-      // ever reflect bars already judged. Kept in its own field and passed as a
-      // scoped view — overwriting pos.bestSpot would throw away the real
-      // tick-tracked extreme that the normal path depends on.
-      if (pos.catchUpBest == null) pos.catchUpBest = pos.entrySpot;
-      pos.catchUpBest = pos.side === "CE"
-        ? Math.max(pos.catchUpBest, fav)
-        : Math.min(pos.catchUpBest, fav);
-      trailPos = { entrySpot: pos.entrySpot, slSpot: pos.slSpot, bestSpot: pos.catchUpBest };
-    }
-  }
-  const tr = haStrategy.trailStop(pos.side, trailPos, {});
-  if (tr) {
-    pos.slSpot = tr.stop;
-    pos.slPts = parseFloat(Math.abs(tr.stop - pos.entrySpot).toFixed(2));
-    if (tr.reason === "BREAKEVEN") pos.breakevenArmed = true; else pos.trailArmed = true;
-    log(`🔒 [HA-SCALP-PAPER] ${tr.reason === "BREAKEVEN" ? "Breakeven armed" : "Trail raised"} — SL → ${pos.slSpot} (favourable ${tr.favPts}pt, best spot ${trailPos.bestSpot})`);
-    try { require("../utils/positionPersist").saveHaScalpPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-  }
-
-  const ex = haStrategy.exitSignal(pos.side, ha, {});
-  if (!ex) return;
-  // opts carry the bar's own close only when this is a CATCH-UP bar (one older
-  // than the newest closed bar). On the normal path the newest bar's close and
-  // the current tick are the same moment, so nothing is overridden.
-  const isCatchUp = lateBar === true && raw && typeof raw.close === "number";
-  simulateSell(
-    `${ex.label} — ${ex.detail}`,
-    isCatchUp ? { exitSpot: raw.close, exitBarTime: raw.time, lateBar: true } : {}
-  );
-}
-
-function _enforceEod() {
-  if (!state.position) return;
-  if (getISTMinutes() >= _parseMins("HA_SCALP_FORCED_EXIT", "15:15")) {
-    simulateSell(`EOD square-off (${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} IST) — neither the stop nor a reversal candle closed it`);
   }
 }
 
@@ -1069,11 +846,8 @@ function _skipGate(sig) {
   if (/against the trend/.test(r))    return "wrong_colour_for_trend";
   if (/wick of/.test(r))              return "has_wick";
   if (/body is only/.test(r))         return "body_too_small";
-  if (/cap/.test(r))                  return "stop_too_wide";
   if (/exactly on the/.test(r))       return "price_on_ma";
-  if (/stopped on its first tick/.test(r)) return "stop_already_through";
   if (/entry window|no new entries/.test(r)) return "outside_window";
-  if (/budget/.test(r))               return "day_budget_spent";
   return "no_setup";
 }
 
@@ -1082,14 +856,8 @@ async function evaluateEntry() {
   // concurrent polls can never open two positions.
   if (state.position || state._entryInFlight || state.dayClosed) return;
   if (state._lastEntryAttemptMs && Date.now() - state._lastEntryAttemptMs < ENTRY_RETRY_MS) return;
-  if (state.tradesTaken >= _maxDailyTrades()) { _applyDayBreakers(); return; }
 
   // ── Risk gates ──────────────────────────────────────────────────────────
-  const maxWeek = _maxWeeklyLoss();
-  if (maxWeek > 0) {
-    const wk = weeklyPnl();
-    if (wk <= -maxWeek) { _closeDay(`Weekly loss cap hit (week P&L ₹${wk} ≤ -₹${maxWeek})`); return; }
-  }
   {
     const pf = require("../utils/portfolioRisk").checkPortfolioCap();
     if (pf.blocked) { _closeDay(pf.reason); return; }
@@ -1099,7 +867,7 @@ async function evaluateEntry() {
   // The HA and MA series are already computed for this bar set (see _mergeBars)
   // and are handed to the engine so the chart and the decision cannot disagree.
   const sig = haStrategy.getSignal(state.candles, {
-    alreadyTraded: false, silent: true, ha: state.ha, ma: state.ma,
+    silent: true, ha: state.ha, ma: state.ma,
   });
   state.lastSignal = sig;
 
@@ -1117,7 +885,6 @@ async function evaluateEntry() {
         haOpen: sig.haOpen, haHigh: sig.haHigh, haLow: sig.haLow, haClose: sig.haClose,
         bodyPct: sig.bodyPct, upperWickPct: sig.upperWickPct, lowerWickPct: sig.lowerWickPct,
         rawClose: sig.rawClose, rawHigh: sig.rawHigh, rawLow: sig.rawLow,
-        slPts: sig.slPts,
         barTime: sig.signalBarTime,
       });
     }
@@ -1160,8 +927,7 @@ async function _retryPendingEntry() {
   const p = state._pendingEntry;
   if (!p) return;
   if (state.position || state._entryInFlight) return;
-  if (state.dayClosed || state.tradesTaken >= _maxDailyTrades()) { state._pendingEntry = null; return; }
-  if (getISTMinutes() >= _parseMins("HA_SCALP_FORCED_EXIT", "15:15")) { state._pendingEntry = null; return; }
+  if (state.dayClosed) { state._pendingEntry = null; return; }
   if (Date.now() - p.lastAttemptMs < ENTRY_RETRY_MS) return;
 
   state._entryInFlight = true;
@@ -1181,15 +947,7 @@ function onCandleClose(bar) {
   state._pendingEntry = null;
   if (!bar || typeof bar.time !== "number") return;
 
-  // A position OPEN at this bar's close is judged by the doji / weak-candle
-  // rules first. If they close it, the same bar is then free to open a new
-  // trade — which is exactly the user's "get ready for the new entry or exit
-  // from the trade if already entered".
-  if (state.position) {
-    try { _checkCandleExits(bar.time); }
-    catch (e) { console.error(`🚨 [HA-SCALP-PAPER] candle-exit error: ${e.message}`); }
-    if (state.position) return;
-  }
+  if (state.position) return;
 
   const cfg = haStrategy.getConfig();
   const closeMins = haStrategy._utcSecToIstMins(bar.time) + cfg.resolutionMins;
@@ -1199,9 +957,8 @@ function onCandleClose(bar) {
 
 // ── onTick — the NIFTY 50 INDEX feed. ────────────────────────────────────────
 // It drives NO ENTRY decision: every entry rule reads CLOSED 15-minute bars, so
-// the tick can never pull an entry forward. What it does own is the STOP: the
-// stop is a frozen spot level, this feed is the fastest source of spot, and
-// waiting for the option poll would leave the stop unchecked for whole seconds.
+// the tick can never pull an entry forward. It also re-tests the profit lock
+// and keeps the MFE/MAE bookkeeping current.
 function onTick(tick) {
   if (!state.running) return;
   const price = tick && tick.ltp;
@@ -1216,14 +973,9 @@ function onTick(tick) {
   // keeps Paper, Backtest and Replay in agreement.
   _updateFormingBar(price);
 
-  // The stop is tested on every tick — it is a spot level, and this is spot.
   // _checkExits is idempotent and returns immediately when flat.
   try { if (state.position) _checkExits(price); }
   catch (e) { console.error(`🚨 [HA-SCALP-PAPER] tick exit-check error: ${e.message}`); }
-
-  // EOD is enforced on the tick too, so a stalled option quote can never hold a
-  // position past the square-off time.
-  _enforceEod();
 }
 
 // ── Preload spot history ──────────────────────────────────────────────────
@@ -1275,28 +1027,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The HA_SCALP-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "HA_SCALP-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -1309,14 +1039,6 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/ha-scalp-paper/status");
 
   if (String(process.env.HA_SCALP_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -1335,8 +1057,8 @@ router.get("/start", async (req, res) => {
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/ha-scalp-paper/status", "← Back"));
 
-  if (getISTMinutes() >= _parseMins("HA_SCALP_FORCED_EXIT", "15:15")) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} IST — HA Scalp does not trade after this`, "/ha-scalp-paper/status", "← Back"));
+  if (getISTMinutes() >= haStrategy.getConfig().entryEndMin) {
+    return res.status(400).send(_errorPage("Session Closed", `Past ${_envStr("HA_SCALP_ENTRY_END", "15:00")} IST — HA Scalp takes no new entries after this`, "/ha-scalp-paper/status", "← Back"));
   }
 
   state = _freshState();
@@ -1352,9 +1074,8 @@ router.get("/start", async (req, res) => {
   log(`⚙️ [HA-SCALP-PAPER] Chart    : ${NIFTY_INDEX_SYMBOL} · HEIKIN ASHI ${cfg.resolutionMins}-min${cfg.haContinuous ? " (chain continuous across days, matching TradingView)" : " (chain reseeds each day)"}`);
   log(`⚙️ [HA-SCALP-PAPER] Trend    : ${cfg.maPeriod} ${cfg.maType.toUpperCase()} of RAW closes — above it CE only, below it PE only. Never against it.`);
   log(`⚙️ [HA-SCALP-PAPER] Entry    : ${cfg.maxWickPct === 0 ? "wick-free" : `≤${cfg.maxWickPct}%-wick`} HA candle in the trend's direction (bullish + no bottom wick = CE, bearish + no top wick = PE), body ≥${cfg.minBodyPts}pt`);
-  log(`⚙️ [HA-SCALP-PAPER] Stop     : the signal candle's RAW ${"low (CE) / high (PE)"}${cfg.slBufferPts ? ` ±${cfg.slBufferPts}pt` : ""}${cfg.maxSlPts ? ` · rejected if wider than ${cfg.maxSlPts}pt` : ""} — ${cfg.trailEnabled ? `breakeven at +${cfg.breakevenPts}pt, then trails ${cfg.trailPts}pt behind from +${cfg.trailStartPts}pt` : "frozen, never trailed"}`);
-  log(`⚙️ [HA-SCALP-PAPER] Exits    : doji (body ≤${cfg.dojiBodyPct}% of range) ${cfg.exitOnDoji ? "ON" : "OFF"} · weak/opposite candle (body <${cfg.weakBodyPct}%) ${cfg.exitOnWeak ? "ON" : "OFF"} · trail ${cfg.trailEnabled ? "ON" : "OFF"} · NO target`);
-  log(`⚙️ [HA-SCALP-PAPER] Session  : entries ${_envStr("HA_SCALP_ENTRY_START", "09:30")}–${_envStr("HA_SCALP_ENTRY_END", "15:00")} · max ${_maxDailyTrades()} trade(s)/day · loss cap ₹${_maxDailyLoss()} · EOD ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} · qty ${haLotQty()}`);
+  log(`⚙️ [HA-SCALP-PAPER] Exit     : global profit lock only — no stop, trail, target or candle exit`);
+  log(`⚙️ [HA-SCALP-PAPER] Session  : entries ${_envStr("HA_SCALP_ENTRY_START", "09:30")}–${_envStr("HA_SCALP_ENTRY_END", "15:00")} · qty ${haLotQty()}`);
 
   await preloadHistory();
   startPolling();
@@ -1399,10 +1120,7 @@ router.get("/start", async (req, res) => {
       `Chart     : NIFTY 50 · Heikin Ashi ${cfg.resolutionMins}-min`,
       `Trend     : ${cfg.maPeriod} ${cfg.maType.toUpperCase()} — CE only above it, PE only below it`,
       `Setup     : ${cfg.maxWickPct === 0 ? "wick-free" : `≤${cfg.maxWickPct}%-wick`} HA strength candle in that direction, body ≥${cfg.minBodyPts}pt`,
-      `Stop      : the signal candle's own raw high/low · no target`,
-      `Exits     : doji · weak candle · EOD`,
-      `Max trades: ${_maxDailyTrades()}/day · loss cap ₹${_maxDailyLoss()}`,
-      `Square-off: ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} IST`,
+      `Exit      : global profit lock`,
     ].filter(Boolean).join("\n"),
   });
 
@@ -1410,10 +1128,8 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
   if (state.position) simulateSell("Session stopped");
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopPolling();
 
@@ -1455,13 +1171,13 @@ function stopSession() {
 router.get("/stop", (req, res) => { stopSession(); res.redirect("/ha-scalp-paper/status"); });
 router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit"); res.redirect("/ha-scalp-paper/status"); });
 
-// ── /status/chart-data — Heikin Ashi candles + MA + raw candles + stop ──────
+// ── /status/chart-data — Heikin Ashi candles + MA + raw candles ─────────────
 router.get("/status/chart-data", (req, res) => {
   try {
     const cfg = haStrategy.getConfig();
     // The chart draws the HEIKIN ASHI candles, because those are the candles
     // every rule reads. The raw series is sent alongside so the page can show
-    // where the stop actually sits — an HA low is not a traded price.
+    // the traded prices — an HA low is not a traded price.
     const haCandles = [];
     const rawCandles = [];
     const maLine = [];
@@ -1485,8 +1201,6 @@ router.get("/status/chart-data", (req, res) => {
       candles: haCandles, rawCandles, maLine, markers,
       optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       entryPrice: pos ? pos.entrySpot : null,
-      stopLoss:   pos ? pos.slSpot : null,
-      target:     null,
       ma:         state.lastMa,
       maPeriod:   cfg.maPeriod,
       maType:     cfg.maType,
@@ -1550,23 +1264,17 @@ router.get("/status/data", (req, res) => {
     lastUpperWickPct: s ? s.upperWickPct : null,
     lastLowerWickPct: s ? s.lowerWickPct : null,
     dayClosed: state.dayClosed, dayClosedReason: state.dayClosedReason,
-    stopOuts: state.stopOuts, maxDailyLosses: _maxDailyLosses(),
-    maxDailyTrades: _maxDailyTrades(),
-    dailyProfitLock: _dailyProfitLock(), maxDailyLoss: _maxDailyLoss(),
+    dailyProfitLock: _dailyProfitLock(),
     lastSkipReason: s && s.signal === "NONE" ? (s.skipReason || s.reason) : null,
     cfg: {
       resMin: cfg.resolutionMins, maPeriod: cfg.maPeriod, maType: cfg.maType,
       maxWickPct: cfg.maxWickPct, minBodyPts: cfg.minBodyPts,
-      dojiBodyPct: cfg.dojiBodyPct, weakBodyPct: cfg.weakBodyPct,
-      exitOnDoji: cfg.exitOnDoji, exitOnWeak: cfg.exitOnWeak,
-      slBufferPts: cfg.slBufferPts, maxSlPts: cfg.maxSlPts,
+      dojiBodyPct: cfg.dojiBodyPct,
       haContinuous: cfg.haContinuous, haWarmupBars: cfg.haWarmupBars,
       entryStart: _envStr("HA_SCALP_ENTRY_START", "09:30"), entryEnd: _envStr("HA_SCALP_ENTRY_END", "15:00"),
-      forcedExit: _envStr("HA_SCALP_FORCED_EXIT", "15:15"),
     },
     position: pos ? {
       side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
-      slSpot: pos.slSpot, riskPts: pos.riskPts,
       trend: pos.trend, ma: pos.ma, bodyPct: pos.bodyPct,
       upperWickPct: pos.upperWickPct, lowerWickPct: pos.lowerWickPct,
       optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
@@ -1579,7 +1287,7 @@ router.get("/status/data", (req, res) => {
 });
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getHaScalpMode() === "HA_SCALP_LIVE";
+  const liveActive = false;
   const data = loadData();
   const pos  = state.position;
   const cfg  = haStrategy.getConfig();
@@ -1618,7 +1326,7 @@ ${buildSidebar('haScalpPaper', liveActive)}
 <div class="main-content">
 ${bbRsiTopBar({
   title: "🕯 HA Scalp — Paper",
-  metaLine: `NIFTY 50 · Heikin Ashi ${cfg.resolutionMins}m · ${maLabel} decides the side · no-wick strength candle enters · SL = that candle's raw high/low · doji or weak candle exits`,
+  metaLine: `NIFTY 50 · Heikin Ashi ${cfg.resolutionMins}m · ${maLabel} decides the side · no-wick strength candle enters · exit = global profit lock`,
   running: state.running,
   primaryAction: { href: "/ha-scalp-paper/start", label: "▶ Start", color: "#0369a1" },
   stopAction:    { href: "/ha-scalp-paper/stop",  label: "■ Stop" },
@@ -1638,14 +1346,14 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
   <ul class="rule-list">
     <li><b>Above the ${maLabel} → CE only.</b> Below it → PE only. Never against it.</li>
     <li><b>Enter</b> on a ${cfg.maxWickPct === 0 ? "wick-free" : `≤${cfg.maxWickPct}%-wick`} Heikin Ashi candle in that direction — bullish with no bottom wick for a CE, bearish with no top wick for a PE. Body must be ≥ ${cfg.minBodyPts}pt.</li>
-    <li><b>Stop</b> = that candle's own raw ${"low (CE) / high (PE)"}${cfg.slBufferPts ? ` ± ${cfg.slBufferPts}pt` : ""}. ${cfg.trailEnabled ? `Moves to breakeven once ${cfg.breakevenPts}pt ahead, then follows the best price ${cfg.trailPts}pt behind from ${cfg.trailStartPts}pt ahead. It only ever tightens.` : "It never moves."}</li>
-    <li><b>Exit</b> on a doji (body ≤ ${cfg.dojiBodyPct}% of range), a weak or opposite-colour candle (body &lt; ${cfg.weakBodyPct}%), or the ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} square-off. There is no target.</li>
+    <li><b>No entry</b> on a doji (body ≤ ${cfg.dojiBodyPct}% of range).</li>
+    <li><b>Exit</b> only through the global profit lock (or a manual exit / session stop). There is no stop, trail, target or candle exit.</li>
   </ul>
 </div>
 
 ${bbRsiStatGrid([
   { label: "Session P&L", value: inr(state.sessionPnl), color: state.sessionPnl >= 0 ? "#10b981" : "#ef4444" },
-  { label: "Trades", value: `${state.tradesTaken}/${_maxDailyTrades()}` },
+  { label: "Trades", value: `${state.tradesTaken}` },
   { label: "W / L", value: `${wins} / ${losses}` },
   { label: "Trend", value: state.lastTrend || "—" },
   { label: maLabel, value: state.lastMa != null ? String(state.lastMa) : "—" },
@@ -1659,13 +1367,13 @@ ${bbRsiCurrentBar({ bar: state.formingBar, resMin: cfg.resolutionMins })}
   <div class="chart-box" style="height:420px;">
     <div id="chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
-      <span style="color:#3b82f6;">── ${maLabel} (the side gate)</span> &nbsp;<span style="color:#ef4444;">── Stop</span>
+      <span style="color:#3b82f6;">── ${maLabel} (the side gate)</span>
     </div>
   </div>
 </div>
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY 50 — RAW ${cfg.resolutionMins}m candles (where the stop actually sits — a Heikin Ashi price never traded)</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY 50 — RAW ${cfg.resolutionMins}m candles (the traded prices — a Heikin Ashi price never traded)</div>
   <div class="chart-box" style="height:240px;"><div id="rawchart" style="width:100%;height:100%;"></div></div>
 </div>
 
@@ -1750,7 +1458,6 @@ setInterval(haRefresh, 4000);
       lines.forEach(function(l){ try { cs.removePriceLine(l); } catch(_){} });
       lines = [];
       addLine(d.entryPrice, '#94a3b8', 'Entry', LightweightCharts.LineStyle.Dotted);
-      addLine(d.stopLoss,   '#ef4444', 'Stop',  LightweightCharts.LineStyle.Solid);
     } catch(e) {}
   }
   fetchChart();
@@ -1779,19 +1486,18 @@ function _positionCardHtml(pos, optLtp) {
     <div><span style="color:var(--muted-1,#8ba1c2);">Side</span> ${pos.side}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Symbol</span> ${pos.symbol}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Entry (spot)</span> ${pos.entrySpot}</div>
-    <div><span style="color:var(--muted-1,#8ba1c2);">Stop</span> ${pos.slSpot} (${pos.slPts != null ? pos.slPts : pos.riskPts}pt${pos.trailArmed ? ", trailed" : pos.breakevenArmed ? ", breakeven" : ""})</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Trend</span> ${pos.trend || "—"} vs MA ${pos.ma != null ? pos.ma : "—"}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Signal candle</span> body ${pos.bodyPct != null ? pos.bodyPct + "%" : "—"}, ${wickLabel} wick ${wickPct != null ? wickPct + "%" : "—"}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Live P&L</span> ₹${live}</div>
   </div>
-  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:8px;">Exits: stop · doji · weak candle · EOD. No target.</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:8px;">Exit: global profit lock. No stop, trail or target.</div>
 </div>`;
 }
 
 // ── History + daily-file viewers + restore + reset ────────────────────────────
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getHaScalpMode() === "HA_SCALP_LIVE";
+  const liveActive = false;
   const startCap = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/ha-scalp-paper",

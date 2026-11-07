@@ -2,7 +2,7 @@
  * TREND DAY SCALP PAPER — /trend-day-scalp-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * CANONICAL surface. Every decision / fill / exit semantic for TREND_DAY_SCALP
- * lives here; the backtest and the live harness must match THIS, never the
+ * lives here; the backtest must match THIS, never the
  * reverse (see feedback_paper_logic_untouchable).
  *
  * The day in one paragraph: at TDS_GATE_TIME (10:15) the engine looks at the
@@ -10,26 +10,17 @@
  * direction. Most days the answer is "no trade", and that ZERO is the design
  * goal — a naked long option bleeds theta through a ranging session. When the
  * gate passes, the side is LOCKED for the day and the route hunts a pullback
- * into the VWAP/EMA20 zone that is immediately reclaimed. Up to
- * TDS_MAX_DAILY_TRADES entries, each with the same fixed risk.
+ * into the VWAP/EMA20 zone that is immediately reclaimed.
  *
- * Exits, in the order they are tested on every tick:
- *   1. hard stop      — the pullback extreme, floored to TDS_MIN_SL_PTS
- *   2. fixed target   — entry ± TDS_TARGET_R × the stop distance
- *   3. breakeven jump — at +TDS_BREAKEVEN_R the stop moves ONCE to
- *                       entry ± TDS_BREAKEVEN_BUFFER_PTS, then never again
- *   4. time stop      — flat if +1R was not reached within TDS_TIME_STOP_MINS
- *   5. premium stop   — the option itself lost TDS_PREMIUM_STOP_PCT%
- *   6. EOD square-off at TDS_FORCED_EXIT
- * There is deliberately NO rolling trail and no partial booking.
+ * Exit: the global profit lock (tradeGuards.checkProfitLock, option premium,
+ * per tick) is the ONLY automatic exit. Beyond it: manual exit, /stop, and the
+ * session teardown at TRADE_STOP_TIME.
  *
- * Day-level breakers: TDS_MAX_DAILY_LOSS, TDS_DAILY_PROFIT_LOCK (stop while
- * ahead — giving profit back is what wrecks a steady curve) and
- * TDS_MAX_DAILY_LOSSES consecutive-of-the-day stop-outs. A breakeven or
- * time-stop exit does NOT burn one of those losses — only a real stop-out does.
+ * Day-level breaker: TDS_DAILY_PROFIT_LOCK (stop new entries while ahead) and
+ * the shared portfolio cap.
  *
- * Signal engine: src/strategies/trend_day_scalp.js (shared by paper, backtest,
- * live harness and replay — no rule is re-implemented in this file).
+ * Signal engine: src/strategies/trend_day_scalp.js (shared by paper, backtest
+ * and replay — no rule is re-implemented in this file).
  *
  * Uses LIVE NIFTY data (Fyers WebSocket) but SIMULATES orders locally.
  * Endpoints: /start /stop /exit /status /status/data /status/chart-data
@@ -83,11 +74,7 @@ function _parseMins(envKey, fallback) {
   return tdsStrategy._parseHHMM(process.env[envKey], tdsStrategy._parseHHMM(fallback, 0));
 }
 function _envStr(key, fallback) { return String(process.env[key] || fallback); }
-function _maxDailyTrades()  { return Math.max(1, parseInt(process.env.TDS_MAX_DAILY_TRADES || "2", 10) || 2); }
-function _maxDailyLosses()  { return Math.max(0, parseInt(process.env.TDS_MAX_DAILY_LOSSES || "2", 10)); }
-function _maxDailyLoss()    { return parseFloat(process.env.TDS_MAX_DAILY_LOSS   || "3000"); }
 function _dailyProfitLock() { return parseFloat(process.env.TDS_DAILY_PROFIT_LOCK || "3000"); }
-function _maxWeeklyLoss()   { return parseFloat(process.env.TDS_MAX_WEEKLY_LOSS  || "0"); }
 
 /** Position size — the one common Lot Multiplier (Settings → Common Rules). */
 function tdsLotQty() {
@@ -134,8 +121,6 @@ function _freshState() {
     // totalPnl — the capital pool adds sessionPnl only then (see trackSession below).
     _unsaved:       false,
     tradesTaken:    0,
-    stopOuts:       0,      // only REAL stop-outs count toward TDS_MAX_DAILY_LOSSES
-    consecutiveLosses: 0,
     candles:        [],
     currentBar:     null,
     barStartTime:   null,
@@ -199,12 +184,9 @@ function rehydrateSessionFromJsonl() {
     state._unsaved      = false;   // rehydrated trades are not counted: they may have been deleted from History, and the pool must not resurrect them
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
-    // Rebuild the stop-out counter so a restart cannot hand back losses the
-    // breaker had already spent.
-    state.stopOuts = trades.filter(t => /Stop hit/i.test(String(t.exitReason || ""))).length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ [TDS-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl}, ${state.stopOuts} stop-out(s))`);
+    console.log(`♻️ [TDS-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
     console.warn(`[TDS-PAPER] session rehydrate failed: ${err.message}`);
   }
@@ -358,23 +340,6 @@ async function simulateBuy(side, sig) {
 
   const qty = tdsLotQty();
 
-  // The engine sized the stop from the SIGNAL bar's close; we fill at the live
-  // spot a moment later. Re-anchor the whole bracket to the ACTUAL fill so the
-  // risk stays exactly slPts and the 2.5R target stays exactly 2.5R — carrying
-  // the engine's levels across would silently change both.
-  const slPts = sig.slPts;
-  if (typeof slPts !== "number" || !Number.isFinite(slPts) || slPts <= 0) {
-    log(`🚫 [TDS-PAPER] Entry ABORTED — stop distance unusable (${slPts}). Refusing to enter without a stop.`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "stop_uncomputable", reason: `stop distance unusable (${slPts})`, side, spot });
-    return;
-  }
-  const cfg = tdsStrategy.getConfig();
-  const dir = side === "CE" ? 1 : -1;
-  const slSpot     = parseFloat((spot - dir * slPts).toFixed(2));
-  const targetSpot = parseFloat((spot + dir * cfg.targetR * slPts).toFixed(2));
-  const beArmSpot  = parseFloat((spot + dir * cfg.breakevenR * slPts).toFixed(2));
-  const beStopSpot = parseFloat((spot + dir * cfg.breakevenBuffer).toFixed(2));
-
   // ── Capital gate — HARD: the pool must fund this position or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    Sits AFTER the last strategy abort path so a refusal is never logged for
@@ -402,22 +367,9 @@ async function simulateBuy(side, sig) {
     entryTimeMs:    Date.now(),
     entryUnixSec:   Math.floor(Date.now() / 1000),
     entryBarTime:   Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
-    slPts,
-    slSpot,
-    initialSlSpot:  slSpot,
-    targetSpot,
-    beArmSpot,
-    beStopSpot,
-    beArmed:        false,
-    riskPts:        slPts,
-    targetR:        cfg.targetR,
-    breakevenR:     cfg.breakevenR,
-    timeStopMins:   cfg.timeStopMins,
-    premiumStopPct: cfg.premiumStopPct,
     // Signal context (kept on the trade record for analytics / reports)
     signalSpot:     sig.entrySpot,
     slRawPts:       sig.slRaw,
-    slClamped:      sig.slClamped,
     zone:           sig.zone,
     vwapAtEntry:    sig.vwap,
     emaAtEntry:     sig.ema,
@@ -449,13 +401,13 @@ async function simulateBuy(side, sig) {
   log(`🟢 [TDS-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
   log(`   ├─ Day gate: ${pos.gateSide} day · first-hour range ${pos.gateRangePts}pt (${pos.gateRangePct}%) · VWAP ${pos.gateVwap} · extension ${pos.gateExtensionPts}pt`);
   log(`   ├─ Setup: pullback to zone ${pos.zone} (VWAP ${pos.vwapAtEntry} / EMA ${pos.emaAtEntry}) → reclaim, body ${pos.bodyPts}pt ≥ ${pos.bodyNeeded}pt (ATR ${pos.atrAtEntry})`);
-  log(`   └─ SL ${slSpot} (${slPts}pt${pos.slClamped ? `, floored from ${pos.slRawPts}pt` : ""}) · TGT ${targetSpot} (${cfg.targetR}R) · BE arms ${beArmSpot} → stop ${beStopSpot} · time-stop ${cfg.timeStopMins}m · premium stop -${cfg.premiumStopPct}% · EOD ${_envStr("TDS_FORCED_EXIT", "15:10")}`);
+  log(`   └─ Pullback depth ${pos.slRawPts}pt · exit = global profit lock`);
 
   notifyEntry({
     mode: "TREND-DAY-SCALP-PAPER",
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
-    qty, stopLoss: slSpot, target: targetSpot,
+    qty,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -467,15 +419,13 @@ async function simulateBuy(side, sig) {
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
       spotEntry: spot, optionEntry: optionEntryLtp,
-      stopLoss: slSpot, target: targetSpot, beArmSpot,
       reason: pos.entryReason,
     });
   } catch (_) {}
 }
 
-function simulateSell(reason, opts) {
+function simulateSell(reason) {
   if (!state.position) return;
-  const o = opts || {};
   const pos = state.position;
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
@@ -489,12 +439,6 @@ function simulateSell(reason, opts) {
   const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
-  if (pnl < 0) state.consecutiveLosses++; else if (pnl > 0) state.consecutiveLosses = 0;
-  // Only a REAL stop-out burns one of the day's allowed losses. A breakeven
-  // exit or a time stop is a scratch, not a bad read (locked decision — see the
-  // route header). isStopOut is set by the caller, never inferred from the sign
-  // of the P&L, so a stop that happens to net positive still counts.
-  if (o.isStopOut) state.stopOuts++;
 
   const trade = {
     side:           pos.side,
@@ -515,21 +459,13 @@ function simulateSell(reason, opts) {
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
     exitReason:     reason,
     entryReason:    pos.entryReason,
-    stopLoss:       pos.slSpot,
-    initialStopLoss: pos.initialSlSpot,
-    target:         pos.targetSpot,
-    beArmSpot:      pos.beArmSpot,
-    beArmed:        !!pos.beArmed,
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
     optionEntrySymbol: pos.symbol,
     signalStrength: pos.signalStrength,
-    riskPts:        pos.riskPts,
-    targetR:        pos.targetR,
     // TREND_DAY_SCALP signal context
     slRawPts:       pos.slRawPts,
-    slClamped:      pos.slClamped,
     zone:           pos.zone,
     vwapAtEntry:    pos.vwapAtEntry,
     emaAtEntry:     pos.emaAtEntry,
@@ -592,29 +528,15 @@ function simulateSell(reason, opts) {
 }
 
 /**
- * Day-level breakers, evaluated after every exit. Each one CLOSES the day —
- * TREND_DAY_SCALP would rather book a small green day than hand it back.
+ * Day-level breaker, evaluated after every exit: the daily profit lock CLOSES
+ * the day for new entries — TREND_DAY_SCALP would rather book a small green day
+ * than hand it back.
  */
 function _applyDayBreakers() {
   if (state.dayClosed) return;
-  const maxLoss = _maxDailyLoss();
-  const lock    = _dailyProfitLock();
-  const maxOuts = _maxDailyLosses();
-
-  if (maxLoss > 0 && state.sessionPnl <= -maxLoss) {
-    _closeDay(`Daily loss cap hit (₹${state.sessionPnl} ≤ -₹${maxLoss})`);
-    return;
-  }
+  const lock = _dailyProfitLock();
   if (lock > 0 && state.sessionPnl >= lock) {
     _closeDay(`Daily profit lock hit (₹${state.sessionPnl} ≥ ₹${lock}) — banking the day`);
-    return;
-  }
-  if (maxOuts > 0 && state.stopOuts >= maxOuts) {
-    _closeDay(`${state.stopOuts} stop-out(s) ≥ ${maxOuts} — day over`);
-    return;
-  }
-  if (state.tradesTaken >= _maxDailyTrades()) {
-    _closeDay(`Daily trade budget spent (${state.tradesTaken}/${_maxDailyTrades()})`);
   }
 }
 
@@ -626,9 +548,8 @@ function _closeDay(reason) {
 }
 
 // ── Exits (per tick) ─────────────────────────────────────────────────────────
-// Priority: hard stop → fixed target → breakeven arm → time stop → premium stop.
-// Every level is guarded with Number.isFinite before it is compared: `spot <= null`
-// is `spot <= 0`, which would square the trade off on its very first tick.
+// The global profit lock is the ONLY automatic exit (manual exit, /stop and the
+// TRADE_STOP_TIME session teardown aside).
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
@@ -639,7 +560,6 @@ function _checkExits(spotPrice) {
     state.optionLtpUpdatedAt = Date.now();
   }
   const optLtp = state.optionLtp || pos.optionEntryLtp;
-  const cfg = tdsStrategy.getConfig();
 
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
   const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
@@ -653,46 +573,15 @@ function _checkExits(spotPrice) {
   trackPath(pos, favPts, Date.now());
   if (curPnl < (pos.maePnl     || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
 
-  // 1. Hard stop (or the breakeven stop once it has jumped).
-  if (tdsStrategy.stopHit(pos.side, spotPrice, pos.slSpot)) {
-    const atBe = pos.beArmed;
-    simulateSell(
-      atBe
-        ? `Breakeven stop — price came back to ${pos.slSpot} after arming at +${pos.breakevenR}R (spot ${spotPrice})`
-        : `Stop hit — ${pos.riskPts}pt against, at ${pos.slSpot} (spot ${spotPrice})`,
-      // A breakeven exit is a scratch, not one of the day's allowed losses.
-      { isStopOut: !atBe }
-    );
-    return;
-  }
-
-  // 2. Fixed target — the whole point of the design; taken, never trailed past.
-  if (tdsStrategy.targetHit(pos.side, spotPrice, pos.targetSpot)) {
-    simulateSell(`Target hit — ${pos.targetR}R at ${pos.targetSpot} (spot ${spotPrice}, +${favPts.toFixed(1)}pt)`);
-    return;
-  }
-
-  // 3. Breakeven jump — ONCE, then the stop never moves again.
-  if (!pos.beArmed) {
-    const be = tdsStrategy.breakevenJump(pos.side, pos.entrySpot, spotPrice, pos.slPts, cfg);
-    if (be.armed && typeof be.stop === "number" && Number.isFinite(be.stop)) {
-      pos.beArmed = true;
-      pos.slSpot = be.stop;
-      log(`🛡️ [TDS-PAPER] Breakeven armed at +${pos.breakevenR}R (spot ${spotPrice}) — stop moved ${pos.initialSlSpot} → ${be.stop}. It will not move again.`);
-      try { require("../utils/positionPersist").saveTrendDayScalpPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+  // Global profit lock (shared across every strategy — see tradeGuards). Options
+  // only: the lock is defined on option premium, and in futures mode optLtp
+  // mirrors the SPOT, so leaving it on would test an 8% move in NIFTY itself.
+  if (!pos.isFutures && pos.optionEntryLtp && state.optionLtp) {
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.peakPremium);
+    if (_plMsg) {
+      log(`🔒 [TDS-PAPER] ${_plMsg}`);
+      simulateSell(_plMsg);
     }
-  }
-
-  // 4. Time stop — a trade that has not reached +1R is only paying theta.
-  if (tdsStrategy.timeStopHit(pos.entryUnixSec, Math.floor(Date.now() / 1000), pos.beArmed, cfg)) {
-    simulateSell(`Time stop — ${pos.timeStopMins}m elapsed without reaching +${pos.breakevenR}R`);
-    return;
-  }
-
-  // 5. Premium stop — catches an IV crush the spot stop cannot see.
-  //    Futures have neither premium nor IV, so this backstop does not apply.
-  if (!pos.isFutures && tdsStrategy.premiumStopHit(pos.optionEntryLtp, optLtp, cfg)) {
-    simulateSell(`Premium stop — option ₹${pos.optionEntryLtp} → ₹${optLtp} (-${pos.premiumStopPct}%)`);
   }
 }
 
@@ -740,14 +629,8 @@ async function evaluateEntry() {
   if (state.position || state._entryInFlight || state.dayClosed) return;
   if (!state.dayGate || !state.dayGate.decided || !state.dayGate.tradeable) return;
   if (state._lastEntryAttemptMs && Date.now() - state._lastEntryAttemptMs < ENTRY_RETRY_MS) return;
-  if (state.tradesTaken >= _maxDailyTrades()) { _applyDayBreakers(); return; }
 
   // ── Risk gates ──────────────────────────────────────────────────────────
-  const maxWeek = _maxWeeklyLoss();
-  if (maxWeek > 0) {
-    const wk = weeklyPnl();
-    if (wk <= -maxWeek) { _closeDay(`Weekly loss cap hit (week P&L ₹${wk} ≤ -₹${maxWeek})`); return; }
-  }
   {
     const pf = require("../utils/portfolioRisk").checkPortfolioCap();
     if (pf.blocked) { _closeDay(pf.reason); return; }
@@ -756,7 +639,6 @@ async function evaluateEntry() {
   // ── The signal ──────────────────────────────────────────────────────────
   const sig = tdsStrategy.getSignal(state.candles, {
     dayGate: state.dayGate,
-    alreadyTraded: false,
   });
   state.lastSignal = sig;
 
@@ -824,8 +706,7 @@ async function _retryPendingEntry() {
   const p = state._pendingEntry;
   if (!p) return;
   if (state.position || state._entryInFlight) return;
-  if (state.dayClosed || state.tradesTaken >= _maxDailyTrades()) { state._pendingEntry = null; return; }
-  if (getISTMinutes() >= _parseMins("TDS_FORCED_EXIT", "15:10")) { state._pendingEntry = null; return; }
+  if (state.dayClosed) { state._pendingEntry = null; return; }
   if (Date.now() - p.lastAttemptMs < ENTRY_RETRY_MS) return;
 
   state._entryInFlight = true;
@@ -908,13 +789,6 @@ function onTick(tick) {
   if (!state.position && state._pendingEntry) {
     _retryPendingEntry().catch(e => console.error(`🚨 [TDS-PAPER] entry-retry error: ${e.message}`));
   }
-
-  if (state.position) {
-    const nowMin = getISTMinutes();
-    if (nowMin >= _parseMins("TDS_FORCED_EXIT", "15:10")) {
-      simulateSell(`EOD square-off (${_envStr("TDS_FORCED_EXIT", "15:10")} IST)`);
-    }
-  }
 }
 
 // ── Preload intraday history ─────────────────────────────────────────────────
@@ -977,28 +851,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The TREND-DAY-SCALP-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "TREND-DAY-SCALP-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -1011,14 +863,6 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/trend-day-scalp-paper/status");
 
   if (String(process.env.TDS_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -1037,10 +881,6 @@ router.get("/start", async (req, res) => {
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/trend-day-scalp-paper/status", "← Back"));
 
-  if (getISTMinutes() >= _parseMins("TDS_FORCED_EXIT", "15:10")) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${_envStr("TDS_FORCED_EXIT", "15:10")} IST — Trend Day Scalp does not trade after this`, "/trend-day-scalp-paper/status", "← Back"));
-  }
-
   state = _freshState();
   state.running = true;
   state._unsaved = true;
@@ -1051,8 +891,8 @@ router.get("/start", async (req, res) => {
 
   const cfg = tdsStrategy.getConfig();
   log(`🟢 [TDS-PAPER] Session started — ${tdsStrategy.NAME}`);
-  log(`⚙️ [TDS-PAPER] Gate ${_envStr("TDS_GATE_TIME", "10:15")} (range ≥${cfg.minRangePct}% · ${cfg.vwapStreakBars} closes one side of VWAP · extension ≥${cfg.extensionMult}×range) · zone VWAP/EMA${cfg.emaPeriod} · body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod} · SL ${cfg.minSlPts}-${cfg.maxSlPts}pt · target ${cfg.targetR}R · BE +${cfg.breakevenR}R→entry±${cfg.breakevenBuffer} · time-stop ${cfg.timeStopMins}m · premium stop -${cfg.premiumStopPct}%`);
-  log(`⚙️ [TDS-PAPER] Entries until ${_envStr("TDS_ENTRY_END", "14:00")} · max ${_maxDailyTrades()}/day · ${_maxDailyLosses()} stop-outs ends the day · loss cap ₹${_maxDailyLoss()} · profit lock ₹${_dailyProfitLock()} · EOD ${_envStr("TDS_FORCED_EXIT", "15:10")} · qty ${tdsLotQty()}`);
+  log(`⚙️ [TDS-PAPER] Gate ${_envStr("TDS_GATE_TIME", "10:15")} (range ≥${cfg.minRangePct}% · ${cfg.vwapStreakBars} closes one side of VWAP · extension ≥${cfg.extensionMult}×range) · zone VWAP/EMA${cfg.emaPeriod} · body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod} · depth ≤${cfg.maxSlPts}pt · exit = global profit lock`);
+  log(`⚙️ [TDS-PAPER] Entries until ${_envStr("TDS_ENTRY_END", "14:00")} · daily profit lock ₹${_dailyProfitLock()} · qty ${tdsLotQty()}`);
 
   await preloadHistory();
 
@@ -1094,9 +934,7 @@ router.get("/start", async (req, res) => {
       `Strategy  : ${tdsStrategy.NAME}`,
       `Day gate  : ${_envStr("TDS_GATE_TIME", "10:15")} — range ≥${cfg.minRangePct}%, ${cfg.vwapStreakBars} closes one side of VWAP, extension ≥${cfg.extensionMult}×range`,
       `Entry     : pullback into VWAP/EMA${cfg.emaPeriod} then reclaim, body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod}`,
-      `Risk      : SL ${cfg.minSlPts}-${cfg.maxSlPts}pt · target ${cfg.targetR}R · breakeven at +${cfg.breakevenR}R`,
-      `Max trades: ${_maxDailyTrades()}/day · profit lock ₹${_dailyProfitLock()} · loss cap ₹${_maxDailyLoss()}`,
-      `Square-off: ${_envStr("TDS_FORCED_EXIT", "15:10")} IST`,
+      `Exit      : global profit lock · daily profit lock ₹${_dailyProfitLock()}`,
     ].filter(Boolean).join("\n"),
   });
 
@@ -1104,10 +942,8 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
   if (state.position) simulateSell("Session stopped");
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopOptionPolling();
 
@@ -1177,10 +1013,6 @@ router.get("/status/chart-data", async (req, res) => {
       candles, vwapSeries, emaSeries, markers,
       optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       entryPrice: pos ? pos.entrySpot : null,
-      stopLoss:   pos ? pos.slSpot : null,
-      target:     pos ? pos.targetSpot : null,
-      beArmSpot:  pos ? (pos.beArmed ? null : pos.beArmSpot) : null,
-      beArmed:    pos ? !!pos.beArmed : false,
       emaPeriod:  cfg.emaPeriod,
       gate: state.dayGate ? {
         decided: state.dayGate.decided, tradeable: state.dayGate.tradeable,
@@ -1237,37 +1069,30 @@ router.get("/status/data", (req, res) => {
     gateExtensionNeeded: g ? g.extensionNeeded : null,
     gateTime:      _envStr("TDS_GATE_TIME", "10:15"),
     dayClosed:     state.dayClosed, dayClosedReason: state.dayClosedReason,
-    stopOuts:      state.stopOuts, maxDailyLosses: _maxDailyLosses(),
-    maxDailyTrades: _maxDailyTrades(),
-    dailyProfitLock: _dailyProfitLock(), maxDailyLoss: _maxDailyLoss(),
+    dailyProfitLock: _dailyProfitLock(),
     lastSkipReason: state.lastSignal && state.lastSignal.signal === "NONE" ? (state.lastSignal.skipReason || state.lastSignal.reason) : null,
     cfg: {
       gateTime: _envStr("TDS_GATE_TIME", "10:15"), minRangePct: cfg.minRangePct,
       vwapStreakBars: cfg.vwapStreakBars, extensionMult: cfg.extensionMult,
       emaPeriod: cfg.emaPeriod, atrPeriod: cfg.atrPeriod, bodyAtrMult: cfg.bodyAtrMult,
-      minSlPts: cfg.minSlPts, maxSlPts: cfg.maxSlPts, targetR: cfg.targetR,
-      breakevenR: cfg.breakevenR, breakevenBuffer: cfg.breakevenBuffer,
-      timeStopMins: cfg.timeStopMins, premiumStopPct: cfg.premiumStopPct,
-      entryEnd: _envStr("TDS_ENTRY_END", "14:00"), forcedExit: _envStr("TDS_FORCED_EXIT", "15:10"),
+      maxSlPts: cfg.maxSlPts,
+      entryEnd: _envStr("TDS_ENTRY_END", "14:00"),
       resMin: _resMin(),
     },
     position: pos ? {
       side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
-      slSpot: pos.slSpot, initialSlSpot: pos.initialSlSpot, targetSpot: pos.targetSpot,
-      beArmSpot: pos.beArmSpot, beArmed: !!pos.beArmed, riskPts: pos.riskPts, targetR: pos.targetR,
       optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
       peakPremium: pos.peakPremium, entryTime: pos.entryTime, signalStrength: pos.signalStrength,
       zone: pos.zone, atrAtEntry: pos.atrAtEntry, bodyPts: pos.bodyPts,
       qty: pos.qty, currentOptLtp: state.optionLtp,
       heldSec: Math.round((Date.now() - pos.entryTimeMs) / 1000),
-      timeStopMins: pos.timeStopMins,
     } : null,
     totalPnl: data.totalPnl, capital: data.capital,
   });
 });
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getTrendDayScalpMode() === "TREND_DAY_SCALP_LIVE";
+  const liveActive = false;
   const data = loadData();
   const pos  = state.position;
   const cfg  = tdsStrategy.getConfig();
@@ -1298,7 +1123,7 @@ ${buildSidebar('trendDayScalpPaper', liveActive)}
 <div class="main-content">
 ${bbRsiTopBar({
   title: "⚡ Trend Day Scalp — Paper",
-  metaLine: `Day gate ${_envStr("TDS_GATE_TIME", "10:15")} → pullback into VWAP/EMA${cfg.emaPeriod} → fixed ${cfg.targetR}R · SL ${cfg.minSlPts}-${cfg.maxSlPts}pt · max ${_maxDailyTrades()}/day`,
+  metaLine: `Day gate ${_envStr("TDS_GATE_TIME", "10:15")} → pullback into VWAP/EMA${cfg.emaPeriod} → exit = global profit lock`,
   running: state.running,
   primaryAction: { href: "/trend-day-scalp-paper/start", label: "▶ Start", color: "#7e22ce" },
   stopAction:    { href: "/trend-day-scalp-paper/stop",  label: "■ Stop" },
@@ -1319,9 +1144,8 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
 
 ${bbRsiStatGrid([
   { label: "Session P&L", value: inr(state.sessionPnl), color: state.sessionPnl >= 0 ? "#10b981" : "#ef4444" },
-  { label: "Trades", value: `${state.tradesTaken}/${_maxDailyTrades()}` },
+  { label: "Trades", value: `${state.tradesTaken}` },
   { label: "W / L", value: `${wins} / ${losses}` },
-  { label: "Stop-outs", value: `${state.stopOuts}/${_maxDailyLosses()}` },
   { label: "Week P&L", value: inr(weeklyPnl()) },
   { label: "Spot", value: state.lastTickPrice != null ? String(state.lastTickPrice) : "—" },
 ])}
@@ -1329,11 +1153,11 @@ ${bbRsiStatGrid([
 ${bbRsiCurrentBar({ bar: state.currentBar, resMin: _resMin() })}
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY ${_resMin()}m — VWAP / EMA${cfg.emaPeriod} zone + bracket</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY ${_resMin()}m — VWAP / EMA${cfg.emaPeriod} zone</div>
   <div id="chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:420px;">
     <div id="chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
-      <span style="color:#8b5cf6;">── VWAP</span> &nbsp;<span style="color:#3b82f6;">── EMA${cfg.emaPeriod}</span> &nbsp;<span style="color:#f59e0b;">── Stop</span> &nbsp;<span style="color:#10b981;">── Target</span>
+      <span style="color:#8b5cf6;">── VWAP</span> &nbsp;<span style="color:#3b82f6;">── EMA${cfg.emaPeriod}</span>
     </div>
   </div>
   ${optionChart.optionChartHtml('tds-opt-chart')}
@@ -1387,7 +1211,7 @@ setInterval(tdsRefresh, 4000);
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var vw = chart.addLineSeries({ color:'#8b5cf6', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false });
   var em = chart.addLineSeries({ color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false });
-  var entryLine=null, slLine=null, tgLine=null, beLine=null, _zoomed=false;
+  var entryLine=null, _zoomed=false;
   async function fetchChart(){
     try {
       var r = await fetch('/trend-day-scalp-paper/status/chart-data', { cache:'no-store' });
@@ -1410,12 +1234,9 @@ setInterval(tdsRefresh, 4000);
       vw.setData(d.vwapSeries || []);
       em.setData(d.emaSeries || []);
       if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
-      [entryLine,slLine,tgLine,beLine].forEach(function(l){ if(l) cs.removePriceLine(l); });
-      entryLine=slLine=tgLine=beLine=null;
+      if (entryLine) cs.removePriceLine(entryLine);
+      entryLine=null;
       if (d.entryPrice) entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#94a3b8', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
-      if (d.stopLoss)   slLine    = cs.createPriceLine({ price:d.stopLoss,   color:'#f59e0b', lineWidth:2, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:d.beArmed?'BE stop':'Stop' });
-      if (d.target)     tgLine    = cs.createPriceLine({ price:d.target,     color:'#10b981', lineWidth:2, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Target' });
-      if (d.beArmSpot)  beLine    = cs.createPriceLine({ price:d.beArmSpot,  color:'#64748b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'BE arms' });
     } catch(e) {}
   }
   fetchChart();
@@ -1439,9 +1260,7 @@ function _positionCardHtml(pos, optLtp) {
     <div><span style="color:var(--muted-1,#8ba1c2);">Side</span> ${pos.side}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Symbol</span> ${pos.symbol}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Entry</span> ${pos.entrySpot}</div>
-    <div><span style="color:var(--muted-1,#8ba1c2);">Stop</span> ${pos.slSpot}${pos.beArmed ? " (BE)" : ""}</div>
-    <div><span style="color:var(--muted-1,#8ba1c2);">Target</span> ${pos.targetSpot}</div>
-    <div><span style="color:var(--muted-1,#8ba1c2);">Risk</span> ${pos.riskPts}pt</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Peak premium</span> ${pos.peakPremium}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Live P&L</span> ₹${live}</div>
   </div>
 </div>`;
@@ -1450,7 +1269,7 @@ function _positionCardHtml(pos, optLtp) {
 // ── History + daily-file viewers + restore + reset ────────────────────────────
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getTrendDayScalpMode() === "TREND_DAY_SCALP_LIVE";
+  const liveActive = false;
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/trend-day-scalp-paper",

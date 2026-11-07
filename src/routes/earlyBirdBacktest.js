@@ -2,11 +2,12 @@
  * EARLYBIRD BACKTEST — /early-bird-backtest
  * ─────────────────────────────────────────────────────────────────────────────
  * Date-range backtest of the EarlyBird strategy over a stock universe. Every
- * rule — the signal-candle shape test, the NIFTY direction filter, the 2% gap
- * rule, the entry/stop/target levels, the big-candle body stop, the trigger test
- * and the exit ordering — comes from src/strategies/early_bird.js. There is NOT
- * ONE threshold comparison or indicator calculation in this file: it fetches
- * candles, groups them by day, walks bars, and calls the engine.
+ * entry rule — the signal-candle shape test, the NIFTY direction filter, the 2%
+ * gap rule, the entry level and the trigger test — comes from
+ * src/strategies/early_bird.js. The ONLY exit is the global profit lock
+ * (tradeGuards.checkProfitLock), applied per bar to the price the P&L is made
+ * of (see _lockExitOnBar); anything still open at the end of the day's bars is
+ * closed on the last candle, mirroring paper's session teardown.
  *
  * ── WHAT IS BEING SIMULATED ─────────────────────────────────────────────────
  * CASH EQUITY intraday on F&O stocks. There is no strike, no expiry, no option
@@ -22,10 +23,10 @@
  *   2. earlyBird.buildDayPlan(...) → tradeable / not, plus the whole funnel.
  *      A day the plan refuses is recorded with plan.reason and nothing else
  *      happens — no second-guessing, no partial trading of a rejected day.
- *   3. The plan's candidates are ALREADY sorted tightest-risk-first by the
+ *   3. The plan's candidates are ALREADY sorted tightest-candle-first by the
  *      engine; the first maxConcurrent of them are taken as pending orders.
  *   4. Every 15-minute bar from EARLYBIRD_ENTRY_START onward is walked per
- *      candidate: isEntryTriggeredOnBar() to fill, checkExitOnBar() to exit.
+ *      candidate: isEntryTriggeredOnBar() to fill, the profit lock to exit.
  *   5. computePnl(side, entry, exit, qty), then slippage, then charges.
  *
  * ── FILL SEMANTICS (identical to Paper/Live by construction) ────────────────
@@ -33,15 +34,16 @@
  * a LONG entry (or whose low reaches a SHORT entry) fills AT THE LEVEL — never
  * at the bar's high/low, which would hand the backtest a price the market never
  * offered. Entries are gated on the bar's CLOSE time (bar start + resolution),
- * the same convention checkExitOnBar uses for its forced-exit test, so no entry
- * is taken on a bar that closes after EARLYBIRD_ENTRY_END.
+ * so no entry is taken on a bar that closes after EARLYBIRD_ENTRY_END.
  *
- * ── THE ENTRY-THEN-STOP BAR (where naive backtests lie) ─────────────────────
- * A single 15-minute bar can both trigger the entry and take out the stop. That
- * loss is REAL and it is booked: the fill happens, and the very same bar is then
- * passed to checkExitOnBar, which applies the engine's conservative ordering
- * (gap-through fills at the open, stop tested before target). The trade is never
- * skipped to avoid the loss, and the target is never assumed to have come first.
+ * ── PROFIT LOCK ORDERING INSIDE ONE BAR ─────────────────────────────────────
+ * The floor is set by the best price seen on EARLIER bars. Each bar first tests
+ * its open (a gap through the floor fills at the open) and its adverse extreme
+ * (fills at the floor) against that floor; only then is the bar's favourable
+ * extreme allowed to raise the peak, after which the bar's close is tested
+ * against the raised floor. A bar's own high is never assumed to have printed
+ * before its own low. The entry bar skips the open/adverse test — its open
+ * printed before the fill.
  *
  * ── SETUPS THAT NEVER TRIGGERED ─────────────────────────────────────────────
  * A confirmed, taken setup whose pending order was never touched all session is
@@ -91,8 +93,8 @@
  *
  * ── DELIBERATELY ABSENT ─────────────────────────────────────────────────────
  * No VIX gate, no OI, no ADX, no RSI, no volume filter, no moving average, no
- * trailing stop, no breakeven, no partials, no re-entry. The user did not ask
- * for any of them and the engine implements none of them.
+ * stop, no target, no trailing stop, no breakeven, no partials, no time exit,
+ * no re-entry. The global profit lock is the only exit.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -217,12 +219,12 @@ function rateLimits() {
 /**
  * OPTION-LEG SIMULATION MODEL.
  *
- * Every EarlyBird level — entry trigger, stop, 1:2 target — is a NIFTY SPOT
- * level (see buildNiftyOptionSetup in the engine: "EVERY LEVEL IS A SPOT
- * LEVEL"). So the option leg's *decisions* need no premium data at all; the
- * spot walk is identical to the stock walk. Only the P&L conversion needs the
- * premium, and that is exactly the delta/theta model backtestEngine.js has used
- * for EMA_RSI_ST / BB_RSI / PA / EMA9VWAP since it was written:
+ * The option leg's entry trigger is a NIFTY SPOT level, so its entry needs no
+ * premium data; the spot walk is identical to the stock walk. The P&L — and the
+ * profit lock, which is applied to that same modelled premium — use exactly the
+ * delta/theta model backtestEngine.js has used for EMA_RSI_ST / BB_RSI / PA /
+ * EMA9VWAP since it was written (entry premium estimated at ₹200, the same
+ * estimate the charges use; futures use the index level itself):
  *
  *   premiumMovePts = spotMovePts × DELTA
  *   thetaDecayPts  = (THETA_PER_DAY / candlesPerDay) × candlesHeld
@@ -310,12 +312,7 @@ function _bookOptionTrade(pos, exitFill, exitType, exitReason, exitTime, heldBar
     ePrice: pos.entryFill,
     xPrice: _r2(exitFill),
     entryLevel: pos.entryLevel,
-    sl: os.stop,
-    target: os.target,
-    riskPts: os.riskPts,
-    rewardPts: os.rewardPts,
-    slBasis: os.slBasis,
-    bigCandle: os.bigCandle,
+    rangePts: os.rangePts,
     gapPct: null,
     prevClose: null,
     qty,
@@ -662,37 +659,134 @@ function buildPrevCloseIndex(dailyCandles) {
   };
 }
 
+// ── The profit lock, on the price the P&L is made of ───────────────────────────
+/**
+ * Map a raw bar price to the "lock price" — a number that RISES when the trade
+ * is winning, which is what tradeGuards.checkProfitLock is defined on — and back.
+ *   stock  : the share price; a SHORT is mirrored around its entry fill.
+ *   option : the modelled premium, base + spot move × δ − θ (see optionSimCfg);
+ *            base is the ₹200 ATM estimate the charges use, or the index level
+ *            itself for futures (δ 1, no θ).
+ */
+function _lockSpace(side, entryFill, opt, cfg) {
+  const dir = side === "SHORT" ? -1 : 1;
+  if (!opt) {
+    return {
+      E: entryFill,
+      toL: (px) => entryFill + dir * (px - entryFill),
+      toPx: (L) => entryFill + dir * (L - entryFill),
+    };
+  }
+  const base  = opt.isFutures ? entryFill : 200;
+  const delta = opt.on ? opt.delta : 1;
+  const thetaBar = opt.on ? opt.thetaPerDay / Math.max(1, Math.round(390 / cfg.resolutionMins)) : 0;
+  return {
+    E: base,
+    toL: (px, held) => base + dir * (px - entryFill) * delta - thetaBar * held,
+    toPx: (L, held) => entryFill + dir * (L - base + thetaBar * held) / delta,
+  };
+}
+
+/** The lock's live settings, read once per run (the Settings page edits them live). */
+function _lockOpts() {
+  return {
+    enabled:  tradeGuards.PROFIT_LOCK_ENABLED,
+    armPct:   tradeGuards.PROFIT_LOCK_ARM_PCT,
+    floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
+    trailPct: tradeGuards.PROFIT_LOCK_TRAIL_PCT,
+    tiers:    tradeGuards.PROFIT_LOCK_TRAIL_TIERS,
+  };
+}
+
+/**
+ * One bar of the profit lock. `pos.best` is the best lock price seen so far and
+ * is raised here. Returns { price (raw bar units, before slippage), reason,
+ * atClose } or null. Ordering: see the header (PROFIT LOCK ORDERING).
+ */
+function _lockExitOnBar(ls, pos, bar, held, isEntryBar, lock) {
+  const L = (px) => Math.max(0.05, ls.toL(px, held));
+  const fav = pos.side === "SHORT" ? bar.low  : bar.high;
+  const adv = pos.side === "SHORT" ? bar.high : bar.low;
+  if (!isEntryBar) {
+    let msg = tradeGuards.checkProfitLock(ls.E, L(bar.open), pos.best, lock);
+    if (msg) return { price: bar.open, reason: `${msg} — bar opened through the floor`, atClose: false };
+    msg = tradeGuards.checkProfitLock(ls.E, L(adv), pos.best, lock);
+    if (msg) {
+      const floor = tradeGuards.profitLockFloorLtp(ls.E, pos.best, lock.floorPct, lock.trailPct, lock.tiers);
+      return { price: _r2(ls.toPx(floor, held)), reason: msg, atClose: false };
+    }
+  }
+  if (L(fav) > pos.best) pos.best = L(fav);
+  const msg = tradeGuards.checkProfitLock(ls.E, L(bar.close), pos.best, lock);
+  if (msg) return { price: bar.close, reason: `${msg} (on the bar's close, after its peak)`, atClose: true };
+  return null;
+}
+
+/**
+ * Walk ONE leg (a stock setup or the option setup) through the day's bars:
+ * fill at the frozen level on the first triggering bar, then the profit lock,
+ * then — if still open when the bars run out — the session-end close on the
+ * last candle. Returns null when the order was never touched, else
+ * { pos, exit: { bar, price, type, reason, held, atClose } } (prices raw,
+ * slippage NOT applied — the caller applies it to the fills).
+ */
+function _walkLeg(setup, bars, cfg, ctx) {
+  let pos = null, ls = null, entryIdx = -1;
+  for (let i = 0; i < bars.length; i++) {
+    const bar = bars[i];
+    if (!_num(bar.time)) continue;
+    // Bars are gated on their CLOSE time (bar start + resolution). The signal
+    // candle itself can never trigger its own breakout: entries only open from
+    // EARLYBIRD_ENTRY_START, which is the bar AFTER 09:15.
+    const barCloseMins = istMinutes(bar.time) + cfg.resolutionMins;
+    if (barCloseMins <= cfg.entryStartMin) continue;
+    if (!pos) {
+      if (barCloseMins > cfg.entryEndMin) return null;   // window closed, order untouched
+      if (!earlyBird.isEntryTriggeredOnBar(setup, bar)) continue;
+      // FILL AT THE LEVEL, never at the bar's high/low. Slippage makes it WORSE.
+      const fill = setup.side === "LONG" ? setup.entry + ctx.SLIP : setup.entry - ctx.SLIP;
+      pos = { side: setup.side, entryLevel: setup.entry, entryFill: _r2(fill), entryTime: bar.time };
+      ls = _lockSpace(setup.side, pos.entryFill, ctx.opt, cfg);
+      pos.best = ls.E;
+      entryIdx = i;
+    }
+    const held = Math.max(1, Math.round((bar.time - pos.entryTime) / 60 / cfg.resolutionMins) + 1);
+    const hit = _lockExitOnBar(ls, pos, bar, held, i === entryIdx, ctx.lock);
+    if (hit && _num(hit.price)) {
+      return { pos, exit: { bar, price: hit.price, type: "PROFIT_LOCK", reason: hit.reason, held, atClose: hit.atClose } };
+    }
+  }
+  if (!pos) return null;
+  // Still open when the day's bars ran out — the session teardown closes it on
+  // the last candle (paper's TRADE_STOP_TIME auto-stop does the same).
+  let last = null;
+  for (let i = bars.length - 1; i >= 0; i--) if (bars[i] && _num(bars[i].time) && _num(bars[i].close)) { last = bars[i]; break; }
+  if (!last) return { pos, exit: null };
+  const held = Math.max(1, Math.round((last.time - pos.entryTime) / 60 / cfg.resolutionMins) + 1);
+  return { pos, exit: { bar: last, price: last.close, type: "SESSION_END", reason: "Session end — still open on the day's last candle, squared off at its close", held, atClose: true } };
+}
+
 // ── Wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES) ─────────────
 // Paper treats the whole book (every stock + the option leg) as ONE position for
 // this rule: once the book goes flat, a setup that triggers before the wait is
 // over is consumed, not filled. That couples legs the day walks below treat as
 // independent, so it is resolved first: each leg's own trigger / exit time from
-// the same engine calls and gates, then accepted or dropped in time order.
-// A tick exit (stop / target) is stamped at its bar's OPEN, the forced exit at
-// its bar's CLOSE; an entry on a bar whose open is inside the wait is dropped.
-function _legTimes(setup, bars, cfg) {
+// the same _walkLeg, then accepted or dropped in time order. An exit fired on a
+// bar's open or adverse leg is stamped at its bar's OPEN, one fired on the close
+// (or the session end) at its bar's CLOSE; an entry on a bar whose open is
+// inside the wait is dropped.
+function _legTimes(setup, bars, cfg, ctx) {
   const resSec = cfg.resolutionMins * 60;
-  let trig = null;
-  for (const bar of bars) {
-    if (!_num(bar.time)) continue;
-    const barCloseMins = istMinutes(bar.time) + cfg.resolutionMins;
-    if (barCloseMins <= cfg.entryStartMin) continue;
-    if (trig == null) {
-      if (barCloseMins > cfg.entryEndMin) return null;
-      if (!earlyBird.isEntryTriggeredOnBar(setup, bar)) continue;
-      trig = bar.time;
-    }
-    const ex = earlyBird.checkExitOnBar(setup, bar, { cfg });
-    if (ex && ex.exit && _num(ex.price)) return { trig, exitTs: ex.exitType === "EOD" ? bar.time + resSec : bar.time };
-  }
-  if (trig == null) return null;
-  return { trig, exitTs: bars[bars.length - 1].time + resSec };
+  const r = _walkLeg(setup, bars, cfg, ctx(setup));
+  if (!r) return null;
+  if (!r.exit) return { trig: r.pos.entryTime, exitTs: bars[bars.length - 1].time + resSec };
+  return { trig: r.pos.entryTime, exitTs: r.exit.atClose ? r.exit.bar.time + resSec : r.exit.bar.time };
 }
 /** The setups (by reference) the cooldown drops on this day. */
-function _reentryDropSet(legs, cfg, cooldownSecs) {
+function _reentryDropSet(legs, cfg, cooldownSecs, ctxFor) {
   const dropped = new Set();
   if (!(cooldownSecs > 0)) return dropped;
-  const timed = legs.map(l => ({ setup: l.setup, t: _legTimes(l.setup, l.bars, cfg) }))
+  const timed = legs.map(l => ({ setup: l.setup, t: _legTimes(l.setup, l.bars, cfg, ctxFor) }))
     .filter(x => x.t).sort((a, b) => a.t.trig - b.t.trig);
   const accepted = [];
   for (const x of timed) {
@@ -726,16 +820,20 @@ async function runEarlyBirdBacktest(data, onProgress) {
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(cfg.resolutionMins) / 1000;
 
   // ── BOTH LEGS ARE BACKTESTED ────────────────────────────────────────────
-  // Every EarlyBird level is a NIFTY SPOT level, on both legs, so the option
-  // leg's decisions need no premium history — only its P&L conversion does, via
-  // the same delta/theta model the other four strategies use. See optionSimCfg.
+  // The entry level is a NIFTY SPOT level on both legs, so the option leg's
+  // entry needs no premium history — its P&L and profit lock use the same
+  // delta/theta model the other four strategies use. See optionSimCfg.
   const OPT = optionSimCfg();
   const optQty = optionQty(cfg);
+  const LOCK = _lockOpts();
+  // Per-leg walk context: the option leg locks on its modelled premium, a stock
+  // leg on its share price.
+  const ctxFor = (setup) => ({ SLIP, lock: LOCK, opt: setup && setup.optionSide ? OPT : null });
   if (earlyBird.tradesOption(cfg)) {
     console.log(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" — NIFTY option leg is simulated: ` +
       (OPT.on
         ? `delta=${OPT.delta}, theta=₹${OPT.thetaPerDay}/day, qty=${optQty}. All levels are SPOT levels; ` +
-          `only the P&L conversion is modelled.`
+          `only the P&L conversion (and the profit lock on it) is modelled.`
         : `BACKTEST_OPTION_SIM=false — reporting RAW SPOT POINTS × ${optQty}, no delta/theta.`));
   }
   if (!earlyBird.tradesStock(cfg)) {
@@ -757,7 +855,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
     // Triggered inside the wait-after-exit cooldown — consumed, not filled.
     reentryBlocked: 0, optReentryBlocked: 0,
   };
-  const exitTypes = { SL: 0, TARGET: 0, EOD: 0 };
+  const exitTypes = { PROFIT_LOCK: 0, SESSION_END: 0 };
   const sides     = { LONG: 0, SHORT: 0 };
   const niftyVerdicts = {};
 
@@ -833,7 +931,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
       plan.optionTradeable && plan.optionSetup && plan.optionSetup.ok ? [{ setup: plan.optionSetup, bars: niftyBars }] : [],
       plan.tradeable ? plan.candidates.slice(0, cfg.maxConcurrent).map(setup => ({
         setup, bars: (stockDefs.find(s => s.symbol === setup.symbol) || { byDay: new Map() }).byDay.get(dayKey) || [],
-      })) : []), cfg, REENTRY_COOLDOWN_SECS);
+      })) : []), cfg, REENTRY_COOLDOWN_SECS, ctxFor);
 
     // ── OPTION LEG. Walked on the SAME NIFTY spot bars, with the SAME engine
     //    calls as a stock, before the stock-leg gate below — in option-only mode
@@ -842,73 +940,32 @@ async function runEarlyBirdBacktest(data, onProgress) {
     if (plan.optionTradeable && plan.optionSetup && plan.optionSetup.ok) {
       const os = plan.optionSetup;
       row.optionSetup = {
-        side: os.side, optionSide: os.optionSide, entry: os.entry, stop: os.stop,
-        target: os.target, riskPts: os.riskPts, slBasis: os.slBasis, triggered: false,
+        side: os.side, optionSide: os.optionSide, entry: os.entry,
+        rangePts: os.rangePts, triggered: false,
       };
       funnel.optTaken++;
       console.log(`${LOG} ${dayStr}:   OPTION SETUP ${os.reason}`);
 
-      // The option setup carries its own qty for the P&L conversion. Levels are
-      // NIFTY spot, so the walk is byte-for-byte the stock walk.
-      const optSetup = Object.assign({}, os, { qty: optQty, symbol: `NIFTY ${os.optionSide}` });
-      let opos = null, odone = false, oblocked = false;
-
-      for (const bar of niftyBars) {
-        if (odone) break;
-        if (!_num(bar.time)) continue;
-        const barCloseMins = istMinutes(bar.time) + cfg.resolutionMins;
-        if (barCloseMins <= cfg.entryStartMin) continue;
-
-        if (!opos) {
-          if (barCloseMins > cfg.entryEndMin) { odone = true; break; }
-          if (earlyBird.isEntryTriggeredOnBar(optSetup, bar)) {
-            if (_reentryDropped.has(os)) {
-              oblocked = true; odone = true;
-              funnel.optReentryBlocked++;
-              console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} OPTION ${os.optionSide} triggered inside the wait-after-exit cooldown — dropped`);
-              break;
-            }
-            const fill = os.side === "LONG" ? os.entry + SLIP : os.entry - SLIP;
-            opos = {
-              side: os.side, stop: os.stop, target: os.target,
-              entryLevel: os.entry, entryFill: _r2(fill), entryTime: bar.time,
-            };
-            row.optionSetup.triggered = true;
-            funnel.optTriggered++;
-            console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} ENTER OPTION ${os.optionSide} @ spot ` +
-              `${_r2(fill)} (level ${os.entry}) | SL ${os.stop} (${os.slBasis}) | TGT ${os.target} | qty ${optQty}`);
-          }
-        }
-
-        if (opos) {
-          const ex = earlyBird.checkExitOnBar(opos, bar, { cfg });
-          if (ex && ex.exit && _num(ex.price)) {
-            const exitFill = opos.side === "LONG" ? ex.price - SLIP : ex.price + SLIP;
-            const heldBars = Math.max(1, Math.round((bar.time - opos.entryTime) / 60 / cfg.resolutionMins) + 1);
-            const t = _bookOptionTrade(opos, exitFill, ex.exitType, ex.reason, bar.time, heldBars,
-              os, optQty, OPT, cfg, dayStr);
-            trades.push(t);
-            exitTypes[t.exitType] = (exitTypes[t.exitType] || 0) + 1;
-            sides[t.side] = (sides[t.side] || 0) + 1;
-            dayOptPnl += t.pnl; dayOptTrades++;
-            opos = null; odone = true;
-            break;
-          }
-        }
-      }
-
-      // Open at the end of the day's bars — square off on the last close, same
-      // as the stock leg does.
-      if (opos) {
-        const last = niftyBars[niftyBars.length - 1];
-        if (last && _num(last.close)) {
-          const exitFill = opos.side === "LONG" ? last.close - SLIP : last.close + SLIP;
-          const heldBars = Math.max(1, Math.round((last.time - opos.entryTime) / 60 / cfg.resolutionMins) + 1);
-          const t = _bookOptionTrade(opos, exitFill, "EOD",
-            "EOD — last candle of the session, no forced-exit bar printed",
-            last.time, heldBars, os, optQty, OPT, cfg, dayStr);
+      // Levels are NIFTY spot, so the entry walk is byte-for-byte the stock walk;
+      // the lock reads the modelled premium.
+      let oblocked = false;
+      const r = _walkLeg(os, niftyBars, cfg, ctxFor(os));
+      if (r && _reentryDropped.has(os)) {
+        oblocked = true;
+        funnel.optReentryBlocked++;
+        console.log(`${LOG} ${dayStr} ${istHHMMSS(r.pos.entryTime)} OPTION ${os.optionSide} triggered inside the wait-after-exit cooldown — dropped`);
+      } else if (r) {
+        row.optionSetup.triggered = true;
+        funnel.optTriggered++;
+        console.log(`${LOG} ${dayStr} ${istHHMMSS(r.pos.entryTime)} ENTER OPTION ${os.optionSide} @ spot ` +
+          `${r.pos.entryFill} (level ${os.entry}) | exit = profit lock on the modelled premium | qty ${optQty}`);
+        if (r.exit) {
+          const ex = r.exit;
+          const exitFill = r.pos.side === "LONG" ? ex.price - SLIP : ex.price + SLIP;
+          const t = _bookOptionTrade(r.pos, exitFill, ex.type, ex.reason, ex.bar.time, ex.held,
+            os, optQty, OPT, cfg, dayStr);
           trades.push(t);
-          exitTypes.EOD = (exitTypes.EOD || 0) + 1;
+          exitTypes[t.exitType] = (exitTypes[t.exitType] || 0) + 1;
           sides[t.side] = (sides[t.side] || 0) + 1;
           dayOptPnl += t.pnl; dayOptTrades++;
         }
@@ -937,7 +994,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
         `${plan.nifty.detail ? plan.nifty.detail.reason : ""}`);
     }
 
-    // ── The engine already sorted candidates tightest-risk-first. Take the cap.
+    // ── The engine already sorted candidates tightest-candle-first. Take the cap.
     const taken = plan.candidates.slice(0, cfg.maxConcurrent);
     row.taken = taken.length;
     funnel.taken += taken.length;
@@ -951,7 +1008,6 @@ async function runEarlyBirdBacktest(data, onProgress) {
     const pending = taken.map(setup => ({
       setup,
       bars: (stockDefs.find(s => s.symbol === setup.symbol) || { byDay: new Map() }).byDay.get(dayKey) || [],
-      pos: null,
       done: false,
       triggered: false,
       blocked: false,
@@ -960,8 +1016,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
     for (const p of pending) {
       const s = p.setup;
       row.candidates.push({
-        symbol: s.symbol, side: s.side, entry: s.entry, stop: s.stop, target: s.target,
-        riskPts: s.riskPts, rewardPts: s.rewardPts, slBasis: s.slBasis, bigCandle: s.bigCandle,
+        symbol: s.symbol, side: s.side, entry: s.entry, rangePts: s.rangePts,
         gapPct: s.gapPct, prevClose: s.prevClose, triggered: false,
       });
       console.log(`${LOG} ${dayStr}:   SETUP ${s.reason}`);
@@ -979,178 +1034,65 @@ async function runEarlyBirdBacktest(data, onProgress) {
         { symbol: setup.symbol, trades: 0, wins: 0, pnl: 0, triggered: 0, untriggered: 0 };
       perSymbol.set(setup.symbol, stat);
 
-      for (const bar of p.bars) {
-        if (p.done) break;
-        if (!_num(bar.time)) continue;
-
-        // Bars are gated on their CLOSE time — bar start + resolution — the same
-        // convention checkExitOnBar uses for the forced exit.
-        const barCloseMins = istMinutes(bar.time) + cfg.resolutionMins;
-
-        // The signal candle itself can never trigger its own breakout: entries
-        // only open from EARLYBIRD_ENTRY_START, which is the bar AFTER 09:15.
-        if (barCloseMins <= cfg.entryStartMin) continue;
-
-        // ── ENTRY. Pending stop order at a frozen level. ────────────────────
-        if (!p.pos) {
-          if (barCloseMins > cfg.entryEndMin) {
-            // Window closed with the order untouched. Nothing more can happen.
-            p.done = true;
-            break;
-          }
-          if (earlyBird.isEntryTriggeredOnBar(setup, bar)) {
-            if (_reentryDropped.has(setup)) {
-              p.blocked = true; p.done = true;
-              funnel.reentryBlocked++;
-              console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} ${setup.side} ${setup.symbol} triggered inside the wait-after-exit cooldown — dropped`);
-              break;
-            }
-            // FILL AT THE LEVEL, never at the bar's high/low. Slippage makes it
-            // WORSE: a LONG pays up, a SHORT sells down.
-            const fill = setup.side === "LONG" ? setup.entry + SLIP : setup.entry - SLIP;
-            p.pos = {
-              symbol: setup.symbol,
-              side: setup.side,
-              // stop/target are the ENGINE's frozen levels and are handed back to
-              // it unchanged — slippage must not move the levels, only the fills.
-              stop: setup.stop,
-              target: setup.target,
-              entryLevel: setup.entry,
-              entryFill: _r2(fill),
-              entryTime: bar.time,
-            };
-            p.triggered = true;
-            row.triggered++;
-            funnel.triggered++;
-            stat.triggered++;
-            if (row.candidates[pi]) row.candidates[pi].triggered = true;
-            console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} ENTER ${setup.side} ${setup.symbol} @ ` +
-              `${_r2(fill)} (level ${setup.entry} + ${SLIP} slip) | SL ${setup.stop} (${setup.slBasis}) | ` +
-              `TGT ${setup.target} | risk ${setup.riskPts} | qty ${setup.qty}`);
-            // FALLS THROUGH to the exit test on THIS SAME BAR. A bar that both
-            // triggered the entry and took out the stop books the LOSS — see the
-            // header. Skipping it here is exactly how a backtest flatters itself.
-          }
-        }
-
-        // ── EXIT. The engine owns the ordering (gap-through at the open, stop
-        //    before target, forced exit on close time). Nothing is second-guessed.
-        if (p.pos) {
-          const ex = earlyBird.checkExitOnBar(p.pos, bar, { cfg });
-          if (ex && ex.exit && _num(ex.price)) {
-            // Slippage makes the exit WORSE too: a LONG sells lower, a SHORT
-            // buys back higher.
-            const exitFill = p.pos.side === "LONG" ? ex.price - SLIP : ex.price + SLIP;
-            const gross = earlyBird.computePnl(p.pos.side, p.pos.entryFill, exitFill, setup.qty);
-            const chg   = _equityCharges(p.pos.entryFill, exitFill, setup.qty);
-            const net   = _r2(gross - chg.total);
-
-            const heldBars = Math.max(1, Math.round((bar.time - p.pos.entryTime) / 60 / cfg.resolutionMins) + 1);
-
-            trades.push({
-              symbol: setup.symbol,
-              side: p.pos.side,
-              entry: stampStr(p.pos.entryTime),
-              exit:  stampStr(bar.time),
-              entryTs: p.pos.entryTime,
-              exitTs:  bar.time,
-              ePrice: p.pos.entryFill,
-              xPrice: _r2(exitFill),
-              entryLevel: p.pos.entryLevel,
-              sl: setup.stop,
-              target: setup.target,
-              riskPts: setup.riskPts,
-              rewardPts: setup.rewardPts,
-              slBasis: setup.slBasis,
-              bigCandle: setup.bigCandle,
-              gapPct: setup.gapPct,
-              prevClose: setup.prevClose,
-              qty: setup.qty,
-              exitType: ex.exitType,
-              reason: ex.reason,
-              entryReason: setup.reason,
-              grossPnl: gross,
-              charges: chg.total,
-              pnl: net,
-              held: heldBars,
-              strength: "STRONG",
-            });
-
-            exitTypes[ex.exitType] = (exitTypes[ex.exitType] || 0) + 1;
-            sides[p.pos.side] = (sides[p.pos.side] || 0) + 1;
-            dayPnl += net;
-            dayTrades++;
-            stat.trades++;
-            stat.pnl = _r2(stat.pnl + net);
-            if (net > 0) stat.wins++;
-
-            console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} EXIT  ${p.pos.side} ${setup.symbol} @ ` +
-              `${_r2(exitFill)} → ${ex.exitType} | ${ex.reason} | gross ₹${gross} − charges ₹${chg.total} = ₹${net} ` +
-              `(${heldBars} bar(s))`);
-
-            p.pos = null;
-            p.done = true;   // no re-entry — one attempt per stock per day
-            break;
-          }
-        }
-      }
-
-      // A position still open when the day's bars ran out. checkExitOnBar only
-      // returns EOD on a bar that actually printed at/after the forced-exit time,
-      // so a short session would otherwise carry the trade overnight — which this
-      // strategy never does.
-      if (p.pos) {
-        const last = p.bars[p.bars.length - 1];
-        if (last && _num(last.close)) {
-          const exitFill = p.pos.side === "LONG" ? last.close - SLIP : last.close + SLIP;
-          const gross = earlyBird.computePnl(p.pos.side, p.pos.entryFill, exitFill, setup.qty);
-          const chg   = _equityCharges(p.pos.entryFill, exitFill, setup.qty);
+      const r = _walkLeg(setup, p.bars, cfg, ctxFor(setup));
+      if (r && _reentryDropped.has(setup)) {
+        p.blocked = true;
+        funnel.reentryBlocked++;
+        console.log(`${LOG} ${dayStr} ${istHHMMSS(r.pos.entryTime)} ${setup.side} ${setup.symbol} triggered inside the wait-after-exit cooldown — dropped`);
+      } else if (r) {
+        p.triggered = true;
+        row.triggered++;
+        funnel.triggered++;
+        stat.triggered++;
+        if (row.candidates[pi]) row.candidates[pi].triggered = true;
+        console.log(`${LOG} ${dayStr} ${istHHMMSS(r.pos.entryTime)} ENTER ${setup.side} ${setup.symbol} @ ` +
+          `${r.pos.entryFill} (level ${setup.entry} + ${SLIP} slip) | exit = profit lock | qty ${setup.qty}`);
+        if (r.exit) {
+          const ex = r.exit;
+          // Slippage makes the exit WORSE too: a LONG sells lower, a SHORT buys back higher.
+          const exitFill = r.pos.side === "LONG" ? ex.price - SLIP : ex.price + SLIP;
+          const gross = earlyBird.computePnl(r.pos.side, r.pos.entryFill, exitFill, setup.qty);
+          const chg   = _equityCharges(r.pos.entryFill, exitFill, setup.qty);
           const net   = _r2(gross - chg.total);
-          const heldBars = Math.max(1, Math.round((last.time - p.pos.entryTime) / 60 / cfg.resolutionMins) + 1);
 
           trades.push({
             symbol: setup.symbol,
-            side: p.pos.side,
-            entry: stampStr(p.pos.entryTime),
-            exit:  stampStr(last.time),
-            entryTs: p.pos.entryTime,
-            exitTs:  last.time,
-            ePrice: p.pos.entryFill,
+            side: r.pos.side,
+            entry: stampStr(r.pos.entryTime),
+            exit:  stampStr(ex.bar.time),
+            entryTs: r.pos.entryTime,
+            exitTs:  ex.bar.time,
+            ePrice: r.pos.entryFill,
             xPrice: _r2(exitFill),
-            entryLevel: p.pos.entryLevel,
-            sl: setup.stop,
-            target: setup.target,
-            riskPts: setup.riskPts,
-            rewardPts: setup.rewardPts,
-            slBasis: setup.slBasis,
-            bigCandle: setup.bigCandle,
+            entryLevel: r.pos.entryLevel,
+            rangePts: setup.rangePts,
             gapPct: setup.gapPct,
             prevClose: setup.prevClose,
             qty: setup.qty,
-            exitType: "EOD",
-            reason: "EOD — last candle of the session, no forced-exit bar printed",
+            exitType: ex.type,
+            reason: ex.reason,
             entryReason: setup.reason,
             grossPnl: gross,
             charges: chg.total,
             pnl: net,
-            held: heldBars,
+            held: ex.held,
             strength: "STRONG",
           });
 
-          exitTypes.EOD = (exitTypes.EOD || 0) + 1;
-          sides[p.pos.side] = (sides[p.pos.side] || 0) + 1;
+          exitTypes[ex.type] = (exitTypes[ex.type] || 0) + 1;
+          sides[r.pos.side] = (sides[r.pos.side] || 0) + 1;
           dayPnl += net;
           dayTrades++;
           stat.trades++;
           stat.pnl = _r2(stat.pnl + net);
           if (net > 0) stat.wins++;
 
-          console.log(`${LOG} ${dayStr} ${istHHMMSS(last.time)} EXIT  ${p.pos.side} ${setup.symbol} @ ` +
-            `${_r2(exitFill)} → EOD (last candle) | gross ₹${gross} − charges ₹${chg.total} = ₹${net}`);
+          console.log(`${LOG} ${dayStr} ${istHHMMSS(ex.bar.time)} EXIT  ${r.pos.side} ${setup.symbol} @ ` +
+            `${_r2(exitFill)} → ${ex.type} | ${ex.reason} | gross ₹${gross} − charges ₹${chg.total} = ₹${net} ` +
+            `(${ex.held} bar(s))`);
         }
-        p.pos = null;
-        p.done = true;
       }
+      p.done = true;   // no re-entry — one attempt per stock per day
 
       // NEVER TRIGGERED. This is the headline statistic for this strategy and it
       // is counted, not hidden — a pending order the market never touched.
@@ -1426,7 +1368,6 @@ details[open] summary{border-radius:8px 8px 0 0;}
 .pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:0.6rem;font-weight:700;}
 .pill-long{background:rgba(16,185,129,0.15);color:var(--green);}
 .pill-short{background:rgba(239,68,68,0.15);color:var(--red);}
-.pill-sl{background:rgba(239,68,68,0.15);color:var(--red);}
 .pill-target{background:rgba(16,185,129,0.15);color:var(--green);}
 .pill-eod{background:rgba(148,163,184,0.15);color:var(--muted);}
 .pill-none{background:rgba(148,163,184,0.12);color:var(--muted);}
@@ -1552,7 +1493,7 @@ function sidePill(side) {
   return `<span class="pill ${side === "SHORT" ? "pill-short" : "pill-long"}">${escHtml(side)}</span>`;
 }
 function exitPill(x) {
-  const cls = x === "SL" ? "pill-sl" : x === "TARGET" ? "pill-target" : "pill-eod";
+  const cls = x === "PROFIT_LOCK" ? "pill-target" : "pill-eod";
   return `<span class="pill ${cls}">${escHtml(x)}</span>`;
 }
 function num(v, dp) {
@@ -1712,8 +1653,8 @@ function modeExplainerHTML(cfg, universeKey) {
   The day's <b>first ${tf} candle</b> (${escHtml(earlyBird._fmtMins(c.sessionStartMin))}–${escHtml(earlyBird._fmtMins(c.sessionStartMin + c.resolutionMins))}) decides everything.
   NIFTY must close with a strong body (at least ${c.minBodyPct}% of the candle) and only a small wick against the move (under ${c.maxOpposingWickPct}%) — green means it goes long, red means it goes short. If it does not, the day is skipped.
   ${what}
-  <br/><b>Entry</b> is ₹${c.entryBufferPts} beyond that candle, <b>stop</b> is ₹${c.entryBufferPts} beyond the other end, and the <b>target</b> is ${c.targetRR}× whatever the stop risks.
-  Nothing new is entered after ${escHtml(earlyBird._fmtMins(c.entryEndMin))}, and anything still open is closed at ${escHtml(earlyBird._fmtMins(c.forcedExitMin))}.
+  <br/><b>Entry</b> is ₹${c.entryBufferPts} beyond that candle. The only exit is the common <b>profit lock</b> — no stop, no target.
+  Nothing new is entered after ${escHtml(earlyBird._fmtMins(c.entryEndMin))}, and anything still open is closed on the day's last candle.
 </div>`;
 }
 
@@ -1812,12 +1753,9 @@ function renderTradeTable(trades) {
 <td class="m" style="font-size:0.64rem;">${escHtml(t.exit)}</td>
 <td>${num(t.entryLevel)}</td>
 <td>${num(t.ePrice)}</td>
-<td class="r">${num(t.sl)}</td>
-<td class="g">${num(t.target)}</td>
 <td>${num(t.xPrice)}</td>
 <td>${exitPill(t.exitType)}</td>
-<td class="m">${num(t.riskPts)}</td>
-<td class="m" style="font-size:0.62rem;">${escHtml(t.slBasis || "")}</td>
+<td class="m">${num(t.rangePts)}</td>
 <td class="m">${num(t.gapPct)}%</td>
 <td class="m">${t.qty}</td>
 <td class="${t.spotPts > 0 ? "g" : t.spotPts < 0 ? "r" : "m"}">${t.spotPts == null ? "—" : num(t.spotPts)}</td>
@@ -1831,8 +1769,8 @@ ${pnlCell(t.pnl)}
   return `<div class="tbl-scroll"><table>
 <thead><tr>
 <th>Symbol</th><th>Side</th><th>Entry time</th><th>Exit time</th>
-<th>Level</th><th>Fill</th><th>SL</th><th>Target</th><th>Exit</th><th>Type</th>
-<th>Risk</th><th title="Where the stop came from: the candle's wick, or its body when the candle was too big.">SL basis</th><th>Gap</th><th>Qty</th>
+<th>Level</th><th>Fill</th><th>Exit</th><th>Type</th>
+<th title="The signal candle's high-low range.">Range</th><th>Gap</th><th>Qty</th>
 <th>Spot pts</th><th>Gross</th><th>Charges</th><th>Net</th><th>Bars</th><th>Exit reason</th>
 </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -1926,12 +1864,9 @@ function tradeToolbarHTML(trades) {
 <th class="sortable" onclick="ebSort('exit')"       id="ebh-exit">Exit time<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('entryLevel')" id="ebh-entryLevel" title="The price the pending order sat at — the signal candle's high (buy) or low (sell), plus the buffer.">Level<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('ePrice')"     id="ebh-ePrice" title="The price actually paid, after slippage.">Fill<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('sl')"         id="ebh-sl" title="Stop loss — where the trade gets closed if it goes the wrong way.">SL<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('target')"     id="ebh-target">Target<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('xPrice')"     id="ebh-xPrice">Exit<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('exitType')"   id="ebh-exitType" title="How the trade ended: hit the target, hit the stop, or was closed at the square-off time.">Type<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('riskPts')"    id="ebh-riskPts" title="Distance in rupees between the entry and the stop — what one trade risks per share.">Risk<span class="arw"></span></th>
-<th>SL basis</th>
+<th class="sortable" onclick="ebSort('exitType')"   id="ebh-exitType" title="How the trade ended: the profit lock, or still open at the session end.">Type<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('rangePts')"   id="ebh-rangePts" title="The signal candle's high-low range.">Range<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('gapPct')"     id="ebh-gapPct" title="How far the stock opened from the previous day's close, in percent.">Gap<span class="arw"></span></th>
 <th>Qty</th>
 <th class="sortable" onclick="ebSort('spotPts')"    id="ebh-spotPts" title="How far NIFTY itself moved on the trade, in index points.">Spot pts<span class="arw"></span></th>
@@ -2027,7 +1962,7 @@ function ebRender(){
   var start=(ebPage-1)*ebPP;
   var slice=ebFiltered.slice(start,start+ebPP);
   if(!slice.length){
-    tb.innerHTML='<tr><td colspan="19" class="m" style="text-align:center;padding:18px;">No trades match these filters.</td></tr>';
+    tb.innerHTML='<tr><td colspan="17" class="m" style="text-align:center;padding:18px;">No trades match these filters.</td></tr>';
     document.getElementById('ebPag').innerHTML='';
     if(ebAnaVisible) ebRenderAnalytics();
     return;
@@ -2036,7 +1971,7 @@ function ebRender(){
   for(var i=0;i<slice.length;i++){
     var t=slice[i];
     var sideCls=t.side==='SHORT'?'pill-short':'pill-long';
-    var exCls=t.exitType==='SL'?'pill-sl':(t.exitType==='TARGET'?'pill-target':'pill-eod');
+    var exCls=t.exitType==='PROFIT_LOCK'?'pill-target':'pill-eod';
     var pc=(t.pnl==null||!isFinite(t.pnl))?'m':(t.pnl>=0?'g':'r');
     out+='<tr>'
       +'<td><b>'+ebEsc(t.symbol)+'</b></td>'
@@ -2045,12 +1980,9 @@ function ebRender(){
       +'<td class="m" style="font-size:0.64rem;">'+ebEsc(t.exit)+'</td>'
       +'<td>'+ebNum(t.entryLevel)+'</td>'
       +'<td>'+ebNum(t.ePrice)+'</td>'
-      +'<td class="r">'+ebNum(t.sl)+'</td>'
-      +'<td class="g">'+ebNum(t.target)+'</td>'
       +'<td>'+ebNum(t.xPrice)+'</td>'
       +'<td><span class="pill '+exCls+'">'+ebEsc(t.exitType)+'</span></td>'
-      +'<td class="m">'+ebNum(t.riskPts)+'</td>'
-      +'<td class="m" style="font-size:0.62rem;">'+ebEsc(t.slBasis||'')+'</td>'
+      +'<td class="m">'+ebNum(t.rangePts)+'</td>'
       +'<td class="m">'+ebNum(t.gapPct)+'%</td>'
       +'<td class="m">'+ebEsc(t.qty)+'</td>'
       +'<td class="'+(t.spotPts>0?'g':t.spotPts<0?'r':'m')+'">'+(t.spotPts==null?'—':ebNum(t.spotPts))+'</td>'
@@ -2312,10 +2244,10 @@ function ebDoCopy(text,btn,label){
 }
 
 function ebCopyTradeLog(btn){
-  var lines=['Symbol\\tSide\\tEntry\\tExit\\tLevel\\tFill\\tSL\\tTarget\\tExitPrice\\tType\\tRisk\\tSL basis\\tGap%\\tQty\\tGross\\tCharges\\tNet\\tBars\\tExit reason'];
+  var lines=['Symbol\\tSide\\tEntry\\tExit\\tLevel\\tFill\\tExitPrice\\tType\\tRange\\tGap%\\tQty\\tGross\\tCharges\\tNet\\tBars\\tExit reason'];
   ebFiltered.forEach(function(t){
-    lines.push([t.symbol,t.side,t.entry,t.exit,t.entryLevel,t.ePrice,t.sl,t.target,t.xPrice,
-      t.exitType,t.riskPts,t.slBasis,t.gapPct,t.qty,t.grossPnl,t.charges,t.pnl,t.held,t.reason]
+    lines.push([t.symbol,t.side,t.entry,t.exit,t.entryLevel,t.ePrice,t.xPrice,
+      t.exitType,t.rangePts,t.gapPct,t.qty,t.grossPnl,t.charges,t.pnl,t.held,t.reason]
       .map(function(v){ return v==null?'':String(v).replace(/[\\t\\r\\n]+/g,' '); }).join('\\t'));
   });
   ebDoCopy(lines.join('\\n'),btn,'Trade Log');
@@ -2408,7 +2340,7 @@ function renderResults(from, to, universeKey, stats, result, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
 
   // ── Breakdown by exit type
-  const exitRows = ["SL", "TARGET", "EOD"].map(x => {
+  const exitRows = ["PROFIT_LOCK", "SESSION_END"].map(x => {
     const s = subsetStats(result.trades.filter(t => t.exitType === x));
     return `<tr><td>${exitPill(x)}</td><td>${s.n}</td><td>${s.wins}</td><td>${s.winRate}%</td>${pnlCell(s.pnl)}</tr>`;
   }).join("");
@@ -2594,11 +2526,11 @@ router.get("/csv", (req, res) => {
   if (!job || job.status !== "done") return res.status(404).send("No finished run for that jobId.");
   const t = job.result.result.trades;
   const csv = toCsv(
-    ["symbol", "side", "entryTime", "exitTime", "entryLevel", "entryFill", "sl", "target", "exitPrice",
-     "exitType", "exitReason", "slBasis", "bigCandle", "riskPts", "rewardPts", "gapPct", "prevClose",
+    ["symbol", "side", "entryTime", "exitTime", "entryLevel", "entryFill", "exitPrice",
+     "exitType", "exitReason", "rangePts", "gapPct", "prevClose",
      "qty", "grossPnl", "charges", "netPnl", "barsHeld", "entryReason"],
-    t.map(x => [x.symbol, x.side, x.entry, x.exit, x.entryLevel, x.ePrice, x.sl, x.target, x.xPrice,
-      x.exitType, x.reason, x.slBasis, x.bigCandle, x.riskPts, x.rewardPts, x.gapPct, x.prevClose,
+    t.map(x => [x.symbol, x.side, x.entry, x.exit, x.entryLevel, x.ePrice, x.xPrice,
+      x.exitType, x.reason, x.rangePts, x.gapPct, x.prevClose,
       x.qty, x.grossPnl, x.charges, x.pnl, x.held, x.entryReason])
   );
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -2703,9 +2635,9 @@ router.get("/", async (req, res) => {
           `${cfg.resolutionMins}-min | qty ${cfg.qty} | max ${cfg.maxConcurrent} concurrent | ` +
           `slippage ₹${slippagePts()}/side` + (pruned ? ` | pruned ${pruned} stale cache file(s)` : ""));
         console.log(`${LOG} job ${id}: rules — body ≥ ${cfg.minBodyPct}%, opposing wick ≤ ${cfg.maxOpposingWickPct}%, ` +
-          `gap ≤ ${cfg.maxGapPct}%, buffer ${cfg.entryBufferPts}, RR 1:${cfg.targetRR}, max SL ${cfg.maxSlPts}, ` +
+          `gap ≤ ${cfg.maxGapPct}%, buffer ${cfg.entryBufferPts}, ` +
           `entries ${earlyBird._fmtMins(cfg.entryStartMin)}–${earlyBird._fmtMins(cfg.entryEndMin)}, ` +
-          `forced exit ${earlyBird._fmtMins(cfg.forcedExitMin)}`);
+          `exit = profit lock only`);
 
         const report = (phase, pct) => backtestJobs.updateProgress(id, { phase, pct });
 
@@ -2748,8 +2680,8 @@ router.get("/", async (req, res) => {
           `${result.funnel.scanned} symbol-days scanned → ${result.funnel.confirmed} confirmed → ` +
           `${result.funnel.taken} taken → ${result.funnel.triggered} triggered, ` +
           `${result.funnel.untriggered} NEVER triggered`);
-        console.log(`${LOG} job ${id}: exits — SL ${result.exitTypes.SL || 0} / ` +
-          `TARGET ${result.exitTypes.TARGET || 0} / EOD ${result.exitTypes.EOD || 0} | ` +
+        console.log(`${LOG} job ${id}: exits — PROFIT_LOCK ${result.exitTypes.PROFIT_LOCK || 0} / ` +
+          `SESSION_END ${result.exitTypes.SESSION_END || 0} | ` +
           `sides — LONG ${result.sides.LONG || 0} / SHORT ${result.sides.SHORT || 0}`);
         console.log(`${LOG} job ${id}: RESULT — ${stats.totalTrades} trade(s), ${stats.winRate}% WR, ` +
           `net ₹${stats.totalPnl} (gross ₹${_r2(stats.totalPnl + stats.totalCharges)} − charges ` +

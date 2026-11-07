@@ -4,101 +4,96 @@
  * Tracks which modes are currently using the socket.
  *
  * RULES:
- * - EMA_RSI_ST_PAPER and EMA_RSI_ST_LIVE are mutually exclusive (same 15-min strategy)
- * - BB_RSI_LIVE and BB_RSI_PAPER are mutually exclusive (same 3-min strategy)
- * - EMA_RSI_ST_LIVE + BB_RSI_LIVE can run in parallel (different brokers, different timeframes)
+ * - Each strategy has its own slot; a second start of the same slot is refused
  * - EMA_RSI_ST_PAPER + BB_RSI_PAPER can run in parallel
  *
- * The primary mode (EMA_RSI_ST_PAPER | EMA_RSI_ST_LIVE) owns the socket start/stop.
+ * The primary mode (EMA_RSI_ST_PAPER) owns the socket start/stop.
  * BB_RSI modes piggyback on the socket via addCallback/removeCallback.
  * If no primary mode is running, bb_rsi can start the socket itself.
  * ─────────────────────────────────────────────────────────────
  */
 
-// Primary mode: "EMA_RSI_ST_PAPER" | "EMA_RSI_ST_LIVE" | null
+// Primary mode: "EMA_RSI_ST_PAPER" | null
 let primaryMode = null;
 
-// BB_RSI mode: "BB_RSI_LIVE" | "BB_RSI_PAPER" | null
+// BB_RSI mode: "BB_RSI_PAPER" | null
 let bbRsiMode = null;
 
-// Price Action mode: "PA_LIVE" | "PA_PAPER" | null
+// Price Action mode: "PA_PAPER" | null
 let paMode = null;
 
 // ORB (Opening Range Breakout) mode: "ORB_PAPER" | null
 let orbMode = null;
 
-// EMA9+VWAP mode: "EMA9VWAP_PAPER" | "EMA9VWAP_LIVE" | null
+// EMA9+VWAP mode: "EMA9VWAP_PAPER" | null
 let ema9vwapMode = null;
 
-// Trend Pullback mode: "TREND_PB_PAPER" | "TREND_PB_LIVE" | null
+// Trend Pullback mode: "TREND_PB_PAPER" | null
 let trendPbMode = null;
 
 
-// Trend Day Scalp mode: "TREND_DAY_SCALP_PAPER" | "TREND_DAY_SCALP_LIVE" | null
+// Trend Day Scalp mode: "TREND_DAY_SCALP_PAPER" | null
 let trendDayScalpMode = null;
 
 
-// HA Scalp mode: "HA_SCALP_PAPER" | "HA_SCALP_LIVE" | null
+// HA Scalp mode: "HA_SCALP_PAPER" | null
 let haScalpMode = null;
 
-// Prev ORB Scalp mode: "PREV_ORB_SCALP_PAPER" | "PREV_ORB_SCALP_LIVE" | null
+// Prev ORB Scalp mode: "PREV_ORB_SCALP_PAPER" | null
 let prevOrbScalpMode = null;
 
 
-// RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | "RSI_PIVOT_ST_LIVE" | null
+// RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | null
 let rsiPivotStMode = null;
 
 // BN Pivot RSI SuperTrend mode (NIFTY BANK):
-//   "BN_PIVOT_RSI_ST_PAPER" | "BN_PIVOT_RSI_ST_LIVE" | null
+//   "BN_PIVOT_RSI_ST_PAPER" | null
 // Deliberately its OWN slot, independent of rsiPivotStMode: BN_PIVOT_RSI_ST is
 // the same rules on a DIFFERENT underlying (NIFTY BANK vs NIFTY 50), so the two
-// may run side by side. Only paper-vs-live within BN is mutually exclusive.
+// may run side by side.
 let bnPivotRsiStMode = null;
 
-// EMA_RSI_ST_V2 mode: "EMA_RSI_ST_V2_PAPER" | "EMA_RSI_ST_V2_LIVE" | null
+// EMA_RSI_ST_V2 mode: "EMA_RSI_ST_V2_PAPER" | null
 // Its OWN slot, deliberately independent of `primaryMode` (which carries V1's
-// EMA_RSI_ST_PAPER/LIVE). V2 is a separate strategy with its own rules, its own
+// EMA_RSI_ST_PAPER). V2 is a separate strategy with its own rules, its own
 // settings and its own position file — the two are free to run side by side.
-// Only paper-vs-live WITHIN V2 is mutually exclusive.
 let emaRsiStV2Mode = null;
 
 // BN_EMA_RSI_ST_V2 mode (NIFTY BANK):
-//   "BN_EMA_RSI_ST_V2_PAPER" | "BN_EMA_RSI_ST_V2_LIVE" | null
+//   "BN_EMA_RSI_ST_V2_PAPER" | null
 // Its OWN slot, deliberately independent of emaRsiStV2Mode: this is the SAME
 // engine on a DIFFERENT underlying (NIFTY BANK vs NIFTY 50), so the two may run
-// side by side. Only paper-vs-live WITHIN the BN strategy is mutually exclusive.
+// side by side.
 let bnEmaRsiStV2Mode = null;
 
-// ST_RSI_PIV_BB mode: "ST_RSI_PIV_BB_PAPER" | "ST_RSI_PIV_BB_LIVE" | null
+// ST_RSI_PIV_BB mode: "ST_RSI_PIV_BB_PAPER" | null
 // Its OWN slot — a separate strategy with its own settings and position file,
-// so it may run side by side with every other strategy. Only paper-vs-live
-// WITHIN ST_RSI_PIV_BB is mutually exclusive.
+// so it may run side by side with every other strategy.
 let stRsiPivBbMode = null;
 
-// SAIL_VWAP_ST mode: "SAIL_VWAP_ST_PAPER" | "SAIL_VWAP_ST_LIVE" | null
+// SAIL_VWAP_ST mode: "SAIL_VWAP_ST_PAPER" | null
 // Its OWN slot — SAIL stock options, its own settings and position file, so it
-// may run side by side with every other strategy. Only paper-vs-live WITHIN
-// SAIL_VWAP_ST is mutually exclusive.
+// may run side by side with every other strategy.
 let sailVwapStMode = null;
 
-// PIVOT_EMA_ST family: "<P>_PAPER" | "<P>_LIVE" | null, for P = PIVOT_EMA_ST
+// PIVOT_EMA_ST family: "<P>_PAPER" | null, for P = PIVOT_EMA_ST
 // (NIFTY), BN_PIVOT_EMA_ST (BANK NIFTY), SAIL_PIVOT_EMA_ST (SAIL). Each its OWN
 // slot (own settings + position file), so all three run side by side with every
-// other strategy. Only paper-vs-live WITHIN one of them is mutually exclusive.
+// other strategy.
 let pivotEmaStMode = null;
 let bnPivotEmaStMode = null;
 let sailPivotEmaStMode = null;
 
 // GAP_RUNAWAY (GAP_runAway__Kirubakaran, NIFTY options) and GAP_RUNAWAY_STK (its
-// stock scanner, paper only): "<P>_PAPER" | "<P>_LIVE" | null. Each its OWN slot,
-// parallel with every other strategy; only paper-vs-live within one is exclusive.
+// stock scanner, paper only): "<P>_PAPER" | null. Each its OWN slot,
+// parallel with every other strategy.
 let gapRunawayMode = null;
 let gapRunawayStkMode = null;
 
-// EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
+// EarlyBird mode: "EARLY_BIRD_PAPER" | null
 let earlyBirdMode = null;
 
-// SIMPLE_9:30 mode: "SIMPLE930_PAPER" | "SIMPLE930_LIVE" | null
+// SIMPLE_9:30 mode: "SIMPLE930_PAPER" | null
 let simple930Mode = null;
 
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
@@ -461,189 +456,84 @@ function isAnyActive() {
 /** Raw mutex check (no reservation). Returns { allowed, reason } */
 function _canStartRaw(mode) {
   switch (mode) {
-    case "EMA_RSI_ST_LIVE":
-      if (primaryMode === "EMA_RSI_ST_PAPER") return { allowed: false, reason: "Paper Trade is running — stop it first" };
-      if (primaryMode === "EMA_RSI_ST_LIVE")  return { allowed: false, reason: "Live Trade is already running" };
-      return { allowed: true };
     case "EMA_RSI_ST_PAPER":
-      if (primaryMode === "EMA_RSI_ST_LIVE")  return { allowed: false, reason: "Live Trade is running — stop it first" };
       if (primaryMode === "EMA_RSI_ST_PAPER") return { allowed: false, reason: "Paper Trade is already running" };
       return { allowed: true };
-    case "BB_RSI_LIVE":
-      if (bbRsiMode === "BB_RSI_PAPER") return { allowed: false, reason: "BB_RSI Paper is running — stop it first" };
-      if (bbRsiMode === "BB_RSI_LIVE")  return { allowed: false, reason: "BB_RSI Live is already running" };
-      return { allowed: true };
     case "BB_RSI_PAPER":
-      if (bbRsiMode === "BB_RSI_LIVE")  return { allowed: false, reason: "BB_RSI Live is running — stop it first" };
       if (bbRsiMode === "BB_RSI_PAPER") return { allowed: false, reason: "BB_RSI Paper is already running" };
       return { allowed: true };
-    case "PA_LIVE":
-      if (paMode === "PA_PAPER") return { allowed: false, reason: "Price Action Paper is running — stop it first" };
-      if (paMode === "PA_LIVE")  return { allowed: false, reason: "Price Action Live is already running" };
-      return { allowed: true };
     case "PA_PAPER":
-      if (paMode === "PA_LIVE")  return { allowed: false, reason: "Price Action Live is running — stop it first" };
       if (paMode === "PA_PAPER") return { allowed: false, reason: "Price Action Paper is already running" };
       return { allowed: true };
     case "ORB_PAPER":
       if (orbMode === "ORB_PAPER") return { allowed: false, reason: "ORB Paper is already running" };
-      if (orbMode === "ORB_LIVE")  return { allowed: false, reason: "ORB Live is running — stop it first" };
-      return { allowed: true };
-    case "ORB_LIVE":
-      if (orbMode === "ORB_PAPER") return { allowed: false, reason: "ORB Paper is running — stop it first" };
-      if (orbMode === "ORB_LIVE")  return { allowed: false, reason: "ORB Live is already running" };
       return { allowed: true };
     case "EMA9VWAP_PAPER":
-      if (ema9vwapMode === "EMA9VWAP_LIVE")  return { allowed: false, reason: "EMA9+VWAP Live is running — stop it first" };
       if (ema9vwapMode === "EMA9VWAP_PAPER") return { allowed: false, reason: "EMA9+VWAP Paper is already running" };
       return { allowed: true };
-    case "EMA9VWAP_LIVE":
-      if (ema9vwapMode === "EMA9VWAP_PAPER") return { allowed: false, reason: "EMA9+VWAP Paper is running — stop it first" };
-      if (ema9vwapMode === "EMA9VWAP_LIVE")  return { allowed: false, reason: "EMA9+VWAP Live is already running" };
-      return { allowed: true };
     case "TREND_PB_PAPER":
-      if (trendPbMode === "TREND_PB_LIVE")  return { allowed: false, reason: "Trend Pullback Live is running — stop it first" };
       if (trendPbMode === "TREND_PB_PAPER") return { allowed: false, reason: "Trend Pullback Paper is already running" };
       return { allowed: true };
-    case "TREND_PB_LIVE":
-      if (trendPbMode === "TREND_PB_PAPER") return { allowed: false, reason: "Trend Pullback Paper is running — stop it first" };
-      if (trendPbMode === "TREND_PB_LIVE")  return { allowed: false, reason: "Trend Pullback Live is already running" };
-      return { allowed: true };
     case "TREND_DAY_SCALP_PAPER":
-      if (trendDayScalpMode === "TREND_DAY_SCALP_LIVE")  return { allowed: false, reason: "Trend Day Scalp Live is running — stop it first" };
       if (trendDayScalpMode === "TREND_DAY_SCALP_PAPER") return { allowed: false, reason: "Trend Day Scalp Paper is already running" };
       return { allowed: true };
-    case "TREND_DAY_SCALP_LIVE":
-      if (trendDayScalpMode === "TREND_DAY_SCALP_PAPER") return { allowed: false, reason: "Trend Day Scalp Paper is running — stop it first" };
-      if (trendDayScalpMode === "TREND_DAY_SCALP_LIVE")  return { allowed: false, reason: "Trend Day Scalp Live is already running" };
-      return { allowed: true };
     case "HA_SCALP_PAPER":
-      if (haScalpMode === "HA_SCALP_LIVE")  return { allowed: false, reason: "HA Scalp Live is running — stop it first" };
       if (haScalpMode === "HA_SCALP_PAPER") return { allowed: false, reason: "HA Scalp Paper is already running" };
       return { allowed: true };
-    case "HA_SCALP_LIVE":
-      if (haScalpMode === "HA_SCALP_PAPER") return { allowed: false, reason: "HA Scalp Paper is running — stop it first" };
-      if (haScalpMode === "HA_SCALP_LIVE")  return { allowed: false, reason: "HA Scalp Live is already running" };
-      return { allowed: true };
     case "PREV_ORB_SCALP_PAPER":
-      if (prevOrbScalpMode === "PREV_ORB_SCALP_LIVE")  return { allowed: false, reason: "Prev ORB Scalp Live is running — stop it first" };
       if (prevOrbScalpMode === "PREV_ORB_SCALP_PAPER") return { allowed: false, reason: "Prev ORB Scalp Paper is already running" };
       return { allowed: true };
-    case "PREV_ORB_SCALP_LIVE":
-      if (prevOrbScalpMode === "PREV_ORB_SCALP_PAPER") return { allowed: false, reason: "Prev ORB Scalp Paper is running — stop it first" };
-      if (prevOrbScalpMode === "PREV_ORB_SCALP_LIVE")  return { allowed: false, reason: "Prev ORB Scalp Live is already running" };
-      return { allowed: true };
     case "EARLY_BIRD_PAPER":
-      if (earlyBirdMode === "EARLY_BIRD_LIVE")  return { allowed: false, reason: "EarlyBird Live is running — stop it first" };
       if (earlyBirdMode === "EARLY_BIRD_PAPER") return { allowed: false, reason: "EarlyBird Paper is already running" };
       return { allowed: true };
-    case "EARLY_BIRD_LIVE":
-      if (earlyBirdMode === "EARLY_BIRD_PAPER") return { allowed: false, reason: "EarlyBird Paper is running — stop it first" };
-      if (earlyBirdMode === "EARLY_BIRD_LIVE")  return { allowed: false, reason: "EarlyBird Live is already running" };
-      return { allowed: true };
     case "RSI_PIVOT_ST_PAPER":
-      if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is running — stop it first" };
       if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is already running" };
-      return { allowed: true };
-    case "RSI_PIVOT_ST_LIVE":
-      if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is running — stop it first" };
-      if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is already running" };
       return { allowed: true };
     // BN_PIVOT_RSI_ST is NIFTY BANK — a different underlying from RSI_PIVOT_ST,
     // so it is checked ONLY against its own sibling. The two strategies are free
     // to run at the same time.
     case "BN_PIVOT_RSI_ST_PAPER":
-      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_LIVE")  return { allowed: false, reason: "BN Pivot RSI ST Live is running — stop it first" };
       if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_PAPER") return { allowed: false, reason: "BN Pivot RSI ST Paper is already running" };
-      return { allowed: true };
-    case "BN_PIVOT_RSI_ST_LIVE":
-      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_PAPER") return { allowed: false, reason: "BN Pivot RSI ST Paper is running — stop it first" };
-      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_LIVE")  return { allowed: false, reason: "BN Pivot RSI ST Live is already running" };
       return { allowed: true };
     // EMA_RSI_ST_V2 is checked ONLY against its own sibling — it is a separate
     // strategy from EMA_RSI_ST (V1), not another mode of it, so V1 and V2 may
     // run at the same time.
     case "EMA_RSI_ST_V2_PAPER":
-      if (emaRsiStV2Mode === "EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "EMA_RSI_ST_V2 Live is running — stop it first" };
       if (emaRsiStV2Mode === "EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "EMA_RSI_ST_V2 Paper is already running" };
-      return { allowed: true };
-    case "EMA_RSI_ST_V2_LIVE":
-      if (emaRsiStV2Mode === "EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "EMA_RSI_ST_V2 Paper is running — stop it first" };
-      if (emaRsiStV2Mode === "EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "EMA_RSI_ST_V2 Live is already running" };
       return { allowed: true };
     // BN_EMA_RSI_ST_V2 is NIFTY BANK — the same engine as EMA_RSI_ST_V2 on a
     // DIFFERENT underlying, so it is checked ONLY against its own sibling. The
     // NIFTY and NIFTY BANK versions are free to run at the same time.
     case "BN_EMA_RSI_ST_V2_PAPER":
-      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Live is running — stop it first" };
       if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Paper is already running" };
-      return { allowed: true };
-    case "BN_EMA_RSI_ST_V2_LIVE":
-      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Paper is running — stop it first" };
-      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Live is already running" };
       return { allowed: true };
     // ST_RSI_PIV_BB is a separate strategy, checked ONLY against its own sibling.
     case "ST_RSI_PIV_BB_PAPER":
-      if (stRsiPivBbMode === "ST_RSI_PIV_BB_LIVE")  return { allowed: false, reason: "ST_RSI_PIV_BB Live is running — stop it first" };
       if (stRsiPivBbMode === "ST_RSI_PIV_BB_PAPER") return { allowed: false, reason: "ST_RSI_PIV_BB Paper is already running" };
-      return { allowed: true };
-    case "ST_RSI_PIV_BB_LIVE":
-      if (stRsiPivBbMode === "ST_RSI_PIV_BB_PAPER") return { allowed: false, reason: "ST_RSI_PIV_BB Paper is running — stop it first" };
-      if (stRsiPivBbMode === "ST_RSI_PIV_BB_LIVE")  return { allowed: false, reason: "ST_RSI_PIV_BB Live is already running" };
       return { allowed: true };
     // SAIL_VWAP_ST is a separate strategy, checked ONLY against its own sibling.
     case "SAIL_VWAP_ST_PAPER":
-      if (sailVwapStMode === "SAIL_VWAP_ST_LIVE")  return { allowed: false, reason: "SAIL_VWAP_ST Live is running — stop it first" };
       if (sailVwapStMode === "SAIL_VWAP_ST_PAPER") return { allowed: false, reason: "SAIL_VWAP_ST Paper is already running" };
-      return { allowed: true };
-    case "SAIL_VWAP_ST_LIVE":
-      if (sailVwapStMode === "SAIL_VWAP_ST_PAPER") return { allowed: false, reason: "SAIL_VWAP_ST Paper is running — stop it first" };
-      if (sailVwapStMode === "SAIL_VWAP_ST_LIVE")  return { allowed: false, reason: "SAIL_VWAP_ST Live is already running" };
       return { allowed: true };
     // PIVOT_EMA_ST family — each checked ONLY against its own sibling.
     case "PIVOT_EMA_ST_PAPER":
-      if (pivotEmaStMode === "PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "PIVOT_EMA_ST Live is running — stop it first" };
       if (pivotEmaStMode === "PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "PIVOT_EMA_ST Paper is already running" };
       return { allowed: true };
-    case "PIVOT_EMA_ST_LIVE":
-      if (pivotEmaStMode === "PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "PIVOT_EMA_ST Paper is running — stop it first" };
-      if (pivotEmaStMode === "PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "PIVOT_EMA_ST Live is already running" };
-      return { allowed: true };
     case "BN_PIVOT_EMA_ST_PAPER":
-      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "BN_PIVOT_EMA_ST Live is running — stop it first" };
       if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "BN_PIVOT_EMA_ST Paper is already running" };
       return { allowed: true };
-    case "BN_PIVOT_EMA_ST_LIVE":
-      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "BN_PIVOT_EMA_ST Paper is running — stop it first" };
-      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "BN_PIVOT_EMA_ST Live is already running" };
-      return { allowed: true };
     case "SAIL_PIVOT_EMA_ST_PAPER":
-      if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Live is running — stop it first" };
       if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Paper is already running" };
-      return { allowed: true };
-    case "SAIL_PIVOT_EMA_ST_LIVE":
-      if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Paper is running — stop it first" };
-      if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Live is already running" };
       return { allowed: true };
     // GAP_RUNAWAY — checked ONLY against its own sibling; the stock scanner is paper-only.
     case "GAP_RUNAWAY_PAPER":
-      if (gapRunawayMode === "GAP_RUNAWAY_LIVE")  return { allowed: false, reason: "GAP_RUNAWAY Live is running — stop it first" };
       if (gapRunawayMode === "GAP_RUNAWAY_PAPER") return { allowed: false, reason: "GAP_RUNAWAY Paper is already running" };
-      return { allowed: true };
-    case "GAP_RUNAWAY_LIVE":
-      if (gapRunawayMode === "GAP_RUNAWAY_PAPER") return { allowed: false, reason: "GAP_RUNAWAY Paper is running — stop it first" };
-      if (gapRunawayMode === "GAP_RUNAWAY_LIVE")  return { allowed: false, reason: "GAP_RUNAWAY Live is already running" };
       return { allowed: true };
     case "GAP_RUNAWAY_STK_PAPER":
       if (gapRunawayStkMode === "GAP_RUNAWAY_STK_PAPER") return { allowed: false, reason: "GAP_RUNAWAY_STK Paper is already running" };
       return { allowed: true };
     case "SIMPLE930_PAPER":
-      if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
-      return { allowed: true };
-    case "SIMPLE930_LIVE":
-      if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is running — stop it first" };
-      if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is already running" };
       return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
@@ -660,7 +550,7 @@ function _canStartRaw(mode) {
 // /start that bails out early simply lets it lapse).
 const START_RESERVATION_MS = 30000;
 const _reservations = new Map();   // slot ("BB_RSI", "EMA_RSI_ST_V2", …) -> expiresAt
-function _slotOf(mode) { return String(mode || "").replace(/_(PAPER|LIVE)$/, ""); }
+function _slotOf(mode) { return String(mode || "").replace(/_PAPER$/, ""); }
 
 /**
  * Can the given mode start? Returns { allowed, reason }.

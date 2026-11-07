@@ -6,7 +6,7 @@
  * read for exactly one thing — the ATM strike the candidate list is built around
  * — and for nothing else. There is no spot-chart rule anywhere in this file.
  *
- * ── THE DAY, IN FOUR EVENTS ─────────────────────────────────────────────────
+ * ── THE DAY, IN THREE EVENTS ─────────────────────────────────────────────────
  *
  *  1. 09:25 SELECTION.  Take the NIFTY spot, round it to the ATM strike, and
  *     quote the ITM ladder on both sides:
@@ -24,47 +24,16 @@
  *     "Above" means strictly greater than the trigger: at exactly ₹180 nothing
  *     has broken yet.
  *
- *  3. STOP + TRAIL.  The stop is a DISTANCE of 20 points from the ACTUAL FILL,
- *     not a fixed price level: filled at 181 → stop 161.
- *
- *     The trail does NOT start there. It stays DISARMED — the flat 20-point
- *     stop is the only risk — until the premium has actually touched the top
- *     of the box (₹220 at the defaults, `bandUp`). Only then does it begin
- *     trailing the highest premium seen by 20 points, ratcheting UP only —
- *     220 → 200, 240 → 220 — never moving down and never falling below the
- *     initial stop.
- *
- *     Why arm it late: a trail that is live from the first tick converts the
- *     20-point stop into a much tighter one the moment the premium ticks up a
- *     rupee or two. A fill at 185.05 that peaked at 191.85 — noise, six points,
- *     nowhere near the box top — trailed its stop up to 171.85 and was closed
- *     for a loss while the real 165.05 stop had never been touched. The trade
- *     was stopped out by its own trail on a move that meant nothing. Arming at
- *     the box top means the trail only ever protects a move the rule itself
- *     calls significant, which is the same ₹220 line the 09:45 box already uses.
- *
- *  4. 09:45 SIDEWAYS EXIT.  If the trade is still open at 09:45 and the premium
- *     has spent those minutes oscillating — never trading at/above ₹220 and
- *     never at/below ₹160 — it is closed at market, profit or loss. A trade
- *     that DID expand past either edge is left alone; the trail now owns it,
- *     all the way to the 15:15 square-off if need be.
- *
- * ── WHY THE BAND IS EXPRESSED AS OFFSETS ────────────────────────────────────
- * The rule quotes ₹220 and ₹160 against a ₹180 trigger. Those are stored as
- * offsets (+40 / −20) rather than absolutes so that changing the trigger moves
- * the whole geometry together instead of silently leaving a band around a level
- * nothing trades near. At the defaults they resolve to exactly 220 and 160.
- *
- * Honest note about the lower edge: with a 20-point stop the trade is already
- * out at fill−20 before the premium can reach trigger−20, so the DOWN edge of
- * the band is unreachable in practice while the stop is armed. It is
- * implemented anyway because it is in the rule, and it becomes live the moment
- * SIMPLE930_SL_PTS is widened past the band offset.
+ *  3. EXIT.  The global profit lock (tradeGuards.checkProfitLock) is the ONLY
+ *     automatic exit, applied to the option premium against its running peak.
+ *     There is no stop, no trail, no target, no sideways exit and no early
+ *     square-off of this strategy's own; anything still open is closed by the
+ *     session teardown (TRADE_STOP_TIME auto-stop, /stop, or the manual exit).
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
  * Every input is an option premium fetched through fyers.getQuotes and recorded
  * to the tick archive by the caller. Replay serves those same recorded quotes
- * back at the replay clock, so Paper, Live-harness and Replay compute identical
+ * back at the replay clock, so Paper and Replay compute identical
  * numbers. Nothing here reads a live spot except calcATMStrike's input, which
  * is sampled ONCE at 09:25 and then frozen into the day's plan.
  *
@@ -93,23 +62,13 @@
  *   getConfig()                              -> live env read (never cached)
  *   buildCandidateStrikes(atm, cfg)          -> the ladder quoted at 09:25
  *   selectWatchlist(quotes, atm, cfg)        -> { ce, pe, candidates, notes }
- *   bandLevels(cfg)                          -> { up, down }
  *   evaluateTrigger(legs, cfg, sustain)      -> { fire, leg, ltp, reason, … }
- *   computeInitialStop(fillLtp, cfg)         -> stop as a DISTANCE off the fill,
- *                                             or null when it would land at/below
- *                                             zero (the caller must then refuse)
- *   computeTrailStop(peak, initialStop, cfg, pos) -> ratcheting trail (armed at bandUp)
- *   isTrailArmed(peak, cfg, pos)             -> has the peak reached the box top?
- *   isExpanded(peak, trough, cfg, pos?)      -> did it leave the 160–220 box?
- *                                             (an open position keeps its own box)
- *   exitCheck(pos, ltp, nowMin, cfg)         -> the ONLY exit decision
  */
 
 const NAME = "SIMPLE_9:30";
 const DESCRIPTION =
   "SIMPLE_9:30 — at 09:25 the ITM strike trading nearest ₹180 is picked on each side; the first of the two to " +
-  "clear ₹180 by 09:35 is bought with a 20-point stop that only starts trailing once the premium touches the " +
-  "top of the 160–220 box, and a trade still boxed inside that range at 09:45 is closed";
+  "clear ₹180 by 09:35 is bought, and the global profit lock is its only automatic exit";
 
 // The NSE NIFTY option ladder is struck every 50 points. Not configurable:
 // a different step would build symbols that do not exist.
@@ -174,12 +133,6 @@ function _intEnv(key, def, min, max) {
   return v;
 }
 
-function _boolEnv(key, def) {
-  const raw = process.env[key];
-  if (raw == null || raw === "") return def;
-  return String(raw).trim().toLowerCase() === "true";
-}
-
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
@@ -194,18 +147,11 @@ function getConfig() {
     // rule is "if it is above 180, take it", not "wait for 09:30".
     entryStartMin:  _parseHHMM(process.env.SIMPLE930_ENTRY_START,    9 * 60 + 25),
     entryEndMin:    _parseHHMM(process.env.SIMPLE930_ENTRY_END,      9 * 60 + 35),
-    sidewaysMin:    _parseHHMM(process.env.SIMPLE930_SIDEWAYS_CHECK, 9 * 60 + 45),
-    forcedExitMin:  _parseHHMM(process.env.SIMPLE930_FORCED_EXIT,   15 * 60 + 15),
 
-    // ── The premium geometry ──
+    // ── The premium level ──
     // ONE number drives both the strike search and the breakout level, because
     // in the rule they are the same ₹180. Two keys could silently disagree.
     triggerPremium: trigger,
-    bandUp:         _r2(trigger + _numEnv("SIMPLE930_BAND_UP_OFFSET",   40, 0, 2000)),
-    // Clamped at 0: a premium cannot trade below zero, so a negative floor is
-    // not a level, it is a number that can never be touched — and it printed as
-    // "₹-10" in the exit reason.
-    bandDown:       _r2(Math.max(0, trigger - _numEnv("SIMPLE930_BAND_DOWN_OFFSET", 20, 0, 2000))),
 
     // ── The ladder quoted at 09:25 ──
     // ITM depth per side. 8 × 50 = 400 points, which covers a ₹180 premium from
@@ -215,17 +161,6 @@ function getConfig() {
     // whole ITM ladder sits far ABOVE ₹180 — that happens on a fresh weekly
     // where even the ATM contract is dearer than the trigger.
     scanOtmStrikes: _intEnv("SIMPLE930_SCAN_OTM_STRIKES", 0, 0, 20),
-
-    // ── Risk ──
-    slPts:          _numEnv("SIMPLE930_SL_PTS",    20, 0.5, 500),
-    trailPts:       _numEnv("SIMPLE930_TRAIL_PTS", 20, 0.5, 500),
-    trailEnabled:   _boolEnv("SIMPLE930_TRAIL_ENABLED", true),
-    // The trail is DISARMED until the premium has touched the top of the box.
-    // Without this the trail tightens the 20-point stop on the first rupee of
-    // noise — see the header. Turn it off to get the old arm-on-entry trail
-    // back; the arming level itself is always `bandUp`, never a separate key,
-    // so it cannot silently disagree with the box the 09:45 exit reads.
-    trailArmAtBandUp: _boolEnv("SIMPLE930_TRAIL_ARM_AT_BAND_UP", true),
 
     // ── Guards that default to OFF (see the header) ──
     maxPremiumDist: _numEnv("SIMPLE930_MAX_PREMIUM_DIST", 0, 0, 5000),
@@ -346,13 +281,6 @@ function selectWatchlist(quotes, atm, cfg) {
   return out;
 }
 
-// ── The band ─────────────────────────────────────────────────────────────────
-/** Absolute rupee edges of the 09:45 sideways box. */
-function bandLevels(cfg) {
-  cfg = cfg || getConfig();
-  return { up: cfg.bandUp, down: cfg.bandDown };
-}
-
 // ── The entry trigger ────────────────────────────────────────────────────────
 /**
  * Has either watchlist leg cleared the trigger?
@@ -405,165 +333,6 @@ function evaluateTrigger(legs, cfg, sustain) {
   };
 }
 
-// ── Stop + trail ─────────────────────────────────────────────────────────────
-/**
- * The initial stop, as a DISTANCE below the ACTUAL FILL — not a fixed level.
- * Filled at 181 → 161. Filled at 186 → 166. Anchoring it to the trigger instead
- * would hand a slipped fill a wider stop than the rule allows.
- * Never returns a negative price: a premium cannot go below zero.
- */
-function computeInitialStop(fillLtp, cfg) {
-  cfg = cfg || getConfig();
-  if (!_px(fillLtp)) return null;
-  const stop = _r2(fillLtp - cfg.slPts);
-  // A stop at or below zero is NOT a stop: `ltp <= 0` can never be true for a
-  // live premium, so the position would ride with its risk switched off and only
-  // the EOD square-off could close it. Returning null makes the caller refuse the
-  // trade — "refuse rather than enter without one". Reachable whenever
-  // SIMPLE930_SL_PTS is set at or above SIMPLE930_TRIGGER_PREMIUM.
-  if (stop <= 0) return null;
-  return stop;
-}
-
-/**
- * Is the trail allowed to move yet?
- *
- * With `trailArmAtBandUp` on (the default) the trail stays disarmed until the
- * premium has traded at or above the top of the box — the same `bandUp` level
- * the 09:45 sideways exit reads, and taken from the POSITION when one is passed
- * so a mid-trade Settings change cannot re-arm or dis-arm a running trade.
- * Touching the level counts, exactly as it does in `isExpanded`.
- */
-function describeTrail(cfg, pos) {
-  cfg = cfg || getConfig();
-  if (!cfg.trailEnabled) return "no trail";
-  const up = pos && _num(pos.bandUp) ? pos.bandUp : cfg.bandUp;
-  const armMode = pos && typeof pos.trailArmAtBandUp === "boolean"
-    ? pos.trailArmAtBandUp : cfg.trailArmAtBandUp;
-  if (!armMode || !_num(up)) return `trailing ${cfg.trailPts}pt from entry`;
-  return `trailing ${cfg.trailPts}pt, armed only once the premium touches ₹${up}`;
-}
-
-function isTrailArmed(peakLtp, cfg, pos) {
-  cfg = cfg || getConfig();
-  // The position's own setting wins while it is running — same reason isExpanded
-  // reads the frozen band: flipping this mid-trade would hand a live trade a
-  // different stop than the one it was opened under.
-  const armMode = pos && typeof pos.trailArmAtBandUp === "boolean"
-    ? pos.trailArmAtBandUp : cfg.trailArmAtBandUp;
-  if (!armMode) return true;
-  const up = pos && _num(pos.bandUp) ? pos.bandUp : cfg.bandUp;
-  if (!_num(up)) return true;
-  return _px(peakLtp) && peakLtp >= up;
-}
-
-/**
- * The trailing stop: `trailPts` under the highest premium seen since entry,
- * ratcheting UP only and never below the initial stop.
- *
- * Returns the initial stop unchanged when the trail is off, when the trail has
- * not ARMED yet (the peak has not reached the top of the box), when the peak is
- * unusable, or whenever the trail has not yet climbed past it — so the caller
- * can assign the result unconditionally.
- */
-function computeTrailStop(peakLtp, initialStop, cfg, pos) {
-  cfg = cfg || getConfig();
-  const floor = _num(initialStop) ? initialStop : null;
-  if (!cfg.trailEnabled || !_px(peakLtp)) return floor;
-  if (!isTrailArmed(peakLtp, cfg, pos)) return floor;
-  const trail = _r2(Math.max(0, peakLtp - cfg.trailPts));
-  if (floor == null) return trail;
-  return trail > floor ? trail : floor;
-}
-
-// ── The 09:45 box ────────────────────────────────────────────────────────────
-/**
- * Did the premium leave the 160–220 box at any point since entry?
- * Touching an edge counts as leaving it — the rule says "not going ABOVE 220 or
- * BELOW 160", and a trade that printed exactly 220 has done what was asked.
- */
-function isExpanded(peak, trough, cfg, pos) {
-  cfg = cfg || getConfig();
-  // A live position carries the box it was OPENED under. Config is read live —
-  // that is what makes a Settings save apply without a restart — but re-pricing
-  // a trade that is already running is a different thing: widening the box at
-  // 09:40 would RE-ARM the 09:45 exit on a trade that had already left it and
-  // close a winner the rule had released. Frozen levels win while a trade is on;
-  // the live config governs the next one.
-  const up   = pos && _num(pos.bandUp)   ? pos.bandUp   : cfg.bandUp;
-  const down = pos && _num(pos.bandDown) ? pos.bandDown : cfg.bandDown;
-  if (_px(peak) && peak >= up) return true;
-  if (_px(trough) && trough <= down) return true;
-  return false;
-}
-
-// ── Exits ────────────────────────────────────────────────────────────────────
-/**
- * The ONLY exit decision in this strategy. Tested in this order on every quote:
- *
- *   1. STOP / TRAIL  — premium at or below the current stop.
- *   2. SIDEWAYS      — 09:45 reached, still boxed inside the band.
- *   3. EOD           — 15:15 square-off.
- *
- * The stop is tested first on purpose: when a single quote is the first
- * evidence of both a stop-out and the 09:45 deadline, the stop is the earlier
- * event in any plausible path between samples, and booking the worse of two
- * possible fills is the only honest reading.
- *
- * `pos` needs { stop, peak, trough, side, symbol, entryMin }. `entryMin` is the
- * IST minute-of-day the position opened; it is optional, and when absent the
- * 09:45 rule behaves exactly as it did before. Every level is checked with
- * Number.isFinite before it is compared — `ltp <= null` is `ltp <= 0`, which
- * would square the trade off on its very first quote.
- *
- * @param {number} nowMin IST minutes-of-day of the observation
- * @returns {{exit:boolean, kind:string, reason:string}|{exit:false}}
- */
-function exitCheck(pos, ltp, nowMin, cfg) {
-  cfg = cfg || getConfig();
-  if (!pos) return { exit: false };
-  if (!_px(ltp)) return { exit: false };
-
-  if (_num(pos.stop) && ltp <= pos.stop) {
-    const trailed = _num(pos.initialStop) && pos.stop > pos.initialStop;
-    return {
-      exit: true,
-      kind: trailed ? "TRAIL" : "STOP",
-      reason: trailed
-        ? `Trailing stop hit — premium ₹${_r2(ltp)} fell to the trail at ₹${_r2(pos.stop)} (peak was ₹${_r2(pos.peak)}, ${cfg.trailPts}pt behind it)`
-        : `Stop hit — premium ₹${_r2(ltp)} fell to the ${cfg.slPts}pt stop at ₹${_r2(pos.stop)}`,
-    };
-  }
-
-  // The box is a wall-clock rule about a trade that has RUN INTO the check.
-  // A position opened at or after the check time was never given those minutes,
-  // and without this guard it would be closed on its very first quote — which
-  // is what happens the moment an operator sets ENTRY_END past SIDEWAYS_CHECK.
-  // Out of the box the windows cannot overlap (09:35 vs 09:45); both are
-  // settable, so the guard is real rather than theoretical.
-  const _openedBeforeCheck = !_num(pos.entryMin) || pos.entryMin < cfg.sidewaysMin;
-  if (_num(nowMin) && nowMin >= cfg.sidewaysMin && _openedBeforeCheck && !isExpanded(pos.peak, pos.trough, cfg, pos)) {
-    const _up   = _num(pos.bandUp)   ? pos.bandUp   : cfg.bandUp;
-    const _down = _num(pos.bandDown) ? pos.bandDown : cfg.bandDown;
-    return {
-      exit: true,
-      kind: "SIDEWAYS",
-      reason: `Sideways exit at ${_fmtMins(cfg.sidewaysMin)} — premium never left ₹${_down}–₹${_up} ` +
-              `(ranged ₹${_r2(pos.trough)}–₹${_r2(pos.peak)}), closing at ₹${_r2(ltp)} whatever the P&L`,
-    };
-  }
-
-  if (_num(nowMin) && nowMin >= cfg.forcedExitMin) {
-    return {
-      exit: true,
-      kind: "EOD",
-      reason: `EOD square-off (${_fmtMins(cfg.forcedExitMin)} IST) — premium ₹${_r2(ltp)}`,
-    };
-  }
-
-  return { exit: false };
-}
-
 /** Is `nowMin` inside the entry window? Both edges inclusive of the start. */
 function inEntryWindow(nowMin, cfg) {
   cfg = cfg || getConfig();
@@ -578,9 +347,7 @@ function describePlan(cfg) {
   cfg = cfg || getConfig();
   return `select @ ${_fmtMins(cfg.selectionMin)} the strike nearest ₹${cfg.triggerPremium} per side · ` +
          `enter the first leg above ₹${cfg.triggerPremium} between ${_fmtMins(cfg.entryStartMin)} and ${_fmtMins(cfg.entryEndMin)} · ` +
-         `SL ${cfg.slPts}pt off the fill, ${describeTrail(cfg)} · ` +
-         `exit at ${_fmtMins(cfg.sidewaysMin)} if still inside ₹${cfg.bandDown}–₹${cfg.bandUp} · ` +
-         `EOD ${_fmtMins(cfg.forcedExitMin)}`;
+         `exit on the global profit lock only`;
 }
 
 module.exports = {
@@ -591,14 +358,7 @@ module.exports = {
   buildCandidateStrikes,
   optionSymbol,
   selectWatchlist,
-  bandLevels,
   evaluateTrigger,
-  computeInitialStop,
-  computeTrailStop,
-  isTrailArmed,
-  describeTrail,
-  isExpanded,
-  exitCheck,
   inEntryWindow,
   describePlan,
   // shared helpers — routes must not re-derive IST arithmetic or number guards

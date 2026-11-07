@@ -9,8 +9,8 @@
  *
  * THE TEST. Hold everything constant except the ONE thing being questioned —
  * the moment of entry. On exactly the same gate-passing days, with the same
- * locked side, the same stop rule, the same 2.5R target, the same exits and the
- * same costs, compare:
+ * locked side, the same exit (the global profit lock, else the session end) and
+ * the same costs, compare:
  *
  *     REAL     — enter where getSignal() says (pullback → reclaim → conviction)
  *     RANDOM   — enter on a randomly chosen eligible bar of the same day
@@ -18,8 +18,7 @@
  * Repeat the random draw many times to build a distribution, then ask where the
  * real strategy falls inside it. If the pullback-and-reclaim rule carries
  * information, REAL should sit in the top tail. If it lands mid-pack, the entry
- * is noise and no stop/target/time-stop tuning will rescue it — the day gate and
- * the risk model would be doing all the work.
+ * is noise — the day gate and the exit would be doing all the work.
  *
  *   node scripts/tdsEdgeTest.js --from 2024-01-01 --to 2026-08-09
  *   node scripts/tdsEdgeTest.js --from 2025-01-01 --to 2025-12-31 --iters 500
@@ -36,6 +35,7 @@ require("dotenv").config();
 
 const path = require("path");
 const tds = require(path.join(__dirname, "../src/strategies/trend_day_scalp"));
+const tradeGuards = require(path.join(__dirname, "../src/utils/tradeGuards"));
 const { fetchCandlesCachedBT } = require(path.join(__dirname, "../src/services/backtestEngine"));
 const { getCharges } = require(path.join(__dirname, "../src/utils/charges"));
 const instrumentConfig = require(path.join(__dirname, "../src/config/instrument"));
@@ -62,54 +62,38 @@ function mulberry32(a) {
 }
 
 // ── The production exit model, run over one day's bars from a given entry ─────
-// Deliberately a copy of trendDayScalpBacktest's ordering (stop before target,
-// gap fills at the open, breakeven arms off the bar extreme but can only be hit
-// on a LATER bar) so REAL and RANDOM are scored by identical rules.
-function simulate(bars, startIdx, side, entrySpot, slPts, cfg, cost) {
+// A copy of trendDayScalpBacktest's exit: the global profit lock on the simulated
+// premium, each bar replayed open → adverse extreme → favourable extreme → close;
+// a trade the lock never closes ends at the day's last bar (paper's
+// TRADE_STOP_TIME session teardown). REAL and RANDOM are scored by these rules.
+function simulate(bars, startIdx, side, entrySpot, cfg, cost, premAt, spotForPrem) {
   const isCE = side === "CE";
-  const dir = isCE ? 1 : -1;
-  let slSpot = entrySpot - dir * slPts;
-  const targetSpot = entrySpot + dir * cfg.targetR * slPts;
-  let beArmed = false;
   const entryTime = bars[startIdx].time;
-  const forcedExitMin = tds._parseHHMM(process.env.TDS_FORCED_EXIT, 15 * 60 + 10);
-
-  // Theta is charged from the ACTUAL exit bar, not the last bar of the day — an
-  // EOD exit at 15:10 must not be billed for the 15:25 bar it never held.
-  const finish = (exitSpot, exitTime, reason) => {
-    const barsHeld = Math.max(0, (exitTime - entryTime) / 60 / cfg.resolutionMins);
-    return { pnl: cost(side, entrySpot, exitSpot, barsHeld), reason, riskPts: slPts };
-  };
+  const RES = cfg.resolutionMins;
+  const entryPrem = premAt(side, entrySpot, entrySpot, 0);
+  let peak = entryPrem;
+  const lock = prem => tradeGuards.checkProfitLock(entryPrem, prem, peak);
+  const held = t => Math.max(0, (t - entryTime) / 60 / RES);
+  const finish = (exitSpot, exitTime, reason) =>
+    ({ pnl: cost(side, entrySpot, exitSpot, held(exitTime)), reason });
 
   for (let i = startIdx + 1; i < bars.length; i++) {
     const c = bars[i];
-    if (MIN(c.time) >= forcedExitMin) return finish(c.open, c.time, "EOD");
-
-    const stopTouched = isCE ? c.low <= slSpot : c.high >= slSpot;
-    const tgtTouched  = isCE ? c.high >= targetSpot : c.low <= targetSpot;
-
-    if (stopTouched) {
-      const fill = isCE ? (c.open < slSpot ? c.open : slSpot) : (c.open > slSpot ? c.open : slSpot);
-      const held = Math.max(0, (c.time - entryTime) / 60 / cfg.resolutionMins);
-      return { pnl: cost(side, entrySpot, fill, held), reason: beArmed ? "BE stop" : "Stop", riskPts: slPts };
+    const barEnd = c.time + RES * 60;
+    const pOpen = premAt(side, entrySpot, c.open, held(c.time));
+    if (pOpen > peak) peak = pOpen;
+    if (lock(pOpen)) return finish(c.open, c.time, "Profit lock");
+    if (lock(premAt(side, entrySpot, isCE ? c.low : c.high, held(barEnd)))) {
+      const lvl = tradeGuards.profitLockFloorLtp(entryPrem, peak, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+      const raw = spotForPrem(side, entrySpot, lvl, held(barEnd));
+      return finish(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), barEnd, "Profit lock");
     }
-    if (tgtTouched) {
-      const fill = isCE ? (c.open > targetSpot ? c.open : targetSpot) : (c.open < targetSpot ? c.open : targetSpot);
-      const held = Math.max(0, (c.time - entryTime) / 60 / cfg.resolutionMins);
-      return { pnl: cost(side, entrySpot, fill, held), reason: "Target", riskPts: slPts };
-    }
-    if (!beArmed) {
-      const fav = isCE ? c.high : c.low;
-      const be = tds.breakevenJump(side, entrySpot, fav, slPts, cfg);
-      if (be.armed && Number.isFinite(be.stop)) { beArmed = true; slSpot = be.stop; }
-    }
-    if (cfg.timeStopMins > 0 && !beArmed && (c.time - entryTime) >= cfg.timeStopMins * 60) {
-      const held = Math.max(0, (c.time - entryTime) / 60 / cfg.resolutionMins);
-      return { pnl: cost(side, entrySpot, c.close, held), reason: "Time stop", riskPts: slPts };
-    }
+    const pFav = premAt(side, entrySpot, isCE ? c.high : c.low, held(c.time));
+    if (pFav > peak) peak = pFav;
+    if (lock(premAt(side, entrySpot, c.close, held(barEnd)))) return finish(c.close, barEnd, "Profit lock");
   }
   const last = bars[bars.length - 1];
-  return finish(last.close, last.time, "EOD (no more bars)");
+  return finish(last.close, last.time + RES * 60, "Session end");
 }
 
 function stats(trades) {
@@ -141,7 +125,16 @@ function stats(trades) {
   const SLIP  = parseFloat(process.env.TDS_BT_SLIPPAGE_PTS || "1.5");
   const barsPerDay = Math.max(1, Math.round(375 / cfg.resolutionMins));
 
-  // Identical premium model for both arms — only the entry bar differs.
+  // Identical premium model for both arms — only the entry bar differs. premAt is
+  // the premium the profit lock watches, as in trendDayScalpBacktest.premiumAt.
+  const premAt = (side, entrySpot, spot, barsHeld) => {
+    const move = side === "CE" ? spot - entrySpot : entrySpot - spot;
+    return Math.max(0.05, parseFloat((SEEDP + move * DELTA - (THETA * barsHeld) / barsPerDay / LOT).toFixed(2)));
+  };
+  const spotForPrem = (side, entrySpot, prem, barsHeld) => {
+    const move = (prem - SEEDP + (THETA * barsHeld) / barsPerDay / LOT) / DELTA;
+    return side === "CE" ? entrySpot + move : entrySpot - move;
+  };
   const cost = (side, entrySpot, exitSpot, barsHeld) => {
     const move = side === "CE" ? exitSpot - entrySpot : entrySpot - exitSpot;
     const theta = (THETA * barsHeld) / barsPerDay;
@@ -152,7 +145,7 @@ function stats(trades) {
   };
 
   console.log(`\nTREND_DAY_SCALP edge test — ${from} → ${to}`);
-  console.log(`config under test: extension ${cfg.extensionMult}× · stop ${cfg.minSlPts}-${cfg.maxSlPts}pt · target ${cfg.targetR}R · time stop ${cfg.timeStopMins}m · BE +${cfg.breakevenR}R`);
+  console.log(`config under test: extension ${cfg.extensionMult}× · pullback depth cap ${cfg.maxSlPts}pt · exit: profit lock (arm +${tradeGuards.PROFIT_LOCK_ARM_PCT}% / floor +${tradeGuards.PROFIT_LOCK_FLOOR_PCT}%) else session end`);
   process.stdout.write("fetching candles… ");
   const raw = await fetchCandlesCachedBT(SYMBOL, String(cfg.resolutionMins), from, to, false, () => {});
   if (!Array.isArray(raw) || raw.length < 500) {
@@ -198,14 +191,14 @@ function stats(trades) {
     for (const p of d.eligible) {
       const sig = tds.getSignal(all.slice(0, d.idxs[p] + 1), { dayGate: d.gate, cfg, silent: true });
       if (sig.signal === "NONE" || !sig.side) continue;
-      realTrades.push(simulate(bars, p, sig.side, sig.entrySpot, sig.slPts, cfg, cost));
+      realTrades.push(simulate(bars, p, sig.side, sig.entrySpot, cfg, cost, premAt, spotForPrem));
       tradedDays.push(d);
       break;   // one trade per day in both arms, so the comparison is like-for-like
     }
   }
   console.log(`the real entry fired on ${tradedDays.length} of those ${days.length} days`);
   // Both arms are capped at ONE trade per day so the comparison isolates timing.
-  // The production backtest allows TDS_MAX_DAILY_TRADES, so the rupee figures below
+  // The production backtest can re-enter after an exit, so the rupee figures below
   // will NOT match /trend-day-scalp-backtest — only the percentile is the result here.
   console.log(`(one trade per day in both arms — these rupees are not comparable to the backtest page, only to each other)\n`);
   if (!tradedDays.length) { console.log("The entry never fires — nothing to compare."); process.exit(0); }
@@ -214,8 +207,9 @@ function stats(trades) {
   // Two things must be matched or the test is rigged. Same DAYS: comparing the
   // real arm's 6 trades against a random arm's 12 would punish the random arm for
   // nothing more than trading twice as often against a negative cost drag. Same
-  // STOP RULE: the pullback extreme of the last N bars, floored and capped, so the
-  // only thing that differs between the arms is the TIMING of the entry.
+  // DEPTH CAP: the engine skips a setup whose pullback is deeper than
+  // TDS_MAX_SL_PTS, so the random arm skips those bars too and the only thing
+  // that differs between the arms is the TIMING of the entry.
   const rand = mulberry32(seed);
   const randomNets = [], randomPfs = [];
   let skipped = 0;
@@ -224,7 +218,7 @@ function stats(trades) {
     for (const d of tradedDays) {
       const bars = d.idxs.map(i => all[i]);
       const side = d.gate.side;
-      // Re-draw when the random bar's structural stop exceeds the cap — the engine
+      // Re-draw when the random bar's pullback depth exceeds the cap — the engine
       // would have skipped it too, and silently dropping the day would leave the
       // arms with different trade counts again.
       let placed = false;
@@ -237,9 +231,7 @@ function stats(trades) {
           ? bar.close - Math.min(...win.map(c => c.low))
           : Math.max(...win.map(c => c.high)) - bar.close;
         if (struct > cfg.maxSlPts) continue;            // same skip rule as the engine
-        const slPts = Math.max(struct, cfg.minSlPts);
-        if (!(slPts > 0)) continue;
-        trades.push(simulate(bars, p, side, bar.close, slPts, cfg, cost));
+        trades.push(simulate(bars, p, side, bar.close, cfg, cost, premAt, spotForPrem));
         placed = true;
       }
       if (!placed) skipped++;
@@ -252,7 +244,7 @@ function stats(trades) {
   if (!randomNets.length) { console.log("No random draw produced a tradeable bar — cannot compare."); process.exit(1); }
   if (skipped) {
     const perDraw = skipped / iters;
-    console.log(`(${perDraw.toFixed(2)} day(s) per draw had no bar inside the ${cfg.maxSlPts}pt stop cap after 40 tries — those days are absent from the random arm)\n`);
+    console.log(`(${perDraw.toFixed(2)} day(s) per draw had no bar inside the ${cfg.maxSlPts}pt depth cap after 40 tries — those days are absent from the random arm)\n`);
   }
 
   // ── Verdict ───────────────────────────────────────────────────────────────
@@ -265,14 +257,14 @@ function stats(trades) {
 
   const pfStr = R.pf === Infinity ? "∞ (no losers)" : R.pf.toFixed(2);
   console.log(`REAL   entries: ${R.n} trades · WR ${R.wr.toFixed(0)}% · PF ${pfStr} · net ₹${R.net.toFixed(0)} · ₹${R.exp.toFixed(0)}/trade`);
-  console.log(`RANDOM entries: ${iters} draws on the SAME days, same stop/target/exits`);
+  console.log(`RANDOM entries: ${iters} draws on the SAME days, same exit`);
   console.log(`   net   p5 ₹${q(randomNets,.05).toFixed(0)}  p25 ₹${q(randomNets,.25).toFixed(0)}  median ₹${q(randomNets,.5).toFixed(0)}  p75 ₹${q(randomNets,.75).toFixed(0)}  p95 ₹${q(randomNets,.95).toFixed(0)}`);
   console.log(`   PF    p5 ${q(randomPfs,.05).toFixed(2)}  median ${q(randomPfs,.5).toFixed(2)}  p95 ${q(randomPfs,.95).toFixed(2)}`);
   console.log(`\n   the real entry beats ${pct.toFixed(0)}% of random entries.\n`);
 
   if (pct >= 95)      console.log("   VERDICT: the entry carries real information. Worth paper trading.");
   else if (pct >= 80) console.log("   VERDICT: suggestive, not proven. More history before risking anything.");
-  else if (pct >= 40) console.log("   VERDICT: the entry is NOISE. It performs like picking a bar at random on\n            the same days — the day gate and the risk model are doing all the\n            work. No stop/target/time-stop tuning will fix this; the entry rule\n            itself has to change or the strategy should be retired.");
+  else if (pct >= 40) console.log("   VERDICT: the entry is NOISE. It performs like picking a bar at random on\n            the same days — the day gate and the exit are doing all the\n            work. No exit tuning will fix this; the entry rule\n            itself has to change or the strategy should be retired.");
   else                console.log("   VERDICT: the entry is WORSE than random. It is actively selecting bad bars —\n            most likely buying exhaustion at the end of a move rather than a\n            continuation. Retire it or invert the premise.");
 
   console.log(`\n(seed ${seed}; re-run with --seed N to confirm the draw is not the story)`);

@@ -17,7 +17,6 @@ const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngi
 const bbRsiStrategy    = require("../strategies/bb_rsi");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const { saveResult }   = require("../utils/resultStore");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
@@ -27,7 +26,6 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards = require("../utils/tradeGuards");
-const commonTradeWindow = require("../utils/commonTradeWindow");
 
 // Signal strength for bb_rsi — delegated to the engine so paper, live and backtest
 // cannot drift apart on it (the comparison inverted with the V8 mean-reversion flip).
@@ -90,9 +88,8 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   // env, and /all-backtest sends a fixed 5 to every panel. Taking the configured value
   // here is silently destructive — confirmCandle.isNextBar tests bar gaps for EXACT
   // equality, so a configured 3 against 5-min bars never matches and the confirmation
-  // candle (on by default) blocks every entry, i.e. a 0-trade run with no error. The
-  // SL pause window has the same units problem, just less visibly. Config is only the
-  // fallback for a run too short to measure.
+  // candle (on by default) blocks every entry, i.e. a 0-trade run with no error. Config
+  // is only the fallback for a run too short to measure.
   // Measured as the SMALLEST gap in the opening stretch, not the first gap alone: the
   // first pair straddles an overnight break whenever the range's first day carries a
   // single candle, and that used to cost only a skewed theta divisor. Now that this
@@ -110,19 +107,30 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   const BB_RSI_RES = _measuredRes || bbRsiStrategy.resolutionMin();
   const CANDLES_PER_DAY = Math.max(1, Math.round(390 / BB_RSI_RES));  // theta, per 6.5-hour day
 
-  // BB_RSI config
-  const BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
-  const BB_RSI_MAX_LOSS      = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
-  const BB_RSI_PAUSE_CANDLES = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
-  const BB_RSI_CONSEC_EXTRA = parseInt(process.env.BB_RSI_CONSEC_SL_EXTRA_PAUSE || "2", 10);
-
   // Slippage simulation (pts added against you on entry & exit)
   // Realistic default (was 0 = frictionless, which overstated edge). 1.5pt each
   // way. Set BB_RSI_SLIPPAGE_PTS=0 to restore the old frictionless fills.
   const SLIPPAGE_PTS = parseFloat(process.env.BB_RSI_SLIPPAGE_PTS || "1.5");
 
-  // Per-side SL pause — when true, an SL on CE only pauses CE entries
-  const BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
+  // ── Profit-lock price model ─────────────────────────────────────────────────
+  // The global profit lock (tradeGuards.checkProfitLock) is the ONLY automatic exit,
+  // as in paper. It runs on the price this engine computes P&L on: the simulated option
+  // premium under OPTION_SIM (₹200 seed + spot move × δ − θ, the same netPremPts the
+  // P&L below uses), otherwise the traded instrument itself (long-equivalent, so a PE
+  // gains as spot falls). `_priceAt` and `_spotFor` are inverses of each other.
+  const SEED_PREMIUM = 200;
+  const _priceBase  = () => OPTION_SIM ? SEED_PREMIUM : position.entryPrice;
+  const _priceSlope = () => OPTION_SIM ? DELTA : 1;
+  const _thetaNow   = () => OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) / LOT_SIZE : 0;
+  const _priceAt = (spot) => {
+    const dir = position.side === "CE" ? 1 : -1;
+    const p = _priceBase() + dir * (spot - position.entryPrice) * _priceSlope() - _thetaNow();
+    return Math.max(0.05, parseFloat(p.toFixed(2)));   // checkProfitLock ignores a non-positive price
+  };
+  const _spotFor = (price) => {
+    const dir = position.side === "CE" ? 1 : -1;
+    return position.entryPrice + dir * (price - _priceBase() + _thetaNow()) / _priceSlope();
+  };
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -171,32 +179,22 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   console.log(`🔍 BB_RSI BACKTEST — ${bbRsiStrategy.NAME}`);
   const _isBreak = bbRsiStrategy.direction() === "breakout";
   console.log(`   Candles: ${candles.length} | ${_isBreak ? "BB BREAK + RSI extreme entry (momentum)" : "BB fade + RSI extreme entry (mean reversion)"}`);
-  console.log(`   MaxTrades: ${BB_RSI_MAX_TRADES}/day | MaxLoss: ₹${BB_RSI_MAX_LOSS}/day`);
-  console.log(`   Exit: hard stop + profit lock${_isBreak ? "" : " + BB middle target"} + 2-opposite-candle SL/trail | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Exit: global profit lock (${tradeGuards.PROFIT_LOCK_ENABLED ? "on" : "OFF"}) + session close | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
   const window = candles.slice(0, 30);
-  let _slPauseUntilTs = 0;       // legacy combined; tracked for log lines
-  let _consecSLs = 0;             // legacy combined
-  // Per-side cooldown state
-  const _slPauseUntilBySide = { CE: 0, PE: 0 };
-  const _consecSLsBySide    = { CE: 0, PE: 0 };
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
-  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
-  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  // Paper measures it from the exit's clock time: a tick exit (the profit lock)
+  // fires INSIDE the bar (≈ bar open here), the session close at the bar's CLOSE.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(BB_RSI_RES) / 1000;
   let _reentryBlockUntilTs = 0;
-  let _dailyTradeCount = 0;
-  let _dailyPnl = 0;
+  let _dailyTradeCount = 0;   // first-rejection-per-day debug log only
   let _prevDate = null;
   let _loggedReason = null;
   const _rejectCounts = {};
   const _btStartMin = (() => { const v = process.env.BB_RSI_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
   const _btEndMin   = (() => { const v = process.env.BB_RSI_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
-  // EOD square-off = TRADE_STOP_TIME − 10, mirroring bbRsiPaper (_STOP_MINS − 10) so a
-  // Settings change to TRADE_STOP_TIME moves the backtest exit too (was hardcoded 3:20).
-  const _eodMin     = commonTradeWindow.exitCap((() => { const v = process.env.TRADE_STOP_TIME   || "15:30"; const p = v.split(":"); return parseInt(p[0],10)*60+(parseInt(p[1],10)||0) - 10; })());
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
@@ -215,11 +213,6 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     // New day reset
     if (_prevDate && candleDate !== _prevDate) {
       _dailyTradeCount = 0;
-      _dailyPnl = 0;
-      _slPauseUntilTs = 0;
-      _consecSLs = 0;
-      _slPauseUntilBySide.CE = 0; _slPauseUntilBySide.PE = 0;
-      _consecSLsBySide.CE    = 0; _consecSLsBySide.PE    = 0;
       _reentryBlockUntilTs   = 0;
       _armed = null; // drop any arm across the day boundary
     }
@@ -228,7 +221,8 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     window.push(candle);
     if (window.length > 100) window.shift();
 
-    const isEOD = candleMin >= _eodMin; // TRADE_STOP_TIME − 10 (mirrors bbRsiPaper EOD square-off)
+    // Last bar of this day's session in the data → paper's session teardown.
+    const isSessionEnd = i === candles.length - 1 || getISTDateStr(candles[i + 1].time) !== candleDate;
 
     // Get prev day OHLC (reference)
     const dateIdx = _dateIdx[candleDate] ?? -1;
@@ -255,7 +249,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         return pts - _estCharges / LOT_SIZE;
       };
 
-      // ── Track peak PNL (record-keeping) + peak favourable spot points (profit lock) ──
+      // ── Track peak PNL + peak favourable spot points (record-keeping only) ──
       const bestSpot = position.side === "CE" ? candle.high : candle.low;
       const bestPnl  = _runPnl(bestSpot);
       if (!position.peakPnl || bestPnl > position.peakPnl) {
@@ -264,83 +258,39 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       const _favPeakPts = (bestSpot - position.entryPrice) * (position.side === "CE" ? 1 : -1);
       if (!position.mfeSpotPts || _favPeakPts > position.mfeSpotPts) position.mfeSpotPts = _favPeakPts;
 
-      // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. Hard stop  2. Profit lock  3. Middle-band target
-      //       4. Two-opposite-candle stop/trail  5. EOD
-      // Paper evaluates the target FIRST (per tick, before the hard stop); this loop
-      // deliberately puts the protective stops first because a single bar carries no
-      // tick order — when a bar's range spans both the stop and the mean, assuming the
-      // stop hit first is the conservative read, and a backtest that guessed the
-      // profitable way round would flatter the strategy. Same trade-off the pre-V8
-      // loop made with its band-touch exit.
-      // ──────────────────────────────────────────────────────────────────────
-
-      const _favClosePts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-
-      // 1. HARD STOP — catastrophic loss cap. Uses the bar's adverse extreme
-      //    (CE→low, PE→high) as a per-bar proxy for the per-tick paper logic; exits
-      //    at the stop level. Reason includes "SL" so it arms the per-side cooldown.
-      const _worstSpot   = position.side === "CE" ? candle.low : candle.high;
-      const _favWorstPts = (_worstSpot - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-      const _hs = bbRsiStrategy.hardStop(_favWorstPts);
-      if (_hs.hit) {
-        position.slSource = "Stop Loss";
-        const _stopLvl = parseFloat((position.entryPrice - _hs.stop * (position.side === "CE" ? 1 : -1)).toFixed(2));
-        // Gap-through: if the bar OPENED beyond the stop, the real fill is at the
-        // open (worse), not the stop level — don't understate loss on gap bars.
-        const _openBeyond = position.side === "CE" ? (candle.open < _stopLvl) : (candle.open > _stopLvl);
-        exitPrice  = _openBeyond ? candle.open : _stopLvl;
-        exitReason = `SL (${_hs.stop}pts)`;
-      }
-
-      // 2. PROFIT LOCK — the upside exit. Once peak favourable spot move ≥
-      //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
-      //    Evaluated at candle close (per-bar proxy for the per-tick paper logic).
-      if (!exitReason) {
-        const _lock = bbRsiStrategy.profitLock(_favClosePts, position.mfeSpotPts);
-        if (_lock.hit) {
-          position.slSource = "Profit Lock";
-          exitPrice  = candle.close;
-          exitReason = "Profit lock";
-        }
-      }
-
-      // 3. MIDDLE-BAND TARGET — the objective of the fade (the engine returns no hit
-      //    at all under BB_RSI_DIRECTION=breakout). The per-tick paper logic
-      //    exits the instant spot reaches the mean, so use the bar's FAVOURABLE extreme
-      //    (CE→high, PE→low) against the band fixed at the bar's start (prior completed
-      //    candles) and exit AT the middle line — the per-bar proxy for the per-tick
-      //    check (cf. the hard stop above, which likewise exits at its level).
-      if (!exitReason) {
-        const _bb = bbRsiStrategy.bbLevels(window.slice(0, -1));
-        if (_bb) {
-          const _favExtreme = position.side === "CE" ? candle.high : candle.low;
-          const _tgt = bbRsiStrategy.middleBandTarget(_bb.middle, position.side, _favExtreme);
-          if (_tgt.hit) {
-            exitPrice  = _tgt.level;
-            exitReason = `BB middle target (${_tgt.level})`;
+      // ── EXIT: global profit lock (intrabar) ──
+      // Path model inside one bar: open → adverse extreme → favourable extreme. The
+      // lock's peak only rises at the open and at the favourable extreme, so it can arm
+      // on an earlier bar and fire on a later give-back, never arm and fire on the same
+      // unknown-order high/low pair.
+      {
+        const isCE = position.side === "CE";
+        const pOpen = _priceAt(candle.open);
+        if (pOpen > position.peak) position.peak = pOpen;
+        const lockOpen = tradeGuards.checkProfitLock(_priceBase(), pOpen, position.peak);
+        if (lockOpen) {
+          exitPrice  = candle.open;
+          exitReason = `${lockOpen} (bar opened through it — filled at the open)`;
+        } else {
+          const pAdv = _priceAt(isCE ? candle.low : candle.high);
+          const lockAdv = tradeGuards.checkProfitLock(_priceBase(), pAdv, position.peak);
+          if (lockAdv) {
+            const g = tradeGuards;
+            const floor = g.profitLockFloorLtp(_priceBase(), position.peak, g.PROFIT_LOCK_FLOOR_PCT, g.PROFIT_LOCK_TRAIL_PCT, g.PROFIT_LOCK_TRAIL_TIERS);
+            const raw = _spotFor(floor);
+            // Never better than the open (the open did not trigger, so the level lies past it).
+            exitPrice  = parseFloat((isCE ? Math.min(candle.open, raw) : Math.max(candle.open, raw)).toFixed(2));
+            exitReason = lockAdv;
+          } else {
+            const pFav = _priceAt(isCE ? candle.high : candle.low);
+            if (pFav > position.peak) position.peak = pFav;
           }
         }
       }
 
-      // 4. TWO-OPPOSITE-CANDLE stop / trail — paper's only candle-close exit. Before
-      //    the trade has run BB_RSI_TRAIL_ARM_PTS in favour this is the initial stop;
-      //    after, the trail takes over with its own count. Exits at the bar close, as
-      //    paper does. The stop's reason contains "SL" so it arms the per-side cooldown
-      //    below; the trail's deliberately does not.
-      if (!exitReason) {
-        const _opp = bbRsiStrategy.oppositeCandleExit(window, position.side, position.mfeSpotPts || 0, position.candlesHeld || 0);
-        if (_opp.hit) {
-          position.slSource = _opp.armed ? "Opposite-candle trail" : "Opposite-candle SL";
-          exitPrice  = candle.close;
-          exitReason = _opp.reason;
-          _exitAtClose = true;
-        }
-      }
-
-      // 5. EOD
-      if (!exitReason && isEOD) {
-        exitReason = "EOD square-off";
+      // Session teardown: paper closes anything still open when the engine stops.
+      if (!exitReason && isSessionEnd) {
+        exitReason = "EOD session close";
         _exitAtClose = true;
       }
 
@@ -371,9 +321,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           exitTime:     toIST(candle.time),
           entryTs:      position.entryTs,
           exitTs:       candle.time,
-          stopLoss:     position.stopLoss,
-          initialStopLoss: position.initialStopLoss,
-          target:       position.target != null ? position.target : null,
+          peakPrice:    position.peak != null ? parseFloat(position.peak.toFixed(2)) : null,
           pnl,
           spotPnlPts:   parseFloat(spotPnlPts.toFixed(2)),
           candlesHeld:  position.candlesHeld,
@@ -382,37 +330,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           pnlMode:      OPTION_SIM ? "option sim" : "raw pts",
         });
 
-        _dailyPnl += pnl;
         _dailyTradeCount++;
-        if (exitReason.includes("SL")) {
-          if (BB_RSI_PER_SIDE_PAUSE) {
-            _consecSLsBySide[position.side] += 1;
-          } else {
-            _consecSLsBySide.CE += 1;
-            _consecSLsBySide.PE += 1;
-          }
-          const _streak = BB_RSI_PER_SIDE_PAUSE ? _consecSLsBySide[position.side] : Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
-          const pauseCandles = _streak >= 2
-            ? BB_RSI_PAUSE_CANDLES + BB_RSI_CONSEC_EXTRA * (_streak - 1)
-            : BB_RSI_PAUSE_CANDLES;
-          const _untilTs = candle.time + (pauseCandles * BB_RSI_RES * 60);
-          if (BB_RSI_PER_SIDE_PAUSE) {
-            _slPauseUntilBySide[position.side] = _untilTs;
-          } else {
-            _slPauseUntilBySide.CE = _untilTs;
-            _slPauseUntilBySide.PE = _untilTs;
-          }
-          _slPauseUntilTs = Math.max(_slPauseUntilBySide.CE, _slPauseUntilBySide.PE);
-          _consecSLs     = Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
-        } else if (pnl > 0) {
-          if (BB_RSI_PER_SIDE_PAUSE) {
-            _consecSLsBySide[position.side] = 0;
-          } else {
-            _consecSLsBySide.CE = 0;
-            _consecSLsBySide.PE = 0;
-          }
-          _consecSLs = Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
-        }
         // Wait-after-any-exit cooldown — every exit reason, both sides.
         if (_REENTRY_COOLDOWN_SECS > 0) {
           _reentryBlockUntilTs = candle.time + (_exitAtClose ? BB_RSI_RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
@@ -423,13 +341,10 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     }
 
     // ── ENTRY LOGIC ─────────────────────────────────────────────────────────
-    if (isEOD) continue;
+    // No entry on the session's last bar — paper's session is closing.
+    if (isSessionEnd) continue;
     // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
     if (expiryDates && !expiryDates.has(candleDate)) continue;
-    if (_dailyTradeCount >= BB_RSI_MAX_TRADES) continue;
-    if (_dailyPnl <= -BB_RSI_MAX_LOSS) continue;
-    // Both-sides-paused fast path (entry-side specific check happens after signal returns)
-    if (candle.time < _slPauseUntilBySide.CE && candle.time < _slPauseUntilBySide.PE) continue;
 
     const _confirmBbRsi = confirmCandle.enabled("BB_RSI");
     // Paper rejects in simulateBuy, so arming still happens; only the fill is blocked.
@@ -443,7 +358,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       const _a = _armed;
       _armed = null; // armed signal is good for exactly one candle — consume it
       if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, BB_RSI_RES)
-          && candle.time >= _slPauseUntilBySide[_a.side] && !_reentryBlocked) {
+          && !_reentryBlocked) {
         // Two confirmation modes (must match paper):
         //  • ON_CLOSE ON  → confirm at this candle's CLOSE: it must have closed beyond
         //    the signal close; entry at the close.
@@ -461,23 +376,15 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         if (_fill != null) {
           const side = _a.side;
           const entryPrice = parseFloat((_fill + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
-          const sl = _a.result.stopLoss;
-          const _initRiskBT = OPTION_SIM
-            ? Math.abs(entryPrice - sl) * DELTA * LOT_SIZE
-            : Math.abs(entryPrice - sl) * LOT_SIZE;
           position = {
             side,
             entryPrice,
             entryTs:         candle.time,
-            stopLoss:        sl,
-            initialStopLoss: sl,
-            slSource:        _a.result.slSource || "Signal candle",
             entryReason:     `${_a.result.reason || side + " signal"} | ${_confTag}`,
-            target:          _a.result.target != null ? _a.result.target : null,
             candlesHeld:     0,
             peakPnl:         0,
-            initialRiskRupees: _initRiskBT,
           };
+          position.peak = _priceBase();   // profit-lock peak, starts at entry
           continue;
         }
       }
@@ -518,8 +425,6 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     // candle close and enters immediately at bar.close (bbRsiPaper.onCandleClose).
     // (Previously queued for the next candle's open, which shifted every trade by one bar.)
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
-    // Per-side SL cooldown — block only if THIS side has an active pause
-    if (candle.time < _slPauseUntilBySide[side]) continue;
 
     // ── Confirmation candle ON: arm the signal — entry fires on the NEXT candle's
     //    cross (handled above), never on the signal candle itself. ──
@@ -531,25 +436,15 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (_reentryBlocked) continue;
 
     const entryPrice = parseFloat((candle.close + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
-    // Initial SL line = the signal candle's own extreme (recorded for sizing only).
-    const sl = result.stopLoss;
-    // Initial rupee risk (recorded for analysis; no longer drives exits).
-    const _initRiskBT = OPTION_SIM
-      ? Math.abs(entryPrice - sl) * DELTA * LOT_SIZE
-      : Math.abs(entryPrice - sl) * LOT_SIZE;
     position = {
       side,
       entryPrice,
       entryTs:         candle.time,
-      stopLoss:        sl,
-      initialStopLoss: sl,
-      slSource:        result.slSource || "Signal candle",
       entryReason:     result.reason || `${side} signal`,
-      target:          result.target != null ? result.target : null,
       candlesHeld:     0,
       peakPnl:         0,
-      initialRiskRupees: _initRiskBT,
     };
+    position.peak = _priceBase();   // profit-lock peak, starts at entry
   }
 
   // Summary
@@ -660,7 +555,6 @@ router.get("/idle", (req, res) => {
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
@@ -672,38 +566,6 @@ router.get("/", async (req, res) => {
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";
-
-  if (liveActive) {
-    res.setHeader("Content-Type", "text/html");
-    return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-      <meta name="viewport" content="width=device-width,initial-scale=1"/>
-      <title>BB_RSI Backtest blocked — Live trade active</title>
-      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
-      ${sidebarCSS()}
-      ${modalCSS()}
-      </style>
-      </head><body>
-<div class="app-shell">
-${buildSidebar('bbRsiBacktest', true)}
-<div class="main-content">
-      <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
-        <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
-          <div style="font-size:2.5rem;margin-bottom:16px;">🔒</div>
-          <h2 style="color:#ef4444;margin-bottom:12px;font-size:1.1rem;">BB_RSI Backtest blocked</h2>
-          <p style="font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;">
-            Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
-            Stop the live trade first, then run your backtest.
-          </p>
-          <a href="/ema_rsi_st-live/status" style="background:#dc2626;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
-        </div>
-      </div>
-      </div></div>
-<script>
-${modalJS()}
-${clearCacheJS()}
-</script>
-</body></html>`);
-  }
 
   if (!process.env.ACCESS_TOKEN) {
     return res.status(401).send(errorPage("Not Authenticated", "Login with Fyers first."));
@@ -923,7 +785,7 @@ ${clearCacheJS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('bbRsiBacktest', liveActive)}
+${buildSidebar('bbRsiBacktest', false)}
 <div class="main-content">
 
 <div class="page">
@@ -1744,10 +1606,7 @@ function renderAnalytics(){
     var r = t.reason;
     // Normalize V8 exit reasons.
     if(r.indexOf('Profit lock')===0) r='Profit lock';
-    else if(r.indexOf('SL')===0) r='Stop loss';
-    else if(r.indexOf('Trail')===0) r='Trail (opposite candles)';
-    else if(r.indexOf('BB middle target')===0) r='BB middle target';
-    else if(r.indexOf('EOD')===0) r='EOD square-off';
+    else if(r.indexOf('EOD')===0) r='EOD session close';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
     reasonMap[r].cnt++;
     reasonMap[r].pnl+=(t.pnl||0);
@@ -2076,10 +1935,7 @@ function renderAnalytics(){
     lossTrades.forEach(function(t){
       var r=t.reason;
       if(r.indexOf('Profit lock')===0) r='Profit lock';
-      else if(r.indexOf('SL')===0) r='Stop loss';
-      else if(r.indexOf('Trail')===0) r='Trail (opposite candles)';
-      else if(r.indexOf('BB middle target')===0) r='BB middle target';
-      else if(r.indexOf('EOD')===0) r='EOD square-off';
+      else if(r.indexOf('EOD')===0) r='EOD session close';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
       lrMap[r].cnt++;
       lrMap[r].pnl+=t.pnl;

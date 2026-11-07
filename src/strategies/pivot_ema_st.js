@@ -1,7 +1,7 @@
 /**
  * STRATEGY: PIVOT_EMA_ST  (created 2026-10-24)
  * ═════════════════════════════════════════════════════════════════════════════
- * EMA 20/50 crossover INSIDE the Pivot→R1 (or Pivot→S1) zone, SuperTrend-stopped.
+ * EMA 20/50 crossover INSIDE the Pivot→R1 (or Pivot→S1) zone, SuperTrend-confirmed.
  * Option BUYING · intraday · Fyers data, Zerodha orders · 1 lot.
  * One rule set, four instruments — each with its own env prefix:
  *   PIVOT_EMA_ST       NIFTY 50          (NSE:NIFTY50-INDEX)
@@ -27,35 +27,28 @@
  *             A cross on an earlier candle does not count (the user's choice:
  *             "on the entry candle", not "within the last N candles").
  *   3. ST:    SuperTrend is GREEN on this candle (line below the close).
- *             That SuperTrend value is the initial stop.
  * ── ENTRY — BUY_PE, the exact mirror ─────────────────────────────────────────
  *   1. S1 < close < PP   2. EMA20 crosses BELOW EMA50 on this candle, the
  *      cross level inside S1–PP
- *   3. SuperTrend RED (line above the close) — initial stop.
+ *   3. SuperTrend RED (line above the close).
  *   A close above R1 or below S1 never enters (outside the zones). A close
  *   exactly on PP / R1 / S1 is not inside the zone.
  *   Example (CE): PP 22,860, R1 23,071; the 10:33 3-min candle closes 22,900;
  *   EMA20 22,881 > EMA50 22,879 after 22,876 ≤ 22,878 on the bar before
  *   (cross level 22,880 — inside PP–R1);
- *   SuperTrend green at 22,840 → BUY the ATM CE, stop = 22,840.
+ *   SuperTrend green at 22,840 → BUY the ATM CE.
  *   Paper/Live fill at the first tick after the signal candle closes.
  *
- * ── EXIT — SuperTrend trailing stop, on CANDLE CLOSE only (user, 2026-10-24) ─
- *   Initial stop = SuperTrend on the signal candle. At every later close:
- *     CE exits when SuperTrend flips RED, or the close is below the trailed
- *        stop.  PE: flips GREEN, or the close is above the stop.
- *     Otherwise the stop trails to that candle's SuperTrend, tighten-only.
- *   A wick through the line that closes back inside does NOT exit.
- *   Plus the repo's common rules, owned by the routes, not here: profit lock,
- *   breakeven, wait-after-exit, bid-ask spread, the common trade window
- *   (entries 10:00–14:00, square-off 15:00), max trades/day, daily loss cap.
+ * ── EXIT — none here. The NSE paper routes exit ONLY through the repo-wide
+ *   profit lock (tradeGuards.checkProfitLock, per tick on the option premium),
+ *   plus manual exit and the global session teardown. The routes also own
+ *   wait-after-exit, bid-ask spread and the entry window (10:00–14:00).
  *
  * ── TIMEFRAME — {PREFIX}_TF = 3 | 5 | 15 (default 3, matches the user's chart)
  *
  * ── DELIBERATELY NOT HERE (do not "helpfully" add these) ────────────────────
  *   No RSI, no VIX gate, no OI filter, no ADX, no volume, no VWAP, no ATR
- *   sizing, no confirmation candle, no fixed target, no premium stop of its
- *   own, no tick-level stop, no R2/S2 logic, no "cross within N candles".
+ *   sizing, no confirmation candle, no R2/S2 logic, no "cross within N candles".
  *   No Backtest and no Replay page (the user's choice, 2026-10-24).
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
@@ -71,9 +64,7 @@
  *   computePivots(daily, { forDayKey })  -> { pp, r1, s1, r2, s2, forDayKey, ... }
  *   computeSeries(candles, cfg)          -> { emaFast, emaSlow, supertrend } 1:1
  *   checkBar(idx, candles, series, pivots, cfg) -> the 3-box checklist, CE and PE
- *   getSignal(candles, opts)             -> { signal, reason, stopLoss, checks, ... }
- *   exitCheck(side, bar, stBar, stop)    -> { exit, reason } — the ONLY exit test
- *   trailStop(candles, side, stop, cfg, pre) -> { stop, changed, tag } tighten-only
+ *   getSignal(candles, opts)             -> { signal, reason, checks, ... }
  */
 
 const { EMA } = require("technicalindicators");
@@ -84,7 +75,7 @@ const DEFAULT_PREFIX = "PIVOT_EMA_ST";
 const PREFIXES = ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST"];
 const DESCRIPTION =
   "PIVOT_EMA_ST — EMA 20/50 crossover inside the Pivot→R1 (CE) or Pivot→S1 (PE) zone with SuperTrend(10,3) " +
-  "agreeing, on one closed candle · SuperTrend trailing stop on candle close · Zerodha";
+  "agreeing, on one closed candle · profit-lock exit · Zerodha";
 
 const TFS = [3, 5, 15];
 
@@ -155,11 +146,6 @@ function getConfig(prefix) {
 
     ENTRY_START:  _parseHHMM(process.env[P + "_ENTRY_START"], 10 * 60),
     ENTRY_END:    _parseHHMM(process.env[P + "_ENTRY_END"], 14 * 60),
-    EOD_EXIT:     _parseHHMM(process.env[P + "_EOD_EXIT_TIME"], 15 * 60),
-
-    // Session guards. Route-level, but read here so one config describes the mode.
-    MAX_DAILY_TRADES: _intEnv(P + "_MAX_DAILY_TRADES", 3, 1, 50),
-    MAX_DAILY_LOSS:   _numEnv(P + "_MAX_DAILY_LOSS", 5000, 0),
   };
 }
 
@@ -191,12 +177,6 @@ function isInTradingWindow(barTimeSec, cfg) {
   if (closeMin < cfg.ENTRY_START) return { ok: false, reason: `Before ${_fmtMins(cfg.ENTRY_START)} — outside the entry window` };
   if (closeMin > cfg.ENTRY_END)   return { ok: false, reason: `After ${_fmtMins(cfg.ENTRY_END)} — no new entries` };
   return { ok: true, reason: null };
-}
-
-/** True when the given IST minute is at/after the forced square-off. */
-function isEodExit(unixSec, cfg) {
-  cfg = cfg || getConfig();
-  return _istMins(unixSec) >= cfg.EOD_EXIT;
 }
 
 // ── Traditional (floor) pivots ───────────────────────────────────────────────
@@ -330,7 +310,7 @@ function _missing(side, chk, cfg) {
   return m.join(", ");
 }
 
-const _NO = { stopLoss: null, slSpot: null, entrySpot: null, prevCandleHigh: null, prevCandleLow: null };
+const _NO = { entrySpot: null, prevCandleHigh: null, prevCandleLow: null };
 
 /**
  * getSignal(candles, opts)
@@ -345,7 +325,7 @@ const _NO = { stopLoss: null, slSpot: null, entrySpot: null, prevCandleHigh: nul
  *                        on candles.slice(0, endIdx+1).
  *   opts.skipTimeCheck — the caller applies its own entry window (commodity), or
  *                        an exit-time indicator snapshot. Never the NSE entry path.
- * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup, stopLoss, slSpot,
+ * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup,
  *           entrySpot, checks, emaFast, emaSlow, supertrend, stTrend, pp, r1, s1, ... }.
  */
 function getSignal(candles, opts) {
@@ -403,7 +383,7 @@ function getSignal(candles, opts) {
     zone: chk.zone, crossLevel: chk.crossLevel,
     checks: chk, tf: cfg.TF,
     prevCandleHigh: prev.high, prevCandleLow: prev.low,
-    entrySpot: bar.close, stopLoss: null, slSpot: null,
+    entrySpot: bar.close,
     signalStrength: "STRONG",
   };
   if (!chk.ready) {
@@ -428,62 +408,16 @@ function getSignal(candles, opts) {
   }
 
   // A green SuperTrend sits below the close by construction; refuse anyway if it
-  // does not, rather than open a trade whose stop is already through the entry.
+  // does not (a SuperTrend on the wrong side of the close is not "agreeing").
   const stv = chk.supertrend;
   if ((side === "CE" && !(stv < bar.close)) || (side === "PE" && !(stv > bar.close))) {
-    return Object.assign({}, base, { signal: "NONE", skipReason: "st_wrong_side", reason: `${side} 3/3 but SuperTrend ${stv} is not beyond the close ${bar.close} — no stop, no trade` });
+    return Object.assign({}, base, { signal: "NONE", skipReason: "st_wrong_side", reason: `${side} 3/3 but SuperTrend ${stv} is not beyond the close ${bar.close} — no trade` });
   }
-  const sl = stv;
   const reason = side === "CE"
-    ? `CE ${tag} 3/3: C ${bar.close} in PP ${pivots.pp}–R1 ${pivots.r1} | EMA${cfg.EMA_FAST} ${chk.emaFast} crossed above EMA${cfg.EMA_SLOW} ${chk.emaSlow} at ${chk.crossLevel} (in zone) | ST green | SL=ST ${sl}`
-    : `PE ${tag} 3/3: C ${bar.close} in S1 ${pivots.s1}–PP ${pivots.pp} | EMA${cfg.EMA_FAST} ${chk.emaFast} crossed below EMA${cfg.EMA_SLOW} ${chk.emaSlow} at ${chk.crossLevel} (in zone) | ST red | SL=ST ${sl}`;
+    ? `CE ${tag} 3/3: C ${bar.close} in PP ${pivots.pp}–R1 ${pivots.r1} | EMA${cfg.EMA_FAST} ${chk.emaFast} crossed above EMA${cfg.EMA_SLOW} ${chk.emaSlow} at ${chk.crossLevel} (in zone) | ST green ${stv}`
+    : `PE ${tag} 3/3: C ${bar.close} in S1 ${pivots.s1}–PP ${pivots.pp} | EMA${cfg.EMA_FAST} ${chk.emaFast} crossed below EMA${cfg.EMA_SLOW} ${chk.emaSlow} at ${chk.crossLevel} (in zone) | ST red ${stv}`;
   if (!o.silent) console.log(`[${cfg.PREFIX}] 🟢 ${side === "CE" ? "BUY_CE" : "BUY_PE"} — ${reason}`);
-  return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", stopLoss: sl, slSpot: sl, reason });
-}
-
-/**
- * The ONLY exit test, run on each CLOSED candle while a position is open.
- * `stBar` is that candle's SuperTrend { value, trend }, `stop` the trail in
- * force BEFORE this candle.
- */
-function exitCheck(side, bar, stBar, stop) {
-  if (!_okBar(bar)) return { exit: false, reason: null };
-  const c = bar.close;
-  const trend = stBar && (stBar.trend === 1 || stBar.trend === -1) ? stBar.trend : null;
-  if (side === "CE") {
-    if (trend === -1) return { exit: true, reason: `SuperTrend flipped red — close ${c}` };
-    if (_num(stop) && c < stop) return { exit: true, reason: `Close ${c} below SuperTrend stop ${stop}` };
-  } else if (side === "PE") {
-    if (trend === 1) return { exit: true, reason: `SuperTrend flipped green — close ${c}` };
-    if (_num(stop) && c > stop) return { exit: true, reason: `Close ${c} above SuperTrend stop ${stop}` };
-  }
-  return { exit: false, reason: null };
-}
-
-/**
- * Trail the stop to the last closed candle's SuperTrend, tighten-only. A
- * SuperTrend on the wrong side of the close, or in the opposite trend, leaves
- * the stop where it was (exitCheck handles the flip).
- * `precomputed` — TESTS / OFFLINE ONLY: { supertrend, endIdx } over the whole array.
- */
-function trailStop(candles, side, currentStop, cfg, precomputed) {
-  cfg = cfg || getConfig();
-  const unchanged = { stop: currentStop, changed: false, tag: null };
-  const pre = precomputed || null;
-  const nBars = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
-  if (nBars < cfg.ST_PERIOD + 2) return unchanged;
-  const bar = candles[nBars - 1];
-  const st = pre ? pre.supertrend : computeSuperTrend(candles, cfg.ST_PERIOD, cfg.ST_MULT);
-  const cur = st[nBars - 1];
-  if (!_okBar(bar) || !cur || !_num(cur.value)) return unchanged;
-  const lvl = _r2(cur.value);
-  if (side === "CE" && cur.trend === 1 && lvl < bar.close && (!_num(currentStop) || lvl > currentStop)) {
-    return { stop: lvl, changed: true, tag: "SuperTrend" };
-  }
-  if (side === "PE" && cur.trend === -1 && lvl > bar.close && (!_num(currentStop) || lvl < currentStop)) {
-    return { stop: lvl, changed: true, tag: "SuperTrend" };
-  }
-  return unchanged;
+  return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", reason });
 }
 
 module.exports = {
@@ -497,13 +431,10 @@ module.exports = {
   warmupBars,
   warmupDays,
   isInTradingWindow,
-  isEodExit,
   computePivots,
   computeSeries,
   checkBar,
   getSignal,
-  exitCheck,
-  trailStop,
   _istDayOf,
   _istMins,
 };

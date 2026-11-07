@@ -17,8 +17,8 @@
  *   ## Settings          — condensed snapshot(s) of the config that produced the trades
  *   ## Trades            — per-mode tables, columns = the keys actually present
  *
- * Consolidation / Live Consolidation render the same shape client-side from their
- * already-normalised trade objects (they filter in the browser); keep the two in
+ * Consolidation renders the same shape client-side from its
+ * already-normalised trade objects (it filters in the browser); keep the two in
  * sync if you change the structure here.
  */
 

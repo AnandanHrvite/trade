@@ -68,18 +68,11 @@ const { EMA } = require("technicalindicators");
 // replay engine's _applySettingsOverride() and the Settings UI's mid-session
 // process.env mutations would never reach the running strategy code.
 let TRADE_RES;            // candle resolution in minutes
-let _MAX_DAILY_TRADES;
-let _MAX_DAILY_LOSS;
-let _OPT_STOP_PCT;
 let _STOP_MINS;
-let _EMA9VWAP_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL hit
-let _EMA9VWAP_EOD_EXIT_MINS;      // square off any open EMA9+VWAP position at/after this IST time (before day close)
 let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
 let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× resolution → minutes)
 let _START_MINS;               // entry-window open  (IST minutes) — refreshed at /start
 let _ENTRY_STOP_MINS;          // entry-window close (IST minutes) — refreshed at /start
-// Candle-trail (EMA9VWAP_CANDLE_TRAIL_*) is read live from process.env on each candle close
-// — INSTANT — so a Settings toggle takes effect without a restart.
 function _refreshConfig() {
   // Candle timeframe is GLOBAL: TRADE_RESOLUTION drives every strategy. The old
   // per-strategy EMA9VWAP_RESOLUTION override was removed — one Settings knob now
@@ -91,53 +84,15 @@ function _refreshConfig() {
   // "Session restart" badge is truthful: stop + start now really does apply it.
   _START_MINS                            = parseMins("EMA9VWAP_ENTRY_START", "10:30");
   _ENTRY_STOP_MINS                       = parseMins("EMA9VWAP_ENTRY_END", "14:30");
-  // Per-strategy caps take precedence, then the global caps, then the default. The
-  // Settings UI + README expose EMA9VWAP_MAX_DAILY_*; honouring them here (with the
-  // global fallback) makes those fields actually work and keeps the backtest engine —
-  // which uses the same fallback chain — mirroring paper. With only the global keys
-  // set (current .env), behaviour is unchanged.
-  _MAX_DAILY_TRADES                      = parseInt(process.env.EMA9VWAP_MAX_DAILY_TRADES || process.env.MAX_DAILY_TRADES || "20", 10);
-  _MAX_DAILY_LOSS                        = parseFloat(process.env.EMA9VWAP_MAX_DAILY_LOSS || process.env.MAX_DAILY_LOSS || "5000");
-  // Pure signal-exit strategy: option-premium stop OFF by default (0). Tunable.
-  _OPT_STOP_PCT                          = parseFloat(process.env.EMA9VWAP_OPT_STOP_PCT || "0");
-  // Engine auto-stop time (after this, no idling); EOD square-off happens earlier at _EMA9VWAP_EOD_EXIT_MINS.
+  // Engine auto-stop time — the session teardown closes any open position here.
   const raw = process.env.EMA9VWAP_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
-  _EMA9VWAP_SL_PAUSE_CANDLES = parseInt(process.env.EMA9VWAP_SL_PAUSE_CANDLES || "3", 10);
-  // Exit-before-close: square off open position at this IST time (default 15:15),
-  // ahead of the TRADE_STOP_TIME auto-stop. Blank/invalid → fall back to _STOP_MINS.
-  const _eodRaw = process.env.EMA9VWAP_EOD_EXIT_TIME || "15:15";
-  const [eh, em] = _eodRaw.split(":").map(Number);
-  _EMA9VWAP_EOD_EXIT_MINS = (isNaN(eh)) ? _STOP_MINS : (eh * 60 + (isNaN(em) ? 0 : em));
   _OPP_COOLDOWN_ENABLED = (process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
 }
 _refreshConfig();
-let _cachedClosedCandleSL = null; // cached getSignal stopLoss from last FULLY CLOSED candle — null for EMA9+VWAP (pure signal exit); used in every tick
-
-// ── Same-side SL cooldown ───────────────────────────────────────────────────
-// After an SL hit (price SL or option stop), block new entries on THAT side for
-// EMA9VWAP_SL_PAUSE_CANDLES candles. Mirrors BB_RSI's per-side pause.
-function _setSlPause(side) {
-  if (!_EMA9VWAP_SL_PAUSE_CANDLES || _EMA9VWAP_SL_PAUSE_CANDLES <= 0) return;
-  ptState._slPauseUntilBySide = ptState._slPauseUntilBySide || { CE: 0, PE: 0 };
-  ptState._slPauseUntilBySide[side] = simNow() + _EMA9VWAP_SL_PAUSE_CANDLES * getTradeResolution() * 60 * 1000;
-  log(`⏸️ [PAPER] ${side} SL cooldown — no new ${side} entries for ${_EMA9VWAP_SL_PAUSE_CANDLES} candles`);
-}
-
-// ── Consecutive-loss streak limit ───────────────────────────────────────────
-// Single source for BOTH streak mechanisms: the session-halting chop guard and
-// the back-to-back-loss pause below. The pause used to fire at a HARDCODED 3,
-// which flatly contradicted EMA9VWAP_MAX_CONSEC_LOSSES=0 — Settings labels that
-// "0 = OFF", yet three losses still paused entries for 20 minutes. Both now read
-// the same key, so 0 really means off and N really means N.
-// Read live from env (not the cached config block) so a Settings save applies
-// mid-session, matching how the chop guard has always read it.
-function _streakLimit() {
-  const n = parseInt(process.env.EMA9VWAP_MAX_CONSEC_LOSSES || "0", 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
+let _cachedClosedCandleSL = null; // cached getSignal stopLoss from last FULLY CLOSED candle — always null for EMA9+VWAP (no stop loss); used in every tick
 
 // ── Opposite-side (flip) cooldown ───────────────────────────────────────────
 // After any non-flip exit, block entries on the OPPOSITE side for
@@ -150,27 +105,6 @@ function _setOppositeCooldown(exitedSide, reason) {
   ptState._oppositeCooldownLastSide  = exitedSide;
   const opp = exitedSide === "CE" ? "PE" : "CE";
   log(`🔁 [PAPER] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * getTradeResolution()} min)`);
-}
-
-// ── C1: live-harness lifecycle safety ────────────────────────────────────────
-// The harness hooks fire on notify payloads tagged "EMA9VWAP-PAPER" — the tag the
-// PAPER engine emits. It used to be removed ONLY by GET /ema9vwap-live/stop, so a
-// harness survived auto-stop / EOD / paper-stop / SIGTERM and stayed armed in the
-// same PM2 process. Starting PAPER the next morning then placed REAL orders.
-// Every path that ends a session now releases it, and paper /start refuses to run
-// under a harness it did not install (see the guard in /start).
-const LIVE_HARNESS_MODE = "EMA9VWAP-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    log(`🔒 [PAPER] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[EMA9VWAP-PAPER] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
 }
 
 // _STOP_MINS declared and populated by _refreshConfig() above
@@ -256,12 +190,6 @@ let ptState = {
   // Logic: 50% rule fired = price immediately reversed after entry = market is choppy
   // Don't fight the same choppy conditions — wait 2 candles for market to settle.
   _fiftyPctPauseUntil: null,  // epoch ms — set on 50%-rule exit, checked before every entry
-  // Consecutive loss circuit breaker
-  _consecutiveLosses: 0,
-  _pauseUntilTime: null,    // epoch ms — block new entries until this time
-  // Daily loss kill switch — latched true when session loss >= MAX_DAILY_LOSS (₹)
-  // Blocks ALL new entries for the rest of the day. Resets only on session restart.
-  _dailyLossHit: false,
   // NOTE: socket is now managed by socketManager — no ptState.socket needed
   // Pre-fetched option symbols (populated after each candle close, used at entry)
   _cachedCE: null,
@@ -271,7 +199,6 @@ let ptState = {
   _lastCheckedBarHigh: null,
   _lastCheckedBarLow:  null,
   _missedLoggedCandle: null,  // throttle for signal-missed log (once per candle)
-  _maxTradesLoggedCandle: null, // throttle for max-trades log (once per candle)
   _vixBlockLoggedCandle:  null, // throttle for VIX block log (once per candle)
   _entryPending:      false, // prevents double-entry on rapid ticks
   // Confirmation candle (cross & close): armed signal awaiting next-candle cross.
@@ -447,8 +374,8 @@ function getISTMinutes() {
   return (istMin % 1440); // minutes since midnight IST (0–1439)
 }
 
-// EMA9+VWAP entry window: 10:30 → 14:30 IST (entries only; a trailing position
-// continues past 14:30 and is squared off at the EOD exit time / 15:15).
+// EMA9+VWAP entry window: 10:30 → 14:30 IST (entries only; an open position
+// continues past 14:30 until the profit lock fires or the session closes).
 // _START_MINS / _ENTRY_STOP_MINS are declared above and populated by _refreshConfig().
 //
 // NSE regular session open (09:15 IST) — the floor for BUILDING candles (so VWAP
@@ -457,7 +384,7 @@ function getISTMinutes() {
 const _MKT_OPEN_MINS = 9 * 60 + 15;
 
 /**
- * THE entry-window gate. Delegates to the shared strategy helper so Paper, Live
+ * THE entry-window gate. Delegates to the shared strategy helper so Paper
  * and Backtest evaluate one rule from one place.
  *
  * Evaluated from the CANDLE TIMESTAMP, never from wall-clock. The old
@@ -690,7 +617,7 @@ function _publishOptionLtp(symbol, ltp) {
     ptState.position.optionEntryLtpTime = istNow();
     // Real premium known — replace the estimate blocked at entry.
     capitalPool.updateBlock("ema9vwap", (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
-    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
+    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry})`);
   }
 }
 
@@ -712,23 +639,8 @@ async function _optionPollTick(symbol, gen) {
     if (!ltp) return;
     _publishOptionLtp(symbol, ltp);
 
-    // ── Option LTP stop — 50% mid DISABLED ──────────────────────────────────
-    // Previously: if option premium dropped below 50% mid threshold, force exit.
-    //
-    // HISTORY, because this comment was wrong for months: it used to claim
-    // "breakeven at +25pt moves SL to entry, trail handles everything else".
-    // Neither was true in THIS file. EMA9+VWAP is a pure signal-exit strategy —
-    // pos.stopLoss stays null unless EMA9VWAP_CANDLE_TRAIL_ENABLED is on (it
-    // ships off), there was no breakeven anywhere in this engine, and .env also
-    // carries EMA9VWAP_STOP_LOSS_PTS=0 / OPT_STOP_PCT=0 / NEG_CANDLE_LIMIT=0.
-    // So the 50% guard was removed on the strength of protection that did not
-    // exist, leaving the position with no stop of any kind. That is the single
-    // biggest reason this strategy lost Rs8,997 over Jul-Sep 2026.
-    //
-    // NOW IT IS TRUE: the shared global guards in tradeGuards.js cover it —
-    // checkProfitLock (arm +8% / floor +5%) and checkBreakevenStop (arm +5%,
-    // floor = entry), both enforced per tick in _onTickExits below. They act on
-    // the option premium, so they work even with pos.stopLoss null.
+    // No exit is taken here. The only automatic exit is the global profit lock
+    // (tradeGuards.checkProfitLock), enforced per tick in onTick on this premium.
   } finally {
     if (gen === _optionPollGen) _optionPollBusy = false; // a stale tick must not clear a newer chain's flag
   }
@@ -879,18 +791,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     log(`⚠️ [PAPER] simulateBuy called while position already open — ignoring duplicate entry (${side} @ ₹${price})`);
     return;
   }
-  // Same-side SL cooldown: reject re-entry on a side that recently hit SL/option-stop.
-  // The `_skipSignalCtx` writer (set on this candle in onCandleClose) records the
-  // rejection in the skip log — logging only, the reject itself is unchanged.
-  if (ptState._slPauseUntilBySide && ptState._slPauseUntilBySide[side] > simNow()) {
-    log(`⏸️ [PAPER] ${side} SL cooldown active — entry rejected (${side} @ ₹${price})`);
-    if (ptState._skipSignalCtx) {
-      ptState._skipSignalCtx("sl_cooldown",
-        `${side} same-side SL cooldown active for another ${Math.ceil((ptState._slPauseUntilBySide[side] - simNow()) / 60000)} min`, side);
-    }
-    ptState._entryPending = false;
-    return;
-  }
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
   // entries are the user's own call and bypass it. Logged once per cooldown.
   if (!/^Manual /.test(reason) && ptState._reentryBlockUntil > simNow()) {
@@ -942,11 +842,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
 
   const _entrySpot = spotAtEntry || price;
 
-  // ── INITIAL SL ────────────────────────────────────────────────────────────────
-  // getSignal() returns stopLoss=null for EMA9+VWAP (pure signal-exit strategy), so
-  // positions open with NO hard SL by default. A stop is only set later if the
-  // optional candle-trail (EMA9VWAP_CANDLE_TRAIL_ENABLED) or option-stop
-  // (EMA9VWAP_OPT_STOP_PCT) is enabled. Primary exit = reverse signal cross + EOD.
+  // ── NO STOP LOSS ──────────────────────────────────────────────────────────────
+  // getSignal() returns stopLoss=null for EMA9+VWAP and nothing sets one later. The
+  // only automatic exit is the global profit lock (onTick); the session teardown at
+  // the engine stop time closes anything still open.
   let _capLog = null;
 
   // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
@@ -1169,52 +1068,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   if (netPnl > 0) { ptState._sessionWins++;   }
   else             { ptState._sessionLosses++; }
 
-  // ── Chop-guard streak (EMA9VWAP_MAX_CONSEC_LOSSES) ──────────────────────────────
-  // Independent of the legacy 3-loss pause below, which resets _consecutiveLosses
-  // to 0 on 5-min. This counter only grows on losses and clears on a win, so the
-  // entry gate can sit the strategy out for the rest of a choppy session.
-  if (netPnl > 0)      { ptState._chopConsecLosses = 0; }
-  else if (netPnl < 0) { ptState._chopConsecLosses = (ptState._chopConsecLosses || 0) + 1; }
-
-  // ── Daily loss kill switch ────────────────────────────────────────────────────
-  // If session loss exceeds MAX_DAILY_LOSS (set in .env, default ₹5000),
-  // latch _dailyLossHit = true and block ALL new entries for the rest of the day.
-  // This is a hard stop — consecutive-loss pause does NOT clear it. Only session restart resets it.
-  const MAX_DAILY_LOSS = _MAX_DAILY_LOSS;
-  if (!ptState._dailyLossHit && ptState.sessionPnl <= -Math.abs(MAX_DAILY_LOSS)) {
-    ptState._dailyLossHit = true;
-    log(`🛑 [PAPER] DAILY LOSS LIMIT HIT — session loss ₹${Math.abs(ptState.sessionPnl)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
-  }
-  // After EMA9VWAP_MAX_CONSEC_LOSSES back-to-back losses (0 = OFF, see _streakLimit):
-  //   15-min: latch dailyLossHit = NO MORE ENTRIES TODAY = bad market day, sit out.
-  //   5-min:  pause for 4 candles then allow re-entry — shorter TF recovers faster.
-  const _streakMax = _streakLimit();
-  if (netPnl < 0) {
-    ptState._consecutiveLosses = (ptState._consecutiveLosses || 0) + 1;
-    log(`📉 [PAPER] Consecutive losses: ${ptState._consecutiveLosses}${_streakMax ? ` / ${_streakMax}` : " (breaker OFF)"}`);
-    if (_streakMax > 0 && ptState._consecutiveLosses >= _streakMax) {
-      if (TRADE_RES >= 15) {
-        // 15-min: streak limit reached = done for the day
-        ptState._dailyLossHit = true;
-        log(`🛑 [PAPER] ${ptState._consecutiveLosses} consecutive losses (≥ ${_streakMax}) on 15-min — NO MORE ENTRIES TODAY (daily kill latched)`);
-        // Keep the counter at the limit so the UI shows N/N with KILLED state
-      } else {
-        // 5-min: pause 4 candles then resume
-        const pauseMs = 4 * getTradeResolution() * 60 * 1000;
-        ptState._pauseUntilTime = simNow() + pauseMs;
-        const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-        log(`⚠️ [PAPER] ${ptState._consecutiveLosses} consecutive losses (≥ ${_streakMax}) — entries PAUSED for ${getTradeResolution() * 4} min (resume ~${resumeTime})`);
-        ptState._consecutiveLosses = 0; // reset only for 5-min (will re-enter later)
-      }
-    }
-  } else {
-    if (ptState._consecutiveLosses > 0) {
-      log(`✅ [PAPER] Consecutive loss streak reset (was ${ptState._consecutiveLosses})`);
-    }
-    ptState._consecutiveLosses = 0;
-    ptState._pauseUntilTime = null; // profitable trade clears any remaining pause
-  }
-
   // ── 50%-rule exit pause ────────────────────────────────────────────────────
   // A 50%-rule exit means price reversed immediately after entry = choppy market.
   // Pause for 2 candles (30 min on 15-min, 10 min on 5-min) before next entry.
@@ -1276,8 +1129,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // Notify active strategy (optional callbacks for strategy-level state tracking)
   const activeStrat = _ema9vwapStrategy;
   if (typeof activeStrat.onTradeClosed === "function") activeStrat.onTradeClosed();
-  const isStopLoss = reason && (reason.toLowerCase().includes("sl hit") || reason.toLowerCase().includes("stop"));
-  if (isStopLoss && typeof activeStrat.onStopLossHit === "function") activeStrat.onStopLossHit(side);
 }
 
 // ── On each completed candle ──────────────────────────────────────────
@@ -1365,136 +1216,25 @@ async function onCandleClose(candle) {
     });
   }
   if (ptState.position) {
-    // Increment candles-held + time-stop check (flat trade = theta bleed)
     ptState.position.candlesHeld = (ptState.position.candlesHeld || 0) + 1;
-    {
-      const _pos = ptState.position;
-      const _entryOpt = _pos.optionEntryLtp;
-      const _curOpt   = ptState.optionLtp || _pos.optionCurrentLtp;
-      let _pnlPts = null;
-      if (_entryOpt && _curOpt) {
-        _pnlPts = _curOpt - _entryOpt;
-      } else if (_pos.spotAtEntry) {
-        _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
-      }
-      // Time-stop is disabled by default — the signal exit owns the trade (inert legacy gate; SL_MODE defaults to "ema").
-      if ((process.env.EMA9VWAP_SL_MODE || "ema").toLowerCase() === "candle") {
-        const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
-        if (_tsReason) {
-          log(`⏳ [PAPER] ${_tsReason}`);
-          simulateSell(candle.close, _tsReason, candle.close);
-          return;
-        }
-      }
-      // ── Negative-candle stop (EMA9VWAP_NEG_CANDLE_LIMIT) ─────────────────────────
-      // Asymmetric loss-cut: if the trade is still in the RED after N candles, square
-      // off — let winners ride the signal exit, but don't let a loser bleed across the
-      // chop. Points-based on option premium (falls back to spot move). 0 = off (the default).
-      const _negLimit = parseInt(process.env.EMA9VWAP_NEG_CANDLE_LIMIT || "0", 10);
-      if (_negLimit > 0 && _pnlPts != null && _pnlPts < 0 && _pos.candlesHeld >= _negLimit) {
-        log(`🔻 [PAPER] Negative ${_negLimit}-candle stop — ${_pos.candlesHeld} candles held, still red (${_pnlPts.toFixed(1)}pt) — squaring off ${_pos.side}`);
-        simulateSell(candle.close, `Negative ${_negLimit}-candle stop`, candle.close);
-        return;
-      }
-    }
 
     const _p    = ptState.position;
     const _est  = _p.side === "CE" ? (candle.close - _p.spotAtEntry).toFixed(1) : (_p.spotAtEntry - candle.close).toFixed(1);
-    const _slGap = _p.side === "CE"
-      ? parseFloat((candle.close - _p.stopLoss).toFixed(1))
-      : parseFloat((_p.stopLoss - candle.close).toFixed(1));
     const _optEntry = _p.optionEntryLtp ? `₹${_p.optionEntryLtp}` : "—";
     const _optNow   = ptState.optionLtp  ? `₹${ptState.optionLtp}`  : "—";
     const _optPnl   = (_p.optionEntryLtp && ptState.optionLtp)
       ? ` (Δ₹${(ptState.optionLtp - _p.optionEntryLtp).toFixed(2)} × ${_p.qty || getLotQty()})`
       : "";
-    log(`   Open ${_p.side} @ ₹${_p.spotAtEntry} | SL=₹${_p.stopLoss} (gap=${_slGap}pt) | best=₹${_p.bestPrice||"—"} | est.PnL≈${_est}pt | 50%mid=₹${_p.entryPrevMid}`);
+    log(`   Open ${_p.side} @ ₹${_p.spotAtEntry} | best=₹${_p.bestPrice||"—"} | est.PnL≈${_est}pt`);
     log(`   Option: entry=${_optEntry} now=${_optNow}${_optPnl}`);
   }
 
-  // ── entryPrevMid is FIXED at entry time — never update it here ──────────────
-  // It is set once in simulateBuy() = mid of the last fully closed candle at entry.
-  // The 50% rule reference must not roll forward as new candles close.
-
-  // ── Optional candle-trail stop ──────────────────────────────────────────────
-  // The EMA9+VWAP exit is the reverse signal cross (below) + EOD square-off; there
-  // is NO default per-candle SL trail. Only when EMA9VWAP_CANDLE_TRAIL_ENABLED is on
-  // does an N-bar low (CE) / high (PE) trail tighten pos.stopLoss (tighten-only),
-  // which is then enforced intra-candle in onTick.
-  if (ptState.position && (process.env.EMA9VWAP_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true") {
-    const pos     = ptState.position;
-    const _ctBars = Math.max(1, parseInt(process.env.EMA9VWAP_CANDLE_TRAIL_BARS || "3", 10));
-    if (ptState.candles && ptState.candles.length >= _ctBars) {
-      const _bars = ptState.candles.slice(-_ctBars);
-      const _candleLvl = pos.side === "CE"
-        ? Math.min(..._bars.map(c => c.low))
-        : Math.max(..._bars.map(c => c.high));
-      if (pos.side === "CE" && (pos.stopLoss == null || _candleLvl > pos.stopLoss)) {
-        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_candleLvl.toFixed(2));
-        log(`📐 [PAPER] Candle trail CE: ₹${_o != null ? _o : "—"} → ₹${pos.stopLoss} (${_ctBars}-bar low)`);
-      } else if (pos.side === "PE" && (pos.stopLoss == null || _candleLvl < pos.stopLoss)) {
-        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_candleLvl.toFixed(2));
-        log(`📐 [PAPER] Candle trail PE: ₹${_o != null ? _o : "—"} → ₹${pos.stopLoss} (${_ctBars}-bar high)`);
-      }
-    }
-  }
-  // SL-hit is enforced intra-candle in onTick against the stop set above —
-  // no separate candle-close SL check needed.
-
-  // ── Exit Rule 2.5: 2-candle reversal engulf ────────────────────────────────
-  // After entry, bail if the just-closed candle reverses HARD against the position:
-  // a candle that CLOSES opposite to our side (CE: bearish close<open; PE: bullish
-  // close>open) AND whose close crosses beyond BOTH of the previous 2 candles'
-  // extremes (CE: below both prior lows; PE: above both prior highs). Rolling
-  // reference — each closed candle is measured against the 2 candles immediately
-  // before it. Env-gated, default ON. Squares off in full and returns (the
-  // opposite-side cooldown fired by simulateSell blocks an instant flip).
-  if (
-    ptState.position &&
-    (process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true" &&
-    ptState.candles.length >= 3
-  ) {
-    const _side  = ptState.position.side;
-    const _prev1 = ptState.candles[ptState.candles.length - 2];
-    const _prev2 = ptState.candles[ptState.candles.length - 3];
-    const _revCE = _side === "CE" && candle.close < candle.open && candle.close < Math.min(_prev1.low, _prev2.low);
-    const _revPE = _side === "PE" && candle.close > candle.open && candle.close > Math.max(_prev1.high, _prev2.high);
-    if (_revCE || _revPE) {
-      const _lvl = _side === "CE" ? Math.min(_prev1.low, _prev2.low) : Math.max(_prev1.high, _prev2.high);
-      log(`🔄 [PAPER] 2-candle reversal — ${_side} candle closed ${_side === "CE" ? "bearish below prev-2 lows" : "bullish above prev-2 highs"} (C=₹${candle.close} vs ₹${_lvl}) — exit @ ₹${candle.close}`);
-      simulateSell(candle.close, "2-candle reversal exit", candle.close);
-      return;
-    }
-  }
-
-  // ── Exit Rule 3: PURE signal exit — EMA9 crosses back INSIDE the VWAP band ──
-  // CE exits when EMA9 re-crosses below the VWAP top line (VWAP+σ); PE exits when
-  // EMA9 re-crosses above the VWAP bottom line (VWAP−σ). No SL / target / trail —
-  // the position is held in full until this reverse cross (or the EOD square-off).
-  if (ptState.position) {
-    const _side = ptState.position.side;
-    if ((_side === "CE" && indicators.exitCE) || (_side === "PE" && indicators.exitPE)) {
-      const _line = _side === "CE" ? "top" : "bottom";
-      log(`🔁 [PAPER] EMA9 re-crossed INSIDE VWAP ${_line} line — exit ${_side} @ ₹${candle.close}`);
-      simulateSell(candle.close, `EMA9 re-entered VWAP ${_line} band`, candle.close);
-      // fall through — position is now null, may enter below
-    }
-  }
-
-  // ── Exit Rule 4: EOD square-off + auto-stop at TRADE_STOP_TIME ─────────────
-  // Use fast integer IST calc (no Date/ICU allocation) + module-level cached _STOP_MINS.
-  // Skip EOD exit in simulation mode
+  // ── Session teardown at the engine stop time (_STOP_MINS) ─────────────────
+  // The global profit lock (onTick) is the only automatic exit; anything still
+  // open is closed here when the session auto-stops.
+  // Skip in simulation mode.
   const _eodMinNow  = ptState._simMode ? 0 : getISTMinutes();
   const _stopLabel  = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
-
-  // ── Exit-before-close: square off any open position at EMA9VWAP_EOD_EXIT_TIME ──
-  // Fires ahead of the TRADE_STOP_TIME auto-stop; the engine keeps running until _STOP_MINS.
-  if (ptState.position && !ptState._simMode && _eodMinNow >= _EMA9VWAP_EOD_EXIT_MINS && _eodMinNow < _STOP_MINS) {
-    const _eLbl = String(Math.floor(_EMA9VWAP_EOD_EXIT_MINS/60)).padStart(2,"0") + ":" + String(_EMA9VWAP_EOD_EXIT_MINS%60).padStart(2,"0");
-    log(`⏰ [PAPER] Exit-before-close ${_eLbl} — squaring off open ${ptState.position.side}`);
-    simulateSell(candle.close, `Exit before day close ${_eLbl}`, candle.close);
-    return;
-  }
 
   if (_eodMinNow >= _STOP_MINS) {
     if (ptState.position) {
@@ -1511,7 +1251,6 @@ async function onCandleClose(candle) {
       log(`════════════════════════════════════════════════════════════════════\n`);
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
-      _releaseLiveHarness("EOD auto-stop");
       saveSession();
       // Release this strategy's socket callback + mode; stop the shared socket
       // only if no other strategy is still using it.
@@ -1532,8 +1271,8 @@ async function onCandleClose(candle) {
   // per blocked signal, always attributed to the gate that actually fired first:
   //   • the three conditions swallowed by the entry `if` itself → logged right below
   //   • VIX / OI / spread                                      → already self-logging
-  //   • circuit breakers                                       → logged at their `return`
-  //   • same-side / opposite-side cooldown                     → logged in simulateBuy
+  //   • portfolio cap                                          → logged at its `return`
+  //   • opposite-side cooldown                                 → logged in simulateBuy
   // `_skipSignal` is the shared writer so every row carries the same band context.
   const _skipSignal = (gate, reason, side) => {
     log(`🚫 [PAPER] Signal NOT taken — ${reason} | ${signal} @ ₹${candle.close}`);
@@ -1605,40 +1344,9 @@ async function onCandleClose(candle) {
       }
       if (_oi.regime) _oiTag = ` | ${_oi.reason}`;
     }
-    // ── Circuit breaker checks — must mirror intra-tick path exactly ──────────
-    // Each `return` now also writes ONE skip row (logging only — the conditions and
-    // the returns themselves are unchanged) so a blocked signal is auditable.
+    // ── Portfolio-wide cap (shared portfolioRisk) — must mirror intra-tick path ──
     const _sideForSkip = signal === "BUY_CE" ? "CE" : "PE";
-    if (ptState._dailyLossHit) {
-      log(`🛑 [PAPER] Daily loss limit active — candle-close entry blocked (${signal})`);
-      _skipSignal("daily_loss", `daily loss limit latched (session PnL ₹${ptState.sessionPnl} vs cap ₹${_MAX_DAILY_LOSS})`, _sideForSkip);
-      return;
-    }
     { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [PAPER] ${_pf.reason} — candle-close entry blocked (${signal})`); _skipSignal("portfolio_cap", _pf.reason || "portfolio-wide daily loss cap hit", _sideForSkip); return; } }
-    if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
-      const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-      log(`⏸ [PAPER] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
-      _skipSignal("consec_loss_pause", `3-consecutive-loss pause active until ~${resumeTime}`, _sideForSkip);
-      return;
-    }
-    if (false) { // 50% pause DISABLED — replaced by breakeven
-      const resumeTime = new Date(ptState._fiftyPctPauseUntil).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-      log(`⏸ [PAPER] 50%-rule pause active — candle-close entry blocked until ~${resumeTime}`);
-      return;
-    }
-    // Chop guard: after N consecutive losses, sit out the rest of the session
-    // (any win resets _chopConsecLosses). Reads live from env; 0 = off.
-    const _chopMax = parseInt(process.env.EMA9VWAP_MAX_CONSEC_LOSSES || "0", 10);
-    if (_chopMax > 0 && (ptState._chopConsecLosses || 0) >= _chopMax) {
-      log(`🚫 [PAPER] Chop guard — ${ptState._chopConsecLosses} consecutive losses (≥ ${_chopMax}) — EMA9+VWAP halted for the session (${signal})`);
-      _skipSignal("chop_guard", `${ptState._chopConsecLosses} consecutive losses (>= ${_chopMax}) — halted for the session`, _sideForSkip);
-      return;
-    }
-    if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
-      log(`🚫 [PAPER] Daily max trades reached — candle-close entry blocked (${signal})`);
-      _skipSignal("max_daily_trades", `daily max trades reached (${ptState.sessionTrades.length}/${_MAX_DAILY_TRADES})`, _sideForSkip);
-      return;
-    }
     const side = signal === "BUY_CE" ? "CE" : "PE";
     const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
 
@@ -1834,32 +1542,12 @@ function onTick(tick) {
       }
     } else {
     ptState._omhLogged = false;
-    // Block re-entry on the same candle where an SL/50% exit just occurred
+    // Block re-entry on the same candle where an exit just occurred
     const currentBarTime = ptState.currentBar ? ptState.currentBar.time : null;
     if (ptState._slHitCandleTime !== null && ptState._slHitCandleTime === currentBarTime) {
       // silently skip — no log spam on every tick
-    } else if (ptState._dailyLossHit) {
-      // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
     } else if (require("../utils/portfolioRisk").checkPortfolioCap().blocked) {
       // Portfolio-wide daily loss cap hit — no entries across any strategy (silent)
-    } else if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
-      // Consecutive loss pause active — silently skip to avoid log spam
-    } else if (false) { // 50% pause DISABLED — replaced by breakeven
-      // 50%-rule pause active — silently skip to avoid log spam
-    } else if (parseInt(process.env.EMA9VWAP_MAX_CONSEC_LOSSES || "0", 10) > 0
-               && (ptState._chopConsecLosses || 0) >= parseInt(process.env.EMA9VWAP_MAX_CONSEC_LOSSES || "0", 10)) {
-      // Chop guard: N consecutive losses — sit out the rest of the session.
-      if (!ptState._chopGuardLoggedCandle || ptState._chopGuardLoggedCandle !== currentBarTime) {
-        log(`🚫 [PAPER] Chop guard — ${ptState._chopConsecLosses} consecutive losses (≥ ${process.env.EMA9VWAP_MAX_CONSEC_LOSSES}) — EMA9+VWAP halted for the session`);
-        ptState._chopGuardLoggedCandle = currentBarTime;
-      }
-    } else if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
-      // Daily max trades cap reached — protect brokerage and capital
-      // Log only once per candle to avoid spam
-      if (!ptState._maxTradesLoggedCandle || ptState._maxTradesLoggedCandle !== currentBarTime) {
-        log(`🚫 [PAPER] Daily max trades (${_MAX_DAILY_TRADES}) reached — no more entries today`);
-        ptState._maxTradesLoggedCandle = currentBarTime;
-      }
     } else {
     // ── Single getSignal call using push/pop (no array copy, no second computation) ──
     // Push the live bar temporarily so strategy sees it, then immediately pop.
@@ -2026,13 +1714,10 @@ function onTick(tick) {
     } // end market hours check
   }
 
-  // ── EXIT: per-tick stop enforcement ───────────────────────────────────────
-  // The PRIMARY exit is the reverse signal cross (EMA9 re-enters the VWAP band) +
-  // EOD square-off, both handled at candle close (see onCandleClose). The checks
-  // below only fire when their optional guards are enabled: catastrophic points
-  // cap (EMA9VWAP_STOP_LOSS_PTS), option-premium stop (EMA9VWAP_OPT_STOP_PCT), and
-  // the candle-trail SL (EMA9VWAP_CANDLE_TRAIL_ENABLED). With all off (the defaults)
-  // no intra-tick stop fires and the position is held to the signal/EOD exit.
+  // ── EXIT: per-tick profit lock ────────────────────────────────────────────
+  // The global profit lock (tradeGuards.checkProfitLock) is the ONLY automatic
+  // exit. Manual exit, /stop and the session teardown at the engine stop time
+  // close anything else.
   // ── MFE/MAE tracking (spot pts in trade direction) — per tick, for analysis ──
   if (ptState.position) {
     const _exPos  = ptState.position;
@@ -2040,91 +1725,23 @@ function onTick(tick) {
     if (_favPts > (_exPos.mfeSpotPts || 0)) { _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMFE = parseFloat(((simNow() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
     if (_favPts < (_exPos.maeSpotPts || 0)) { _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMAE = parseFloat(((simNow() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
     trackPath(_exPos, _favPts, simNow());
-    // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
+    // Favourable spot extreme (best price seen) — observer-only, for the UI and trade record.
+    if (_exPos.side === "CE") { if (!_exPos.bestPrice || ltp > _exPos.bestPrice) _exPos.bestPrice = ltp; }
+    else                      { if (!_exPos.bestPrice || ltp < _exPos.bestPrice) _exPos.bestPrice = ltp; }
+    // Peak option premium (long CE/PE both profit on premium rise) — the profit lock reads it.
     if (ptState.optionLtp && ptState.optionLtp > (_exPos.bestOptionLtp || 0)) _exPos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));
   }
 
-  // ── Per-trade points stop: catastrophic spot-points cap (EMA9VWAP_STOP_LOSS_PTS) ──
-  // Mirrors BB_RSI_STOP_LOSS_PTS — exit once spot has moved this many points against
-  // entry. Checked BEFORE the structural/trail SL so it caps deep adverse excursions
-  // when the trailing SL sits wider than the cap (e.g. a 70pt prevHigh/Low stop).
-  // Read live from process.env so a Settings change applies without a restart.
-  // Points-based; 0 = disabled (default — no behaviour change until set).
-  if (ptState.position && ptState.position.spotAtEntry) {
-    const _slpCap = parseFloat(process.env.EMA9VWAP_STOP_LOSS_PTS || "0");
-    if (_slpCap > 0) {
-      const _pos2    = ptState.position;
-      const _favPts2 = (ltp - _pos2.spotAtEntry) * (_pos2.side === "CE" ? 1 : -1);
-      if (_favPts2 <= -_slpCap) {
-        const _capLvl = _pos2.side === "CE" ? _pos2.spotAtEntry - _slpCap : _pos2.spotAtEntry + _slpCap;
-        log(`🛑 [PAPER] STOP LOSS ${_slpCap}pts — spot ₹${ltp} (${_favPts2.toFixed(1)}pt vs entry ₹${_pos2.spotAtEntry})`);
-        _setSlPause(_pos2.side);
-        ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-        simulateSell(_capLvl, `SL (${_slpCap}pts)`, ltp);
-        return;
-      }
-    }
-  }
-
   // ── Global profit lock (shared across every strategy — see tradeGuards) ──
-  // Checked BEFORE the option stop: once armed, the locked floor sits above
-  // entry, so it must win over any wider stop below entry.
   if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp) {
     const _plPos = ptState.position;
     const _plMsg = tradeGuards.checkProfitLock(
-      _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
-    ) || tradeGuards.checkBreakevenStop(
-      // Fallback for a trade that never reached the lock's arm level. The lock's
-      // floor sits above entry, so when both are armed the lock wins (checked first).
       _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
     );
     if (_plMsg) {
       log(`🔒 [PAPER] ${_plMsg}`);
       ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
       simulateSell(ltp, _plMsg, ltp);
-      return;
-    }
-  }
-
-  // ── Option-premium stop: exit if option LTP drops OPT_STOP_PCT below entry premium ──
-  if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp && _OPT_STOP_PCT > 0) {
-    const _pos     = ptState.position;
-    const _stopLtp = parseFloat((_pos.optionEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2));
-    if (ptState.optionLtp <= _stopLtp) {
-      log(`🛑 [PAPER] OPTION STOP ${(_OPT_STOP_PCT*100).toFixed(0)}% — opt ₹${ptState.optionLtp} <= ₹${_stopLtp} (entry ₹${_pos.optionEntryLtp})`);
-      _setSlPause(_pos.side);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      simulateSell(ltp, `Option stop ${(_OPT_STOP_PCT*100).toFixed(0)}% @ opt ₹${ptState.optionLtp}`, ltp);
-      return;
-    }
-  }
-
-  // ── Candle-trail SL hit ───────────────────────────────────────────────────
-  // pos.stopLoss is null by default (pure signal-exit strategy); it is only set
-  // when the candle-trail is enabled (see onCandleClose). When set, it is enforced
-  // here tick-by-tick. PE: exit when ltp >= stopLoss | CE: exit when ltp <= stopLoss
-  if (ptState.position && ptState.position.stopLoss !== null) {
-    const pos = ptState.position;
-    // Track favourable extreme (best price seen, for the UI trail card)
-    if (pos.side === "CE") { if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp; }
-    else                   { if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp; }
-
-    const updatedSL = pos.stopLoss;
-    const _slType = (sl) => (pos.initialStopLoss && Math.abs(sl - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
-    if (pos.side === "PE" && ltp >= updatedSL) {
-      const optStr = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🛑 [PAPER] ${_slType(updatedSL)} SL HIT PE — ltp ₹${ltp} >= SL ₹${updatedSL} | best=₹${pos.bestPrice||"—"}${optStr}`);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      _setSlPause("PE");
-      simulateSell(updatedSL, `${_slType(updatedSL)} SL hit @ ₹${updatedSL}`, ltp);
-      return;
-    }
-    if (pos.side === "CE" && ltp <= updatedSL) {
-      const optStr = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🛑 [PAPER] ${_slType(updatedSL)} SL HIT CE — ltp ₹${ltp} <= SL ₹${updatedSL} | best=₹${pos.bestPrice||"—"}${optStr}`);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      _setSlPause("CE");
-      simulateSell(updatedSL, `${_slType(updatedSL)} SL hit @ ₹${updatedSL}`, ltp);
       return;
     }
   }
@@ -2210,16 +1827,9 @@ function generatePaperDailyReport(trades, sessionPnl) {
 
     const exitGroups = {};
     trades.forEach(t => {
-      // Buckets mirror the exits this engine can actually produce. "50% Rule" and
-      // "Opposite Signal" were removed — neither rule exists here (the 50% rule is
-      // disabled in code, and there is no opposite-signal exit), so they could only
-      // ever have reported 0. "SL Hit" / "Trail SL" are kept: they are reachable
-      // whenever the optional EMA9VWAP_STOP_LOSS_PTS / _OPT_STOP_PCT / _CANDLE_TRAIL_*
-      // stops are switched on.
-      const label = t.exitReason.includes("SL hit")    ? "SL Hit"
-                  : t.exitReason.includes("reversal")  ? "2-Candle Reversal"
-                  : t.exitReason.includes("re-entered VWAP") ? "Signal Exit (band re-entry)"
-                  : t.exitReason.includes("trail") || t.exitReason.includes("Trail") ? "Trail SL"
+      // Buckets mirror the exits this engine can actually produce: the global
+      // profit lock, the session close / stop, and a manual exit.
+      const label = t.exitReason.includes("Profit lock") ? "Profit Lock"
                   : t.exitReason.includes("EOD") || t.exitReason.includes("stop") ? "EOD/Stop"
                   : t.exitReason.includes("Manual")    ? "Manual Exit"
                   : "Other";
@@ -2287,20 +1897,6 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
-  // ── C1 SAFETY NET — FIRST STATEMENT, before any early return ────────────────
-  // The harness fires on the "EMA9VWAP-PAPER" notify tag that THIS engine emits, so
-  // a harness left installed by an earlier live session would make a paper start
-  // place REAL Zerodha orders. Releasing it here — ahead of the token check, the
-  // running check and every other guard — is what makes "paper can never place a
-  // real order" hold even if a stop path was missed or /start aborts early.
-  // /ema9vwap-live/start invokes this same handler with _viaHarness=1 and is the
-  // ONLY caller allowed to keep the harness attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      log(`🛑 [PAPER] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   // Re-read env into module-level config so Settings UI changes and replay
   // env overrides (snapshot or simulator mode) take effect for this session.
   _refreshConfig();
@@ -2320,7 +1916,7 @@ router.get("/start", async (req, res) => {
   if (sharedSocketState.isEma9VwapActive()) {
     return res.status(400).json({
       success: false,
-      error: `Cannot start paper trading — Live Trading is currently active. Stop it first at /ema9vwap-live/stop`,
+      error: "Cannot start paper trading — another EMA9VWAP session is already active.",
     });
   }
 
@@ -2400,17 +1996,11 @@ router.get("/start", async (req, res) => {
   ptState.prevCandleMid  = null;
   ptState.optionLtp      = null;
   ptState.optionSymbol   = null;
-  ptState._consecutiveLosses   = 0;
-  ptState._chopConsecLosses    = 0;   // chop-guard streak (EMA9VWAP_MAX_CONSEC_LOSSES)
-  ptState._pauseUntilTime      = null;
   ptState._fiftyPctPauseUntil  = null;  // clear 50%-rule pause from previous session
-  ptState._dailyLossHit        = false; // reset daily kill switch on new session
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
-  ptState._maxTradesLoggedCandle = null;
   ptState._skipSignalCtx       = null; // per-candle skip-log writer (set in onCandleClose)
   ptState._slHitCandleTime     = null;
-  ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
   ptState._reentryBlockUntil   = 0;
   ptState._oppositeCooldownUntilTs  = 0;
   ptState._oppositeCooldownLastSide = null;
@@ -2444,26 +2034,11 @@ router.get("/start", async (req, res) => {
     log(`   Entry       : CE = EMA${_emaP} crosses ABOVE VWAP+${_mult}σ (top band) | PE = EMA${_emaP} crosses BELOW VWAP−${_mult}σ (bottom band) (${_entryTiming}; VWAP anchored ${process.env.EMA9VWAP_VWAP_SESSION_START||"09:15"})`);
   }
   {
-    const _optPct = parseFloat(process.env.EMA9VWAP_OPT_STOP_PCT || "0");
-    const _ctOn   = (process.env.EMA9VWAP_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true";
-    const _negLim = parseInt(process.env.EMA9VWAP_NEG_CANDLE_LIMIT || "0", 10);
-    const _slPts  = parseFloat(process.env.EMA9VWAP_STOP_LOSS_PTS || "0");
-    // NOTE: "opposite signal" is deliberately NOT listed — no such exit rule exists
-    // in this engine. An opposite cross cannot fire while a position is open (the
-    // re-entry cross closes it first), so the banner must not advertise it.
-    const _parts  = [`signal exit (EMA${Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD||"9",10)||9)} re-enters band)`];
-    if ((process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true") _parts.push("2-candle reversal engulf");
-    if (_slPts > 0)  _parts.push(`${_slPts}pt spot cap`);
-    if (_optPct > 0) _parts.push(`option stop ${(_optPct*100).toFixed(0)}%`);
-    if (_ctOn)       _parts.push(`${Math.max(1,parseInt(process.env.EMA9VWAP_CANDLE_TRAIL_BARS||"3",10))}-bar candle trail`);
-    if (_negLim > 0) _parts.push(`neg-${_negLim}-candle stop`);
-    _parts.push(`exit-before-close ${process.env.EMA9VWAP_EOD_EXIT_TIME||"15:15"}`, `EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
-    log(`   Stop/exit   : ${_parts.join(" | ")}`);
+    const _stopLbl = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
+    log(`   Exit        : global profit lock ${tradeGuards.PROFIT_LOCK_ENABLED ? "(on)" : "(OFF — no automatic exit)"} | session close ${_stopLbl}`);
   }
-  // Print the RESOLVED per-strategy values actually in force (_refreshConfig has run),
-  // not the raw global env keys — the old line showed MAX_DAILY_* / VIX_FILTER_ENABLED,
-  // which are not what this engine reads, and defaulted MaxTrades to a stale "6".
-  log(`   Risk guards : MaxDailyLoss=₹${_MAX_DAILY_LOSS} | MaxTrades=${_MAX_DAILY_TRADES} | same-side SL cooldown ${_EMA9VWAP_SL_PAUSE_CANDLES} candles | opposite-side cooldown ${_OPP_COOLDOWN_ENABLED ? _OPP_COOLDOWN_CANDLES + " candles" : "off"} | VIX ${vixFilter.getVixEnabled("ema9vwap") ? ("≤" + vixFilter.getVixMaxEntry("ema9vwap")) : "off"} | OI ${oiFilter.getOiEnabled("ema9vwap") ? "on" : "off"}`);
+  // Print the RESOLVED per-strategy values actually in force (_refreshConfig has run).
+  log(`   Entry guards: opposite-side cooldown ${_OPP_COOLDOWN_ENABLED ? _OPP_COOLDOWN_CANDLES + " candles" : "off"} | VIX ${vixFilter.getVixEnabled("ema9vwap") ? ("≤" + vixFilter.getVixMaxEntry("ema9vwap")) : "off"} | OI ${oiFilter.getOiEnabled("ema9vwap") ? "on" : "off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
   // Telegram: session started + checklist (same as live trade)
@@ -2506,7 +2081,6 @@ router.get("/start", async (req, res) => {
       `Instrument: ${instrumentConfig.INSTRUMENT}`,
       `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
       `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
-      `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
       ``,
       `Pre-Market Checklist:`,
       `${_ptChecks.fyers.ok  ? "✅" : "❌"} Fyers   : ${_ptChecks.fyers.msg}`,
@@ -2602,7 +2176,6 @@ router.get("/start", async (req, res) => {
     // No tick price → the square-off above was skipped; free the capital block.
     if (ptState.position) capitalPool.clear("ema9vwap");
     ptState.running = false;
-    _releaseLiveHarness("scheduled auto-stop");
     stopOptionPolling();
     try {
       tickRecorder.recordSessionStop({
@@ -2649,8 +2222,6 @@ router.get("/start", async (req, res) => {
  */
 router.get("/stop", async (req, res) => {
   if (!ptState.running) {
-    // A stale harness must be removable even when the engine is already stopped.
-    _releaseLiveHarness("paper /stop — engine not running");
     return res.status(400).json({ success: false, error: "Paper trading is not running." });
   }
 
@@ -2658,9 +2229,6 @@ router.get("/stop", async (req, res) => {
   if (ptState.position && ptState.currentBar) {
     simulateSell(ptState.currentBar.close, "Manual stop", ptState.currentBar.close);
   }
-  // Released AFTER the square-off: releasing first removed the hooks before the
-  // closing notifyExit fired, so the harness never closed the REAL position.
-  _releaseLiveHarness("paper /stop");
   // No bar yet → the square-off above was skipped; free the capital block.
   if (ptState.position) capitalPool.clear("ema9vwap");
 
@@ -2679,7 +2247,6 @@ router.get("/stop", async (req, res) => {
     socketManager.stop();
   }
   ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
-  // (harness already released at the top of this handler)
 
   try {
     tickRecorder.recordSessionStop({
@@ -2737,8 +2304,8 @@ router.get("/exit", (req, res) => {
 
 /**
  * POST /ema9vwap-paper/manualEntry
- * Manually enter a CE or PE trade at current spot price.
- * SL = getSignal stopLoss (null for EMA9+VWAP) → falls back to a fixed points SL, so manual entries always carry a protective stop.
+ * Manually enter a CE or PE trade at current spot price. No stop loss — the
+ * global profit lock is the only automatic exit, as for signal entries.
  */
 router.post("/manualEntry", async (req, res) => {
   if (!ptState.running) {
@@ -2754,36 +2321,6 @@ router.post("/manualEntry", async (req, res) => {
   const spot = ptState.lastTickPrice || (ptState.currentBar ? ptState.currentBar.close : null);
   if (!spot) {
     return res.status(400).json({ success: false, error: "No market data yet." });
-  }
-
-  // Initial SL from the strategy = previous-candle low/high
-  const candles = ptState.candles || [];
-  let sarSL = null;
-  if (candles.length > 0) {
-    const { getActiveStrategy } = require("../strategies");
-    const result = _ema9vwapStrategy.getSignal(candles, { silent: true });
-    if (result && result.stopLoss) {
-      sarSL = result.stopLoss;
-    }
-  }
-
-  // Fallback SL distance when there's no live signal (manual override entry)
-  const MAX_SL = 80;
-  if (!sarSL) {
-    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
-  }
-
-  // Validate SL is on correct side (CE: SL must be below entry, PE: SL must be above entry)
-  if ((side === "CE" && sarSL >= spot) || (side === "PE" && sarSL <= spot)) {
-    // Prev-candle SL on wrong side — manual entry against trend, use fixed fallback
-    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
-    log(`⚠️ [PAPER] Manual ${side}: SL on wrong side — using ${MAX_SL}pt fixed SL @ ₹${sarSL}`);
-  }
-
-  // Cap the fallback SL distance from entry
-  const sarGap = Math.abs(spot - sarSL);
-  if (sarGap > MAX_SL) {
-    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
   }
 
   // Get option symbol
@@ -2808,15 +2345,15 @@ router.post("/manualEntry", async (req, res) => {
     const symbol = optResult.symbol;
     const qty = getLotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
 
-    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${sarSL} | Symbol: ${symbol}`);
-    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user | SL=₹${sarSL}`, sarSL, spot, true);
+    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | Symbol: ${symbol}`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user`, null, spot, true);
     if (!ptState.position || !/^Manual/.test(String(ptState.position.reason || ""))) {
-      // simulateBuy refused (capital gate, cooldown or protective-stop guard) — it
+      // simulateBuy refused (capital gate or cooldown) — it
       // has already logged why. Never report a position that was not opened.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
 
-    return res.json({ success: true, spot: spot, side: side, sl: sarSL, symbol: symbol });
+    return res.json({ success: true, spot: spot, side: side, sl: null, symbol: symbol });
   } catch (e) {
     log(`❌ [PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -3065,12 +2602,6 @@ router.get("/status/data", (req, res) => {
       ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
     const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
       ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
-    // optStopPrice: same 50%-mid logic as the live stop — optionSL = entryLtp - |entrySpot - prevMid|
-    const _optSp     = pos ? pos.spotAtEntry  : null;
-    const _optPm     = pos ? pos.entryPrevMid : null;
-    const optStopPrice = (optEntryLtp && _optSp && _optPm)
-      ? parseFloat((optEntryLtp - Math.max(Math.abs(_optSp - _optPm), 20)).toFixed(2))
-      : optEntryLtp ? parseFloat((optEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2)) : null;
     const liveClose    = ptState.currentBar?.close || null;
     const pointsMoved  = pos && liveClose
       ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2)) : 0;
@@ -3085,10 +2616,6 @@ router.get("/status/data", (req, res) => {
       candleCount:       ptState.candles.length,
       prevCandleHigh:    ptState.prevCandleHigh,
       prevCandleLow:     ptState.prevCandleLow,
-      consecutiveLosses: ptState._consecutiveLosses || 0,
-      consecStreakLimit: _streakLimit(),   // 0 = breaker OFF — the card must not invent a denominator
-      pauseUntilTime:    ptState._pauseUntilTime || null,
-      dailyLossHit:      ptState._dailyLossHit || false,
       simMode:           ptState._simMode || false,
       simScenario:       ptState._simScenario || null,
       sessionStart:      ptState.sessionStart,
@@ -3115,8 +2642,6 @@ router.get("/status/data", (req, res) => {
         optPremiumPnl,
         optPremiumMove,
         optPremiumPct,
-        optStopPrice,
-        optStopPct:        (_optSp && _optPm) ? Math.abs(_optSp - _optPm).toFixed(1) + 'pt (50% mid)' : '20% fallback',
         liveClose,
         pointsMoved,
         bestPrice:         pos.bestPrice || null,
@@ -3183,17 +2708,11 @@ router.get("/status", (req, res) => {
   const pointsMoved = pos && liveClose
     ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2))
     : 0;
-  const trailActive = pos && pos.bestPrice !== undefined && pos.bestPrice !== null;
-  const trailProfit = pos && pos.bestPrice
+  const bestProfit = pos && pos.bestPrice
     ? parseFloat(((pos.side === "CE"
         ? pos.bestPrice - pos.entryPrice
         : pos.entryPrice - pos.bestPrice)).toFixed(2))
     : 0;
-  // Trailing-stop label: EMA21 base SL + optional candle-trail overlay
-  const _slModeLbl  = "EMA21";
-  const _ctOn       = (process.env.EMA9VWAP_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-  const _ctBars     = Math.max(1, parseInt(process.env.EMA9VWAP_CANDLE_TRAIL_BARS || "3", 10));
-  const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;
 
   // ATM/ITM badge
   const atmStrike = pos ? Math.round(pos.entryPrice / 50) * 50 : null;
@@ -3215,15 +2734,6 @@ router.get("/status", (req, res) => {
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
     ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
     : null;
-  // optStopPrice for HTML: same 50%-mid logic
-  const _h_sp   = pos ? pos.spotAtEntry  : null;
-  const _h_pm   = pos ? pos.entryPrevMid : null;
-  const optStopPrice = (optEntryLtp && _h_sp && _h_pm)
-    ? parseFloat((optEntryLtp - Math.max(Math.abs(_h_sp - _h_pm), 20)).toFixed(2))
-    : optEntryLtp ? parseFloat((optEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2)) : null;
-  const optStopPct   = (_h_sp && _h_pm)
-    ? Math.abs(_h_sp - _h_pm).toFixed(1) + 'pt (50% mid)'
-    : Math.round(_OPT_STOP_PCT * 100) + '% fallback';
 
   const posHtml = pos ? `
     <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">
@@ -3324,7 +2834,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
 
-      <!-- Secondary grid: NIFTY spot + EMA21 SL + Trail -->
+      <!-- Secondary grid: NIFTY spot + best price -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
@@ -3336,21 +2846,10 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
-          <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
-          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
-        </div>
-        <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct})</div>
-          <div id="ajax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
-          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">${optEntryLtp ? "entry 20b9" + optEntryLtp.toFixed(2) + " 2212 " + optStopPct : "awaiting entry LTP"}</div>
-        </div>
-        <div id="ajax-trail-card" data-trail="${_trailLbl}" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
-          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#f59e0b"};">${_trailLbl}</div>
-          <div id="ajax-trail-best" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Trail source: ${_trailLbl}${_ctOn ? " · tighter wins" : ""}</div>
+        <div id="ajax-best-card" style="background:#071a12;border:1px solid ${bestProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Best Spot</div>
+          <div id="ajax-best-price" style="font-size:1.05rem;font-weight:700;color:${bestProfit > 0 ? "#8b5cf6" : "#c8d8f0"};">${pos.bestPrice ? inr(pos.bestPrice) : "—"}</div>
+          <div id="ajax-best-pts" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">${bestProfit >= 0 ? "+" : ""}${bestProfit.toFixed(1)} pts · exit = profit lock</div>
         </div>
       </div>
 
@@ -3436,7 +2935,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_LIVE', ptState.running, {
+${buildSidebar('ema9vwapPaper', false, ptState.running, {
   showExitBtn:  !!ptState.position,
   showStopBtn:  ptState.running,
   showStartBtn: !ptState.running,
@@ -3488,18 +2987,8 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     </div>
     <div class="sc" style="border-top:1.5px solid #6a5090;">
       <div class="sc-label">${ptState._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
-      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_MAX_DAILY_TRADES}</span></div>
+      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span></div>
       <div id="ajax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
-    </div>
-    <div class="sc" style="border-top:2px solid ${(ptState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};" id="ajax-sc-cl">
-      <div class="sc-label">Loss Streak</div>
-      <div class="sc-val" id="ajax-consec-losses" style="color:${_streakLimit() > 0 && (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '#ef4444' : '#fff'}">${ptState._consecutiveLosses || 0}${_streakLimit() > 0 ? ` / ${_streakLimit()}` : ''}</div>
-      <div id="ajax-cl-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '#f59e0b' : '#8ba1c2'}">${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
-    </div>
-    <div class="sc" style="border-top:2px solid ${ptState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-sc-dloss">
-      <div class="sc-label">Daily Loss Limit</div>
-      <div class="sc-val" id="ajax-daily-loss-val" style="color:${ptState._dailyLossHit ? '#ef4444' : '#fff'}">${inr(-_MAX_DAILY_LOSS)}</div>
-      <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._dailyLossHit ? '#ef4444' : '#10b981'}">${ptState._dailyLossHit ? '🛑 KILLED — no entries' : '✅ Active'}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #a07010;">
       <div class="sc-label">Candles Loaded</div>
@@ -4125,33 +3614,6 @@ ${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', 
       const wlEl = document.getElementById('ajax-wl');
       if (wlEl) wlEl.textContent = d.wins + 'W \u00b7 ' + d.losses + 'L';
 
-      // Streak limit comes from the server (EMA9VWAP_MAX_CONSEC_LOSSES); 0 = OFF.
-      // Never render a "/ 3" the engine will not act on.
-      const clLimit = Number(d.consecStreakLimit || 0);
-      const clNear  = clLimit > 0 && (d.consecutiveLosses || 0) >= clLimit - 1;
-      const clEl = document.getElementById('ajax-consec-losses');
-      if (clEl) {
-        clEl.textContent = (d.consecutiveLosses || 0) + (clLimit > 0 ? ' / ' + clLimit : '');
-        clEl.style.color = clNear ? '#ef4444' : '#fff';
-        const card = clEl.closest('.sc');
-        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#8ba1c2';
-      }
-      const clStatus = document.getElementById('ajax-cl-status');
-      if (clStatus) {
-        const paused = d.pauseUntilTime && Date.now() < d.pauseUntilTime;
-        clStatus.textContent = paused ? '\u23f8 PAUSED' : clLimit <= 0 ? '\u2796 breaker OFF' : clNear ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
-        clStatus.style.color = paused ? '#f59e0b' : '#8ba1c2';
-      }
-
-      // Daily loss kill switch card
-      const dlCard = document.getElementById('ajax-sc-dloss');
-      const dlStatus = document.getElementById('ajax-daily-loss-status');
-      if (dlCard) dlCard.style.borderTopColor = d.dailyLossHit ? '#ef4444' : '#10b981';
-      if (dlStatus) {
-        dlStatus.textContent = d.dailyLossHit ? '\uD83D\uDED1 KILLED \u2014 no entries' : '\u2705 Active';
-        dlStatus.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-      }
-
       const candleEl = document.getElementById('ajax-candle-count');
       if (candleEl) {
         candleEl.textContent = d.candleCount;
@@ -4240,11 +3702,6 @@ ${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', 
             pctEl.textContent = '\u2014';
           }
         }
-        // Option SL price
-        const optSlEl = document.getElementById('ajax-opt-sl');
-        if (optSlEl) {
-          optSlEl.textContent = p.optStopPrice ? '\u20b9' + p.optStopPrice.toFixed(2) : '\u2014';
-        }
         const optPnlEl = document.getElementById('ajax-opt-pnl');
         if (optPnlEl && p.optPremiumPnl !== null) {
           optPnlEl.textContent = (p.optPremiumPnl >= 0 ? '+' : '') + INR(p.optPremiumPnl);
@@ -4266,26 +3723,18 @@ ${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', 
             sub.style.color = moved >= 0 ? '#10b981' : '#ef4444';
           }
         }
-        // SL
-        const slEl = document.getElementById('ajax-stop-loss');
-        if (slEl) slEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\u2014';
-        // Trail status card
-        const trailCard  = document.getElementById('ajax-trail-card');
-        const trailStat  = document.getElementById('ajax-trail-status');
-        const trailBest  = document.getElementById('ajax-trail-best');
-        const trailAct   = document.getElementById('ajax-trail-activate');
-        if (trailCard && trailStat && trailBest) {
-          const tActive     = p.bestPrice !== null && p.bestPrice !== undefined;
-          const tProfit     = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
-          const tProfDir    = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
-          const trailLbl    = trailCard.dataset.trail || 'EMA21';
-          const inProfit    = tProfDir > 0;
-          trailCard.style.borderColor = inProfit ? '#8b5cf6' : '#134e35';
-          trailStat.textContent  = trailLbl;
-          trailStat.style.color  = inProfit ? '#8b5cf6' : '#f59e0b';
-          const pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
-          trailBest.textContent  = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
-          if (trailAct) trailAct.textContent = 'Trail source: ' + trailLbl;
+        // Best spot card
+        const bestCard = document.getElementById('ajax-best-card');
+        const bestPx   = document.getElementById('ajax-best-price');
+        const bestPts  = document.getElementById('ajax-best-pts');
+        if (bestCard && bestPx && bestPts) {
+          const tActive  = p.bestPrice !== null && p.bestPrice !== undefined;
+          const tProfDir = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
+          const inProfit = tProfDir > 0;
+          bestCard.style.borderColor = inProfit ? '#8b5cf6' : '#134e35';
+          bestPx.textContent = tActive ? '\u20b9' + p.bestPrice.toLocaleString('en-IN') : '\u2014';
+          bestPx.style.color = inProfit ? '#8b5cf6' : '#c8d8f0';
+          bestPts.textContent = (tProfDir >= 0 ? '+' : '') + tProfDir.toFixed(1) + ' pts \u00b7 exit = profit lock';
         }
       }
 
@@ -4361,7 +3810,7 @@ ${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', 
  */
 router.get("/history", (req, res) => {
   const data = loadPaperData();
-  const liveActive = sharedSocketState.getEma9VwapMode() === "EMA9VWAP_LIVE";
+  const liveActive = false;
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
     routePrefix: "/ema9vwap-paper",
@@ -4916,11 +4365,6 @@ function _post(url, body, btn, resetLabel) {
 
 router.post("/simulate/start", async (req, res) => {
   if (ptState.running) return res.json({ success: false, error: "Session already running. Stop it first." });
-  // The simulator sets ptState.running directly instead of going through /start, so
-  // it bypasses that handler's harness release. simulateBuy already skips notifyEntry
-  // in sim mode, but that is ONE guard; release here too so the safety does not rest
-  // on a single flag.
-  _releaseLiveHarness("simulate/start");
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
@@ -4950,15 +4394,10 @@ router.post("/simulate/start", async (req, res) => {
     ptState.prevCandleMid  = null;
     ptState.optionLtp      = null;
     ptState.optionSymbol   = null;
-    ptState._consecutiveLosses   = 0;
-    ptState._pauseUntilTime      = null;
     ptState._fiftyPctPauseUntil  = null;
-    ptState._dailyLossHit        = false;
     ptState._cachedCE            = null;
     ptState._cachedPE            = null;
-    ptState._maxTradesLoggedCandle = null;
     ptState._slHitCandleTime     = null;
-    ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
     ptState._reentryBlockUntil   = 0;
     ptState._oppositeCooldownUntilTs  = 0;
     ptState._oppositeCooldownLastSide = null;
@@ -4968,10 +4407,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._sessionWins         = 0;
     ptState._sessionLosses       = 0;
     ptState._expiryDayBlocked    = false;
-    // These three are reset by /start but were missing here, so a scenario inherited
-    // them from whatever ran before it. A latched chop guard (N straight losses in a
-    // prior session) silently produced a 0-trade simulation that read as "no signals".
-    ptState._chopConsecLosses    = 0;
+    // Reset by /start too, so a scenario never inherits them from whatever ran before it.
     ptState._skipSignalCtx       = null;
     ptState._sessionId           = null;
     ptState._simMode             = true;
@@ -5144,22 +4580,17 @@ router.post("/simulate/start", async (req, res) => {
 /**
  * stopSession() — square off + stop the session, callable by app.js
  * gracefulShutdown on SIGTERM / auto-deploy. Without this export the shutdown
- * routeMap skipped EMA9VWAP_PAPER (typeof stopSession !== "function"), so a
- * harness-live position was never squared off on a deploy/restart and the
+ * routeMap skipped EMA9VWAP_PAPER (typeof stopSession !== "function"), so an
+ * open position was never squared off on a deploy/restart and the
  * shutdown Telegram falsely reported it squared. Idempotent: no-op if not running.
  */
 function stopSession(reason = "Shutdown square-off") {
-  // The harness must be dropped even when the engine is already stopped — a harness
-  // that outlived its session is exactly the state that let a later paper start
-  // place real orders.
-  if (!ptState.running) { _releaseLiveHarness("stopSession/shutdown — engine not running"); return; }
+  if (!ptState.running) return;
   try {
     if (ptState.position && ptState.currentBar) {
       simulateSell(ptState.currentBar.close, reason, ptState.currentBar.close);
     }
   } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
-  // Released AFTER the square-off (releasing first dropped the closing notifyExit).
-  _releaseLiveHarness("stopSession/shutdown");
   // The square-off above is conditional on currentBar and can throw, so a
   // position may survive it. Free its capital reservation either way — a leaked
   // block would keep shrinking the broker pool for the rest of the process.
@@ -5175,8 +4606,5 @@ function stopSession(reason = "Shutdown square-off") {
   try { saveSession(); } catch (_) {}
 }
 router.stopSession = stopSession;
-// Read-only view of engine state for sibling routes (the live-harness page needs
-// to know whether the paper engine is still running after the harness was released).
-router.getState = () => ({ running: ptState.running, hasPosition: !!ptState.position });
 
 module.exports = router;

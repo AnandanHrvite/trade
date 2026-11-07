@@ -25,11 +25,11 @@
  * The consequence that matters for trading: **a Heikin Ashi candle is not a
  * tradeable price.** haClose is an average of four prices; nothing ever traded
  * there. So every DECISION is read off the HA candle, and every PRICE — entry
- * fill reference and stop level — is read off the RAW candle. Mixing the two is
+ * fill reference — is read off the RAW candle. Mixing the two is
  * the classic Heikin Ashi mistake and it silently invents fills that could not
  * have happened.
  *
- * ── THE DAY, IN FOUR RULES ──────────────────────────────────────────────────
+ * ── THE DAY, IN THREE RULES ─────────────────────────────────────────────────
  *
  *  1. TREND — the 50-period MA of RAW 15-minute closes (HA_SCALP_MA_PERIOD,
  *     HA_SCALP_MA_TYPE = sma | ema, default sma).
@@ -63,53 +63,18 @@
  *     (default 5). A zero-range HA candle has "no wick" trivially and would
  *     otherwise be a signal.
  *
- *  3. ENTRY PRICE + STOP — both read off RAW candles, never HA.
+ *  3. ENTRY PRICE — read off the RAW candle, never HA.
  *
  *         entry = the NEXT candle's OPEN. The signal fires at a 15-minute
  *                 close and is filled at the open of the bar that follows, which
  *                 is exactly the next tick the market prints. Paper and Live
  *                 both enter on the first tick after the signal bar closes;
  *                 Backtest uses the next raw bar's open. Same event.
- *         stop  = the SIGNAL candle's RAW extreme (a LEVEL, frozen at entry and
- *                 never moved again):
- *                     CE → the signal candle's raw LOW  − HA_SCALP_SL_BUFFER_PTS
- *                     PE → the signal candle's raw HIGH + HA_SCALP_SL_BUFFER_PTS
  *
- *     The user's rule says "SL is previous candle high/low". At the moment of
- *     entry the signal candle IS the previous candle, so those are the same
- *     level; it is stored frozen so it cannot drift while the trade is open.
- *
- *     HA_SCALP_MAX_SL_PTS (default 0 = OFF) rejects setups whose stop is
- *     further than N spot points away. It exists because a wide HA candle can
- *     hand the trade a 120-point stop, and 0 means the rules run exactly as
- *     written unless the user turns it on.
- *
- *  4. EXITS — three, all read on 15-minute HA closes, plus the route's EOD:
- *
- *     a. STOP — the frozen raw level above. Tested per tick on spot.
- *     b. DOJI — an HA candle whose body is <= HA_SCALP_DOJI_BODY_PCT (default
- *        20) of its range. In the user's words: "high chances for trend
- *        reversal". It exits regardless of colour, because a doji closes the
- *        trend question either way.
- *     c. WEAK — an HA candle in the trend's own direction whose body is
- *        smaller than HA_SCALP_WEAK_BODY_PCT (default 40) of its range, or an
- *        HA candle of the OPPOSITE colour. "Trend is getting weak, ready for
- *        exit better."
- *
- *     d. BREAKEVEN + TRAIL (HA_SCALP_TRAIL_ENABLED, default ON) — the stop is
- *        frozen only until the trade earns the right to move it. Once
- *        favourable by HA_SCALP_BREAKEVEN_PTS (20) the stop lifts to the entry;
- *        once favourable by HA_SCALP_TRAIL_START_PTS (25) it follows the best
- *        spot at HA_SCALP_TRAIL_PTS (20) behind. It RATCHETS — never widened.
- *
- *        Added 2026-09-15 after the first 14 paper trades: 10 of them were up
- *        more than ₹200 at some point (₹10,186 of open profit in total) and
- *        every one round-tripped, because the stop never moved and there is no
- *        target. Set HA_SCALP_TRAIL_ENABLED=false for the original frozen-stop
- *        behaviour.
- *
- *     There is still NO fixed target. The trade runs until the stop (frozen,
- *     breakeven or trailed), a doji, a weak candle, or the square-off time.
+ * ── EXITS — none here ───────────────────────────────────────────────────────
+ * This engine decides ENTRIES only. The routes exit through the global profit
+ * lock (tradeGuards.checkProfitLock), the manual exit and the session teardown.
+ * There is no stop loss, trail, breakeven, target or candle exit in this file.
  *
  * ── THE FIRST HA CANDLE OF THE DAY ──────────────────────────────────────────
  * haOpen is recursive across the overnight boundary. This engine builds the HA
@@ -122,17 +87,14 @@
  * No auto-drawn trend line (the user chose the 50 MA as the sole trend test —
  * a drawn line depends on which swing points you pick and is not reproducible),
  * no VIX gate, no OI filter, no ADX, no RSI, no ATR, no VWAP, no SuperTrend, no
- * volume test, no multi-timeframe bias, no extra confirmation candle, no fixed
- * target, no partial booking, no premium stop, no re-entry rule beyond the
- * shared cooldown, no expiry-day special case. (The breakeven jump and trailing
- * stop WERE on this list until 2026-09-15 — see exit rule 4d for why they moved.)
+ * volume test, no multi-timeframe bias, no extra confirmation candle, no re-entry
+ * rule beyond the shared cooldown, no expiry-day special case.
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
  * Every value a decision reads comes from CLOSED 15-minute candle OHLC as
  * returned by the history API. No live tick and no live spot enters any signal
  * computation, so Paper, Backtest, Live and Replay compute identical numbers
- * from the same session. The live spot is used for ONE thing only: testing the
- * already-frozen stop level per tick.
+ * from the same session.
  *
  * ── NOT MARKET-VALIDATED ────────────────────────────────────────────────────
  * Zero trades, paper or live. The wick rule is EXACT-ZERO by the user's choice,
@@ -144,9 +106,8 @@
  *   getConfig()                      -> live env read (never cached)
  *   toHeikinAshi(candles, opts)      -> HA series, index-aligned to `candles`
  *   computeMA(candles, cfg)          -> MA series, index-aligned to `candles`
- *   classifyCandle(ha, cfg)          -> { bullish, bearish, doji, weak, ... }
- *   getSignal(candles, opts)         -> { signal, side, entrySpot, slSpot, ... }
- *   stopHit / trailStop / exitSignal -> the ONLY exit tests (plus route EOD)
+ *   classifyCandle(ha, cfg)          -> { bullish, bearish, doji, ... }
+ *   getSignal(candles, opts)         -> { signal, side, entrySpot, ... }
  */
 
 const { SMA, EMA } = require("technicalindicators");
@@ -154,7 +115,7 @@ const { SMA, EMA } = require("technicalindicators");
 const NAME = "HA_SCALP";
 const DESCRIPTION =
   "Heikin Ashi Scalp — a no-wick 15-minute Heikin Ashi candle in the direction of the 50 MA is entered at the " +
-  "next candle's open, stopped at the signal candle's raw high/low, and exited on a doji or a weak candle";
+  "next candle's open; the global profit lock is its only automatic exit";
 
 // ── primitives ───────────────────────────────────────────────────────────────
 function _r2(x) { return Math.round(x * 100) / 100; }
@@ -250,27 +211,11 @@ function getConfig() {
     maxWickPct:      _numEnv("HA_SCALP_MAX_WICK_PCT", 0, 0, 100),
     minBodyPts:      _numEnv("HA_SCALP_MIN_BODY_PTS", 5, 0),
 
-    // Exits
+    // A doji (body <= this % of range) is never an entry.
     dojiBodyPct:     _numEnv("HA_SCALP_DOJI_BODY_PCT", 20, 0, 100),
-    weakBodyPct:     _numEnv("HA_SCALP_WEAK_BODY_PCT", 40, 0, 100),
-    exitOnDoji:      _boolEnv("HA_SCALP_EXIT_ON_DOJI", true),
-    exitOnWeak:      _boolEnv("HA_SCALP_EXIT_ON_WEAK", true),
 
-    // Risk
-    slBufferPts:     _numEnv("HA_SCALP_SL_BUFFER_PTS", 15, 0),
-    maxSlPts:        _numEnv("HA_SCALP_MAX_SL_PTS", 0, 0),
     // Stretched-move guard: skip when the raw close is this far from the MA.
     maxMaDistPts:    _numEnv("HA_SCALP_MAX_MA_DIST_PTS", 150, 0),
-
-    // Breakeven + spot trail. Both ratchet the stop one way only and are read
-    // on CLOSED candles, like every other decision here — the per-tick test
-    // stays the single frozen-level compare in stopHit().
-    trailEnabled:    _boolEnv("HA_SCALP_TRAIL_ENABLED", true),
-    breakevenPts:    _numEnv("HA_SCALP_BREAKEVEN_PTS", 20, 0),
-    trailPts:        _numEnv("HA_SCALP_TRAIL_PTS", 20, 0),
-    trailStartPts:   _numEnv("HA_SCALP_TRAIL_START_PTS", 25, 0),
-    // The global +% premium breakeven (tradeGuards) — off here by default.
-    premiumBreakeven: _boolEnv("HA_SCALP_PREMIUM_BREAKEVEN_ENABLED", false),
   };
 }
 
@@ -382,14 +327,14 @@ function computeMA(candles, opts) {
  * same thing on a quiet 20-point bar and a 200-point bar. A zero-range candle
  * is reported as doji and never as a valid entry.
  *
- * @returns {{ bullish, bearish, doji, weak, bodyPct, upperWickPct, lowerWickPct,
+ * @returns {{ bullish, bearish, doji, bodyPct, upperWickPct, lowerWickPct,
  *             noTopWick, noBottomWick, range, body }}
  */
 function classifyCandle(ha, opts) {
   const o = opts || {};
   const cfg = o.cfg || getConfig();
   const out = {
-    ok: false, bullish: false, bearish: false, doji: false, weak: false,
+    ok: false, bullish: false, bearish: false, doji: false,
     bodyPct: null, upperWickPct: null, lowerWickPct: null,
     noTopWick: false, noBottomWick: false, range: null, body: null,
   };
@@ -404,7 +349,6 @@ function classifyCandle(ha, opts) {
   if (!(ha.range > 0)) {
     // A flat candle has no direction and no wick. It is a doji, never an entry.
     out.doji = true;
-    out.weak = true;
     out.bodyPct = 0;
     out.upperWickPct = 0;
     out.lowerWickPct = 0;
@@ -416,7 +360,6 @@ function classifyCandle(ha, opts) {
   out.lowerWickPct = _r2((ha.lowerWick / ha.range) * 100);
 
   out.doji = out.bodyPct <= cfg.dojiBodyPct;
-  out.weak = out.bodyPct < cfg.weakBodyPct;
   out.noTopWick = out.upperWickPct <= cfg.maxWickPct;
   out.noBottomWick = out.lowerWickPct <= cfg.maxWickPct;
   return out;
@@ -426,7 +369,7 @@ function classifyCandle(ha, opts) {
 function _baseSignal(cfg) {
   return {
     signal: "NONE", side: null, reason: "", skipReason: "", warmup: false,
-    entrySpot: null, slSpot: null, slPts: null, signalStrength: null,
+    entrySpot: null, signalStrength: null,
     ma: null, maType: null, trend: null,
     haOpen: null, haHigh: null, haLow: null, haClose: null,
     bodyPct: null, upperWickPct: null, lowerWickPct: null,
@@ -442,7 +385,7 @@ function _baseSignal(cfg) {
  * @param {Array} candles ascending 15-min IST **raw NIFTY spot** bars. The LAST
  *        element is the just-CLOSED signal candle — never a forming bar (the
  *        caller decides that).
- * @param {object} opts { cfg, silent, alreadyTraded, ha, ma }
+ * @param {object} opts { cfg, silent, ha, ma }
  *        `ha` and `ma` may be passed in when the caller has already computed
  *        them for a chart, purely to avoid recomputation — they must be the
  *        index-aligned outputs of this file's own helpers.
@@ -494,11 +437,6 @@ function getSignal(candles, opts) {
     base.skipReason = base.reason = `Past ${_fmtMins(cfg.entryEndMin)} — no new entries`;
     return base;
   }
-  if (o.alreadyTraded) {
-    base.skipReason = base.reason = "Daily trade budget spent — no new entries";
-    return base;
-  }
-
   // ── Heikin Ashi + MA, both index-aligned to `candles`. ────────────────────
   const ha = pre ? pre.ha
     : Array.isArray(o.ha) && o.ha.length === n ? o.ha : toHeikinAshi(candles, { cfg });
@@ -587,184 +525,29 @@ function getSignal(candles, opts) {
     return base;
   }
 
-  // ── 3. LEVELS. Both read off the RAW candle — an HA price never traded. ───
-  //    entry is the reference the routes fill against: Paper/Live take the
-  //    first tick after this bar closes, Backtest takes the next raw bar's
-  //    open. The signal bar's raw close is stored as the reference price.
+  // ── 3. ENTRY. Read off the RAW candle — an HA price never traded. Paper/Live
+  //    take the first tick after this bar closes, Backtest takes the next raw
+  //    bar's open. The signal bar's raw close is stored as the reference price.
   const entry = _r2(sig.close);
-  const slSpot = _r2(wantCE ? sig.low - cfg.slBufferPts : sig.high + cfg.slBufferPts);
-
-  // Geometry sanity. `spot >= null` is `spot >= 0`, so every level is checked
-  // finite first, and then checked to be on the side the trade needs it on.
-  if (!_num(slSpot)) {
-    base.skipReason = base.reason = "Stop level not computable — refusing to enter without one";
-    return base;
-  }
-  if (wantCE ? entry <= slSpot : entry >= slSpot) {
-    base.skipReason = base.reason =
-      `Signal candle closed ${entry}, already ${wantCE ? "at or below" : "at or above"} its own ${wantCE ? "low" : "high"} ` +
-      `stop ${slSpot} — the trade would be stopped on its first tick`;
-    return base;
-  }
-
-  const slPts = _r2(Math.abs(entry - slSpot));
-  base.slPts = slPts;
-  if (!(slPts > 0)) {
-    base.skipReason = base.reason = `Stop distance resolved to ${slPts}pt — refusing a zero-risk trade`;
-    return base;
-  }
-
-  // ── Optional guard (defaults to OFF — see the header). ────────────────────
-  if (cfg.maxSlPts > 0 && slPts > cfg.maxSlPts) {
-    base.skipReason = base.reason =
-      `Setup valid but the signal candle's ${wantCE ? "low" : "high"} is ${slPts}pt away > ${cfg.maxSlPts}pt cap — ` +
-      `SKIPPED (the stop is never moved closer than the rule says)`;
-    return base;
-  }
 
   base.signal = wantCE ? "BUY_CE" : "BUY_PE";
   base.side = side;
   base.signalStrength = "STRONG";
   base.entrySpot = entry;
-  base.slSpot = slSpot;
   base.reason =
     `HA SCALP ${side}: trend ${base.trend} (raw close ${entry} ${wantCE ? "above" : "below"} the ${cfg.maPeriod} ` +
     `${cfg.maType.toUpperCase()} ${ma}) | ${wantCE ? "bullish" : "bearish"} Heikin Ashi candle with NO ${wickLabel.toUpperCase()} WICK ` +
     `(${wickPct}% of range, body ${cls.body}pt = ${cls.bodyPct}%) closed ${_fmtMins(closeMins)} | ` +
-    `entry at the next candle's open | SL = signal candle raw ${wantCE ? "low" : "high"} ${slSpot} (${slPts}pt)`;
+    `entry at the next candle's open`;
 
   if (!o.silent) {
     const ist = new Date(sig.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
     console.log(
       `[HA_SCALP ${ist}] ENTER ${side} | trend ${base.trend} vs MA ${ma} | ` +
-      `HA body ${cls.body}pt (${cls.bodyPct}%), ${wickLabel} wick ${wickPct}% | SL ${slSpot} (${slPts}pt)`
+      `HA body ${cls.body}pt (${cls.bodyPct}%), ${wickLabel} wick ${wickPct}%`
     );
   }
   return base;
-}
-
-// ── Exit rules (ONE place, so paper / backtest / live / replay cannot drift) ──
-/**
- * Stop taken out? The stop is a fixed spot LEVEL, frozen at entry, and never
- * moves. A CE is stopped when spot falls to the signal candle's low; a PE when
- * spot rises to the signal candle's high.
- *
- * `stop` must be a finite level — `price <= null` is `price <= 0`, which would
- * book a stop on the very first tick.
- */
-function stopHit(side, price, stop) {
-  if (!_num(price) || !_num(stop)) return false;
-  return side === "CE" ? price <= stop : price >= stop;
-}
-
-/**
- * Breakeven + spot trail. Returns the NEW stop level, or null to leave the stop
- * alone. Never widens: a returned level is always at least as tight as `slSpot`,
- * so a retrace cannot hand the trade back its original risk.
- *
- * Two stages, both measured in SPOT points from the entry (the same units the
- * stop itself is in — no premium anywhere, so this stays as deterministic as
- * the rest of the engine):
- *
- *   BREAKEVEN — once favourable by `breakevenPts`, the stop moves to the entry.
- *               The trade can no longer become a full loss.
- *   TRAIL     — once favourable by `trailStartPts`, the stop follows `bestSpot`
- *               at a distance of `trailPts`.
- *
- * Both are applied in that order and the tightest wins, so with trailStartPts
- * below breakevenPts the trail simply takes over earlier. Called on candle
- * close; `bestSpot` is the best spot seen so far (tracked per tick by the route).
- *
- * @param {"CE"|"PE"} side
- * @param {object} pos  { entrySpot, slSpot, bestSpot }
- * @param {object} opts { cfg }
- * @returns {{ stop: number, reason: "BREAKEVEN"|"TRAIL", favPts: number } | null}
- */
-function trailStop(side, pos, opts) {
-  const o = opts || {};
-  const cfg = o.cfg || getConfig();
-  if (!cfg.trailEnabled) return null;
-  if (side !== "CE" && side !== "PE") return null;
-  if (!pos || !_num(pos.entrySpot) || !_num(pos.slSpot)) return null;
-
-  const best = _num(pos.bestSpot) ? pos.bestSpot : pos.entrySpot;
-  const dir = side === "CE" ? 1 : -1;
-  const favPts = (best - pos.entrySpot) * dir;
-  if (!(favPts > 0)) return null;
-
-  let stop = null, reason = null;
-
-  if (cfg.breakevenPts > 0 && favPts >= cfg.breakevenPts) {
-    stop = pos.entrySpot;
-    reason = "BREAKEVEN";
-  }
-  if (cfg.trailPts > 0 && favPts >= cfg.trailStartPts) {
-    const cand = best - dir * cfg.trailPts;
-    // Tighter of the two: further along the trade's direction.
-    if (stop == null || (cand - stop) * dir > 0) { stop = cand; reason = "TRAIL"; }
-  }
-  if (stop == null) return null;
-
-  // Ratchet only — never loosen a stop that is already tighter.
-  if ((stop - pos.slSpot) * dir <= 0) return null;
-  return { stop: _r2(stop), reason, favPts: _r2(favPts) };
-}
-
-/**
- * Candle-close exit test, run on each CLOSED 15-minute HA candle while a
- * position is open. Returns null when the trade should be left alone.
- *
- * Two reasons, in the user's own terms:
- *   DOJI — body <= dojiBodyPct of range. "High chances for trend reversal."
- *          Colour is irrelevant: a doji ends the trend question either way.
- *   WEAK — the candle turned the OPPOSITE colour, or its body is below
- *          weakBodyPct of range. "Trend is getting weak, ready for exit."
- *
- * A doji is reported as DOJI even though it is also weak, because the reason
- * string is what the user reads in the log and the doji is the stronger signal.
- *
- * @returns {{ reason, label, detail } | null}
- */
-function exitSignal(side, ha, opts) {
-  const o = opts || {};
-  const cfg = o.cfg || getConfig();
-  if (!ha || (side !== "CE" && side !== "PE")) return null;
-
-  const cls = classifyCandle(ha, { cfg });
-  if (!cls.ok) return null;
-
-  if (cfg.exitOnDoji && cls.doji) {
-    return {
-      reason: "HA_DOJI",
-      label: "Doji candle",
-      detail:
-        `Heikin Ashi doji (body ${cls.body}pt = ${cls.bodyPct}% of a ${cls.range}pt range <= ${cfg.dojiBodyPct}%) — ` +
-        `trend reversal risk, exiting the ${side}`,
-    };
-  }
-
-  if (cfg.exitOnWeak) {
-    const withTrend = side === "CE" ? cls.bullish : cls.bearish;
-    if (!withTrend) {
-      return {
-        reason: "HA_OPPOSITE",
-        label: "Opposite colour candle",
-        detail:
-          `Heikin Ashi candle turned ${cls.bullish ? "bullish" : "bearish"} against the ${side} ` +
-          `(HA open ${ha.open} → close ${ha.close}) — trend broken, exiting`,
-      };
-    }
-    if (cls.weak) {
-      return {
-        reason: "HA_WEAK",
-        label: "Weak strength candle",
-        detail:
-          `Heikin Ashi candle still ${side === "CE" ? "bullish" : "bearish"} but weak ` +
-          `(body ${cls.body}pt = ${cls.bodyPct}% of range < ${cfg.weakBodyPct}%) — momentum fading, exiting`,
-      };
-    }
-  }
-  return null;
 }
 
 module.exports = {
@@ -776,9 +559,6 @@ module.exports = {
   computeMA,
   classifyCandle,
   getSignal,
-  stopHit,
-  trailStop,
-  exitSignal,
   // shared time helpers (routes must not re-derive IST arithmetic)
   _istDayOf,
   _istDateStr,

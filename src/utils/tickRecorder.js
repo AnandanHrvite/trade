@@ -231,7 +231,7 @@ function recordSpotTick(tick, spotSymbol) {
  * Record one option LTP REST poll result.
  *   symbol — full Fyers option symbol e.g. "NSE:NIFTY2451524500CE"
  *   ltp    — number from the REST quote
- *   src    — string mode tag for debugging ("pa-paper", "bb_rsi-live", etc.)
+ *   src    — string mode tag for debugging ("pa-paper", "bb_rsi-paper", etc.)
  */
 function recordOptionLtp(symbol, ltp, src) {
   if (!ENABLED || ltp == null || !symbol) return;
@@ -319,7 +319,7 @@ function recordChainOi(symbol, oi) {
 
 /**
  * Record a session-start event with everything needed to seed a replay:
- *   - mode: "pa-paper" | "pa-live" | "bb_rsi-paper" | etc.
+ *   - mode: "pa-paper" | "bb_rsi-paper" | etc.
  *   - sessionId: caller-provided unique id (used to pair start ↔ stop events)
  *   - settings: env snapshot of all strategy-relevant keys
  *   - warmup: array of historical candles loaded to seed indicators
@@ -403,19 +403,17 @@ function recordMarketContext(ctx) {
 const _SETTINGS_KEY_MATCHERS = [
   /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^EMA_RSI_ST_V2_/, /^BN_EMA_RSI_ST_V2_/, /^ORB_/, /^TREND_PB_/, /^TDS_/, /^HA_SCALP_/, /^PREV_ORB_SCALP_/, /^EARLYBIRD_/, /^RSI_PIVOT_ST_/, /^BN_PIVOT_RSI_ST_/, /^SIMPLE930_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
   /^MAX_/, /^MIN_/, /^EMA_/, /^SAR_/, /^RSI_/, /^ADX_/,
-  /^INSTRUMENT/, /^OPTION_/, /^BREAKEVEN/, /^FAIL_MODE/,
+  /^INSTRUMENT/, /^OPTION_/, /^FAIL_MODE/,
   /^MODE_/, /^EXPIRY/, /^STRIKE/, /^QTY/, /^LOT/, /^SIGNAL/,
   // Added so snapshot-mode replay pins these too (they influence paper decisions
   // but weren't captured, so replays silently used TODAY's env for them):
   //   EMA9VWAP_* — the whole EMA9+VWAP strategy (NOT matched by /^EMA_/, key is "EMA9…")
   //   OI_*       — the OI-filter master switch (per-mode {PA,EMA_RSI_ST,…}_OI_ENABLED were caught)
-  //   OPT_*      — EMA_RSI_ST's OPT_STOP_PCT (/^OPTION_/ does not match "OPT_")
-  //   TIME_STOP_*— shared tradeGuards time-stop
   //   NIFTY*     — NIFTY_LOT_SIZE (/^LOT/ does not match "NIFTY_LOT_SIZE")
   //   LTP_STALE* — stale-LTP fallback window
-  /^EMA9VWAP_/, /^OI_/, /^OPT_/, /^TIME_STOP_/, /^NIFTY/, /^LTP_STALE/,
-  //   PROFIT_LOCK_* — the global profit-lock guard (its sibling BREAKEVEN_* is
-  //   matched above). Uncaptured, a snapshot replay ran with TODAY's lock values.
+  /^EMA9VWAP_/, /^OI_/, /^NIFTY/, /^LTP_STALE/,
+  //   PROFIT_LOCK_* — the global profit-lock guard. Uncaptured, a snapshot
+  //   replay ran with TODAY's lock values.
   /^PROFIT_LOCK_/,
   //   PORTFOLIO_* — the cross-strategy daily loss cap; it can block every entry,
   //   so a snapshot replay must use the cap the session ran with, not today's.
@@ -453,11 +451,9 @@ function snapshotSettings() {
       out[k] = process.env[k];
     }
   }
-  // Default-ON global guards: write the effective value even when the key is
-  // unset, so a recording always says whether they were on.
-  for (const k of ["PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
-    if (out[k] === undefined) out[k] = "true";
-  }
+  // Default-ON global guard: write the effective value even when the key is
+  // unset, so a recording always says whether it was on.
+  if (out.PROFIT_LOCK_ENABLED === undefined) out.PROFIT_LOCK_ENABLED = "true";
   if (out.PROFIT_LOCK_TRAIL_PCT === undefined) out.PROFIT_LOCK_TRAIL_PCT = "70";
   if (out.PROFIT_LOCK_TRAIL_TIERS === undefined) out.PROFIT_LOCK_TRAIL_TIERS = "20:85,40:80";
   if (out.EXIT_REENTRY_COOLDOWN_CANDLES === undefined) out.EXIT_REENTRY_COOLDOWN_CANDLES = "2";

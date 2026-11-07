@@ -3,16 +3,16 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Date-range backtest of the Trend Pullback strategy. Replays 5-min candles
  * through the SAME signal engine (src/strategies/trend_pb.js) and RE-IMPLEMENTS
- * the paper route's SPOT-based exits (paper is canonical) — it does NOT use the
- * shared single-pass backtestEngine (whose exits are EMA_RSI_ST-flavored).
+ * the paper route's exit (paper is canonical): the global profit lock on the
+ * simulated premium, else held to the end of the day's session. It does NOT use
+ * the shared single-pass backtestEngine (whose exits are EMA_RSI_ST-flavored).
  *
  * Honesty features (agreed in design review):
  *   • Realistic costs — getCharges (brokerage + statutory) PLUS a spread/slippage
  *     haircut of TREND_PB_BT_SLIPPAGE_PTS premium points EACH WAY. Without this a
  *     backtest of option BUYING looks great and loses money live.
  *   • Dumb baseline — the same range is run with a naive "enter in the 15m-trend
- *     direction at the window open, ATR-trail on spot, EOD exit; no pullback
- *     filter" engine. The strategy must BEAT this baseline, else its filters are
+ *     direction at the window open, same exit; no pullback filter" engine. The strategy must BEAT this baseline, else its filters are
  *     curve-fit noise.
  *   • Walk-forward — trades are split into rolling out-of-sample folds (walkForward.js)
  *     with a stability verdict + thin-fold flags. Params are fixed defaults, so
@@ -24,7 +24,6 @@
 
 const express = require("express");
 const router  = express.Router();
-const { EMA, ATR } = require("technicalindicators");
 const trendPbStrategy = require("../strategies/trend_pb");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const vixFilter = require("../services/vixFilter");
@@ -59,17 +58,6 @@ function istHHMMSS(unixSec) {
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
-function _emaAtLast(closes, period) {
-  if (!closes || closes.length < period) return null;
-  const arr = EMA.calculate({ period, values: closes });
-  return arr && arr.length ? arr[arr.length - 1] : null;
-}
-function _atrAtLast(window, period) {
-  if (!window || window.length < period + 1) return null;
-  const arr = ATR.calculate({ period, high: window.map(c => c.high), low: window.map(c => c.low), close: window.map(c => c.close) });
-  return arr && arr.length ? arr[arr.length - 1] : null;
-}
-
 /**
  * Run the backtest. `baseline=true` swaps the entry rule for the naive
  * bias-at-window-open engine but keeps the identical exit machinery + costs.
@@ -93,26 +81,6 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
   const SLIPPAGE_PTS = parseFloat(process.env.TREND_PB_BT_SLIPPAGE_PTS || "1.5");     // spread+slippage haircut EACH way (premium pts)
   const SIG_WINDOW   = parseInt(process.env.TREND_PB_SIG_WINDOW || "300", 10);        // trailing bars to seed EMA50(15m)
 
-  // Exit params — mirror trendPbPaper.js exactly.
-  const CLAMP_MIN    = parseFloat(process.env.TREND_PB_STOP_CLAMP_MIN || "8");
-  const CLAMP_MAX    = parseFloat(process.env.TREND_PB_STOP_CLAMP_MAX || "30");
-  const BE_R         = parseFloat(process.env.TREND_PB_BREAKEVEN_R || "1.0");
-  const TRAIL_MULT   = parseFloat(process.env.TREND_PB_TRAIL_ATR_MULT || "2.5");
-  const ATR_PERIOD   = parseInt(process.env.TREND_PB_ATR_PERIOD || "14", 10);
-  const TRAIL_EMA    = Math.max(2, parseInt(process.env.TREND_PB_TRAIL_EMA || "20", 10));
-  const EMA_EXIT_ON  = (process.env.TREND_PB_EMA_EXIT_ENABLED || "true").toLowerCase() === "true";
-  const EMA5_PERIOD  = parseInt(process.env.TREND_PB_EMA5_PERIOD || "20", 10);
-  const TS_CANDLES   = parseInt(process.env.TREND_PB_TIME_STOP_CANDLES || "6", 10);
-  const TS_FLAT      = parseFloat(process.env.TREND_PB_TIME_STOP_FLAT_PTS || "12");
-  const PREM_STOP_PCT= parseFloat(process.env.TREND_PB_PREMIUM_STOP_PCT || "35");
-  const MAX_TRADE_LOSS = parseFloat(process.env.TREND_PB_MAX_TRADE_LOSS || "0");
-  const MAX_TRADES   = parseInt(process.env.TREND_PB_MAX_DAILY_TRADES || "3", 10);
-  // Session circuit breakers — paper checks both before every entry (onCandleClose);
-  // the backtest used to model neither, so a bad day kept trading past the point
-  // paper would have stood down for the rest of the session.
-  const MAX_DAILY_LOSS   = parseFloat(process.env.TREND_PB_MAX_DAILY_LOSS || "5000");
-  const LOSS_STREAK_SKIP = parseInt(process.env.TREND_PB_LOSS_STREAK_SKIP || "3", 10);
-  const FORCED_EXIT_MIN = _parseMin("TREND_PB_FORCED_EXIT", "15:15");
   const ENTRY_START_MIN = _parseMin("TREND_PB_ENTRY_START", "09:45");
   const ENTRY_END_MIN   = _parseMin("TREND_PB_ENTRY_END",   "14:30");
 
@@ -127,15 +95,24 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
 
   const trades = [];
   let globalBase = 0;
-  // Per-day session state feeding the circuit breakers above. Reset each day, the
-  // same way paper's in-memory session state starts fresh every morning.
-  let _dayPnl = 0;
-  let _consecLosses = 0;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
   // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(5) / 1000;
   let _reentryBlockUntilTs = 0;
+
+  // Simulated MARKET premium (δ+θ, no slippage) at a raw spot and time — the
+  // price the profit lock reads, exactly as paper reads the live option LTP.
+  function _thetaPerUnit(pos, t) { return ((THETA_DAY * (((t - pos.entryTime) / 60) / 5)) / 78) / LOT_SIZE; }
+  function premAt(pos, spot, t) {
+    const spotMove = pos.side === "CE" ? (spot - pos.entrySpot) : (pos.entrySpot - spot);
+    return Math.max(0.05, parseFloat((pos.optionEntryLtp + spotMove * DELTA - _thetaPerUnit(pos, t)).toFixed(2)));
+  }
+  /** Inverse of premAt: the raw spot at which the premium equals `prem`. */
+  function spotForPrem(pos, prem, t) {
+    const dir = pos.side === "CE" ? 1 : -1;
+    return pos.entrySpot + dir * (prem - pos.optionEntryLtp + _thetaPerUnit(pos, t)) / DELTA;
+  }
 
   // δ+θ premium sim + spread/slippage haircut both ways. Returns pnl (₹) + exit premium.
   function priceExit(pos, exitSpot, exitTime) {
@@ -153,17 +130,13 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     const p = priceExit(pos, exitSpot, exitTime);
     // Wait-after-any-exit cooldown — every exit reason, both sides.
     if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitTime + (atClose ? 5 * 60 : 0) + _REENTRY_COOLDOWN_SECS;
-    _dayPnl += p.pnl;
-    // Paper's exact three-way rule: a loss increments, a WIN resets, and an exactly
-    // flat trade leaves the counter alone (trendPbPaper: `if (pnl<0) ++; else if (pnl>0) =0`).
-    if (p.pnl < 0) _consecLosses++; else if (p.pnl > 0) _consecLosses = 0;
     trades.push({
       side: pos.side,
       entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),
       entryTs: pos.entryTime, exitTs: exitTime,
-      ePrice: pos.entrySpot, xPrice: parseFloat(exitSpot.toFixed(2)), sl: pos.slSpot,
+      ePrice: pos.entrySpot, xPrice: parseFloat(exitSpot.toFixed(2)), sl: null,
       pnl: p.pnl, reason, entryReason: pos.entryReason,
-      trendBias: pos.trendBias, riskPts: pos.riskPts, strength: pos.signalStrength,
+      trendBias: pos.trendBias, strength: pos.signalStrength, peakPremium: pos.peak,
       eOpt: pos.optionEntryLtp, xOpt: p.exitPrem, held: p.heldCandles,
     });
   }
@@ -175,10 +148,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     const _dayLen = dayCandles.length;
     if (dayCandles.length < 5) { globalBase += _dayLen; continue; }
     let position = null;
-    let tradesTaken = 0;
     let baselineDone = false;
-    _dayPnl = 0;
-    _consecLosses = 0;
     _reentryBlockUntilTs = 0;
 
     for (let i = 0; i < dayCandles.length; i++) {
@@ -186,78 +156,47 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
       const istMin = _utcSecToIstMins(c.time);
       const gIdx = globalBase + i;
 
-      // ── EOD forced square-off ──
-      if (position && istMin >= FORCED_EXIT_MIN) {
-        closeAndPush(position, c.close, c.time, `EOD square-off (${process.env.TREND_PB_FORCED_EXIT || "15:15"} IST)`);
-        position = null; continue;
-      }
-
-      // ── In-position management (mirrors paper _checkExits + _managePositionOnClose).
-      //    Conservative ordering, NO look-ahead: adverse stops use slSpot/best set by
-      //    PRIOR candles; only after surviving do we ratchet the trail with THIS candle. ──
+      // ── In-position management (mirrors paper _checkExits): the global profit
+      //    lock on the simulated premium is the only automatic exit. Intra-bar
+      //    path, NO look-ahead: open → adverse extreme → favourable extreme →
+      //    close. Futures have no premium, so paper skips the lock — so do we. ──
       if (position) {
         const pos = position;
-        const win = allCandles.slice(Math.max(0, gIdx - SIG_WINDOW), gIdx + 1);
-        const atr5 = _atrAtLast(win, ATR_PERIOD);
-        const ema5 = _emaAtLast(win.map(x => x.close), EMA5_PERIOD);
-
-        // A. adverse intra-candle exits (stop set by earlier candles)
-        const advSpot = pos.side === "CE" ? c.low : c.high;
-        const advMove = pos.side === "CE" ? (c.low - pos.entrySpot) : (pos.entrySpot - c.high);
-        const advPrem = Math.max(0.05, pos.optionEntryLtp + advMove * DELTA);
-        if (PREM_STOP_PCT > 0 && advPrem <= pos.optionEntryLtp * (1 - PREM_STOP_PCT / 100)) {
-          closeAndPush(pos, advSpot, c.time, `Premium disaster stop (−${PREM_STOP_PCT}%)`); position = null; continue;
-        }
-        if (MAX_TRADE_LOSS > 0 && (advPrem - pos.optionEntryLtp) * LOT_SIZE <= -MAX_TRADE_LOSS) {
-          closeAndPush(pos, advSpot, c.time, `Max trade loss (₹${MAX_TRADE_LOSS})`); position = null; continue;
-        }
-        // Gap-through: fill at the open if the bar gapped past the stop (worse).
-        if (pos.side === "CE" && c.low <= pos.slSpot)  { closeAndPush(pos, c.open < pos.slSpot ? c.open : pos.slSpot, c.time, `Stop hit (${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); position = null; continue; }
-        if (pos.side === "PE" && c.high >= pos.slSpot) { closeAndPush(pos, c.open > pos.slSpot ? c.open : pos.slSpot, c.time, `Stop hit (${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); position = null; continue; }
-
-        // B. survived the candle → ratchet stop + close-based exits for the NEXT candle
-        pos.candlesHeld++;
-        if (pos.side === "CE") { if (c.high > pos.bestSpot) pos.bestSpot = c.high; } else { if (c.low < pos.bestSpot) pos.bestSpot = c.low; }
-        const favPts = (c.close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-        // breakeven (tighten only)
-        if (!pos.breakevenArmed && BE_R > 0 && pos.riskPts > 0 && favPts >= BE_R * pos.riskPts) {
-          if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = pos.entrySpot;
-          if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = pos.entrySpot;
-          pos.breakevenArmed = true;
-        }
-        // ATR chandelier trail (ratchet one way)
-        if (atr5 != null) {
-          const cand = pos.side === "CE" ? pos.bestSpot - TRAIL_MULT * atr5 : pos.bestSpot + TRAIL_MULT * atr5;
-          if (pos.side === "CE" && cand > pos.slSpot) { pos.slSpot = parseFloat(cand.toFixed(2)); pos.trailArmed = true; }
-          if (pos.side === "PE" && cand < pos.slSpot) { pos.slSpot = parseFloat(cand.toFixed(2)); pos.trailArmed = true; }
-        }
-        // EMA20(5m) close trend-failure (arm then fire)
-        if (ema5 != null) {
-          if (pos.side === "CE") {
-            if (c.close >= ema5) pos.emaArmed = true;
-            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed below EMA${TRAIL_EMA}(5m) — trend failed`, true); position = null; continue; }
-          } else {
-            if (c.close <= ema5) pos.emaArmed = true;
-            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed above EMA${TRAIL_EMA}(5m) — trend failed`, true); position = null; continue; }
+        if (!IS_FUT) {
+          const isCE = pos.side === "CE";
+          const barEnd = c.time + 5 * 60;
+          // a) the open
+          const pOpen = premAt(pos, c.open, c.time);
+          if (pOpen > pos.peak) pos.peak = pOpen;
+          let lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, pOpen, pos.peak);
+          if (lock) { closeAndPush(pos, c.open, c.time, `${lock} (bar opened through it — filled at the open)`); position = null; continue; }
+          // b) open → adverse extreme: the floor is crossed on the way down.
+          const pAdv = premAt(pos, isCE ? c.low : c.high, barEnd);
+          lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, pAdv, pos.peak);
+          if (lock) {
+            const lvl = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peak, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT, tradeGuards.PROFIT_LOCK_TRAIL_TIERS);
+            const raw = spotForPrem(pos, lvl, barEnd);
+            // Never better than the open (the open did not trigger, so the level lies past it).
+            const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
+            closeAndPush(pos, fill, c.time, lock); position = null; continue;
           }
-        }
-        // time-stop (theta bleed while flat)
-        if (TS_CANDLES > 0 && pos.candlesHeld >= TS_CANDLES && Math.abs(favPts) < TS_FLAT) {
-          closeAndPush(pos, c.close, c.time, `Time stop (${pos.candlesHeld} candles, flat ${favPts.toFixed(1)}pt)`, true); position = null; continue;
+          // c) adverse → favourable extreme: the peak rises, nothing exits.
+          const pFav = premAt(pos, isCE ? c.high : c.low, c.time);
+          if (pFav > pos.peak) pos.peak = pFav;
+          // d) favourable → close: a lock armed by THIS peak and given back.
+          const pClose = premAt(pos, c.close, barEnd);
+          lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, pClose, pos.peak);
+          if (lock) { closeAndPush(pos, c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close)`, true); position = null; continue; }
         }
         continue;   // in-position candle handled
       }
 
       // ── Flat → look for an entry ──
-      // Session breakers first, in paper's order (max trades → daily loss → loss
-      // streak). Paper's portfolio-wide cap is cross-strategy live state and has no
-      // meaning in a single-strategy backtest, so it is the one gate not mirrored.
-      if (tradesTaken >= MAX_TRADES) continue;
-      if (_dayPnl <= -MAX_DAILY_LOSS) continue;
-      if (LOSS_STREAK_SKIP > 0 && _consecLosses >= LOSS_STREAK_SKIP) continue;
+      // Paper's portfolio-wide cap is cross-strategy live state and has no meaning
+      // in a single-strategy backtest, so it is not mirrored.
       if (istMin < ENTRY_START_MIN || istMin >= ENTRY_END_MIN) continue;
       const seen = allCandles.slice(Math.max(0, gIdx - SIG_WINDOW), gIdx + 1);
-      const sig = trendPbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
+      const sig = trendPbStrategy.getSignal(seen, { silent: true });
 
       // VIX gate — paper runs it only once a signal exists, so the block count means
       // the same thing on both sides. No-op unless TREND_PB_VIX_ENABLED=true.
@@ -279,13 +218,12 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
         continue;
       }
 
-      let side = null, structStop = null, entryReason = null, bias = sig.trendBias;
+      let side = null, entryReason = null, bias = sig.trendBias;
       if (!baseline) {
-        if (sig.signal === "BUY_CE" || sig.signal === "BUY_PE") { side = sig.side; structStop = sig.slSpot; entryReason = sig.reason; }
+        if (sig.signal === "BUY_CE" || sig.signal === "BUY_PE") { side = sig.side; entryReason = sig.reason; }
       } else if (!baselineDone && (sig.trendBias === "UP" || sig.trendBias === "DOWN")) {
-        // Naive baseline: first window candle with a 15m bias → enter that side, widest stop.
+        // Naive baseline: first window candle with a 15m bias → enter that side.
         side = sig.trendBias === "UP" ? "CE" : "PE";
-        structStop = side === "CE" ? c.close - CLAMP_MAX : c.close + CLAMP_MAX;
         entryReason = `BASELINE: 15m ${sig.trendBias} bias at window open (no pullback filter)`;
         baselineDone = true;
       }
@@ -293,23 +231,20 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
       // Wait-after-any-exit cooldown: blocks both sides (paper: simulateBuy).
       if (c.time < _reentryBlockUntilTs) continue;
 
-      let riskPts = Math.abs(c.close - (typeof structStop === "number" ? structStop : (side === "CE" ? c.close - CLAMP_MIN : c.close + CLAMP_MIN)));
-      riskPts = Math.min(Math.max(riskPts, CLAMP_MIN), CLAMP_MAX);
-      const initSl = parseFloat((side === "CE" ? c.close - riskPts : c.close + riskPts).toFixed(2));
+      const _entryPrem = IS_FUT ? c.close : SEED_PREMIUM;
       position = {
         side, entryTime: c.time, entrySpot: c.close,
-        optionEntryLtp: IS_FUT ? c.close : SEED_PREMIUM, slSpot: initSl, riskPts,
-        bestSpot: c.close, breakevenArmed: false, trailArmed: false, emaArmed: false,
-        candlesHeld: 0, trendBias: bias, signalStrength: baseline ? "BASELINE" : (sig.signalStrength || "STRONG"),
+        optionEntryLtp: _entryPrem, peak: _entryPrem,
+        trendBias: bias, signalStrength: baseline ? "BASELINE" : (sig.signalStrength || "STRONG"),
         entryReason,
       };
-      tradesTaken++;
     }
 
-    // close any open position at the last candle of the day
+    // Session teardown: close any open position at the last candle of the day
+    // (mirrors paper's TRADE_STOP_TIME auto-stop) so every trade's P&L is defined.
     if (position) {
       const last = dayCandles[dayCandles.length - 1];
-      closeAndPush(position, last.close, last.time, "EOD (end of day candles)");
+      closeAndPush(position, last.close, last.time, "Session end (last candle of the day)");
       position = null;
     }
     globalBase += _dayLen;
@@ -347,7 +282,7 @@ function _renderResults(res, from, to, trades, stats, baselineStats, wf) {
     activePage: "trendPbBacktest",
     extraTradeColumns: [
       { key: "trendBias", label: "Bias" },
-      { key: "riskPts", label: "Risk (pt)" },
+      { key: "peakPremium", label: "Peak Prem" },
       { key: "held", label: "Held" },
     ],
     extraStats: [
@@ -358,7 +293,7 @@ function _renderResults(res, from, to, trades, stats, baselineStats, wf) {
       { label: "vs Dumb Baseline", value: `${beatsBaseline >= 0 ? "+" : ""}₹${beatsBaseline.toFixed(0)} (base ₹${baselineStats.totalPnl}, ${baselineStats.totalTrades}t/${baselineStats.winRate}%)` },
       { label: "WF verdict", value: wf.foldCount ? `${wf.positiveFolds}/${wf.foldCount} folds +ve` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium stop (they have no meaning without a premium); a PE is a SHORT. " : ""}Option premium δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded slightly-ITM at ₹${process.env.TREND_PB_BT_SEED_PREMIUM || "240"}, PLUS a spread/slippage haircut of ${process.env.TREND_PB_BT_SLIPPAGE_PTS || "1.5"}pt EACH way — treat ₹ as directional, not exact. Entry: 15m bias (HH/HL + EMA20>EMA50 + slope + VWAP) → healthy 5m pullback to EMA20 → resumption body ≥ ${process.env.TREND_PB_BODY_ATR_MULT || "0.5"}×ATR5. Exits (all on SPOT except the premium backstop): structural stop (clamped ${process.env.TREND_PB_STOP_CLAMP_MIN || "8"}–${process.env.TREND_PB_STOP_CLAMP_MAX || "30"}pt) → breakeven ${process.env.TREND_PB_BREAKEVEN_R || "1.0"}R → ATR-chandelier trail ${process.env.TREND_PB_TRAIL_ATR_MULT || "2.5"}×ATR5 → EMA${process.env.TREND_PB_TRAIL_EMA || "20"}(5m)-close → time-stop ${process.env.TREND_PB_TIME_STOP_CANDLES || "6"} → premium −${process.env.TREND_PB_PREMIUM_STOP_PCT || "35"}% → 15:15 EOD. <b>${wfLine}</b> The DUMB BASELINE (enter in the 15m-trend direction at the window open, same trail+EOD, NO pullback filter) is the bar to beat: if the strategy doesn't clear it out-of-sample, the pullback filter is noise. Use Replay (recorded ticks) for tick-accurate fills.`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}Option premium δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded slightly-ITM at ₹${process.env.TREND_PB_BT_SEED_PREMIUM || "240"}, PLUS a spread/slippage haircut of ${process.env.TREND_PB_BT_SLIPPAGE_PTS || "1.5"}pt EACH way — treat ₹ as directional, not exact. Entry: 15m bias (HH/HL + EMA20>EMA50 + slope + VWAP) → healthy 5m pullback to EMA20 → resumption body ≥ ${process.env.TREND_PB_BODY_ATR_MULT || "0.5"}×ATR5. Exit: the global profit lock on the simulated premium is the only automatic exit; otherwise the trade is held to the day's last candle (session end). <b>${wfLine}</b> The DUMB BASELINE (enter in the 15m-trend direction at the window open, same exit, NO pullback filter) is the bar to beat: if the strategy doesn't clear it out-of-sample, the pullback filter is noise. Use Replay (recorded ticks) for tick-accurate fills.`,
   });
   res.send(html);
 }

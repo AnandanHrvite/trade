@@ -15,7 +15,6 @@ const fs      = require("fs");
 const path    = require("path");
 const { loadResult } = require("../utils/resultStore");
 const { ACTIVE }     = require("../strategies");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 
 const _HOME    = require("os").homedir();
@@ -158,7 +157,6 @@ function pageCSS() {
 
 // ── Build comparison page ───────────────────────────────────────────────────
 function buildComparePage(mode, paperSummary, backtestResult, activePage) {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const title = mode === "bb_rsi" ? "BB_RSI: Paper vs Backtest" : "Trading: Paper vs Backtest";
   const bt = backtestResult ? backtestResult.summary : null;
 
@@ -277,7 +275,7 @@ function buildComparePage(mode, paperSummary, backtestResult, activePage) {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar(activePage, liveActive)}
+${buildSidebar(activePage, false)}
 <div class="main-content">
 <div class="page">
   <h1>${title}</h1>

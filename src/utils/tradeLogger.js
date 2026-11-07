@@ -33,42 +33,19 @@ const FILE_BY_MODE = {
   // BN_PIVOT_RSI_ST (NIFTY BANK) — same engine as rsi_pivot_st on a different underlying.
   bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_trades_log.jsonl",
   // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop.
-  // Its live counterpart key is "ema_rsi_st_v2-live". It is NOT registered here
-  // because no strategy logs live trades to disk any more (see f0372ea: every
-  // harness installs with liveLogKey:null). If live logging is ever turned back
-  // on for V2, add "ema_rsi_st_v2-live" here and in DAILY_PREFIX_BY_MODE below —
-  // MUST match tradeLogger's key character for character, because nothing
-  // normalises hyphens/underscores/case and an unregistered key drops every live
-  // trade from both logs while the run still looks healthy.
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_log.jsonl",
-  // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK. Paper key only, for the
-  // same reason as its NIFTY sibling above: no strategy logs live trades to
-  // disk any more, and the harness passes liveLogKey:null.
+  // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK.
   bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_log.jsonl",
   // ST_RSI_PIV_BB — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_log.jsonl",
-  // MUST match tradeLogger's key character for character — the harness's
-  // liveLogKey, if it is ever set, must be exactly "st_rsi_piv_bb-live".
-  "st_rsi_piv_bb-live": "st_rsi_piv_bb_live_trades_log.jsonl",
   // SAIL_VWAP_ST — SAIL stock options: VWAP cross + breakout, SuperTrend stop.
   sail_vwap_st: "sail_vwap_st_paper_trades_log.jsonl",
-  // MUST match tradeLogger's key character for character — the harness's
-  // liveLogKey must be exactly "sail_vwap_st-live".
-  "sail_vwap_st-live": "sail_vwap_st_live_trades_log.jsonl",
   // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend (NIFTY / BANK NIFTY / SAIL).
-  // MUST match tradeLogger's key character for character — each harness's
-  // liveLogKey, if it is ever set, must be exactly "<slug>-live".
   pivot_ema_st: "pivot_ema_st_paper_trades_log.jsonl",
-  "pivot_ema_st-live": "pivot_ema_st_live_trades_log.jsonl",
   bn_pivot_ema_st: "bn_pivot_ema_st_paper_trades_log.jsonl",
-  "bn_pivot_ema_st-live": "bn_pivot_ema_st_live_trades_log.jsonl",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_log.jsonl",
-  "sail_pivot_ema_st-live": "sail_pivot_ema_st_live_trades_log.jsonl",
   // GAP_RUNAWAY (NIFTY options) + GAP_RUNAWAY_STK (stock scanner, paper only).
-  // MUST match tradeLogger's key character for character — the harness's
-  // liveLogKey, if it is ever set, must be exactly "gap_runaway-live".
   gap_runaway: "gap_runaway_paper_trades_log.jsonl",
-  "gap_runaway-live": "gap_runaway_live_trades_log.jsonl",
   gap_runaway_stk: "gap_runaway_stk_paper_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
@@ -90,21 +67,13 @@ const DAILY_PREFIX_BY_MODE = {
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_",
   bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_",
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_",
-  // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
-  "st_rsi_piv_bb-live": "st_rsi_piv_bb_live_trades_",
   sail_vwap_st: "sail_vwap_st_paper_trades_",
-  // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
-  "sail_vwap_st-live": "sail_vwap_st_live_trades_",
   // PIVOT_EMA_ST family — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   pivot_ema_st: "pivot_ema_st_paper_trades_",
-  "pivot_ema_st-live": "pivot_ema_st_live_trades_",
   bn_pivot_ema_st: "bn_pivot_ema_st_paper_trades_",
-  "bn_pivot_ema_st-live": "bn_pivot_ema_st_live_trades_",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_",
-  "sail_pivot_ema_st-live": "sail_pivot_ema_st_live_trades_",
   // GAP_RUNAWAY — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   gap_runaway: "gap_runaway_paper_trades_",
-  "gap_runaway-live": "gap_runaway_live_trades_",
   gap_runaway_stk: "gap_runaway_stk_paper_trades_",
   simple930: "simple930_paper_trades_",
 };

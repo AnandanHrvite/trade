@@ -2,7 +2,6 @@ const express = require("express");
 const router  = express.Router();
 const { loadAll, loadResult } = require("../utils/resultStore");
 const { ACTIVE } = require("../strategies");
-const sharedSocketState = require("../utils/sharedSocketState");
 
 // ── Shared HTML shell ─────────────────────────────────────────────────────────
 
@@ -13,14 +12,8 @@ function _resultLightAttr() {
 }
 
 function shell(title, body) {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
-  const disabledLink = (label) =>
-    `<span title="Disabled — Live trade is running" style="font-size:0.78rem;font-weight:500;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 ${label}</span>`;
-  const btLink = liveActive ? disabledLink("🔍 Backtest") : `<a class="nav-link" href="/ema_rsi_st-backtest">🔍 Backtest</a>`;
-  const ptLink = liveActive ? disabledLink("📋 Paper")    : `<a class="nav-link" href="/ema_rsi_st-paper/status">📋 Paper</a>`;
-  const liveBanner = liveActive
-    ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span><style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>`
-    : "";
+  const btLink = `<a class="nav-link" href="/ema_rsi_st-backtest">🔍 Backtest</a>`;
+  const ptLink = `<a class="nav-link" href="/ema_rsi_st-paper/status">📋 Paper</a>`;
   return `<!DOCTYPE html>
 <html lang="en"${_resultLightAttr()}>
 <head>
@@ -237,10 +230,8 @@ function shell(title, body) {
     <a href="/result">My Result</a>
     <a href="/result/all">All Results</a>
     ${ptLink}
-    <a href="/ema_rsi_st-live/status">🔴 Live</a>
     <a href="/logs">📜 Logs</a>
     <a href="/settings">⚙ Settings</a>
-    ${liveBanner}
   </div>
 </nav>
 <div class="page">

@@ -12,14 +12,13 @@
  * that changes what these rupees mean. A monthly contract decays FAR more slowly
  * than a weekly, so the θ this sim charges (BACKTEST_THETA_DAY, a NIFTY-weekly
  * figure) OVERSTATES the real decay here, while BANKNIFTY's roughly 2× larger
- * point moves mean the same SuperTrend distance is a bigger rupee risk. Nothing
+ * point moves mean the same spot move is a bigger rupee swing. Nothing
  * in this file compensates for either: the guard defaults below are the NIFTY
  * version's numbers verbatim. Treat the ₹ column as directional only.
  *
  * THE ENGINE OWNS THE RULES. Every entry decision comes from
- * src/strategies/ema_rsi_st_v2.js `getSignal()` and every stop advance from its
- * `trailStop()`. There is NO indicator maths and NO threshold comparison in this
- * file — if you find yourself typing `rsi >` or `ema20 >` here, you are writing a
+ * src/strategies/ema_rsi_st_v2.js `getSignal()`. There is NO indicator maths and
+ * NO threshold comparison in this file — if you find yourself typing `rsi >` or `ema20 >` here, you are writing a
  * second copy of the strategy and it WILL drift from paper.
  *
  * What this file re-implements is only the EXIT SEQUENCING, because the Paper
@@ -27,26 +26,27 @@
  *
  *   for each IST day:
  *     for each closed 5-min bar:
- *       manage the open position on THIS bar   (stop first, then favourable)
- *       advance the SuperTrend trail on the bar CLOSE
+ *       manage the open position on THIS bar   (the profit lock, tick-ordered)
+ *       square off at the session end           (TRADE_STOP_TIME / last bar)
  *       look for a new entry on the bar CLOSE  (engine getSignal)
  *
- * V2's EXIT SET — deliberately tiny, and this is the WHOLE list:
- *   1. SuperTrend(10,2) stop, seeded at entry from the signal's own stopLoss and
- *      re-read at every bar close via engine.trailStop(), TIGHTEN-ONLY.
- *   2. Opposite-signal exit — the engine prints the other side while we are in.
- *   3. Hard square-off at BN_EMA_RSI_ST_V2_EOD_EXIT_TIME (default 14:00 IST).
- * There is NO profit target, NO breakeven, NO time-stop, NO fixed-point stop, NO
- * option-premium stop, NO negative-candle stop, NO candle trail and NO EMA21
- * anything. V1 has all of those; V2 deleted them on purpose. Do not add them back.
+ * V2's EXIT SET — and this is the WHOLE list:
+ *   1. The global profit lock (tradeGuards.checkProfitLock) on the simulated
+ *      option premium, with the peak premium tracked intra-bar — paper's only
+ *      automatic exit.
+ *   2. The session-end square-off — paper's TRADE_STOP_TIME teardown, or the
+ *      day's last bar when the data ends first.
+ * There is NO stop loss, NO trail, NO target, NO breakeven, NO time-stop, NO
+ * signal exit, NO early square-off and NO loss-based day limit. Options only:
+ * paper's lock is defined on option premium, so in futures mode it is off and a
+ * trade runs to the session end.
  *
  * CONSERVATIVE INTRA-BAR ORDERING (this is where naive backtests lie):
- *   • the adverse STOP is tested on the bar's high/low BEFORE any favourable exit
- *     on the close, so a bar that touched both books the LOSS;
- *   • a bar that OPENED already beyond the stop fills at the OPEN, never at the
- *     better stop level — no assuming a fill the market never offered;
- *   • the trail advances only on a bar CLOSE, matching paper, so the stop can
- *     never tighten onto a level the bar merely traded through;
+ *   • each bar is walked open → adverse extreme → favourable extreme → close, so
+ *     the lock is tested on the adverse leg BEFORE the favourable extreme can
+ *     raise the peak;
+ *   • a bar that OPENED already through the locked floor fills at the OPEN, never
+ *     at the better floor level;
  *   • a spread/slippage haircut of BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS is applied EACH
  *     way — without it a backtest of option BUYING always flatters.
  *
@@ -153,19 +153,18 @@ function _bool(envKey, fallback) {
 }
 
 /**
- * Guard config — V2's OWN prefixed keys, never the shared globals.
- * V1 reads MAX_DAILY_TRADES / MAX_DAILY_LOSS / TRADE_ENTRY_START / TRADE_ENTRY_END;
- * reading those here would let a V1 tuning session silently change V2's results.
+ * Guard config — V2's OWN prefixed keys. The one shared global read here is
+ * TRADE_STOP_TIME, the session teardown paper's auto-stop also reads. V1 reads
+ * TRADE_ENTRY_START / TRADE_ENTRY_END; reading those here would let a V1 tuning
+ * session silently change V2's results.
  */
 function getGuardConfig() {
   return {
     entryStartMin:  _parseMins("BN_EMA_RSI_ST_V2_ENTRY_START", "10:30"),
     entryEndMin:    _parseMins("BN_EMA_RSI_ST_V2_ENTRY_END",   "13:00"),
-    eodExitMin:     _parseMins("BN_EMA_RSI_ST_V2_EOD_EXIT_TIME", "14:00"),
-    maxDailyTrades: _int("BN_EMA_RSI_ST_V2_MAX_DAILY_TRADES", "2"),
-    maxDailyLoss:   _num("BN_EMA_RSI_ST_V2_MAX_DAILY_LOSS",   "1000"),
-    maxConsecLosses: _int("BN_EMA_RSI_ST_V2_MAX_CONSEC_LOSSES", "2"),
-    slPauseCandles: _int("BN_EMA_RSI_ST_V2_SL_PAUSE_CANDLES", "2"),
+    // Session teardown — the same global key paper's auto-stop reads. Entries
+    // stop 10 min before it (paper's _ENTRY_STOP_MINS).
+    sessionStopMin: _parseMins("TRADE_STOP_TIME", "15:30"),
     oppCooldownEnabled: _bool("BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", "true"),
     oppCooldownCandles: _int("BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES", "2"),
     warmupDays:     _int("BN_EMA_RSI_ST_V2_WARMUP_DAYS", "5"),
@@ -190,8 +189,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
   const empty = {
     trades: [], days: 0, warmupViolations: 0, warmupBars: 0,
     gateStats: { setups: 0, confirmArmed: 0, confirmFilled: 0, confirmExpired: 0,
-                 blockedWarmup: 0, blockedWindow: 0, blockedMaxTrades: 0,
-                 blockedDayLoss: 0, blockedConsecLoss: 0, blockedSlPause: 0,
+                 blockedWarmup: 0, blockedWindow: 0,
                  blockedOppCooldown: 0, blockedReentry: 0 },
   };
   if (!Array.isArray(candles) || !candles.length) return empty;
@@ -208,9 +206,22 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
   const RES       = g.resolutionMins > 0 ? g.resolutionMins : 5;
   const SLIP      = g.slippagePts;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
-  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
-  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  // Paper measures it from the exit's clock time: a tick exit (the lock) fires
+  // INSIDE the bar (≈ bar open here), a candle-close exit at the bar's CLOSE.
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
+  // The global profit lock — the ONLY automatic exit, read from the same live
+  // getters paper's checkProfitLock() call uses, snapshotted for the run.
+  // Options only (paper's lock is defined on premium; in futures mode the
+  // "premium" here IS spot and the lock would test an 8% move in the index).
+  const lockOpts = {
+    enabled:  tradeGuards.PROFIT_LOCK_ENABLED,
+    armPct:   tradeGuards.PROFIT_LOCK_ARM_PCT,
+    floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
+    trailPct: tradeGuards.PROFIT_LOCK_TRAIL_PCT,
+    tiers:    tradeGuards.PROFIT_LOCK_TRAIL_TIERS,
+  };
+  const LOCK_ON = !IS_FUT && lockOpts.enabled;
+  const ENTRY_CUTOFF_MIN = g.sessionStopMin - 10;
 
   const sorted = candles.slice().sort((a, b) => a.time - b.time);
 
@@ -220,8 +231,8 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
   let warmupBars = 0;
   for (const c of sorted) if (c.time < activeFromTs) warmupBars++;
 
-  // Day boundaries. Guards (trade count, day loss, consecutive losses, pauses)
-  // all reset per IST session, exactly as paper's per-day state does.
+  // Day boundaries. Per-session state (cooldowns, the open position) resets per
+  // IST session, exactly as paper's per-day state does.
   const dayKeys = [];
   const byDay = new Map();
   for (const c of sorted) {
@@ -231,7 +242,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
   }
 
   // The engine needs history ACROSS days (warm-up is longer than one session),
-  // so getSignal/trailStop are always handed the running prefix of ALL bars, not
+  // so getSignal is always handed the running prefix of ALL bars, not
   // just the current day's. `globalIdx` maps a day-local bar back to that prefix.
   const globalIndex = new Map();
   for (let i = 0; i < sorted.length; i++) globalIndex.set(sorted[i].time, i);
@@ -255,9 +266,6 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
     // Only sessions inside the requested range count as "scanned".
     if (bars[bars.length - 1].time >= activeFromTs) days++;
 
-    let dayPnl = 0, dayTrades = 0, dayClosed = false;
-    let consecLosses = 0;
-    let pauseUntilIdx = -1;        // SL_PAUSE_CANDLES — index (global) to resume at
     let oppCooldownSide = null;    // side we may NOT take
     let oppCooldownUntilIdx = -1;
     let reentryBlockUntilTs = 0;   // wait-after-any-exit — no entry on a bar opening before this
@@ -271,6 +279,17 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       const thetaCost  = (THETA_DAY * barsHeld) / barsPerDay;
       const move = pos.side === "CE" ? (exitPx - pos.entrySpot) : (pos.entrySpot - exitPx);
       return Math.max(0.05, pos.optionEntryLtp + move * DELTA - thetaCost / LOT_SIZE);
+    }
+
+    /** The spot at which premiumAt() equals `prem` — inverts the δ+θ model so a
+     *  profit-lock fill on the adverse leg books the floor premium, not a guess. */
+    function spotForPremium(prem, exitTime) {
+      if (!(DELTA > 0)) return pos.entrySpot;
+      const barsHeld   = Math.max(0, (exitTime - pos.entryTime) / 60 / RES);
+      const barsPerDay = Math.max(1, Math.round(375 / RES));
+      const thetaCost  = (THETA_DAY * barsHeld) / barsPerDay;
+      const move = (prem - pos.optionEntryLtp + thetaCost / LOT_SIZE) / DELTA;
+      return pos.side === "CE" ? pos.entrySpot + move : pos.entrySpot - move;
     }
 
     /** Net P&L of closing at `exitPx`, with slippage BOTH ways and real charges. */
@@ -290,7 +309,6 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
 
     function close(exitPx, exitTime, reason, globalIdx, atBarClose = false) {
       const p = priceAt(exitPx, exitTime);
-      dayPnl += p.pnl;
       const spotPts = parseFloat(
         (pos.side === "CE" ? exitPx - pos.entrySpot : pos.entrySpot - exitPx).toFixed(2));
 
@@ -300,13 +318,9 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
         entryTs: pos.entryTime,       exitTs: exitTime,
         ePrice: parseFloat(pos.entrySpot.toFixed(2)),
         xPrice: parseFloat(exitPx.toFixed(2)),
-        sl:     pos.slSpot,
-        initialSL: pos.initialSlSpot,
-        riskPts: Number.isFinite(pos.initialSlSpot)
-          ? parseFloat(Math.abs(pos.entrySpot - pos.initialSlSpot).toFixed(2)) : null,
         spotPts,
         rsi:  pos.rsi, ema20: pos.ema20, ema50: pos.ema50,
-        supertrend: pos.slSpot,
+        peakPremium: parseFloat(pos.peak.toFixed(2)),
         pnl:  p.pnl,
         reason,
         entryReason: pos.entryReason,
@@ -314,13 +328,6 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
         eOpt: pos.optionEntryLtp, xOpt: p.exitPrem, held: p.held,
       });
 
-      if (p.pnl < 0) {
-        consecLosses++;
-        // A loss pauses fresh entries for SL_PAUSE_CANDLES bars, matching paper.
-        if (g.slPauseCandles > 0) pauseUntilIdx = globalIdx + g.slPauseCandles;
-      } else {
-        consecLosses = 0;
-      }
       if (g.oppCooldownEnabled && g.oppCooldownCandles > 0) {
         // Cool off the OPPOSITE side for N candles after any exit — flipping
         // straight into the other side on the same bar is how paper's cooldown
@@ -334,11 +341,6 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       }
       pos = null;
       armed = null;
-
-      // Day-level breakers — identical thresholds to the paper route.
-      if (g.maxDailyLoss > 0 && dayPnl <= -g.maxDailyLoss) dayClosed = true;
-      else if (g.maxDailyTrades > 0 && dayTrades >= g.maxDailyTrades) dayClosed = true;
-      else if (g.maxConsecLosses > 0 && consecLosses >= g.maxConsecLosses) dayClosed = true;
     }
 
     /** Why this side cannot be taken right now, or null if it can. */
@@ -355,11 +357,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       if (barTime < activeFromTs) return "blockedWarmup";
       // The engine already refuses outside its own window, but the SIGNAL bar's
       // close is what arms — re-checking here keeps the funnel counters honest.
-      if (istMin < g.entryStartMin || istMin >= g.entryEndMin) return "blockedWindow";
-      if (g.maxDailyTrades > 0 && dayTrades >= g.maxDailyTrades) return "blockedMaxTrades";
-      if (g.maxDailyLoss > 0 && dayPnl <= -g.maxDailyLoss) return "blockedDayLoss";
-      if (g.maxConsecLosses > 0 && consecLosses >= g.maxConsecLosses) return "blockedConsecLoss";
-      if (gIdx <= pauseUntilIdx) return "blockedSlPause";
+      if (istMin < g.entryStartMin || istMin >= g.entryEndMin || istMin >= ENTRY_CUTOFF_MIN) return "blockedWindow";
       if (g.oppCooldownEnabled && side === oppCooldownSide && gIdx <= oppCooldownUntilIdx) {
         return "blockedOppCooldown";
       }
@@ -375,22 +373,18 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       const entryPrem = IS_FUT ? entrySpot : g.seedPremium;
       // Entry premium carries the slippage haircut too (we buy high).
       const entryPremSlipped = parseFloat(Math.max(0.05, entryPrem + SLIP).toFixed(2));
-      const sl = Number.isFinite(sig.slSpot) ? sig.slSpot
-               : Number.isFinite(sig.stopLoss) ? sig.stopLoss : null;
 
       pos = {
         side,
         entryTime,
         entrySpot,
         optionEntryLtp: entryPremSlipped,
-        slSpot:        sl,
-        initialSlSpot: sl,
+        peak:           entryPremSlipped,   // best simulated premium — the lock's peak
         rsi:   sig.rsi   != null ? sig.rsi   : null,
         ema20: sig.ema20 != null ? sig.ema20 : null,
         ema50: sig.ema50 != null ? sig.ema50 : null,
         entryReason: sig.reason || `${side} setup`,
       };
-      dayTrades++;
     }
 
     for (let i = 0; i < bars.length; i++) {
@@ -401,56 +395,50 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       // its warm-up is longer than one session, so it must see previous days too.
       const pre = { series: fullSeries, endIdx: gIdx, cfg: stratCfg };
 
-      // ── 1. Manage an open position on THIS bar ─────────────────────────────
-      // ORDER MATTERS. The stop is tested against the bar's ADVERSE extreme
-      // FIRST; only if it survives do we consider anything favourable.
-      if (pos) {
+      // ── 1. Manage an open position on THIS bar — the profit lock ───────────
+      // The global profit lock is the ONLY automatic exit. The bar is walked
+      // open → adverse extreme → favourable extreme → close, so the lock is
+      // tested on the adverse leg BEFORE the favourable extreme raises the peak.
+      if (pos && LOCK_ON) {
         const isCE = pos.side === "CE";
-
-        // 1a. Hard square-off. Tested before the stop only because at/after the
-        // EOD minute there is no "next bar" to trail into — the position is out
-        // at this bar's OPEN regardless of what the rest of the bar did.
-        if (istMin >= g.eodExitMin) {
-          close(c.open, c.time, `EOD square-off (${_fmtMins(g.eodExitMin)} IST)`, gIdx);
-        } else if (Number.isFinite(pos.slSpot)) {
-          // 1b. The SuperTrend stop, on the bar's adverse extreme.
+        const entryPrem = pos.optionEntryLtp;
+        // Simulated premium at a spot level on this bar, in paise like a real quote.
+        const prem = (px) => Math.round(premiumAt(px, c.time) * 100) / 100;
+        // a) the open
+        const pOpen = prem(c.open);
+        if (pOpen > pos.peak) pos.peak = pOpen;
+        let lock = tradeGuards.checkProfitLock(entryPrem, pOpen, pos.peak, lockOpts);
+        if (lock) {
+          close(c.open, c.time, `${lock} (bar opened through it — filled at the open ${c.open})`, gIdx);
+        } else {
+          // b) open → adverse extreme: the floor set by the peak so far is crossed.
           const adverse = isCE ? c.low : c.high;
-          const hit = isCE ? adverse <= pos.slSpot : adverse >= pos.slSpot;
-          if (hit) {
-            // A bar that OPENED already through the level fills at the OPEN —
-            // the better stop level was never on offer.
-            const openThrough = isCE ? c.open <= pos.slSpot : c.open >= pos.slSpot;
-            const fill = openThrough ? c.open : pos.slSpot;
-            const trailing = isCE ? pos.slSpot > pos.initialSlSpot : pos.slSpot < pos.initialSlSpot;
-            close(fill, c.time,
-              `SuperTrend ${trailing ? "trailing " : ""}stop hit at ${pos.slSpot}` +
-              (trailing ? ` (initial ${pos.initialSlSpot})` : ""),
-              gIdx);
+          lock = tradeGuards.checkProfitLock(entryPrem, prem(adverse), pos.peak, lockOpts);
+          if (lock) {
+            const floor = tradeGuards.profitLockFloorLtp(entryPrem, pos.peak, lockOpts.floorPct, lockOpts.trailPct, lockOpts.tiers);
+            const raw = spotForPremium(floor, c.time);
+            // Never better than the open — the open did not trigger, so the floor lies past it.
+            const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
+            close(fill, c.time, `${lock} — floor premium ₹${floor} ≈ spot ${fill.toFixed(2)}`, gIdx);
+          } else {
+            // c) adverse → favourable extreme: the peak rises, nothing exits.
+            const pFav = prem(isCE ? c.high : c.low);
+            if (pFav > pos.peak) pos.peak = pFav;
+            // d) favourable → close: a lock armed by THIS bar's peak and given back.
+            lock = tradeGuards.checkProfitLock(entryPrem, prem(c.close), pos.peak, lockOpts);
+            if (lock) close(c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close ${c.close})`, gIdx, true);
           }
         }
       }
 
-      // ── 2. Advance the trail on the bar CLOSE (tighten-only, engine-owned) ──
-      // Only after the stop survived the bar, so the stop can never tighten onto
-      // a level this same bar merely traded through.
-      if (pos) {
-        const t = engine.trailStop(sorted, pos.side, pos.slSpot, stratCfg,
-          { supertrend: fullSeries.supertrend, endIdx: gIdx });
-        if (t && t.changed && Number.isFinite(t.stop)) pos.slSpot = t.stop;
+      // ── 2. Session-end square-off — paper's TRADE_STOP_TIME teardown ───────
+      if (pos && istMin + RES >= g.sessionStopMin) {
+        close(c.close, c.time, `Session end — squared off at the close of the bar ending at/after ${_fmtMins(g.sessionStopMin)} IST`, gIdx, true);
       }
 
-      // ── 3. Read the engine on this bar's CLOSE ─────────────────────────────
-      // One call serves both the opposite-signal exit and the entry search, so
-      // the two can never disagree about what this bar printed.
+      // ── 3. Read the engine on this bar's CLOSE (entry search only) ─────────
       const sig = engine.getSignal(sorted, { prefix: PREFIX, silent: true, precomputed: pre });
       const sigSide = sig.signal === "BUY_CE" ? "CE" : sig.signal === "BUY_PE" ? "PE" : null;
-
-      // 3a. OPPOSITE-SIGNAL EXIT — kept from V1. A favourable/close-based exit,
-      // so it runs only after the adverse stop above had its chance.
-      if (pos && sigSide && sigSide !== pos.side) {
-        close(c.close, c.time,
-          `Opposite signal — engine printed BUY_${sigSide} while long ${pos.side}`, gIdx, true);
-      }
 
       // ── 4. Confirmation-candle fill ────────────────────────────────────────
       // An armed trigger is valid for exactly ONE bar: the immediately-next one.
@@ -459,9 +447,9 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
           const fill = confirmCandle.barCrossFill(armed.side, c, armed.triggerLevel);
           // The entry window is honoured on the CONFIRMATION bar too — a trigger
           // armed at 12:59 must not fill at 13:04.
-          const inWindow = istMin >= g.entryStartMin && istMin < g.entryEndMin;
+          const inWindow = istMin >= g.entryStartMin && istMin < g.entryEndMin && istMin < ENTRY_CUTOFF_MIN;
           const reentryBlocked = c.time < reentryBlockUntilTs;
-          if (fill != null && inWindow && !dayClosed && istMin < g.eodExitMin && !reentryBlocked) {
+          if (fill != null && inWindow && !reentryBlocked) {
             openPosition(armed.side, fill, c.time, armed.signal, gIdx);
             gateStats.confirmFilled++;
           } else {
@@ -479,7 +467,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       }
 
       // ── 5. Look for a NEW setup on this bar's close ────────────────────────
-      if (!pos && !dayClosed && sigSide) {
+      if (!pos && sigSide) {
         const blocked = entryBlockedReason(sigSide, gIdx, c.time);
         // Warm-up setups are not part of the requested range's funnel — counting
         // them under `setups` would inflate every ratio on the results page.
@@ -508,7 +496,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
     // Anything still open at the last bar of the session is squared off there.
     if (pos) {
       const last = bars[bars.length - 1];
-      close(last.close, last.time, "EOD (end of day candles)", globalIndex.get(last.time), true);
+      close(last.close, last.time, "Session end — the day's candles ended before the square-off, filled at the last close", globalIndex.get(last.time), true);
     }
 
   }
@@ -561,6 +549,11 @@ function _renderResults(res, from, to, trades, stats, meta) {
   const c   = engine.getConfig(PREFIX);
   const gs  = meta.gateStats || {};
   const wv  = meta.warmupViolations || 0;
+  const lockOn    = tradeGuards.PROFIT_LOCK_ENABLED;
+  const lockArm   = tradeGuards.PROFIT_LOCK_ARM_PCT;
+  const lockFloor = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
+  const lockTrail = tradeGuards.PROFIT_LOCK_TRAIL_PCT;
+  const lockTiers = tradeGuards.PROFIT_LOCK_TRAIL_TIERS;
 
   const html = renderBacktestResults({
     mode: LABEL,
@@ -575,7 +568,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { key: "rsi",     label: "RSI" },
       { key: "ema20",   label: "EMA20" },
       { key: "ema50",   label: "EMA50" },
-      { key: "riskPts", label: "Risk (pt)" },
+      { key: "peakPremium", label: "Peak prem" },
       { key: "spotPts", label: "Spot (pt)" },
       { key: "held",    label: "Held" },
     ],
@@ -590,10 +583,6 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Confirmations expired", value: gs.confirmExpired || 0 },
       { label: "Blocked — warm-up runway", value: gs.blockedWarmup || 0 },
       { label: "Blocked — entry window", value: gs.blockedWindow || 0 },
-      { label: "Blocked — max trades",   value: gs.blockedMaxTrades || 0 },
-      { label: "Blocked — day loss cap", value: gs.blockedDayLoss || 0 },
-      { label: "Blocked — consec losses", value: gs.blockedConsecLoss || 0 },
-      { label: "Blocked — SL pause",      value: gs.blockedSlPause || 0 },
       { label: "Blocked — opp cooldown",  value: gs.blockedOppCooldown || 0 },
       { label: "Warm-up bars fetched",    value: meta.warmupBars || 0 },
       {
@@ -609,12 +598,11 @@ function _renderResults(res, from, to, trades, stats, meta) {
       `<b>Entry:</b> CE = EMA${c.EMA_FAST} &gt; EMA${c.EMA_SLOW} AND the bar CLOSES above EMA${c.EMA_FAST} AND RSI(${c.RSI_PERIOD}) &gt; ${c.RSI_CE_MIN}; PE is the exact mirror (&lt;, &lt;, RSI &lt; ${c.RSI_PE_MAX}). ` +
       `There is deliberately <b>no SuperTrend entry gate and no RSI cap</b> — a CE may fire while SuperTrend is red, and RSI 95 is a valid CE. ` +
       `<b>Confirmation candle is ${g.confirmEnabled ? "ON" : "OFF"}</b> (<code>BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED</code>)${g.confirmEnabled ? ": the signal bar never enters — its CLOSE is armed as the trigger and the fill is taken on the IMMEDIATELY-next bar, the same market moment paper fills at on its first tick past the trigger" : ": entry is the signal bar's close"}. ` +
-      `<b>Stop:</b> SuperTrend(${c.ST_PERIOD},${c.ST_MULT}) and nothing else — seeded from the signal at entry, re-read at every bar CLOSE via the engine's own <code>trailStop()</code>, tighten-only, then tested intra-bar on the NEXT bar's high/low. ` +
-      `<b>V2 has no profit target</b>, no breakeven, no time-stop, no fixed-point stop, no option-premium stop, no negative-candle stop, no candle trail and no EMA21 anything — V1 has all of those and V2 dropped them on purpose. ` +
-      `The only other exits are the <b>opposite signal</b> and the hard square-off at ${_fmtMins(g.eodExitMin)} IST (<code>BN_EMA_RSI_ST_V2_EOD_EXIT_TIME</code>). ` +
-      `<b>Guards (V2's own keys, never the shared globals):</b> entries ${_fmtMins(g.entryStartMin)}–${_fmtMins(g.entryEndMin)}, max ${g.maxDailyTrades} trades/day, day ends on a ₹${g.maxDailyLoss} loss or ${g.maxConsecLosses} consecutive losses, ${g.slPauseCandles}-candle pause after a loss, opposite-side cooldown ${g.oppCooldownEnabled ? `${g.oppCooldownCandles} candles` : "off"}. ` +
+      `<b>Exit:</b> the global profit lock is the ONLY automatic exit (arm +${lockArm}%, floor +${lockFloor}%, trail ${lockTrail}%${lockTiers ? `, tiers ${_escHtml(lockTiers)}` : ""} — the shared <code>PROFIT_LOCK_*</code> keys)${lockOn ? "" : " — <b>currently OFF</b>"}${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? " — off in futures mode (it is defined on option premium)" : ""}, tested on the simulated premium with the peak tracked intra-bar. Anything still open is squared off at the session end (${_fmtMins(g.sessionStopMin)} IST, <code>TRADE_STOP_TIME</code>) or the day's last bar. ` +
+      `There is <b>no stop loss, no trail, no target</b>, no breakeven, no time-stop, no signal exit and no early square-off. ` +
+      `<b>Guards (V2's own keys):</b> entries ${_fmtMins(g.entryStartMin)}–${_fmtMins(g.entryEndMin)}, opposite-side cooldown ${g.oppCooldownEnabled ? `${g.oppCooldownCandles} candles` : "off"}, plus the global wait-after-exit cooldown. No loss-based day limits. ` +
       `<b>Warm-up:</b> the engine refuses below ${engine.warmupBars(c)} candles — more than one session — so ${g.warmupDays} calendar days of runway are fetched BEFORE ${_escHtml(from)} purely to seed the indicators. ${meta.warmupBars || 0} such bars were loaded and ${wv === 0 ? "<b>none of them produced a trade</b> (asserted, not assumed)" : `<b>⚠ ${wv} produced a trade — this is a bug, do not trust these results</b>`}. ` +
-      `<b>Intra-bar ordering is conservative:</b> the stop is tested on the bar's high/low BEFORE any favourable exit on the close, a bar that opened beyond the stop fills at the OPEN, and the trail advances only on a bar close. ` +
+      `<b>Intra-bar ordering is conservative:</b> each bar is walked open → adverse extreme → favourable extreme → close, so the lock is tested on the adverse leg before the favourable extreme can raise the peak, and a bar that opened through the locked floor fills at the OPEN. ` +
       `<b>P&L is simulated</b> — no historical option chain exists here, so premium is δ+θ modelled (BACKTEST_DELTA ${_num("BACKTEST_DELTA", "0.55")}, θ ₹${_num("BACKTEST_THETA_DAY", "8")}/day) seeded at ₹${g.seedPremium}, PLUS ${g.slippagePts}pt slippage EACH way (<code>BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS</code>) and real brokerage. Treat ₹ as directional, not exact.`,
   });
   res.send(html);

@@ -51,12 +51,7 @@ const { EMA, RSI } = require("technicalindicators");
 // replay engine's _applySettingsOverride() and the Settings UI's mid-session
 // process.env mutations would never reach the running strategy code.
 let TRADE_RES;            // candle resolution in minutes
-let _MAX_DAILY_TRADES;
-let _MAX_DAILY_LOSS;
-let _OPT_STOP_PCT;
 let _STOP_MINS;
-let _EMA_RSI_ST_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL hit
-let _EMA_RSI_ST_EOD_EXIT_MINS;      // square off any open EMA_RSI_ST position at/after this IST time (before day close)
 let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
 let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RESOLUTION → minutes)
 // Entry-window bounds — declared HERE (not further down as const) so
@@ -66,22 +61,11 @@ let _ENTRY_STOP_MINS;
 // isMarketHours() memo — invalidated by _refreshConfig(), so declared before it.
 let _mktHoursCache    = null;
 let _mktHoursCacheMin = -1;   // IST minute the cached verdict was computed for
-// Candle-trail (EMA_RSI_ST_CANDLE_TRAIL_*) is read live from process.env on each candle close
-// — INSTANT — so a Settings toggle takes effect without a restart.
 function _refreshConfig() {
   TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
-  _MAX_DAILY_TRADES                      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
-  _MAX_DAILY_LOSS                        = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
-  _OPT_STOP_PCT                          = parseFloat(process.env.OPT_STOP_PCT || "0.15");
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
-  _EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
-  // Exit-before-close: square off open position at this IST time (default 15:15),
-  // ahead of the TRADE_STOP_TIME auto-stop. Blank/invalid → fall back to _STOP_MINS.
-  const _eodRaw = process.env.EMA_RSI_ST_EOD_EXIT_TIME || "15:15";
-  const [eh, em] = _eodRaw.split(":").map(Number);
-  _EMA_RSI_ST_EOD_EXIT_MINS = (isNaN(eh)) ? _STOP_MINS : (eh * 60 + (isNaN(em) ? 0 : em));
   _OPP_COOLDOWN_ENABLED = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
   // Entry-window bounds. These were `const` computed once at module load while
@@ -95,30 +79,9 @@ function _refreshConfig() {
   _mktHoursCacheMin = -1;               // invalidate the cached market-hours verdict
 }
 _refreshConfig();
-let _cachedClosedCandleSL = null; // seed SL (prev-candle low/high) from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
-
-// ── Same-side SL cooldown ───────────────────────────────────────────────────
-// After an SL hit (price SL or option stop), block new entries on THAT side for
-// EMA_RSI_ST_SL_PAUSE_CANDLES candles. Mirrors BB_RSI's per-side pause.
-function _setSlPause(side) {
-  if (!_EMA_RSI_ST_SL_PAUSE_CANDLES || _EMA_RSI_ST_SL_PAUSE_CANDLES <= 0) return;
-  ptState._slPauseUntilBySide = ptState._slPauseUntilBySide || { CE: 0, PE: 0 };
-  ptState._slPauseUntilBySide[side] = simNow() + _EMA_RSI_ST_SL_PAUSE_CANDLES * getTradeResolution() * 60 * 1000;
-  log(`⏸️ [PAPER] ${side} SL cooldown — no new ${side} entries for ${_EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
-}
-
-// ── Consecutive-loss streak limit ───────────────────────────────────────────
-// Single source for BOTH streak mechanisms: the session-halting chop guard and
-// the back-to-back-loss pause below. The pause used to fire at a HARDCODED 3,
-// which flatly contradicted EMA_RSI_ST_MAX_CONSEC_LOSSES=0 — Settings labels that
-// "0 = OFF", yet three losses still paused entries for 20 minutes. Both now read
-// the same key, so 0 really means off and N really means N.
-// Read live from env (not the cached config block) so a Settings save applies
-// mid-session, matching how the chop guard has always read it.
-function _streakLimit() {
-  const n = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
+// True when the last FULLY CLOSED candle produced a BUY signal — updated in
+// onCandleClose. The 15-min intra-candle entry path waits for it (see onTick).
+let _closedCandleHadSignal = false;
 
 // ── Opposite-side (flip) cooldown ───────────────────────────────────────────
 // After any non-flip exit, block entries on the OPPOSITE side for
@@ -239,19 +202,8 @@ let ptState = {
   optionLtp:     null,
   optionSymbol:  null,
   optionChart:   null,
-  // SL-hit guard: block re-entry on the same candle where SL was hit
+  // Exit-candle guard: block re-entry on the same candle where a position was just closed
   _slHitCandleTime: null,
-  // 50%-rule exit pause: after a 50%-rule exit, block re-entry for 2 candles (30 min on 15-min)
-  // Logic: 50% rule fired = price immediately reversed after entry = market is choppy
-  // Don't fight the same choppy conditions — wait 2 candles for market to settle.
-  _fiftyPctPauseUntil: null,  // epoch ms — set on 50%-rule exit, checked before every entry
-  // Consecutive loss circuit breaker
-  _consecutiveLosses: 0,
-  _pauseUntilTime: null,    // epoch ms — block new entries until this time
-  // Daily loss kill switch — latched true when session loss >= MAX_DAILY_LOSS (₹)
-  // Blocks ALL new entries for the rest of the day. Resets only on session restart.
-  _dailyLossHit: false,
-  _priorRealizedToday: 0,   // today's realized P&L from EARLIER sessions (restart recovery)
   // NOTE: socket is now managed by socketManager — no ptState.socket needed
   // Pre-fetched option symbols (populated after each candle close, used at entry)
   _cachedCE: null,
@@ -261,11 +213,10 @@ let ptState = {
   _lastCheckedBarHigh: null,
   _lastCheckedBarLow:  null,
   _missedLoggedCandle: null,  // throttle for signal-missed log (once per candle)
-  _maxTradesLoggedCandle: null, // throttle for max-trades log (once per candle)
   _vixBlockLoggedCandle:  null, // throttle for VIX block log (once per candle)
   _entryPending:      false, // prevents double-entry on rapid ticks
   // Confirmation candle (cross & close): armed signal awaiting next-candle cross.
-  // { side, triggerLevel, armedBarTime, reason, stopLoss, indicators } | null.
+  // { side, triggerLevel, armedBarTime, reason, indicators } | null.
   _armedSignal:       null,
   _expiryDayBlocked:  false, // blocks entries on non-expiry days
   _simMode:           false, // simulation mode (fake ticks, no broker)
@@ -486,27 +437,6 @@ function _lateStartStopMins() {
 
 // Schedule auto-stop at TRADE_STOP_TIME (default 15:30 IST).
 // Set TRADE_STOP_TIME=HH:MM in .env to override.
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The EMA_RSI_ST-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "EMA_RSI_ST-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
 
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -671,7 +601,7 @@ function _publishOptionLtp(symbol, ltp, at) {
     ptState.position.optionEntryLtpTime = istNow();
     // Real premium known — replace the estimate blocked at entry.
     capitalPool.updateBlock("ema_rsi_st", (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
-    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
+    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry})`);
   }
 }
 
@@ -692,28 +622,20 @@ async function _optionPollTick(symbol, gen) {
     const ltpAt = streamed ? streamed.at  : Date.now();
     if (gen !== _optionPollGen) return; // position changed while in flight
     if (!ltp) {
-      // ── Staleness alert (mirrors emaRsiStLive) ────────────────────────────
+      // ── Staleness alert ────────────────────────────────────────────────────
       // A failed poll leaves ptState.optionLtp at its LAST value forever — there
       // was no timestamp and no warning, so the 25% option stop and the exit P&L
       // could both be computed from an arbitrarily old premium with nothing in
-      // the log to show it. Via emaRsiStLiveHarness that stale premium drives
-      // real orders. Warn only — the exit rules are unchanged.
+      // the log to show it. Warn only — the exit rules are unchanged.
       const _staleMs = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
       if (ptState.optionLtpUpdatedAt && (Date.now() - ptState.optionLtpUpdatedAt) > _staleMs
           && !ptState._ltpStaleLogged) {
-        log(`⚠️ [PAPER] Option LTP STALE — no update for ${Math.round((Date.now() - ptState.optionLtpUpdatedAt) / 1000)}s. Option stop + P&L are using a stale premium.`);
+        log(`⚠️ [PAPER] Option LTP STALE — no update for ${Math.round((Date.now() - ptState.optionLtpUpdatedAt) / 1000)}s. Profit lock + P&L are using a stale premium.`);
         ptState._ltpStaleLogged = true;
       }
       return;
     }
     _publishOptionLtp(symbol, ltp, ltpAt);
-
-    // ── Option LTP stop — 50% mid DISABLED ──
-    // Previously: if option premium dropped below 50% mid threshold, force exit.
-    // Now: protection is the EMA21 / candle trail set in onCandleClose (tighten-
-    // only) plus the initial prev-candle SL. NOTE: there is NO "+25pt breakeven"
-    // that moves SL to entry — that was never implemented. Winners can give back
-    // to the (possibly sub-entry) EMA21 stop until the trail rises past entry.
   } finally {
     if (gen === _optionPollGen) _optionPollBusy = false; // a stale tick must not clear a newer chain's flag
   }
@@ -741,7 +663,6 @@ function startOptionPolling(symbol) {
       // A rejection here used to kill the whole chain silently: scheduleNext()
       // would never run, the premium would freeze at its last value, the 25%
       // option stop could never fire, and the exit would book a stale premium.
-      // emaRsiStLive already guards its poll loop with try/catch — match it.
       try { await _optionPollTick(symbol, gen); }
       catch (err) { log(`⚠️ [PAPER] Option poll error: ${err.message} — polling continues`); }
       scheduleNext(); // reschedule only after this call finishes
@@ -772,11 +693,10 @@ function startOptionPolling(symbol) {
   //   3. Once stamped, the `if (!optionEntryLtp)` guard in _optionPollTick meant
   //      the REAL premium never replaced it.
   //
-  // Via emaRsiStLiveHarness (which runs live by wrapping this engine) that phantom
-  // exit became a real Zerodha order. The fix is to leave optionEntryLtp null and
+  // The fix is to leave optionEntryLtp null and
   // let this contract's own first successful poll set it — which is exactly what
   // happens in the normal case. With it null, simulateSell falls through to its
-  // designed "spot proxy (option LTP unavailable)" mode and the option stop stays
+  // designed "spot proxy (option LTP unavailable)" mode and the profit lock stays
   // inert until a genuine premium exists. No threshold or rule changes.
   //
   // OWNERSHIP: this timer belongs to the position that started THIS polling run;
@@ -786,7 +706,7 @@ function startOptionPolling(symbol) {
     if (ptState.position && ptState.optionSymbol === symbol
         && !ptState.position.optionEntryLtp) {
       ptState.position.optionEntryLtpMissing = true;
-      log(`⚠️ [PAPER] No option premium after 10s for ${symbol} — entry premium left UNSET (P&L falls back to spot proxy; 25% option stop stays inert until a real premium arrives). Spot is NOT used as a premium.`);
+      log(`⚠️ [PAPER] No option premium after 10s for ${symbol} — entry premium left UNSET (P&L falls back to spot proxy; profit lock stays inert until a real premium arrives). Spot is NOT used as a premium.`);
     }
   }, 10000);
 }
@@ -878,17 +798,11 @@ function parseOptionDetails(symbol) {
   return null;
 }
 
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, isIntraCandle = false, entryMeta = {}) {
+function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandle = false, entryMeta = {}) {
   // Guard: never overwrite an existing position (catches async race between candle-close
   // fallback and intra-tick entry both resolving at the same time)
   if (ptState.position) {
     log(`⚠️ [PAPER] simulateBuy called while position already open — ignoring duplicate entry (${side} @ ₹${price})`);
-    return;
-  }
-  // Same-side SL cooldown: reject re-entry on a side that recently hit SL/option-stop.
-  if (ptState._slPauseUntilBySide && ptState._slPauseUntilBySide[side] > simNow()) {
-    log(`⏸️ [PAPER] ${side} SL cooldown active — entry rejected (${side} @ ₹${price})`);
-    ptState._entryPending = false;
     return;
   }
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
@@ -916,88 +830,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     return;
   }
   const optDetails = parseOptionDetails(symbol);
-
-  // Capture the prev-candle reference at entry time — tick exit rule uses this FIXED value forever.
-  // Relaxed from 50% mid to 35%/65% — gives ~40% more room before exit fires.
-  // CE: 35% from low (exit level lower → more room above). PE: 65% from low (exit level higher → more room below).
-  // IMPORTANT: this value must NEVER be updated after entry — it is the fixed reference.
-  const _lastCandle = ptState.candles.length >= 1 ? ptState.candles[ptState.candles.length - 1] : null;
-  const entryPrevMid = _lastCandle
-    ? parseFloat((_lastCandle.low + (_lastCandle.high - _lastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
-    : null;
-
-  // 50% entry gate REMOVED — protection is now the EMA21/candle trail (no +25pt breakeven exists)
   const _entrySpot = spotAtEntry || price;
-
-  // ── INITIAL SL (EMA_RSI_ST redefined) ──────────────────────────────────────────
-  // The stop passed in IS the previous-candle low (CE) / high (PE) from getSignal.
-  // Used as-is; the execution layer trails it candle-by-candle (EMA21) from here.
-  //
-  // One correction only: an initial stop must be PROTECTIVE. The confirmation
-  // candle fills one bar after the signal candle, so the seeded level can land on
-  // the wrong side of the fill (CE stop above entry / PE stop below), which stops
-  // the trade out on the very next tick. resolveProtectiveStop keeps the seeded
-  // level untouched whenever it is protective and otherwise steps to the nearest
-  // structural low/high that is — same candle series, same philosophy.
-  // M2 race guard. simulateBuy runs inside the async symbol-lookup continuation,
-  // so a candle can close between the entry DECISION and this call — appending a
-  // candle and advancing ptState.currentBar. Reading the cutoff here would
-  // therefore be non-deterministic. Each call site captures it synchronously at
-  // the decision point and passes it in (`slBeforeTime`): the time of the bar
-  // that was still FORMING when the entry was decided. Everything at or after it
-  // is ignored, so the resolver always sees the signal candle and older.
-  const _slBeforeTime = entryMeta.slBeforeTime != null
-    ? entryMeta.slBeforeTime
-    : (ptState.currentBar ? ptState.currentBar.time : null);
-
-  // ── Initial-SL mode (EMA_RSI_ST_INITIAL_SL_MODE) ───────────────────────────
-  // "prev_candle" (default) — seed the stop from the previous candle low/high,
-  //   as passed in by getSignal. Structure-based, but often only a few points
-  //   from the fill, so ordinary noise stops the trade out within seconds.
-  // "ema21" — seed the stop on the SAME EMA21 line the trail already rides, so
-  //   entry protection and trail protection are one line. Only applied when the
-  //   EMA21 level is genuinely protective (below entry for CE / above for PE);
-  //   otherwise the prev-candle seed is kept and resolveProtectiveStop below
-  //   does its usual repair. EMA21 replaces the seed outright (it may be wider
-  //   than the prev-candle level — that extra room is the point of the mode).
-  let _seedSL = stopLoss != null ? stopLoss : null;
-  const _initSlMode = (process.env.EMA_RSI_ST_INITIAL_SL_MODE || "prev_candle").toLowerCase();
-  if (_initSlMode === "ema21" && _seedSL != null) {
-    const _e21 = entryMeta.ema21AtEntry;
-    if (_e21 != null) {
-      const _protective = side === "CE" ? _e21 < price : _e21 > price;
-      if (_protective) _seedSL = Math.round(_e21 * 100) / 100;
-    }
-  }
-
-  let _capLog = null;
-  const _slFix = tradeGuards.resolveProtectiveStop({
-    side,
-    entryPrice: price,
-    stopLoss:   _seedSL,
-    candles:    ptState.candles,
-    beforeTime: _slBeforeTime,
-  });
-  const _initialSL = _slFix.stopLoss;
-  if (_slFix.repaired) _capLog = `🛡️ [PAPER] Initial SL corrected — ${_slFix.reason}`;
-
-  // M1 — never open a position we cannot protect. Reached only when a stop was
-  // seeded but NO protective structural level exists in the whole history; with
-  // the confirmation candle ON this is unreachable (the signal candle always
-  // qualifies). Refusing beats opening an unstopped position.
-  if (stopLoss != null && _initialSL == null) {
-    log(`🚫 [PAPER] Entry aborted — ${_slFix.reason}`);
-    skipLogger.appendSkipLog("ema_rsi_st", {
-      gate: "strategy",
-      reason: "no protective structural stop available",
-      spot: price,
-      side,
-      signal: side === "CE" ? "BUY_CE" : "BUY_PE",
-      path: "protective-stop",
-    });
-    ptState._entryPending = false;
-    return;
-  }
 
   // ── Capital gate — HARD: the pool must fund qty × premium or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
@@ -1030,16 +863,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     entryPrice:        price,          // NIFTY spot at candle close
     spotAtEntry:       _entrySpot,
     entryTime:         istNow(),
-    // getSignal() bakes "SL=prevLow <level>" into `reason` before the initial-SL
-    // mode is applied, so under mode "ema21" that label names a level the trade
-    // never used. Append the level actually armed; the prev-candle level stays
-    // visible as the structural reference.
-    reason: (_seedSL != null && _initialSL != null && Math.abs(_initialSL - _seedSL) >= 0.01)
-      ? `${reason} | SL=EMA21 ${_initialSL}`
-      : reason,
-    stopLoss:          _initialSL,
-    initialStopLoss:   _initialSL,
-    entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry (retained for trade-record continuity)
+    reason,
     entryBarTime:      ptState.currentBar ? ptState.currentBar.time : (ptState.candles.length ? ptState.candles[ptState.candles.length - 1].time : null),
     bestPrice:         null,
     bestOptionLtp:     null,   // peak (highest) option premium reached during trade — observer-only
@@ -1058,7 +882,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     // Option premium tracking — always start EMPTY and let this contract's own
     // first poll fill them (see _optionPollTick). Inheriting ptState.optionLtp
     // here is what let a late reply from the PREVIOUS strike become this trade's
-    // entry premium. Matches emaRsiStLive, which already seeds both as null.
+    // entry premium.
     optionEntryLtp:    null,  // back-filled by this symbol's first successful poll
     optionCurrentLtp:  null,  // updated on each option tick
     // Data-collection fields — surfaced on the trade record in simulateSell()
@@ -1094,12 +918,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     log(`📊 [PAPER] Futures mode — skipping option LTP polling`);
   }
 
-  const slText = stopLoss ? ` | SL: ₹${stopLoss}` : "";
-  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price}${slText} | Opt: capturing… | Reason: ${reason}`);
-  if (_capLog) log(_capLog);
-  if (entryPrevMid !== null) {
-    // log(`📐 [PAPER] 50% rule ref fixed: prev candle mid = ₹${entryPrevMid} (exit if ${side}=PE: spot > ₹${entryPrevMid} | CE: spot < ₹${entryPrevMid})`);
-  }
+  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price} | Opt: capturing… | Reason: ${reason}`);
 
   // ── Telegram notification (skip in simulation mode) ───────────────────────
   if (!ptState._simMode) {
@@ -1111,7 +930,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
       expiry:         ptState.position.optionExpiry,
       spotAtEntry:    price,
       optionEntryLtp: ptState.optionLtp || null,
-      stopLoss:       stopLoss || null,
       qty,
       reason,
     });
@@ -1185,7 +1003,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     pnlMode,
     exitReason:       reason,
     entryReason:      ptState.position.reason,
-    stopLoss:         ptState.position.stopLoss,        // final SL at exit (may be trailed)
     optionExpiry:     ptState.position.optionExpiry || null,
     optionStrike:     ptState.position.optionStrike || null,
     optionType:       ptState.position.optionType   || side,
@@ -1200,9 +1017,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     entryHourIST:     entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST:   entryMinuteIST   != null ? entryMinuteIST   : null,
     // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
-    initialStopLoss:  ptState.position.initialStopLoss  || null,
-    trailActivatePts: ptState.position.trailActivatePts || null,
-    entryPrevMid:     ptState.position.entryPrevMid     || null,   // 50%-rule reference
     bestPrice:        ptState.position.bestPrice        || null,   // peak favorable spot during trade
     bestOptionLtp:    ptState.position.bestOptionLtp    || null,   // peak option premium during trade
     candlesHeld:      ptState.position.candlesHeld      || 0,
@@ -1244,68 +1058,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
   if (netPnl > 0) { ptState._sessionWins++;   }
   else             { ptState._sessionLosses++; }
-
-  // ── Chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES) ──────────────────────────────
-  // Independent of the legacy 3-loss pause below, which resets _consecutiveLosses
-  // to 0 on 5-min. This counter only grows on losses and clears on a win, so the
-  // entry gate can sit the strategy out for the rest of a choppy session.
-  if (netPnl > 0)      { ptState._chopConsecLosses = 0; }
-  else if (netPnl < 0) { ptState._chopConsecLosses = (ptState._chopConsecLosses || 0) + 1; }
-
-  // ── Daily loss kill switch ────────────────────────────────────────────────────
-  // If session loss exceeds MAX_DAILY_LOSS (set in .env, default ₹5000),
-  // latch _dailyLossHit = true and block ALL new entries for the rest of the day.
-  // This is a hard stop — consecutive-loss pause does NOT clear it. Only session restart resets it.
-  const MAX_DAILY_LOSS = _MAX_DAILY_LOSS;
-  // Measured against session + prior-realized-today so a mid-day restart cannot
-  // hand the day a fresh loss budget (see the restart recovery in /start).
-  const _dayPnl = ptState.sessionPnl + (ptState._priorRealizedToday || 0);
-  if (!ptState._dailyLossHit && _dayPnl <= -Math.abs(MAX_DAILY_LOSS)) {
-    ptState._dailyLossHit = true;
-    log(`🛑 [PAPER] DAILY LOSS LIMIT HIT — session loss ₹${Math.abs(ptState.sessionPnl)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
-  }
-  // After EMA_RSI_ST_MAX_CONSEC_LOSSES back-to-back losses (0 = OFF, see _streakLimit):
-  //   15-min: latch dailyLossHit = NO MORE ENTRIES TODAY = bad market day, sit out.
-  //   5-min:  pause for 4 candles then allow re-entry — shorter TF recovers faster.
-  const _streakMax = _streakLimit();
-  if (netPnl < 0) {
-    ptState._consecutiveLosses = (ptState._consecutiveLosses || 0) + 1;
-    log(`📉 [PAPER] Consecutive losses: ${ptState._consecutiveLosses}${_streakMax ? ` / ${_streakMax}` : " (breaker OFF)"}`);
-    if (_streakMax > 0 && ptState._consecutiveLosses >= _streakMax) {
-      if (TRADE_RES >= 15) {
-        // 15-min: streak limit reached = done for the day
-        ptState._dailyLossHit = true;
-        log(`🛑 [PAPER] ${ptState._consecutiveLosses} consecutive losses (≥ ${_streakMax}) on 15-min — NO MORE ENTRIES TODAY (daily kill latched)`);
-        // Keep the counter at the limit so the UI shows N/N with KILLED state
-      } else {
-        // 5-min: pause 4 candles then resume
-        const pauseMs = 4 * getTradeResolution() * 60 * 1000;
-        ptState._pauseUntilTime = simNow() + pauseMs;
-        const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-        log(`⚠️ [PAPER] ${ptState._consecutiveLosses} consecutive losses (≥ ${_streakMax}) — entries PAUSED for ${getTradeResolution() * 4} min (resume ~${resumeTime})`);
-        ptState._consecutiveLosses = 0; // reset only for 5-min (will re-enter later)
-      }
-    }
-  } else {
-    if (ptState._consecutiveLosses > 0) {
-      log(`✅ [PAPER] Consecutive loss streak reset (was ${ptState._consecutiveLosses})`);
-    }
-    ptState._consecutiveLosses = 0;
-    ptState._pauseUntilTime = null; // profitable trade clears any remaining pause
-  }
-
-  // ── 50%-rule exit pause ────────────────────────────────────────────────────
-  // A 50%-rule exit means price reversed immediately after entry = choppy market.
-  // Pause for 2 candles (30 min on 15-min, 10 min on 5-min) before next entry.
-  // This prevents the bot from re-entering the same choppy conditions repeatedly.
-  // Only 50%-rule exits trigger this — SL hits and opposite-signal exits do NOT.
-  if (false) { // 50% pause DISABLED
-    const pauseCandles  = 2;
-    const pauseMs       = pauseCandles * getTradeResolution() * 60 * 1000;
-    ptState._fiftyPctPauseUntil = Date.now() + pauseMs;
-    const resumeTime = new Date(ptState._fiftyPctPauseUntil).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-    log(`⏸ [PAPER] 50%-rule exit — market choppy. Entry paused for ${pauseCandles} candles (~${pauseCandles * getTradeResolution()} min, resume ~${resumeTime})`);
-  }
 
   stopOptionPolling();
   ptState.optionSymbol = null;
@@ -1354,8 +1106,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // Notify active strategy (optional callbacks for strategy-level state tracking)
   const activeStrat = getActiveStrategy();
   if (typeof activeStrat.onTradeClosed === "function") activeStrat.onTradeClosed();
-  const isStopLoss = reason && (reason.toLowerCase().includes("sl hit") || reason.toLowerCase().includes("stop"));
-  if (isStopLoss && typeof activeStrat.onStopLossHit === "function") activeStrat.onStopLossHit(side);
 }
 
 // ── On each completed candle ──────────────────────────────────────────
@@ -1372,10 +1122,10 @@ async function onCandleClose(candle) {
   if (ptState.candles.length > tradeGuards.INDICATOR_HISTORY_CANDLES) ptState.candles.shift();
 
   const strategy = getActiveStrategy();
-  const { signal, reason, stopLoss, signalStrength, ...indicators } = strategy.getSignal(ptState.candles);
+  const { signal, reason, stopLoss: _seedStop, signalStrength, ...indicators } = strategy.getSignal(ptState.candles); // stop seed unused — the profit lock is the only exit
 
-  // Cache stable SAR SL for every intra-candle tick — avoids recomputing strategy on every tick
-  _cachedClosedCandleSL = stopLoss ?? null;
+  // Readiness flag for the 15-min intra-candle entry path (see onTick).
+  _closedCandleHadSignal = signal === "BUY_CE" || signal === "BUY_PE";
   _clearMoveLockOnFlip(indicators.stTrendInt);
 
   // ── Confirmation candle (cross & close) — arm the signal here; entry fires
@@ -1393,7 +1143,7 @@ async function onCandleClose(candle) {
         side:         _armSide,
         triggerLevel: candle.close,
         armedBarTime: candle.time,
-        reason, stopLoss, indicators,
+        reason, indicators,
       };
       log(`🎯 [PAPER] Signal candle closed — ARMED ${_armSide}; next candle must cross ${candle.close} to enter | ${reason}`);
     }
@@ -1417,15 +1167,8 @@ async function onCandleClose(candle) {
   //
   // Everything after the await is a candle-close rule for THIS bar, so it must
   // only ever act on the position that was open when THIS bar closed. Without the
-  // check below, bar N's block would run against a position opened in bar N+1:
-  //   • candlesHeld incremented for a bar it was never held in, so the 2-candle
-  //     negative stop fired one bar early for the rest of that trade;
-  //   • bar N's EMA21 trail overwrote the stop just resolved for the new entry;
-  //   • the touch-back "skip on entry bar" guard compares candle.time against
-  //     entryBarTime — bar N ≠ bar N+1, so it did NOT skip, and a brand-new
-  //     position could be closed instantly by "EMA touch-back exit" computed from
-  //     the PREVIOUS bar's range.
-  // Live never had this: its onCandleClose has no await before the same block.
+  // check below, bar N's block would run against a position opened in bar N+1
+  // (e.g. candlesHeld incremented for a bar it was never held in).
   const _posAtClose = ptState.position;
   const _sid = _entrySessionGen;
   if (!ptState._simMode) await oiFilter.recordOiSample(candle.close);
@@ -1463,171 +1206,30 @@ async function onCandleClose(candle) {
       time: _candleIST,
     });
   }
-  if (_ownsClose) {   // candle-close rules act only on the position open at THIS close
-    // Increment candles-held + time-stop check (flat trade = theta bleed)
+  if (_ownsClose) {   // candle-close bookkeeping acts only on the position open at THIS close
     ptState.position.candlesHeld = (ptState.position.candlesHeld || 0) + 1;
-    {
-      const _pos = ptState.position;
-      const _entryOpt = _pos.optionEntryLtp;
-      const _curOpt   = ptState.optionLtp || _pos.optionCurrentLtp;
-      let _pnlPts = null;
-      if (_entryOpt && _curOpt) {
-        _pnlPts = _curOpt - _entryOpt;
-      } else if (_pos.spotAtEntry) {
-        _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
-      }
-      // Time-stop is disabled — EMA21 trail owns the SL fully (inert legacy gate; SL_MODE is no longer set).
-      if ((process.env.EMA_RSI_ST_SL_MODE || "ema").toLowerCase() === "candle") {
-        const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
-        if (_tsReason) {
-          log(`⏳ [PAPER] ${_tsReason}`);
-          simulateSell(candle.close, _tsReason, candle.close);
-          return;
-        }
-      }
-      // ── Negative-candle stop (EMA_RSI_ST_NEG_CANDLE_LIMIT) ─────────────────────────
-      // Asymmetric loss-cut: if the trade is still in the RED after N candles, square
-      // off — let winners ride the EMA21 trail, but don't let a loser bleed across the
-      // chop. Points-based on option premium (falls back to spot move). 0 = off; default 2.
-      const _negLimit = parseInt(process.env.EMA_RSI_ST_NEG_CANDLE_LIMIT || "2", 10);
-      if (_negLimit > 0 && _pnlPts != null && _pnlPts < 0 && _pos.candlesHeld >= _negLimit) {
-        log(`🔻 [PAPER] Negative ${_negLimit}-candle stop — ${_pos.candlesHeld} candles held, still red (${_pnlPts.toFixed(1)}pt) — squaring off ${_pos.side}`);
-        simulateSell(candle.close, `Negative ${_negLimit}-candle stop`, candle.close);
-        return;
-      }
-    }
-
     const _p    = ptState.position;
     const _est  = _p.side === "CE" ? (candle.close - _p.spotAtEntry).toFixed(1) : (_p.spotAtEntry - candle.close).toFixed(1);
-    const _slGap = _p.side === "CE"
-      ? parseFloat((candle.close - _p.stopLoss).toFixed(1))
-      : parseFloat((_p.stopLoss - candle.close).toFixed(1));
     const _optEntry = _p.optionEntryLtp ? `₹${_p.optionEntryLtp}` : "—";
     const _optNow   = ptState.optionLtp  ? `₹${ptState.optionLtp}`  : "—";
     const _optPnl   = (_p.optionEntryLtp && ptState.optionLtp)
       ? ` (Δ₹${(ptState.optionLtp - _p.optionEntryLtp).toFixed(2)} × ${_p.qty || getLotQty()})`
       : "";
-    log(`   Open ${_p.side} @ ₹${_p.spotAtEntry} | SL=₹${_p.stopLoss} (gap=${_slGap}pt) | best=₹${_p.bestPrice||"—"} | est.PnL≈${_est}pt | 50%mid=₹${_p.entryPrevMid}`);
+    log(`   Open ${_p.side} @ ₹${_p.spotAtEntry} | best=₹${_p.bestPrice||"—"} | est.PnL≈${_est}pt`);
     log(`   Option: entry=${_optEntry} now=${_optNow}${_optPnl}`);
   }
 
-  // ── entryPrevMid is FIXED at entry time — never update it here ──────────────
-  // It is set once in simulateBuy() = mid of the last fully closed candle at entry.
-  // The 50% rule reference must not roll forward as new candles close.
-
-  // ── Trailing stop (EMA21 base + optional candle-trail overlay) ──────────────
-  // EMA_RSI_ST_EMA_EXIT_MODE decides how the EMA21 line ends a trade:
-  //   "touch" (default, legacy) — the base SL source updated at each candle close
-  //     (tighten-only) is the current EMA21, AND a candle whose RANGE merely reaches
-  //     back to EMA21 is an explicit exit. A wick is enough, in both places.
-  //   "close" (cross & close)  — EMA21 becomes a candle-CLOSE rule only: exit when the
-  //     candle CLOSES the wrong side of it (CE below / PE above), so a wick through the
-  //     line is held. EMA21 then does NOT seed the stop either: pos.stopLoss is enforced
-  //     tick-by-tick in onTick, so a stop parked on EMA21 would close the trade on the
-  //     first wick that touches it and the mode would be indistinguishable from "touch".
-  //     The hard stop in this mode is the candle trail (keep it ON) / the initial SL /
-  //     EMA_RSI_ST_STOP_LOSS_PTS / the option-premium stop.
-  // When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low (CE) / high (PE) trail is computed
-  // and the stop is set to whichever of (EMA21, candle-trail level) is TIGHTER —
-  // i.e. closer to price (higher for CE, lower for PE). Tighten-only either way.
-  // pos.stopLoss is then enforced intra-candle in onTick.
-  if (_ownsClose) {   // trail/EMA exit belong to THIS bar's position only
-    const pos     = ptState.position;
-    let _newSL    = null;
-    let _flipExit = false;
-    let _trailTag = "";
-    const _emaExitClose = (process.env.EMA_RSI_ST_EMA_EXIT_MODE || "touch").toLowerCase() === "close";
-    if (indicators.ema21 != null && !_emaExitClose) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
-    if (indicators.ema21 != null) {
-      _flipExit = _emaExitClose
-        ? (pos.side === "CE" ? candle.close < indicators.ema21 : candle.close > indicators.ema21)
-        : (candle.low <= indicators.ema21 && candle.high >= indicators.ema21);
-    }
-    // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of EMA21 vs candle.
-    const _ctOn   = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-    const _ctBars = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
-    if (_ctOn && ptState.candles && ptState.candles.length >= _ctBars) {
-      const _bars = ptState.candles.slice(-_ctBars);
-      const _candleLvl = pos.side === "CE"
-        ? Math.min(..._bars.map(c => c.low))
-        : Math.max(..._bars.map(c => c.high));
-      if (_newSL == null) { _newSL = _candleLvl; _trailTag = `${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}`; }
-      else if (pos.side === "CE" && _candleLvl > _newSL) { _newSL = _candleLvl; _trailTag = `${_ctBars}-bar low`; }
-      else if (pos.side === "PE" && _candleLvl < _newSL) { _newSL = _candleLvl; _trailTag = `${_ctBars}-bar high`; }
-    }
-    if (_newSL != null) {
-      if (pos.side === "CE" && (pos.stopLoss == null || _newSL > pos.stopLoss)) {
-        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
-        log(`📐 [PAPER] SL trail CE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
-      } else if (pos.side === "PE" && (pos.stopLoss == null || _newSL < pos.stopLoss)) {
-        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
-        log(`📐 [PAPER] SL trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
-      }
-    }
-    // ── Breakeven floor (default OFF) ─────────────────────────────────────────
-    // Once the trade is >= EMA_RSI_ST_BREAKEVEN_PTS in profit (spot), raise the
-    // stop to the entry price so a winner can't turn into a loss. Tighten-only:
-    // only ever moves the stop toward entry from below (never loosens a deeper
-    // trail). Measured at candle close so paper + candle-based backtest match.
-    if ((process.env.EMA_RSI_ST_BREAKEVEN_ENABLED || "false").toLowerCase() === "true") {
-      const _bePts = parseFloat(process.env.EMA_RSI_ST_BREAKEVEN_PTS || "25");
-      const _profit = pos.side === "CE" ? (candle.close - pos.entryPrice) : (pos.entryPrice - candle.close);
-      if (_profit >= _bePts) {
-        const _be = parseFloat(pos.entryPrice.toFixed(2));
-        if (pos.side === "CE" && (pos.stopLoss == null || pos.stopLoss < _be)) {
-          const _o = pos.stopLoss; pos.stopLoss = _be;
-          log(`🛡️ [PAPER] Breakeven CE: SL ₹${_o} → entry ₹${_be} (+${_profit.toFixed(1)}pt)`);
-        } else if (pos.side === "PE" && (pos.stopLoss == null || pos.stopLoss > _be)) {
-          const _o = pos.stopLoss; pos.stopLoss = _be;
-          log(`🛡️ [PAPER] Breakeven PE: SL ₹${_o} → entry ₹${_be} (+${_profit.toFixed(1)}pt)`);
-        }
-      }
-    }
-    if (_flipExit) {
-      // Skip the EMA exit on the entry bar (the entry condition trivially satisfies
-      // it — would cause an instant exit on the entry candle). Applies to both modes.
-      const _emaExitReason = _emaExitClose ? "EMA close-through exit" : "EMA touch-back exit";
-      const _isEntryBar = pos.entryBarTime && candle.time === pos.entryBarTime;
-      if (_isEntryBar) {
-        log(`⏭️ [PAPER] ${_emaExitReason} on entry bar — skipping flip exit`);
-      } else {
-        log(`🔁 [PAPER] ${_emaExitReason} — ${pos.side} @ candle close ₹${candle.close} vs EMA21 ₹${indicators.ema21}`);
-        simulateSell(candle.close, _emaExitReason, candle.close);
-      }
-    }
-  }
-  // SL-hit is enforced intra-candle in onTick against the stop set above —
-  // no separate candle-close SL check needed.
-
-  // ── Exit Rule 3: Opposite signal ────────────────────────────────────────
-  if (_ownsClose) {   // opposite-signal exit is a THIS-bar rule
-    const opposite = ptState.position.side === "CE" ? "BUY_PE" : "BUY_CE";
-    if (signal === opposite) {
-      simulateSell(candle.close, "Opposite signal exit", candle.close);
-      // fall through — position is now null, may enter below
-    }
-  }
-
-  // ── Exit Rule 4: EOD square-off + auto-stop at TRADE_STOP_TIME ─────────────
+  // ── Session square-off + auto-stop at TRADE_STOP_TIME ──────────────────────
   // Use fast integer IST calc (no Date/ICU allocation) + module-level cached _STOP_MINS.
   // Skip EOD exit in simulation mode
   const _eodMinNow  = ptState._simMode ? 0 : getISTMinutes();
   const _stopLabel  = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
 
-  // ── Exit-before-close: square off any open position at EMA_RSI_ST_EOD_EXIT_TIME ──
-  // Fires ahead of the TRADE_STOP_TIME auto-stop; the engine keeps running until _STOP_MINS.
-  if (_ownsClose && !ptState._simMode && _eodMinNow >= _EMA_RSI_ST_EOD_EXIT_MINS && _eodMinNow < _STOP_MINS) {
-    const _eLbl = String(Math.floor(_EMA_RSI_ST_EOD_EXIT_MINS/60)).padStart(2,"0") + ":" + String(_EMA_RSI_ST_EOD_EXIT_MINS%60).padStart(2,"0");
-    log(`⏰ [PAPER] Exit-before-close ${_eLbl} — squaring off open ${ptState.position.side}`);
-    simulateSell(candle.close, `Exit before day close ${_eLbl}`, candle.close);
-    return;
-  }
-
   if (_eodMinNow >= _STOP_MINS) {
     // Deliberately NOT gated on _ownsClose. This is the hard session-end square-off
     // and it sets running=false immediately after, so no later candle close will
     // run. Any open position must be closed here, including one opened during this
-    // handler's await window — leaving it would strand a real position overnight.
+    // handler's await window — leaving it would strand an open position overnight.
     if (ptState.position) {
       log("⏰ [PAPER] EOD " + _stopLabel + " — auto square off");
       simulateSell(candle.close, "EOD square-off " + _stopLabel, candle.close);
@@ -1642,7 +1244,6 @@ async function onCandleClose(candle) {
       log(`════════════════════════════════════════════════════════════════════\n`);
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
-      _releaseLiveHarness("EOD auto-stop");   // after the EOD square-off above
       saveSession();
       // Clear THIS (primary) slot FIRST, then stop the shared socket only if no
       // other strategy is still subscribed. The old guard checked BB_RSI +
@@ -1699,33 +1300,8 @@ async function onCandleClose(candle) {
       }
       if (_oi.regime) _oiTag = ` | ${_oi.reason}`;
     }
-    // ── Circuit breaker checks — must mirror intra-tick path exactly ──────────
-    if (ptState._dailyLossHit) {
-      log(`🛑 [PAPER] Daily loss limit active — candle-close entry blocked (${signal})`);
-      return;
-    }
+    // ── Portfolio-wide cap — must mirror intra-tick path exactly ──────────────
     { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [PAPER] ${_pf.reason} — candle-close entry blocked (${signal})`); return; } }
-    if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
-      const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-      log(`⏸ [PAPER] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
-      return;
-    }
-    if (false) { // 50% pause DISABLED — replaced by breakeven
-      const resumeTime = new Date(ptState._fiftyPctPauseUntil).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-      log(`⏸ [PAPER] 50%-rule pause active — candle-close entry blocked until ~${resumeTime}`);
-      return;
-    }
-    // Chop guard: after N consecutive losses, sit out the rest of the session
-    // (any win resets _chopConsecLosses). Reads live from env; 0 = off.
-    const _chopMax = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10);
-    if (_chopMax > 0 && (ptState._chopConsecLosses || 0) >= _chopMax) {
-      log(`🚫 [PAPER] Chop guard — ${ptState._chopConsecLosses} consecutive losses (≥ ${_chopMax}) — EMA_RSI_ST halted for the session (${signal})`);
-      return;
-    }
-    if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
-      log(`🚫 [PAPER] Daily max trades reached — candle-close entry blocked (${signal})`);
-      return;
-    }
     const side = signal === "BUY_CE" ? "CE" : "PE";
     const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
 
@@ -1789,11 +1365,8 @@ async function onCandleClose(candle) {
 
       // /stop (or stop + restart) may have run during the awaits above.
       if (ptState.position || !ptState.running || _entrySessionGen !== _sid) { ptState._entryPending = false; clearTimeout(_ptEntryTimer); return; }
-      simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
+      simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, candle.close, false, {
         signalStrength: "STRONG",
-        // Entry fires at THIS candle's close, so it is fully closed and counts as
-        // available structure; the next bar is the one still forming.
-        slBeforeTime: candle.time + TRADE_RES * 60,
         rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
         ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
         ema20AtEntry: indicators.ema20  != null ? indicators.ema20 : null,
@@ -1843,7 +1416,7 @@ function onTick(tick) {
     if (ptState.currentBar) {
       onCandleClose(ptState.currentBar).catch(console.error);
     }
-    // New candle — clear the SL-hit block and intra-candle entry throttle
+    // New candle — clear the exit-candle block and intra-candle entry throttle
     ptState._slHitCandleTime    = null;
     ptState._lastCheckedBarHigh = null;
     ptState._lastCheckedBarLow  = null;
@@ -1878,16 +1451,16 @@ function onTick(tick) {
   // actually changes — i.e. when a new extreme tick arrives that could newly cross EMA21.
   // For 5-min this throttle is skipped (ticks are less frequent, no need).
   //
-  // SAFETY: we only allow intra-tick entry if _cachedClosedCandleSL is not null,
-  // meaning at least one candle has fully closed and SAR is properly initialised.
-  // This prevents entries on the very first partial bar of the session.
+  // SAFETY (15-min only): intra-tick entry waits for _closedCandleHadSignal — the
+  // last fully closed candle produced a BUY signal. This prevents entries on the
+  // very first partial bar of the session.
   const barHighChanged = bar && bar.high !== ptState._lastCheckedBarHigh;
   const barLowChanged  = bar && bar.low  !== ptState._lastCheckedBarLow;
   const shouldCheckSignal = TRADE_RES === 5 || barHighChanged || barLowChanged;
 
   if (!ptState.position && bar && ptState.candles.length >= 30
       && !ptState._entryPending && shouldCheckSignal
-      && (TRADE_RES === 5 || _cachedClosedCandleSL !== null)) {
+      && (TRADE_RES === 5 || _closedCandleHadSignal)) {
 
     // Update throttle — record the high/low we're about to evaluate against
     if (TRADE_RES !== 5) {
@@ -1904,45 +1477,23 @@ function onTick(tick) {
       }
     } else {
     ptState._omhLogged = false;
-    // Block re-entry on the same candle where an SL/50% exit just occurred
+    // Block re-entry on the same candle where a position was just closed
     const currentBarTime = ptState.currentBar ? ptState.currentBar.time : null;
     if (ptState._slHitCandleTime !== null && ptState._slHitCandleTime === currentBarTime) {
       // silently skip — no log spam on every tick
-    } else if (ptState._dailyLossHit) {
-      // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
     } else if (require("../utils/portfolioRisk").checkPortfolioCap().blocked) {
       // Portfolio-wide daily loss cap hit — no entries across any strategy (silent)
-    } else if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
-      // Consecutive loss pause active — silently skip to avoid log spam
-    } else if (false) { // 50% pause DISABLED — replaced by breakeven
-      // 50%-rule pause active — silently skip to avoid log spam
-    } else if (parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10) > 0
-               && (ptState._chopConsecLosses || 0) >= parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10)) {
-      // Chop guard: N consecutive losses — sit out the rest of the session.
-      if (!ptState._chopGuardLoggedCandle || ptState._chopGuardLoggedCandle !== currentBarTime) {
-        log(`🚫 [PAPER] Chop guard — ${ptState._chopConsecLosses} consecutive losses (≥ ${process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES}) — EMA_RSI_ST halted for the session`);
-        ptState._chopGuardLoggedCandle = currentBarTime;
-      }
-    } else if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
-      // Daily max trades cap reached — protect brokerage and capital
-      // Log only once per candle to avoid spam
-      if (!ptState._maxTradesLoggedCandle || ptState._maxTradesLoggedCandle !== currentBarTime) {
-        log(`🚫 [PAPER] Daily max trades (${_MAX_DAILY_TRADES}) reached — no more entries today`);
-        ptState._maxTradesLoggedCandle = currentBarTime;
-      }
     } else {
     // ── Single getSignal call using push/pop (no array copy, no second computation) ──
     // Push the live bar temporarily so strategy sees it, then immediately pop.
     // This avoids the expensive [...candles, bar] spread AND the duplicate getSignal call.
-    // SAR stopLoss: use strategy's LIVE value (includes SAR flips), fallback to cached closed-candle SL.
     ptState.candles.push(bar);
-    let { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(ptState.candles, { silent: true });
+    let { signal, reason, signalStrength, stopLoss: _seedStop, ...indicators } = strategy.getSignal(ptState.candles, { silent: true }); // stop seed unused
     ptState.candles.pop();
-    let stopLoss = strategySL || _cachedClosedCandleSL;
     // ── Confirmation candle (cross & close): when ON, ignore the live forming-bar
     //    signal and instead enter only when this (the candle AFTER a signal candle)
     //    crosses the armed signal candle's close. Carries the signal candle's
-    //    reason/SL/indicators into the trade record. ──
+    //    reason/indicators into the trade record. ──
     if (confirmCandle.enabled("EMA_RSI_ST")) {
       const _a = ptState._armedSignal;
       // ── Entry-window enforcement on the CONFIRMATION bar ────────────────────
@@ -1970,7 +1521,6 @@ function onTick(tick) {
             && confirmCandle.crossed(_a.side, ltp, _a.triggerLevel)) {
         signal     = _a.side === "CE" ? "BUY_CE" : "BUY_PE";
         reason     = `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`;
-        stopLoss   = _a.stopLoss != null ? _a.stopLoss : stopLoss;
         indicators = _a.indicators || indicators;
         ptState._armedSignal = null; // consume — prevents double-fire while symbol lookup runs
       } else {
@@ -2094,11 +1644,8 @@ function onTick(tick) {
 
         // /stop (or stop + restart) may have run during the awaits above.
         if (ptState.position || !ptState.running || _entrySessionGen !== _sidIntra) { ptState._entryPending = false; clearTimeout(_ptIntraTimer); return; }
-        simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
+        simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, ltp, true, {
           signalStrength: "STRONG",
-          // This bar is still forming — captured NOW, before the async gap, so a
-          // candle closing mid-lookup cannot change which structure is used.
-          slBeforeTime: bar.time,
           rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
           ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
           ema20AtEntry: indicators.ema20  != null ? indicators.ema20 : null,
@@ -2118,112 +1665,36 @@ function onTick(tick) {
       } // end OI-not-blocked
       } // end VIX else
     }
-    } // end SL-hit candle guard
+    } // end exit-candle guard
     } // end market hours check
   }
 
-  // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
-  // NOTE: Intra-tick 50% rule was REMOVED (was firing on single-tick noise at prevMid).
-  // On 15-min candles Nifty routinely wicks through prevMid and recovers within the candle.
-  // A single ltp > prevMid tick was triggering exit on trades the backtest would HOLD.
-  // Fix: 50% rule only fires at candle CLOSE (see onCandleClose) — identical to backtest.
-  // The trail SL below handles all real-time intra-candle profit protection.
-  // SL is updated each candle close as SAR dot moves in our favour.
-  // ADDITIONALLY: intra-candle points trail — from the very FIRST favourable tick,
-  // trail SL 10 pts behind the best price seen (no minimum trigger distance).
-  // This tightens the stop immediately as price moves in our direction.
-  // ── MFE/MAE tracking (spot pts in trade direction) — per tick, for analysis ──
+  // ── MFE/MAE + best-price tracking (spot pts in trade direction) — per tick, for analysis ──
   if (ptState.position) {
     const _exPos  = ptState.position;
     const _favPts = (ltp - _exPos.spotAtEntry) * (_exPos.side === "CE" ? 1 : -1);
     if (_favPts > (_exPos.mfeSpotPts || 0)) { _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMFE = parseFloat(((simNow() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
     if (_favPts < (_exPos.maeSpotPts || 0)) { _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMAE = parseFloat(((simNow() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
     trackPath(_exPos, _favPts, simNow());
-    // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
+    // Peak option premium (long CE/PE both profit on premium rise) — feeds the profit lock below.
     if (ptState.optionLtp && ptState.optionLtp > (_exPos.bestOptionLtp || 0)) _exPos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));
-  }
-
-  // ── Per-trade points stop: catastrophic spot-points cap (EMA_RSI_ST_STOP_LOSS_PTS) ──
-  // Mirrors BB_RSI_STOP_LOSS_PTS — exit once spot has moved this many points against
-  // entry. Checked BEFORE the structural/trail SL so it caps deep adverse excursions
-  // when the trailing SL sits wider than the cap (e.g. a 70pt prevHigh/Low stop).
-  // Read live from process.env so a Settings change applies without a restart.
-  // Points-based; 0 = disabled (default — no behaviour change until set).
-  if (ptState.position && ptState.position.spotAtEntry) {
-    const _slpCap = parseFloat(process.env.EMA_RSI_ST_STOP_LOSS_PTS || "0");
-    if (_slpCap > 0) {
-      const _pos2    = ptState.position;
-      const _favPts2 = (ltp - _pos2.spotAtEntry) * (_pos2.side === "CE" ? 1 : -1);
-      if (_favPts2 <= -_slpCap) {
-        const _capLvl = _pos2.side === "CE" ? _pos2.spotAtEntry - _slpCap : _pos2.spotAtEntry + _slpCap;
-        log(`🛑 [PAPER] STOP LOSS ${_slpCap}pts — spot ₹${ltp} (${_favPts2.toFixed(1)}pt vs entry ₹${_pos2.spotAtEntry})`);
-        _setSlPause(_pos2.side);
-        ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-        simulateSell(_capLvl, `SL (${_slpCap}pts)`, ltp);
-        return;
-      }
-    }
+    // Favourable spot extreme (best price seen, for the UI card + trade record)
+    if (_exPos.side === "CE") { if (!_exPos.bestPrice || ltp > _exPos.bestPrice) _exPos.bestPrice = ltp; }
+    else                      { if (!_exPos.bestPrice || ltp < _exPos.bestPrice) _exPos.bestPrice = ltp; }
   }
 
   // ── Global profit lock (shared across every strategy — see tradeGuards) ──
-  // Checked BEFORE the option stop: once armed, the locked floor sits above
-  // entry, so it must win over any wider stop below entry.
+  // The ONLY automatic exit while the session runs (plus the TRADE_STOP_TIME
+  // session square-off and the manual exit).
   if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp) {
     const _plPos = ptState.position;
     const _plMsg = tradeGuards.checkProfitLock(
-      _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
-    ) || tradeGuards.checkBreakevenStop(
-      // Fallback for a trade that never reached the lock's arm level. The lock's
-      // floor sits above entry, so when both are armed the lock wins (checked first).
       _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
     );
     if (_plMsg) {
       log(`🔒 [PAPER] ${_plMsg}`);
       ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
       simulateSell(ltp, _plMsg, ltp);
-      return;
-    }
-  }
-
-  // ── Option-premium stop: exit if option LTP drops OPT_STOP_PCT below entry premium ──
-  if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp && _OPT_STOP_PCT > 0) {
-    const _pos     = ptState.position;
-    const _stopLtp = parseFloat((_pos.optionEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2));
-    if (ptState.optionLtp <= _stopLtp) {
-      log(`🛑 [PAPER] OPTION STOP ${(_OPT_STOP_PCT*100).toFixed(0)}% — opt ₹${ptState.optionLtp} <= ₹${_stopLtp} (entry ₹${_pos.optionEntryLtp})`);
-      _setSlPause(_pos.side);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      simulateSell(ltp, `Option stop ${(_OPT_STOP_PCT*100).toFixed(0)}% @ opt ₹${ptState.optionLtp}`, ltp);
-      return;
-    }
-  }
-
-  // ── Prev-candle trailing SL hit ───────────────────────────────────────────
-  // pos.stopLoss is the previous candle's low (CE) / high (PE), set at the last
-  // candle close (or breakeven=entry). Enforced here tick-by-tick.
-  // PE: exit when ltp >= stopLoss | CE: exit when ltp <= stopLoss
-  if (ptState.position && ptState.position.stopLoss !== null) {
-    const pos = ptState.position;
-    // Track favourable extreme (best price seen, for the UI trail card)
-    if (pos.side === "CE") { if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp; }
-    else                   { if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp; }
-
-    const updatedSL = pos.stopLoss;
-    const _slType = (sl) => (pos.initialStopLoss && Math.abs(sl - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
-    if (pos.side === "PE" && ltp >= updatedSL) {
-      const optStr = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🛑 [PAPER] ${_slType(updatedSL)} SL HIT PE — ltp ₹${ltp} >= SL ₹${updatedSL} | best=₹${pos.bestPrice||"—"}${optStr}`);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      _setSlPause("PE");
-      simulateSell(updatedSL, `${_slType(updatedSL)} SL hit @ ₹${updatedSL}`, ltp);
-      return;
-    }
-    if (pos.side === "CE" && ltp <= updatedSL) {
-      const optStr = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🛑 [PAPER] ${_slType(updatedSL)} SL HIT CE — ltp ₹${ltp} <= SL ₹${updatedSL} | best=₹${pos.bestPrice||"—"}${optStr}`);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      _setSlPause("CE");
-      simulateSell(updatedSL, `${_slType(updatedSL)} SL hit @ ₹${updatedSL}`, ltp);
       return;
     }
   }
@@ -2308,10 +1779,7 @@ function generatePaperDailyReport(trades, sessionPnl) {
 
     const exitGroups = {};
     trades.forEach(t => {
-      const label = t.exitReason.includes("50% rule")  ? "50% Rule"
-                  : t.exitReason.includes("SL hit")    ? "SL Hit"
-                  : t.exitReason.includes("trail") || t.exitReason.includes("Trail") ? "Trail SL"
-                  : t.exitReason.includes("Opposite")  ? "Opposite Signal"
+      const label = t.exitReason.includes("Profit lock") ? "Profit Lock"
                   : t.exitReason.includes("EOD") || t.exitReason.includes("stop") ? "EOD/Stop"
                   : t.exitReason.includes("Manual")    ? "Manual Exit"
                   : "Other";
@@ -2379,14 +1847,6 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   // Re-read env into module-level config so Settings UI changes and replay
   // env overrides (snapshot or simulator mode) take effect for this session.
   _refreshConfig();
@@ -2406,7 +1866,7 @@ router.get("/start", async (req, res) => {
   if (sharedSocketState.isActive()) {
     return res.status(400).json({
       success: false,
-      error: `Cannot start paper trading — Live Trading is currently active. Stop it first at /ema_rsi_st-live/stop`,
+      error: "Cannot start paper trading — another EMA_RSI_ST session is already active.",
     });
   }
 
@@ -2471,60 +1931,9 @@ router.get("/start", async (req, res) => {
   ptState.optionLtpUpdatedAt = null;   // staleness tracking (mirrors live)
   ptState._ltpStaleLogged    = false;
   ptState.optionSymbol   = null;
-  ptState._consecutiveLosses   = 0;
-  ptState._chopConsecLosses    = 0;   // chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES)
-  ptState._pauseUntilTime      = null;
-  ptState._fiftyPctPauseUntil  = null;  // clear 50%-rule pause from previous session
-  ptState._dailyLossHit        = false; // reset daily kill switch on new session
-  ptState._priorRealizedToday  = 0;     // re-seeded from disk just below
-  // ── Daily-loss RESTART RECOVERY (mirrors emaRsiStLive) ─────────────────────
-  // The kill switch used to be purely session-scoped, so a stop→start (or a crash
-  // + PM2 restart) mid-day reset the loss budget to ₹0 and the same day could
-  // breach MAX_DAILY_LOSS again and again. emaRsiStLive already recovered this;
-  // paper did not — and emaRsiStLiveHarness runs LIVE by wrapping this engine, so
-  // paper's latch IS the real-money daily kill switch on that path.
-  //
-  // Prior realized P&L is kept in a SEPARATE field rather than folded into
-  // sessionPnl: saveSession() persists sessionPnl verbatim, so seeding it would
-  // write prior P&L into the new session record and double-count on the NEXT
-  // restart. The latch checks the SUM (see simulateSell).
-  try {
-    // NOT during replay. Replay patches Date.now() to the recorded session's
-    // clock, so "today" resolves to the day being replayed — and loadPaperData()
-    // is the REAL session store. Without this guard, replaying 2026-07-20 would
-    // seed _priorRealizedToday with that day's actual recorded P&L, instantly
-    // latch the kill switch and return zero trades, destroying replay
-    // determinism (a replay must reproduce the session, not react to its result).
-    let _inReplay = false;
-    try { _inReplay = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
-    if (_inReplay) throw { __skip: true };
-
-    const _todayIst = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    let _realized = 0;
-    for (const s of (data.sessions || [])) {
-      // Session `date` is "YYYY-MM-DD"; older records were stamped in UTC and
-      // newer ones in IST. Both are compared as plain date strings, and a session
-      // that ends by 15:30 IST (10:00 UTC) has the same value either way.
-      if (String(s.date || "").slice(0, 10) === _todayIst) _realized += Number(s.sessionPnl) || 0;
-    }
-    if (_realized !== 0) {
-      ptState._priorRealizedToday = parseFloat(_realized.toFixed(2));
-      if (ptState._priorRealizedToday <= -Math.abs(_MAX_DAILY_LOSS)) {
-        ptState._dailyLossHit = true;
-        log(`♻️ [PAPER] Restart recovery — today's realized ₹${ptState._priorRealizedToday} ≤ -₹${_MAX_DAILY_LOSS}: daily kill-switch RE-ARMED (no new entries)`);
-      } else {
-        log(`♻️ [PAPER] Restart recovery — today's prior realized P&L ₹${ptState._priorRealizedToday} (kill-switch tracks session + prior)`);
-      }
-    }
-  } catch (e) {
-    if (e && e.__skip) log(`♻️ [PAPER] Replay run — daily-loss restart recovery skipped (must not read the real session store)`);
-    else log(`⚠️ [PAPER] daily-loss restart recovery failed: ${e.message}`);
-  }
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
-  ptState._maxTradesLoggedCandle = null;
   ptState._slHitCandleTime     = null;
-  ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
   ptState._reentryBlockUntil   = 0;
   ptState._oppositeCooldownUntilTs  = 0;
   ptState._oppositeCooldownLastSide = null;
@@ -2561,8 +1970,8 @@ router.get("/start", async (req, res) => {
     const _peGate  = (process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED||"true").toLowerCase()==="true" ? ` + C<${_baseEmaLbl}` : "";
     log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN${_ceGate} | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED${_peGate} (intra-candle)`);
   }
-  log(`   Stop/exit   : ${(process.env.EMA_RSI_ST_EMA_EXIT_MODE||"touch").toLowerCase()==="close" ? "EMA21 cross-and-close exit (candle close only — EMA21 is NOT the tick stop)" : "EMA21 trail + touch-back"}${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS||"3",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.EMA_RSI_ST_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
-  log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | MaxTrades=${process.env.MAX_DAILY_TRADES||6} | same-side SL cooldown ${process.env.EMA_RSI_ST_SL_PAUSE_CANDLES||3} candles | VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
+  log(`   Exit        : global profit lock only | session square-off ${process.env.TRADE_STOP_TIME||"15:30"}`);
+  log(`   Entry guards: VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
   // Telegram: session started + checklist (same as live trade)
@@ -2605,7 +2014,6 @@ router.get("/start", async (req, res) => {
       `Instrument: ${instrumentConfig.INSTRUMENT}`,
       `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
       `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
-      `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
       ``,
       `Pre-Market Checklist:`,
       `${_ptChecks.fyers.ok  ? "✅" : "❌"} Fyers   : ${_ptChecks.fyers.msg}`,
@@ -2638,10 +2046,10 @@ router.get("/start", async (req, res) => {
       ptState.candles = todayCandles.slice(0, -1);
       log(`✅ Pre-loaded ${ptState.candles.length} candles (from ${fromStr} to ${todayStr})`);
 
-      // Check current signal state on pre-loaded data — also seeds _cachedClosedCandleSL
-      // so intra-tick entries on the very first live bar have a valid SAR stop-loss.
-      const { signal, reason, stopLoss: preloadSL } = strategy.getSignal(ptState.candles);
-      _cachedClosedCandleSL = preloadSL ?? null;
+      // Check current signal state on pre-loaded data — also seeds _closedCandleHadSignal
+      // so the 15-min intra-tick entry path is ready on the very first live bar.
+      const { signal, reason } = strategy.getSignal(ptState.candles);
+      _closedCandleHadSignal = signal === "BUY_CE" || signal === "BUY_PE";
       log(`📊 Current signal on pre-loaded data: ${signal} | ${reason}`);
 
       // Seed display values from last closed candle
@@ -2699,7 +2107,6 @@ router.get("/start", async (req, res) => {
       simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
     }
     ptState.running = false;
-    _releaseLiveHarness("scheduled auto-stop");   // after the square-off above
     // Square-off above needs lastTickPrice; never let a reservation outlive the session.
     capitalPool.clear("ema_rsi_st");
     stopOptionPolling();
@@ -2745,7 +2152,6 @@ router.get("/start", async (req, res) => {
  */
 router.get("/stop", async (req, res) => {
   if (!ptState.running) {
-    _releaseLiveHarness("paper /stop — engine not running");   // a stale harness must still be removable
     return res.status(400).json({ success: false, error: "Paper trading is not running." });
   }
 
@@ -2753,8 +2159,6 @@ router.get("/stop", async (req, res) => {
   if (ptState.position && ptState.currentBar) {
     simulateSell(ptState.currentBar.close, "Manual stop", ptState.currentBar.close);
   }
-  // Released AFTER the virtual square-off, so the harness still closes the real position.
-  _releaseLiveHarness("paper /stop");
 
   stopOptionPolling();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -2818,8 +2222,7 @@ router.get("/exit", (req, res) => {
   // ── Block re-entry for 1 full candle after manual exit ──────────────────────
   ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
   const _manualPauseMs = TRADE_RES * 60 * 1000;
-  ptState._fiftyPctPauseUntil = Date.now() + _manualPauseMs;
-  const _resumeTime = new Date(ptState._fiftyPctPauseUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+  const _resumeTime = new Date(Date.now() + _manualPauseMs).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
   log(`⏸ [PAPER] Manual exit — re-entry paused for 1 candle (~${TRADE_RES} min, resume ~${_resumeTime})`);
 
   simulateSell(exitSpot, "Manual exit by user", exitSpot);
@@ -2831,7 +2234,7 @@ router.get("/exit", (req, res) => {
 /**
  * POST /ema_rsi_st-paper/manualEntry
  * Manually enter a CE or PE trade at current spot price.
- * SL = previous-candle low/high from getSignal (80pt fallback if no live signal). Trail/breakeven apply normally.
+ * Exits like any other trade: global profit lock, manual exit, or session square-off.
  */
 router.post("/manualEntry", async (req, res) => {
   if (!ptState.running) {
@@ -2849,36 +2252,6 @@ router.post("/manualEntry", async (req, res) => {
     return res.status(400).json({ success: false, error: "No market data yet." });
   }
 
-  // Initial SL from the strategy = previous-candle low/high
-  const candles = ptState.candles || [];
-  let sarSL = null;
-  if (candles.length > 0) {
-    const { getActiveStrategy } = require("../strategies");
-    const result = getActiveStrategy().getSignal(candles, { silent: true });
-    if (result && result.stopLoss) {
-      sarSL = result.stopLoss;
-    }
-  }
-
-  // Fallback SL distance when there's no live signal (manual override entry)
-  const MAX_SL = 80;
-  if (!sarSL) {
-    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
-  }
-
-  // Validate SL is on correct side (CE: SL must be below entry, PE: SL must be above entry)
-  if ((side === "CE" && sarSL >= spot) || (side === "PE" && sarSL <= spot)) {
-    // Prev-candle SL on wrong side — manual entry against trend, use fixed fallback
-    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
-    log(`⚠️ [PAPER] Manual ${side}: SL on wrong side — using ${MAX_SL}pt fixed SL @ ₹${sarSL}`);
-  }
-
-  // Cap the fallback SL distance from entry
-  const sarGap = Math.abs(spot - sarSL);
-  if (sarGap > MAX_SL) {
-    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
-  }
-
   // Get option symbol
   const _sidManual = _entrySessionGen;
   try {
@@ -2886,7 +2259,7 @@ router.post("/manualEntry", async (req, res) => {
     const optResult = await validateAndGetOptionSymbol(spot, side, 'ema_rsi_st');
     // Both automatic entry paths already refuse an unresolvable symbol; this
     // manual route did not, so it would have entered on symbol=null (no premium
-    // → "spot proxy" P&L with the option stop inert). Same refusal, stated.
+    // → "spot proxy" P&L with the profit lock inert). Same refusal, stated.
     if (!optResult || optResult.invalid || !optResult.symbol) {
       const why = optResult && optResult.staleExpiry
         ? `${optResult.overrideKey}="${optResult.staleExpiry}" has expired — update it in Settings`
@@ -2903,15 +2276,15 @@ router.post("/manualEntry", async (req, res) => {
     const symbol = optResult.symbol;
     const qty = getLotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
 
-    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${sarSL} | Symbol: ${symbol}`);
-    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user | SL=₹${sarSL}`, sarSL, spot, true);
+    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | Symbol: ${symbol}`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user`, spot, true);
     if (!ptState.position || !/^Manual/.test(String(ptState.position.reason || ""))) {
-      // simulateBuy refused (capital gate, cooldown or protective-stop guard) — it
+      // simulateBuy refused (capital gate or cooldown) — it
       // has already logged why. Never report a position that was not opened.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
 
-    return res.json({ success: true, spot: spot, side: side, sl: sarSL, symbol: symbol });
+    return res.json({ success: true, spot: spot, side: side, symbol: symbol });
   } catch (e) {
     log(`❌ [PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -2949,8 +2322,7 @@ function buildSessionTradeRows(trades, inr) {
       "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(entryNifty) + "</div>" +
       "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
-      "<div style=\"font-weight:700;color:#60a5fa;\">" + (entryOption ? inr(entryOption) : "—") + "</div>" +
-      (t.stopLoss ? "<div style=\"font-size:0.65rem;color:#f59e0b;margin-top:3px;\">SL " + inr(t.stopLoss) + "</div>" : "");
+      "<div style=\"font-weight:700;color:#60a5fa;\">" + (entryOption ? inr(entryOption) : "—") + "</div>";
 
     // Exit prices: NIFTY spot + Option premium + movement pts
     const exitNifty  = t.spotAtExit;
@@ -2996,7 +2368,7 @@ function _getCachedTradesForPoll() {
     side: t.side || "", strike: t.optionStrike || "", expiry: t.optionExpiry || "",
     entry: t.entryTime || "", exit: t.exitTime || "",
     eSpot: t.spotAtEntry || t.entryPrice || 0, eOpt: t.optionEntryLtp || null,
-    eSl: t.stopLoss || null, xSpot: t.spotAtExit || t.exitPrice || 0,
+    xSpot: t.spotAtExit || t.exitPrice || 0,
     xOpt: t.optionExitLtp || null, pnl: typeof t.pnl === "number" ? t.pnl : null,
     reason: t.exitReason || "",
     // Fields used by tickReplay to attach per-trade option-tick windows.
@@ -3048,7 +2420,7 @@ router.get("/status/chart-data", async (req, res) => {
     const EMA_FAST    = parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20;
     const EMA_SLOW    = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
     const EMA_FASTEST = parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9;
-    let ema9Series = [], ema20Series = [], ema50Series = [], ema21Series = [];
+    let ema9Series = [], ema20Series = [], ema50Series = [];
     const _emaLine = (period, values) => {
       const out = [];
       const vals = values || candles.map(c => c.close);
@@ -3064,8 +2436,6 @@ router.get("/status/chart-data", async (req, res) => {
     ema9Series  = _emaLine(EMA_FASTEST);
     ema20Series = _emaLine(EMA_FAST);
     ema50Series = _emaLine(EMA_SLOW);
-    // EMA21 is the exit/trail line — same OHLC4 source as strategy1_sar_ema_rsi.js.
-    ema21Series = _emaLine(21, candles.map(c => (c.open + c.high + c.low + c.close) / 4));
 
     // RSI(14) overlay (closes) — drawn on its own bottom scale by the chart
     let rsiSeries = [];
@@ -3119,23 +2489,17 @@ router.get("/status/chart-data", async (req, res) => {
       }
     }
 
-    // Stop-loss line — current SL if position is open
-    let stopLoss = null;
-    if (ptState.position && ptState.position.stopLoss) {
-      stopLoss = ptState.position.stopLoss;
-    }
-
     // Entry price line — if position is open
     let entryPrice = null;
     if (ptState.position && ptState.position.entryPrice) {
       entryPrice = ptState.position.entryPrice;
     }
 
-    return res.json({ candles, markers, stopLoss, entryPrice,
+    return res.json({ candles, markers, entryPrice,
       optionChart: optionChart.buildPayload({ store: ptState.optionChart, position: ptState.position, trades: ptState.sessionTrades }),
       armedTrigger: ptState._armedSignal ? ptState._armedSignal.triggerLevel : null,
       armedSide:    ptState._armedSignal ? ptState._armedSignal.side : null,
-      ema9: ema9Series, ema20: ema20Series, ema50: ema50Series, ema21: ema21Series,
+      ema9: ema9Series, ema20: ema20Series, ema50: ema50Series,
       supertrend, trendSource: "SUPERTREND", rsi: rsiSeries,
       emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
       tripleStack: (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
@@ -3181,12 +2545,6 @@ router.get("/status/data", (req, res) => {
       ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
     const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
       ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
-    // optStopPrice: same 50%-mid logic as the live stop — optionSL = entryLtp - |entrySpot - prevMid|
-    const _optSp     = pos ? pos.spotAtEntry  : null;
-    const _optPm     = pos ? pos.entryPrevMid : null;
-    const optStopPrice = (optEntryLtp && _optSp && _optPm)
-      ? parseFloat((optEntryLtp - Math.max(Math.abs(_optSp - _optPm), 20)).toFixed(2))
-      : optEntryLtp ? parseFloat((optEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2)) : null;
     const liveClose    = ptState.currentBar?.close || null;
     const pointsMoved  = pos && liveClose
       ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2)) : 0;
@@ -3201,10 +2559,6 @@ router.get("/status/data", (req, res) => {
       candleCount:       ptState.candles.length,
       prevCandleHigh:    ptState.prevCandleHigh,
       prevCandleLow:     ptState.prevCandleLow,
-      consecutiveLosses: ptState._consecutiveLosses || 0,
-      consecStreakLimit: _streakLimit(),   // 0 = breaker OFF — the card must not invent a denominator
-      pauseUntilTime:    ptState._pauseUntilTime || null,
-      dailyLossHit:      ptState._dailyLossHit || false,
       simMode:           ptState._simMode || false,
       simScenario:       ptState._simScenario || null,
       sessionStart:      ptState.sessionStart,
@@ -3221,7 +2575,6 @@ router.get("/status/data", (req, res) => {
         qty:               pos.qty,
         entryPrice:        pos.entryPrice,
         entryTime:         pos.entryTime,
-        stopLoss:          pos.stopLoss,
         optionStrike:      pos.optionStrike,
         optionExpiry:      pos.optionExpiry,
         optionType:        pos.optionType,
@@ -3231,8 +2584,6 @@ router.get("/status/data", (req, res) => {
         optPremiumPnl,
         optPremiumMove,
         optPremiumPct,
-        optStopPrice,
-        optStopPct:        (_optSp && _optPm) ? Math.abs(_optSp - _optPm).toFixed(1) + 'pt (50% mid)' : '20% fallback',
         liveClose,
         pointsMoved,
         bestPrice:         pos.bestPrice || null,
@@ -3299,20 +2650,11 @@ router.get("/status", (req, res) => {
   const pointsMoved = pos && liveClose
     ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2))
     : 0;
-  const trailActive = pos && pos.bestPrice !== undefined && pos.bestPrice !== null;
   const trailProfit = pos && pos.bestPrice
     ? parseFloat(((pos.side === "CE"
         ? pos.bestPrice - pos.entryPrice
         : pos.entryPrice - pos.bestPrice)).toFixed(2))
     : 0;
-  // Trailing-stop label: EMA21 base SL + optional candle-trail overlay. With
-  // EMA_RSI_ST_EMA_EXIT_MODE=close the EMA is a candle-close exit, not the SL base.
-  const _slModeLbl  = (process.env.EMA_RSI_ST_EMA_EXIT_MODE || "touch").toLowerCase() === "close"
-    ? "EMA21 (close-only)"
-    : "EMA21";
-  const _ctOn       = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-  const _ctBars     = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
-  const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;
 
   // ATM/ITM badge
   const atmStrike = pos ? Math.round(pos.entryPrice / 50) * 50 : null;
@@ -3334,15 +2676,6 @@ router.get("/status", (req, res) => {
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
     ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
     : null;
-  // optStopPrice for HTML: same 50%-mid logic
-  const _h_sp   = pos ? pos.spotAtEntry  : null;
-  const _h_pm   = pos ? pos.entryPrevMid : null;
-  const optStopPrice = (optEntryLtp && _h_sp && _h_pm)
-    ? parseFloat((optEntryLtp - Math.max(Math.abs(_h_sp - _h_pm), 20)).toFixed(2))
-    : optEntryLtp ? parseFloat((optEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2)) : null;
-  const optStopPct   = (_h_sp && _h_pm)
-    ? Math.abs(_h_sp - _h_pm).toFixed(1) + 'pt (50% mid)'
-    : Math.round(_OPT_STOP_PCT * 100) + '% fallback';
 
   const posHtml = pos ? `
     <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">
@@ -3443,7 +2776,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
 
-      <!-- Secondary grid: NIFTY spot + EMA21 SL + Trail -->
+      <!-- Secondary grid: NIFTY spot + best price -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
@@ -3455,21 +2788,10 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
-          <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
-          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
-        </div>
-        <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct})</div>
-          <div id="ajax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
-          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">${optEntryLtp ? "entry 20b9" + optEntryLtp.toFixed(2) + " 2212 " + optStopPct : "awaiting entry LTP"}</div>
-        </div>
-        <div id="ajax-trail-card" data-trail="${_trailLbl}" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
-          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#f59e0b"};">${_trailLbl}</div>
-          <div id="ajax-trail-best" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Trail source: ${_trailLbl}${_ctOn ? " · tighter wins" : ""}</div>
+        <div id="ajax-trail-card" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Best Price</div>
+          <div id="ajax-trail-best" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#c8d8f0"};">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Exit: global profit lock</div>
         </div>
       </div>
 
@@ -3555,7 +2877,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE', ptState.running, {
+${buildSidebar('emaRsiStPaper', false, ptState.running, {
   showExitBtn:  !!ptState.position,
   showStopBtn:  ptState.running,
   showStartBtn: !ptState.running,
@@ -3607,18 +2929,8 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
     </div>
     <div class="sc" style="border-top:1.5px solid #6a5090;">
       <div class="sc-label">${ptState._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
-      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${process.env.MAX_DAILY_TRADES || 20}</span></div>
+      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span></div>
       <div id="ajax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
-    </div>
-    <div class="sc" style="border-top:2px solid ${(ptState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};" id="ajax-sc-cl">
-      <div class="sc-label">Loss Streak</div>
-      <div class="sc-val" id="ajax-consec-losses" style="color:${_streakLimit() > 0 && (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '#ef4444' : '#fff'}">${ptState._consecutiveLosses || 0}${_streakLimit() > 0 ? ` / ${_streakLimit()}` : ''}</div>
-      <div id="ajax-cl-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '#f59e0b' : '#8ba1c2'}">${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
-    </div>
-    <div class="sc" style="border-top:2px solid ${ptState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-sc-dloss">
-      <div class="sc-label">Daily Loss Limit</div>
-      <div class="sc-val" id="ajax-daily-loss-val" style="color:${ptState._dailyLossHit ? '#ef4444' : '#fff'}">${inr(-(process.env.MAX_DAILY_LOSS || 5000))}</div>
-      <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._dailyLossHit ? '#ef4444' : '#10b981'}">${ptState._dailyLossHit ? '🛑 KILLED — no entries' : '✅ Active'}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #a07010;">
       <div class="sc-label">Candles Loaded</div>
@@ -3684,10 +2996,8 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
         <span style="color:#a855f7;">── EMA9</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
         <span style="color:#3b82f6;">── EMA50</span> &nbsp;
-        <span style="color:#f472b6;">╌╌ EMA21 (exit)</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
-        <span style="color:#22d3ee;">── RSI</span> &nbsp;
-        <span style="color:#f59e0b;">── SL</span>
+        <span style="color:#22d3ee;">── RSI</span>
       </div>
     </div>
     ${optionChart.optionChartHtml('ers-opt-chart')}
@@ -3719,7 +3029,6 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Time</th>
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit</th>
           <th onclick="ptSort('exit')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Exit Time ▲▼</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">SL</th>
           <th onclick="ptSort('pnl')"    style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">PnL ₹ ▲▼</th>
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Reason</th>
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit Reason</th>
@@ -3754,7 +3063,6 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
     exit:         t.exitTime       || "",
     eSpot:        t.spotAtEntry    || t.entryPrice || 0,
     eOpt:         t.optionEntryLtp || null,
-    eSl:          t.stopLoss       || null,
     xSpot:        t.spotAtExit     || t.exitPrice  || 0,
     xOpt:         t.optionExitLtp  || null,
     peakOpt:      t.bestOptionLtp  || null,
@@ -3800,7 +3108,7 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
     // Store slice globally for eye button access
     window._ptSlice = slice;
     document.getElementById('ptBody').innerHTML = slice.length === 0
-      ? '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>'
+      ? '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>'
       : slice.map((t, i) => {
           const sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
           const pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
@@ -3814,7 +3122,6 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
             <td style="padding:8px 12px;font-size:0.75rem;">\${ptFmtTime(t.entry)}</td>
             <td style="padding:8px 12px;font-weight:700;">\${ptFmt(t.xSpot)}</td>
             <td style="padding:8px 12px;font-size:0.75rem;">\${ptFmtTime(t.exit)}</td>
-            <td style="padding:8px 12px;color:#f59e0b;">\${t.eSl?ptFmt(t.eSl):'—'}</td>
             <td style="padding:8px 12px;">
               <div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ptFmt(t.pnl):'—'}</div>
             </td>
@@ -3882,8 +3189,6 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
       + cell('Entry Time', t.entry || '—', '#c8d8f0')
       + cell('NIFTY Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
       + cell('Option LTP @ Entry', fmt(t.eOpt), '#60a5fa', 'Option premium paid')
-      + cell('Initial Stop Loss', fmt(t.eSl), '#f59e0b', 'NIFTY spot SL level')
-      + cell('SL Distance', (t.eSl && t.eSpot) ? Math.abs(t.eSpot - t.eSl).toFixed(2) + ' pts' : '—', '#f59e0b', 'pts from entry to SL')
       + cell('Entry Signal', t.entryReason || '—', '#a0b8d0')
       + '</div></div>';
 
@@ -3921,9 +3226,9 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
 
   // ── Copy Trade Log ──────────────────────────────────────────────────
   function copyTradeLog(btn){
-    var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
+    var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tPnL\\tEntry Reason\\tExit Reason'];
     PT_ALL.forEach(function(t){
-      lines.push((t.side||'')+'\\t'+ptFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+ptFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+ptFmtTime(t.exit)+'\\t'+(t.eSl||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
+      lines.push((t.side||'')+'\\t'+ptFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+ptFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+ptFmtTime(t.exit)+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
     });
     doCopy(lines.join('\\n'),btn,'Trade Log');
   }
@@ -4056,7 +3361,6 @@ ${modalJS()}
   const ema9Series  = chart.addLineSeries({ color:'#a855f7', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
   const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
-  const ema21Series = chart.addLineSeries({ color:'#f472b6', lineWidth:2, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA21 (exit)' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
   const stSeries   = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   // Colour each SuperTrend point by its trend (1=up→green, -1=down→red). Falls back to green if trend missing.
@@ -4073,8 +3377,6 @@ ${modalJS()}
     mk(peMax != null ? peMax : 48, '#ef4444', 'PE');  // RSI_PE_MAX — PE entry cap
   }
 
-  // SL line
-  let slLine = null;
   // Entry price line
   let entryLine = null;
   // Confirmation-candle armed-trigger line
@@ -4126,7 +3428,6 @@ ${modalJS()}
       if (d.ema9  && d.ema9.length)  ema9Series.setData(d.ema9);   else ema9Series.setData([]);
       if (d.ema20 && d.ema20.length) ema20Series.setData(d.ema20); else ema20Series.setData([]);
       if (d.ema50 && d.ema50.length) ema50Series.setData(d.ema50); else ema50Series.setData([]);
-      if (d.ema21 && d.ema21.length) ema21Series.setData(d.ema21); else ema21Series.setData([]);
       if (d.supertrend && d.supertrend.length) stSeries.setData(d.supertrend.map(_stColor)); else stSeries.setData([]);
       if (d.rsi   && d.rsi.length) { rsiSeries.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiSeries.setData([]);
 
@@ -4138,16 +3439,6 @@ ${modalJS()}
         }));
       } else {
         candleSeries.setMarkers([]);
-      }
-
-      // SL line
-      if (slLine) { candleSeries.removePriceLine(slLine); slLine = null; }
-      if (d.stopLoss) {
-        slLine = candleSeries.createPriceLine({
-          price: d.stopLoss, color: '#f59e0b', lineWidth: 1,
-          lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: true, title: 'SL',
-        });
       }
 
       // Entry price line
@@ -4163,7 +3454,7 @@ ${modalJS()}
       // Confirmation candle — dashed line at the armed signal candle's close
       // (the level the next candle must cross to trigger entry)
       if (armedLine) { candleSeries.removePriceLine(armedLine); armedLine = null; }
-      if (d.armedTrigger && !d.stopLoss) {
+      if (d.armedTrigger && !d.entryPrice) {
         armedLine = candleSeries.createPriceLine({
           price: d.armedTrigger, color: '#f59e0b', lineWidth: 2,
           lineStyle: LightweightCharts.LineStyle.Dashed,
@@ -4260,33 +3551,6 @@ ${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-paper/status/chart-data'
       const wlEl = document.getElementById('ajax-wl');
       if (wlEl) wlEl.textContent = d.wins + 'W \u00b7 ' + d.losses + 'L';
 
-      // Streak limit comes from the server (EMA_RSI_ST_MAX_CONSEC_LOSSES); 0 = OFF.
-      // Never render a "/ 3" the engine will not act on.
-      const clLimit = Number(d.consecStreakLimit || 0);
-      const clNear  = clLimit > 0 && (d.consecutiveLosses || 0) >= clLimit - 1;
-      const clEl = document.getElementById('ajax-consec-losses');
-      if (clEl) {
-        clEl.textContent = (d.consecutiveLosses || 0) + (clLimit > 0 ? ' / ' + clLimit : '');
-        clEl.style.color = clNear ? '#ef4444' : '#fff';
-        const card = clEl.closest('.sc');
-        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#8ba1c2';
-      }
-      const clStatus = document.getElementById('ajax-cl-status');
-      if (clStatus) {
-        const paused = d.pauseUntilTime && Date.now() < d.pauseUntilTime;
-        clStatus.textContent = paused ? '\u23f8 PAUSED' : clLimit <= 0 ? '\u2796 breaker OFF' : clNear ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
-        clStatus.style.color = paused ? '#f59e0b' : '#8ba1c2';
-      }
-
-      // Daily loss kill switch card
-      const dlCard = document.getElementById('ajax-sc-dloss');
-      const dlStatus = document.getElementById('ajax-daily-loss-status');
-      if (dlCard) dlCard.style.borderTopColor = d.dailyLossHit ? '#ef4444' : '#10b981';
-      if (dlStatus) {
-        dlStatus.textContent = d.dailyLossHit ? '\uD83D\uDED1 KILLED \u2014 no entries' : '\u2705 Active';
-        dlStatus.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-      }
-
       const candleEl = document.getElementById('ajax-candle-count');
       if (candleEl) {
         candleEl.textContent = d.candleCount;
@@ -4375,11 +3639,6 @@ ${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-paper/status/chart-data'
             pctEl.textContent = '\u2014';
           }
         }
-        // Option SL price
-        const optSlEl = document.getElementById('ajax-opt-sl');
-        if (optSlEl) {
-          optSlEl.textContent = p.optStopPrice ? '\u20b9' + p.optStopPrice.toFixed(2) : '\u2014';
-        }
         const optPnlEl = document.getElementById('ajax-opt-pnl');
         if (optPnlEl && p.optPremiumPnl !== null) {
           optPnlEl.textContent = (p.optPremiumPnl >= 0 ? '+' : '') + INR(p.optPremiumPnl);
@@ -4401,26 +3660,18 @@ ${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-paper/status/chart-data'
             sub.style.color = moved >= 0 ? '#10b981' : '#ef4444';
           }
         }
-        // SL
-        const slEl = document.getElementById('ajax-stop-loss');
-        if (slEl) slEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\u2014';
-        // Trail status card
+        // Best-price card
         const trailCard  = document.getElementById('ajax-trail-card');
-        const trailStat  = document.getElementById('ajax-trail-status');
         const trailBest  = document.getElementById('ajax-trail-best');
-        const trailAct   = document.getElementById('ajax-trail-activate');
-        if (trailCard && trailStat && trailBest) {
+        if (trailCard && trailBest) {
           const tActive     = p.bestPrice !== null && p.bestPrice !== undefined;
           const tProfit     = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
           const tProfDir    = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
-          const trailLbl    = trailCard.dataset.trail || 'EMA21';
           const inProfit    = tProfDir > 0;
           trailCard.style.borderColor = inProfit ? '#8b5cf6' : '#134e35';
-          trailStat.textContent  = trailLbl;
-          trailStat.style.color  = inProfit ? '#8b5cf6' : '#f59e0b';
+          trailBest.style.color  = inProfit ? '#8b5cf6' : '#c8d8f0';
           const pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
           trailBest.textContent  = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
-          if (trailAct) trailAct.textContent = 'Trail source: ' + trailLbl;
         }
       }
 
@@ -4496,7 +3747,7 @@ ${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-paper/status/chart-data'
  */
 router.get("/history", (req, res) => {
   const data = loadPaperData();
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const liveActive = false;
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
     routePrefix: "/ema_rsi_st-paper",
@@ -5051,9 +4302,6 @@ function _post(url, body, btn, resetLabel) {
 
 router.post("/simulate/start", async (req, res) => {
   if (ptState.running) return res.json({ success: false, error: "Session already running. Stop it first." });
-  // The simulator bypasses /start; sim mode never notifies, but release anyway so
-  // "paper can never place a real order" does not rest on one flag.
-  _releaseLiveHarness("simulate/start");
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
@@ -5085,19 +4333,9 @@ router.post("/simulate/start", async (req, res) => {
     ptState.optionLtpUpdatedAt = null;
     ptState._ltpStaleLogged    = false;
     ptState.optionSymbol   = null;
-    ptState._consecutiveLosses   = 0;
-    ptState._pauseUntilTime      = null;
-    ptState._fiftyPctPauseUntil  = null;
-    ptState._dailyLossHit        = false;
-    // A simulation must be self-contained: without this, a REAL session that lost
-    // money earlier today would still be sitting in _priorRealizedToday and would
-    // latch the sim's daily kill switch against P&L the simulation never made.
-    ptState._priorRealizedToday  = 0;
     ptState._cachedCE            = null;
     ptState._cachedPE            = null;
-    ptState._maxTradesLoggedCandle = null;
     ptState._slHitCandleTime     = null;
-    ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
     ptState._reentryBlockUntil   = 0;
     ptState._oppositeCooldownUntilTs  = 0;
     ptState._oppositeCooldownLastSide = null;
@@ -5111,7 +4349,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._simMode             = true;
     ptState._simSession          = true;   // sticky — survives onSimDone clearing _simMode
     ptState._simScenario         = label;
-    _cachedClosedCandleSL        = null;
+    _closedCandleHadSignal       = false;
     // 09:15 IST = 03:45 UTC on the same IST date
     const simStart = simDate
       ? new Date(simDate + "T09:15:00+05:30")
@@ -5123,15 +4361,15 @@ router.post("/simulate/start", async (req, res) => {
   function seedWarmup(result) {
     if (result.warmupCandles.length > 0) {
       ptState.candles = result.warmupCandles;
-      const { stopLoss: preloadSL } = strategy.getSignal(ptState.candles, { silent: true });
-      _cachedClosedCandleSL = preloadSL ?? null;
+      const { signal: preloadSig } = strategy.getSignal(ptState.candles, { silent: true });
+      _closedCandleHadSignal = preloadSig === "BUY_CE" || preloadSig === "BUY_PE";
       const lastC = ptState.candles[ptState.candles.length - 1];
       if (lastC) {
         ptState.prevCandleHigh = lastC.high;
         ptState.prevCandleLow  = lastC.low;
         ptState.prevCandleMid  = parseFloat(((lastC.high + lastC.low) / 2).toFixed(2));
       }
-      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles | seed SL: ${_cachedClosedCandleSL || "n/a"}`);
+      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles | last signal: ${preloadSig}`);
     }
   }
 
@@ -5278,19 +4516,17 @@ router.post("/simulate/start", async (req, res) => {
 /**
  * stopSession() — square off + stop the session, callable by app.js
  * gracefulShutdown on SIGTERM / auto-deploy. Without this export the shutdown
- * routeMap skipped EMA_RSI_ST_PAPER (typeof stopSession !== "function"), so a
- * harness-live Zerodha position was never squared off on a deploy/restart and the
+ * routeMap skipped EMA_RSI_ST_PAPER (typeof stopSession !== "function"), so an
+ * open position was never squared off on a deploy/restart and the
  * shutdown Telegram falsely reported it squared. Idempotent: no-op if not running.
  */
 function stopSession(reason = "Shutdown square-off") {
-  if (!ptState.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!ptState.running) return;
   try {
     if (ptState.position && ptState.currentBar) {
       simulateSell(ptState.currentBar.close, reason, ptState.currentBar.close);
     }
   } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
-  // Released AFTER the virtual square-off above (shutdown / SIGTERM path).
-  _releaseLiveHarness("stopSession/shutdown");
   // The square-off above is conditional on currentBar and can throw, so a
   // position may survive it. Free its capital reservation either way — a leaked
   // block would keep shrinking the broker pool for the rest of the process.

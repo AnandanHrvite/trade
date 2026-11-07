@@ -2,7 +2,7 @@
  * RSI_PIVOT_ST PAPER — /rsi-pivot-st-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * CANONICAL surface. Every decision / fill / exit semantic for RSI_PIVOT_ST
- * lives here; the backtest and the live harness must match THIS, never the
+ * lives here; the backtest must match THIS, never the
  * reverse (see feedback_paper_logic_untouchable).
  *
  * The day in one paragraph: before the open, yesterday's daily high/low/close
@@ -16,30 +16,22 @@
  * itself. The strike is 1% of spot away from the money (ATM/ITM/OTM chosen in
  * Settings).
  *
- * The two sides are stopped DIFFERENTLY, by rule:
- *   • CE — TWO stops, both live, first to trigger wins:
- *       SuperTrend(10,2) on the 5-min spot chart, trailed (it only ratchets up)
- *       AND a premium floor at 25% below the trade's high-water premium.
- *   • PE — ONE stop: the 25% premium floor only. No SuperTrend.
- *     This asymmetry is the user's stated rule. Do not "balance" it.
+ * SuperTrend(10,2) on the 5-min spot chart is an ENTRY filter on the sides
+ * RSI_PIVOT_ST_ST_SIDES covers (CE by default) — it must agree with the trade.
  *
  * ONE INSTRUMENT: NIFTY 50 INDEX. Closed 5-min bars come from the Fyers HISTORY
  * endpoint (the same one the backtest and replay read, which is what makes the
  * modes agree). Daily bars for the pivots come from the same endpoint, fetched
- * once at session start and frozen. The option LTP is polled for the premium
- * stop and for P&L.
+ * once at session start and frozen. The option LTP is polled for the profit
+ * lock and for P&L.
  *
- * Exits, in the order they are tested on every poll:
- *   1. premium stop — 25% below the high-water premium (BOTH sides)
- *   2. SuperTrend   — CE only, trailed, re-read on each closed bar
- *   3. EOD square-off at RSI_PIVOT_ST_EXIT_TIME
- * There is deliberately NO profit target, NO breakeven jump, NO time stop and NO
- * partial booking. The trade runs until a stop trails into it or the day ends.
+ * Exits: the global profit lock (tradeGuards.checkProfitLock) is the ONLY
+ * automatic exit, tested on every poll/tick. Otherwise a trade closes on the
+ * manual exit, /stop, or the global TRADE_STOP_TIME session auto-stop. There is
+ * no stop loss, trail, target, breakeven, time stop or day-loss breaker.
  *
- * Day-level breakers: RSI_PIVOT_ST_MAX_TRADES and RSI_PIVOT_ST_MAX_DAILY_LOSS.
- *
- * Signal engine: src/strategies/rsi_pivot_st.js (shared by paper, backtest, live
- * harness and replay — no rule is re-implemented in this file).
+ * Signal engine: src/strategies/rsi_pivot_st.js (shared by paper, backtest
+ * and replay — no rule is re-implemented in this file).
  *
  * Uses LIVE data but SIMULATES orders locally.
  * Endpoints: /start /stop /exit /status /status/data /status/chart-data
@@ -85,27 +77,8 @@ const PT_FILE  = path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json");
 
 // ── Config readers (Settings mutates process.env live — never cache) ──────────
 function _cfg() { return rsiPivotStrategy.getConfig(); }
-/**
- * One-line description of the stops a given side actually carries, honouring
- * both the CE SuperTrend toggle and the premium-stop side toggle. Used by the
- * boot banner, /status and the harness so no screen can claim a stop the trade
- * does not have.
- */
-function _sideStopText(side, cfg) {
-  cfg = cfg || _cfg();
-  const bits = [];
-  if (rsiPivotStrategy.stApplies(side, cfg)) bits.push(`SuperTrend(${cfg.stPeriod},${cfg.stMultiplier})`);
-  if (rsiPivotStrategy.premiumStopApplies(side, cfg)) bits.push(`${cfg.premiumStopPct}% premium floor`);
-  return bits.length ? bits.join(" + ") : "NONE — EOD square-off only";
-}
 function _resMin() { return _cfg().resolutionMins; }
-function _parseMins(envKey, fallback) {
-  return rsiPivotStrategy._parseHHMM(process.env[envKey], rsiPivotStrategy._parseHHMM(fallback, 0));
-}
 function _envStr(key, fallback) { return String(process.env[key] || fallback); }
-function _maxDailyTrades()  { return _cfg().maxDailyTrades; }
-function _maxDailyLoss()    { return _cfg().maxDailyLoss; }
-function _maxWeeklyLoss()   { return parseFloat(process.env.RSI_PIVOT_ST_MAX_WEEKLY_LOSS || "0"); }
 function _pollMs() {
   const v = parseInt(process.env.RSI_PIVOT_ST_POLL_MS || "2000", 10);
   return Number.isFinite(v) && v >= 500 && v <= 30000 ? v : 2000;
@@ -165,8 +138,6 @@ function _freshState() {
     // totalPnl — the capital pool adds sessionPnl only then (see trackSession below).
     _unsaved:       false,
     tradesTaken:    0,
-    stopOuts:       0,
-    consecutiveLosses: 0,
     // SPOT bars — the decision series. Closed bars only.
     candles:        [],
     lastClosedBarTime: null,
@@ -237,10 +208,9 @@ function rehydrateSessionFromJsonl() {
     state._unsaved      = false;   // rehydrated trades are not counted: they may have been deleted from History, and the pool must not resurrect them
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
-    state.stopOuts = trades.filter(t => /stop|SuperTrend|premium floor/i.test(String(t.exitReason || ""))).length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ [RSI_PIVOT_ST-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl}, ${state.stopOuts} stop-out(s))`);
+    console.log(`♻️ [RSI_PIVOT_ST-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
     console.warn(`[RSI_PIVOT_ST-PAPER] session rehydrate failed: ${err.message}`);
   }
@@ -280,7 +250,7 @@ function weeklyPnl() {
   }
 }
 
-// ── Option quote poll — the premium every exit is measured against ────────────
+// ── Option quote poll — the premium the profit lock is measured against ───────
 let _pollTimer = null;
 let _pollStopped = true;
 
@@ -315,10 +285,9 @@ function startPolling() {
       }
     } catch (_) {}
 
-    // Exits first (a hit premium stop must not wait on a history round-trip),
+    // Exits first (a profit-lock hit must not wait on a history round-trip),
     // then the bar-close work.
     try { if (state.position) _checkExits(); } catch (e) { console.error(`🚨 [RSI_PIVOT_ST-PAPER] exit-check error: ${e.message}`); }
-    try { _enforceEod(); } catch (e) { console.error(`🚨 [RSI_PIVOT_ST-PAPER] eod error: ${e.message}`); }
     _maybeRefreshHistory().catch(e => console.error(`🚨 [RSI_PIVOT_ST-PAPER] history refresh error: ${e.message}`));
     if (!state.position && state._pendingEntry) {
       _retryPendingEntry().catch(e => console.error(`🚨 [RSI_PIVOT_ST-PAPER] entry-retry error: ${e.message}`));
@@ -438,10 +407,6 @@ function _mergeBars(bars) {
   if (!fresh.length) return;
   const newest = fresh[fresh.length - 1];
   state.lastClosedBarTime = newest.time;
-  // A closed bar is also when the CE trail is re-read — SuperTrend is a
-  // candle-close indicator, so trailing it per-tick would be inventing values.
-  try { _trailSuperTrend(); }
-  catch (e) { console.error(`🚨 [RSI_PIVOT_ST-PAPER] trail error: ${e.message}`); }
   // Fire ONCE, for the newest bar only. evaluateEntry always reads the LAST
   // element of state.candles, so replaying older bars would re-evaluate the same
   // series N times.
@@ -536,44 +501,11 @@ async function simulateBuy(side, sig) {
     }
   }
 
-  const cfg = _cfg();
-  // The PREMIUM floor is anchored to the ACTUAL fill, not to the signal — 25%
-  // of a premium the trade never paid is not the rule. Which sides carry it is
-  // the RSI_PIVOT_ST_PREMIUM_SL_SIDES toggle; a side left out gets a null floor
-  // and is NOT aborted, because "no premium stop" is a valid configuration.
-  // A futures position has no premium, so the premium floor is simply absent —
-  // it must NOT abort the entry (that would silently disable the strategy).
-  const premiumApplies = !_isFut && rsiPivotStrategy.premiumStopApplies(side, cfg);
-  const premiumFloor = _isFut ? null : rsiPivotStrategy.premiumStop(optionEntryLtp, null, cfg, side);
-  if (premiumApplies && !Number.isFinite(premiumFloor)) {
-    log(`🚫 [RSI_PIVOT_ST-PAPER] Entry ABORTED — premium floor not computable from entry LTP ${optionEntryLtp}`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `premium floor unusable from ltp ${optionEntryLtp}`, side, spot });
-    return;
-  }
-
-  // The SPOT stop is CE-only. It came from the engine off closed bars; it is a
-  // LEVEL and is not re-anchored to the fill.
-  let slSpot = null;
-  if (rsiPivotStrategy.stApplies(side, cfg)) {
-    slSpot = sig.slSpot;
-    if (!Number.isFinite(slSpot)) {
-      log(`🚫 [RSI_PIVOT_ST-PAPER] Entry ABORTED — ${side} needs a SuperTrend stop and it is unusable (${slSpot})`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `${side} SuperTrend stop ${slSpot} unusable`, side, spot });
-      return;
-    }
-    if (rsiPivotStrategy.stopHit(side, spot, slSpot)) {
-      log(`🚫 [RSI_PIVOT_ST-PAPER] Entry ABORTED — spot ${spot} is already through the SuperTrend stop ${slSpot}`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "fill_past_stop", reason: `spot ${spot} already beyond stop ${slSpot}`, side, spot });
-      return;
-    }
-  }
-
   // /stop (or a stop + restart) may have run while we awaited — opening now
   // would strand an orphan position and its capital block.
   if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = rsiPivotLotQty();
-  const slPts = Number.isFinite(slSpot) ? parseFloat(Math.abs(slSpot - spot).toFixed(2)) : null;
 
   // ── Capital gate — HARD: the pool must fund this position or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
@@ -603,16 +535,6 @@ async function simulateBuy(side, sig) {
     vixAtEntry:     vixFilter.getCachedVix(),   // observer-only — see VIX_LOG_ENABLED
     entryUnixSec:   Math.floor(Date.now() / 1000),
     entryBarTime:   Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
-    // Dual stops
-    slSpot,                       // CE only — SuperTrend, trailed. null for PE.
-    initialSlSpot:  slSpot,
-    premiumFloor,                 // 25% below high-water premium; null when this side is excluded
-    initialPremiumFloor: premiumFloor,
-    premiumStopPct: cfg.premiumStopPct,
-    premiumStopSides: cfg.premiumStopSides,
-    premiumStopApplies: premiumApplies,
-    slPts,
-    riskPts:        slPts,
     // Signal context (kept on the trade record for analytics / reports)
     signalSpot:     sig.entrySpot,
     signalRsi:      sig.rsi,
@@ -640,21 +562,11 @@ async function simulateBuy(side, sig) {
   log(`🟢 [RSI_PIVOT_ST-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
   log(`   ├─ Trigger: RSI ${sig.rsi} · crossed ${side === "CE" ? "R1" : "S1"} ${sig.crossedLevel} (pivots from ${pos.pivotFrom})`);
   log(`   ├─ Strike: ${optInfo.strike} (${strikeInfo.mode}${strikeInfo.steps ? `, ${strikeInfo.distancePts}pt from spot` : ""})`);
-  const _slBits = [];
-  if (Number.isFinite(slSpot)) _slBits.push(`SuperTrend ${slSpot} (${slPts}pt)`);
-  if (Number.isFinite(premiumFloor)) _slBits.push(`premium floor ₹${premiumFloor} (${cfg.premiumStopPct}% of ₹${optionEntryLtp})`);
-  log(`   └─ SL: ${_slBits.length ? _slBits.join(" + ") : "NONE"} · EOD ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")}`);
-  if (rsiPivotStrategy.isStoplessSide(side, cfg)) {
-    log(`⚠️ [RSI_PIVOT_ST-PAPER] THIS ${side} TRADE HAS NO STOP. The premium stop is OFF for ${side} ` +
-        `(RSI_PIVOT_ST_PREMIUM_SL_SIDES=${cfg.premiumStopSides})${side === "PE" ? " and PE never carries a SuperTrend" : ""} — ` +
-        `the ONLY exit is the ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} square-off. The full premium is at risk.`);
-  }
-
   notifyEntry({
     mode: "RSI_PIVOT_ST-PAPER",
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
-    qty, stopLoss: slSpot, target: null,
+    qty, stopLoss: null, target: null,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -666,15 +578,14 @@ async function simulateBuy(side, sig) {
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
       spotEntry: spot, optionEntry: optionEntryLtp,
-      stopLoss: slSpot, target: null,
+      stopLoss: null, target: null,
       reason: pos.entryReason,
     });
   } catch (_) {}
 }
 
-function simulateSell(reason, opts) {
+function simulateSell(reason) {
   if (!state.position) return;
-  const o = opts || {};
   const pos = state.position;
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
@@ -688,10 +599,6 @@ function simulateSell(reason, opts) {
   const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
-  if (pnl < 0) state.consecutiveLosses++; else if (pnl > 0) state.consecutiveLosses = 0;
-  // Only a REAL stop-out burns one of the day's allowed losses. isStopOut is set
-  // by the caller, never inferred from the sign of the P&L.
-  if (o.isStopOut) state.stopOuts++;
 
   const trade = {
     side:           pos.side,
@@ -712,17 +619,13 @@ function simulateSell(reason, opts) {
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
     exitReason:     reason,
     entryReason:    pos.entryReason,
-    stopLoss:       pos.slSpot,
-    initialStopLoss: pos.initialSlSpot,
-    premiumFloor:   pos.premiumFloor,
-    initialPremiumFloor: pos.initialPremiumFloor,
+    stopLoss:       null,
     target:         null,
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
     optionEntrySymbol: pos.symbol,
     signalStrength: pos.signalStrength,
-    riskPts:        pos.riskPts,
     // RSI_PIVOT_ST signal context
     signalRsi:      pos.signalRsi,
     pivotPp:        pos.pivotPp,
@@ -779,22 +682,6 @@ function simulateSell(reason, opts) {
   state.optionLtpUpdatedAt = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
-
-  _applyDayBreakers();
-}
-
-/** Day-level breakers, evaluated after every exit. Each one CLOSES the day. */
-function _applyDayBreakers() {
-  if (state.dayClosed) return;
-  const maxLoss = _maxDailyLoss();
-
-  if (maxLoss > 0 && state.sessionPnl <= -maxLoss) {
-    _closeDay(`Daily loss cap hit (₹${state.sessionPnl} ≤ -₹${maxLoss})`);
-    return;
-  }
-  if (state.tradesTaken >= _maxDailyTrades()) {
-    _closeDay(`Daily trade budget spent (${state.tradesTaken}/${_maxDailyTrades()})`);
-  }
 }
 
 function _closeDay(reason) {
@@ -804,52 +691,10 @@ function _closeDay(reason) {
   skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
 }
 
-// ── The CE trail — SuperTrend, re-read on each CLOSED bar ────────────────────
-/**
- * Ratchet the CE stop up to the current SuperTrend line. Runs on candle close
- * only: SuperTrend is a candle-close indicator, and trailing it per tick would
- * be quoting a value that does not exist yet.
- *
- * A trend FLIP (the line crossing above price) is itself the exit — the CE's
- * whole premise is gone at that point, so the trade is closed rather than left
- * to a stop that can no longer be reached from below.
- */
-function _trailSuperTrend() {
-  const pos = state.position;
-  if (!pos) return;
-  const cfg = _cfg();
-  if (!rsiPivotStrategy.stApplies(pos.side, cfg)) return;
-
-  const isCE = pos.side === "CE";
-  const series = rsiPivotStrategy.computeSuperTrendSeries(state.candles, cfg);
-  const st = rsiPivotStrategy.superTrendStop(pos.side, series, pos.slSpot, cfg);
-  if (!st) return;
-
-  if (st.flipped) {
-    simulateSell(`SuperTrend flipped ${isCE ? "bearish" : "bullish"} — the ${pos.side}'s trend premise is gone (spot ${state.lastTickPrice})`, { isStopOut: true });
-    return;
-  }
-  // The stop only ever TIGHTENS: up for a CE, down for a PE.
-  const tighter = Number.isFinite(st.stop) &&
-    (!Number.isFinite(pos.slSpot) || (isCE ? st.stop > pos.slSpot : st.stop < pos.slSpot));
-  if (tighter) {
-    const prev = pos.slSpot;
-    pos.slSpot = st.stop;
-    log(`🔒 [RSI_PIVOT_ST-PAPER] ${pos.side} SuperTrend trail ${prev} → ${st.stop}`);
-    try { require("../utils/positionPersist").saveRsiPivotStPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-  }
-}
-
 // ── Exits ────────────────────────────────────────────────────────────────────
 /**
- * Tested on every poll. Priority: premium floor → SuperTrend (CE only) → EOD.
- *
- * The premium floor is tested FIRST because it is the only stop BOTH sides
- * carry, and because a premium that has collapsed is a fact about the position
- * itself rather than an inference from spot.
- *
- * Every level is guarded with Number.isFinite before it is compared:
- * `ltp <= null` is `ltp <= 0`, which would square the trade off on its first poll.
+ * Tested on every poll and tick. The global profit lock is the ONLY automatic
+ * exit; this also keeps the peak premium and the MFE/MAE bookkeeping current.
  */
 function _checkExits() {
   if (!state.position) return;
@@ -862,26 +707,13 @@ function _checkExits() {
   const spot   = state.lastTickPrice;
   if (typeof optLtp !== "number" || !Number.isFinite(optLtp) || optLtp <= 0) return;
 
-  // High-water premium drives the trailing floor.
-  if (optLtp > pos.peakPremium) {
-    pos.peakPremium = optLtp;
-    const trailed = rsiPivotStrategy.premiumStop(pos.optionEntryLtp, pos.peakPremium, _cfg(), pos.side);
-    if (Number.isFinite(trailed) && trailed > pos.premiumFloor) {
-      const prev = pos.premiumFloor;
-      pos.premiumFloor = trailed;
-      log(`🔒 [RSI_PIVOT_ST-PAPER] Premium floor trail ₹${prev} → ₹${trailed} (high ₹${pos.peakPremium})`);
-      try { require("../utils/positionPersist").saveRsiPivotStPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-    }
-  }
+  // High-water premium — the profit lock's peak.
+  if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
 
-  // Global profit lock (shared across every strategy — see tradeGuards). Runs
-  // alongside this engine's own premium floor: whichever is hit first exits, and
-  // the lock only ever fires above entry, so it can never loosen that floor.
-  // Options only — in futures mode optLtp mirrors the SPOT.
+  // Global profit lock (shared across every strategy — see tradeGuards) — the
+  // only automatic exit. Options only — in futures mode optLtp mirrors the SPOT.
   if (!pos.isFutures && pos.optionEntryLtp) {
-    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, optLtp, pos.peakPremium)
-      // Fallback for a trade that never reached the lock's arm level.
-      || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, optLtp, pos.peakPremium);
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, optLtp, pos.peakPremium);
     if (_plMsg) {
       log(`🔒 [RSI_PIVOT_ST-PAPER] ${_plMsg}`);
       simulateSell(_plMsg);
@@ -902,39 +734,6 @@ function _checkExits() {
   });
   if (curPnl > (pos.mfePnl || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
   if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
-
-  // 1. Premium floor — BOTH sides.
-  if (rsiPivotStrategy.premiumStopHit(optLtp, pos.premiumFloor)) {
-    const trailing = pos.premiumFloor > pos.initialPremiumFloor;
-    simulateSell(
-      `Premium ${trailing ? "trailing " : ""}stop hit — ₹${optLtp} at or below the ${pos.premiumStopPct}% floor ₹${pos.premiumFloor}` +
-      (trailing ? ` (peak ₹${pos.peakPremium})` : ""),
-      { isStopOut: true }
-    );
-    return;
-  }
-
-  // 2. SuperTrend — whichever sides ST_SIDES covers. The level is trailed on
-  //    candle close; here it is only TESTED, against the live spot.
-  if (Number.isFinite(pos.slSpot) && typeof spot === "number" && Number.isFinite(spot)) {
-    if (rsiPivotStrategy.stopHit(pos.side, spot, pos.slSpot)) {
-      // "Trailing" = the stop has TIGHTENED from where it started: up for a CE,
-      // down for a PE.
-      const trailing = pos.side === "CE" ? pos.slSpot > pos.initialSlSpot : pos.slSpot < pos.initialSlSpot;
-      simulateSell(
-        `SuperTrend ${trailing ? "trailing " : ""}stop hit — spot ${spot} at or ${pos.side === "CE" ? "below" : "above"} ${pos.slSpot}` +
-        (trailing ? ` (initial ${pos.initialSlSpot})` : ""),
-        { isStopOut: true }
-      );
-    }
-  }
-}
-
-function _enforceEod() {
-  if (!state.position) return;
-  if (getISTMinutes() >= _parseMins("RSI_PIVOT_ST_EXIT_TIME", "15:15")) {
-    simulateSell(`EOD square-off (${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} IST)`);
-  }
 }
 
 // ── Entry evaluation (on candle close — CLOSED bars only) ────────────────────
@@ -945,14 +744,8 @@ async function evaluateEntry() {
   // concurrent polls can never open two positions.
   if (state.position || state._entryInFlight || state.dayClosed) return;
   if (state._lastEntryAttemptMs && Date.now() - state._lastEntryAttemptMs < ENTRY_RETRY_MS) return;
-  if (state.tradesTaken >= _maxDailyTrades()) { _applyDayBreakers(); return; }
 
   // ── Risk gates ──────────────────────────────────────────────────────────
-  const maxWeek = _maxWeeklyLoss();
-  if (maxWeek > 0) {
-    const wk = weeklyPnl();
-    if (wk <= -maxWeek) { _closeDay(`Weekly loss cap hit (week P&L ₹${wk} ≤ -₹${maxWeek})`); return; }
-  }
   {
     const pf = require("../utils/portfolioRisk").checkPortfolioCap();
     if (pf.blocked) { _closeDay(pf.reason); return; }
@@ -961,7 +754,6 @@ async function evaluateEntry() {
   // ── The signal ──────────────────────────────────────────────────────────
   const sig = rsiPivotStrategy.getSignal(state.candles, {
     pivots: state.pivots,
-    alreadyTraded: false,
     silent: true,
   });
   state.lastSignal = sig;
@@ -1021,8 +813,7 @@ async function _retryPendingEntry() {
   const p = state._pendingEntry;
   if (!p) return;
   if (state.position || state._entryInFlight) return;
-  if (state.dayClosed || state.tradesTaken >= _maxDailyTrades()) { state._pendingEntry = null; return; }
-  if (getISTMinutes() >= _parseMins("RSI_PIVOT_ST_EXIT_TIME", "15:15")) { state._pendingEntry = null; return; }
+  if (state.dayClosed) { state._pendingEntry = null; return; }
   if (Date.now() - p.lastAttemptMs < ENTRY_RETRY_MS) return;
 
   state._entryInFlight = true;
@@ -1040,7 +831,7 @@ function onCandleClose(bar) {
   // A new bar supersedes any setup still waiting on a failed fill — the market
   // has moved on, and this bar's own evaluation is the current truth.
   state._pendingEntry = null;
-  if (state.position) return;                    // the trail already ran in _mergeBars
+  if (state.position) return;
   if (!bar || typeof bar.time !== "number") return;
   const cfg = _cfg();
   const closeMins = rsiPivotStrategy._utcSecToIstMins(bar.time) + cfg.resolutionMins;
@@ -1049,9 +840,7 @@ function onCandleClose(bar) {
 }
 
 // ── onTick — the NIFTY 50 INDEX feed. Heartbeat, live spot, forming bar. ─────
-// It drives NO entry decision: every rule reads closed bars instead. It DOES
-// feed the spot stop test, which is what makes a SuperTrend stop react between
-// bars rather than only on the close.
+// It drives NO entry decision: every rule reads closed bars instead.
 function onTick(tick) {
   if (!state.running) return;
   const price = tick && tick.ltp;
@@ -1073,11 +862,8 @@ function onTick(tick) {
       state.formingBar.close = price;
   }
 
-  // Spot-based exits are tested per tick so a SuperTrend stop does not wait for
-  // the option poll. EOD is enforced here too, so a stalled option quote can
-  // never hold a position past the square-off time.
+  // The profit lock (and the MFE/MAE bookkeeping) is also tested per tick.
   try { if (state.position) _checkExits(); } catch (_) {}
-  _enforceEod();
 }
 
 // ── Preload history + freeze the day's pivots ────────────────────────────────
@@ -1129,28 +915,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The RSI_PIVOT_ST-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "RSI_PIVOT_ST-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -1163,14 +927,6 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running) return res.redirect("/rsi-pivot-st-paper/status");
 
   if (String(process.env.RSI_PIVOT_ST_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -1189,8 +945,8 @@ router.get("/start", async (req, res) => {
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/rsi-pivot-st-paper/status", "← Back"));
 
-  if (getISTMinutes() >= _parseMins("RSI_PIVOT_ST_EXIT_TIME", "15:15")) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} IST — RSI Pivot ST does not trade after this`, "/rsi-pivot-st-paper/status", "← Back"));
+  if (getISTMinutes() >= _cfg().entryEndMin) {
+    return res.status(400).send(_errorPage("Session Closed", `Past ${_envStr("RSI_PIVOT_ST_ENTRY_END", "15:00")} IST — RSI Pivot ST takes no new entries after this`, "/rsi-pivot-st-paper/status", "← Back"));
   }
 
   state = _freshState();
@@ -1204,14 +960,8 @@ router.get("/start", async (req, res) => {
   const cfg = _cfg();
   log(`🟢 [RSI_PIVOT_ST-PAPER] Session started — ${rsiPivotStrategy.NAME}`);
   log(`⚙️ [RSI_PIVOT_ST-PAPER] NIFTY @ ${cfg.resolutionMins}m · CE: RSI>${cfg.rsiCeMin} + cross/close above R1 · PE: RSI<${cfg.rsiPeMax} + cross/close below S1${cfg.pivotBufferPts ? ` (±${cfg.pivotBufferPts}pt buffer)` : ""}`);
-  log(`⚙️ [RSI_PIVOT_ST-PAPER] Strike ${cfg.strikeMode} @ ${cfg.strikePct}% of spot · CE SL ${_sideStopText("CE", cfg)} · PE SL ${_sideStopText("PE", cfg)}`);
-  for (const _s of ["CE", "PE"]) {
-    if (rsiPivotStrategy.isStoplessSide(_s, cfg)) {
-      log(`⚠️ [RSI_PIVOT_ST-PAPER] ${_s} TRADES WILL HAVE NO STOP (RSI_PIVOT_ST_PREMIUM_SL_SIDES=${cfg.premiumStopSides})` +
-          `${_s === "PE" ? " and PE never carries a SuperTrend" : ""} — such a trade can only exit at the EOD square-off.`);
-    }
-  }
-  log(`⚙️ [RSI_PIVOT_ST-PAPER] Entries ${_envStr("RSI_PIVOT_ST_ENTRY_START", "09:30")}–${_envStr("RSI_PIVOT_ST_ENTRY_END", "15:00")} · max ${_maxDailyTrades()}/day · loss cap ₹${_maxDailyLoss()} · EOD ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} · qty ${rsiPivotLotQty()}`);
+  log(`⚙️ [RSI_PIVOT_ST-PAPER] Strike ${cfg.strikeMode} @ ${cfg.strikePct}% of spot · SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) filter on ${cfg.stSides} · exit = global profit lock`);
+  log(`⚙️ [RSI_PIVOT_ST-PAPER] Entries ${_envStr("RSI_PIVOT_ST_ENTRY_START", "09:30")}–${_envStr("RSI_PIVOT_ST_ENTRY_END", "15:00")} · qty ${rsiPivotLotQty()}`);
 
   await preloadHistory();
   startPolling();
@@ -1259,9 +1009,7 @@ router.get("/start", async (req, res) => {
         : `Levels    : ⚠️ NOT AVAILABLE — no previous daily candle, no trades possible today`,
       `Setup     : CE = RSI>${cfg.rsiCeMin} + close above R1 · PE = RSI<${cfg.rsiPeMax} + close below S1`,
       `Strike    : ${cfg.strikeMode} @ ${cfg.strikePct}% of spot`,
-      `Stops     : CE ${_sideStopText("CE", cfg)} · PE ${_sideStopText("PE", cfg)}`,
-      `Max trades: ${_maxDailyTrades()}/day · loss cap ₹${_maxDailyLoss()}`,
-      `Square-off: ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} IST`,
+      `Exit      : global profit lock`,
     ].filter(Boolean).join("\n"),
   });
 
@@ -1269,10 +1017,8 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!state.running) return;
   if (state.position) simulateSell("Session stopped");
-  // Released AFTER the virtual square-off above, so the harness still closes the real position.
-  _releaseLiveHarness("session end");
   state.running = false;
   stopPolling();
 
@@ -1314,7 +1060,7 @@ function stopSession() {
 router.get("/stop", (req, res) => { stopSession(); res.redirect("/rsi-pivot-st-paper/status"); });
 router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit"); res.redirect("/rsi-pivot-st-paper/status"); });
 
-// ── /status/chart-data — spot candles + pivot levels + stops ─────────────────
+// ── /status/chart-data — spot candles + pivot levels + SuperTrend ────────────
 router.get("/status/chart-data", (req, res) => {
   try {
     const cfg = _cfg();
@@ -1326,7 +1072,7 @@ router.get("/status/chart-data", (req, res) => {
     }
 
     // SuperTrend line, aligned 1:1 with the closed candles so the chart plots the
-    // exact values the CE stop uses.
+    // exact values the entry filter uses.
     const stSeries = rsiPivotStrategy.computeSuperTrendSeries(state.candles, cfg);
     const superTrend = [];
     for (let i = 0; i < state.candles.length; i++) {
@@ -1380,8 +1126,6 @@ router.get("/status/chart-data", (req, res) => {
       s2: p ? p.s2 : null,
       pivotFrom: p ? p.from : null,
       entryPrice: pos ? pos.entrySpot : null,
-      stopLoss:   pos ? pos.slSpot : null,
-      target:     null,
       rsiCeMin:   cfg.rsiCeMin,
       rsiPeMax:   cfg.rsiPeMax,
       resMin:     cfg.resolutionMins,
@@ -1432,8 +1176,6 @@ router.get("/status/data", (req, res) => {
     superTrend: state.lastSuperTrend ? state.lastSuperTrend.value : null,
     superTrendTrend: state.lastSuperTrend ? state.lastSuperTrend.trend : null,
     dayClosed: state.dayClosed, dayClosedReason: state.dayClosedReason,
-    stopOuts: state.stopOuts,
-    maxDailyTrades: _maxDailyTrades(), maxDailyLoss: _maxDailyLoss(),
     lastSkipReason: s && s.signal === "NONE" ? (s.skipReason || s.reason) : null,
     // Live "why nothing was taken", recomputed rather than read from the last
     // candle-close verdict — see _entryDiagnosis.
@@ -1445,19 +1187,11 @@ router.get("/status/data", (req, res) => {
       strikeMode: cfg.strikeMode, strikePct: cfg.strikePct,
       stPeriod: cfg.stPeriod, stMultiplier: cfg.stMultiplier, stCeEnabled: cfg.stCeEnabled,
       stSides: cfg.stSides,
-      premiumStopPct: cfg.premiumStopPct,
-      premiumStopSides: cfg.premiumStopSides,
       entryStart: _envStr("RSI_PIVOT_ST_ENTRY_START", "09:30"),
       entryEnd: _envStr("RSI_PIVOT_ST_ENTRY_END", "15:00"),
-      forcedExit: _envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15"),
     },
     position: pos ? {
       side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
-      slSpot: pos.slSpot, premiumFloor: pos.premiumFloor, initialPremiumFloor: pos.initialPremiumFloor,
-      premiumStopPct: pos.premiumStopPct,
-      premiumStopSides: pos.premiumStopSides,
-      premiumStopApplies: pos.premiumStopApplies,
-      riskPts: pos.riskPts,
       signalRsi: pos.signalRsi, crossedLevel: pos.crossedLevel,
       strikeMode: pos.strikeMode, strikeDistancePts: pos.strikeDistancePts,
       optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
@@ -1534,7 +1268,6 @@ function _diagStyle(diag, running) {
 }
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getRsiPivotStMode() === "RSI_PIVOT_ST_LIVE";
   const data   = loadData();
   const pos    = state.position;
   const cfg    = _cfg();
@@ -1548,9 +1281,6 @@ router.get("/status", (req, res) => {
   const worst   = state.sessionTrades.length ? Math.min(...state.sessionTrades.map(t => t.pnl || 0)) : null;
 
   const startCap  = parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000");
-  const maxTrades = _maxDailyTrades();
-  const maxLoss   = _maxDailyLoss();
-  const dailyLossHit = maxLoss > 0 && state.sessionPnl <= -maxLoss;
 
   const diag  = _entryDiagnosis();
   const dStyle = _diagStyle(diag, state.running);
@@ -1575,7 +1305,7 @@ router.get("/status", (req, res) => {
     { label: "Session PnL", accent: pnlColor(state.sessionPnl),
       value: `<span id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${money(state.sessionPnl || 0)}</span>` },
     { label: "Trades Today", accent: "#6a5090",
-      value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${maxTrades}</span>`,
+      value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span>`,
       sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>` },
     { label: "Live PnL", accent: "#3b82f6",
       value: `<span id="ajax-live-pnl" style="color:${livePnl == null ? "#c8d8f0" : pnlColor(livePnl)};">${livePnl == null ? "—" : money(livePnl)}</span>`,
@@ -1585,16 +1315,13 @@ router.get("/status", (req, res) => {
       sub: `<span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">CE needs &gt;${cfg.rsiCeMin} · PE needs &lt;${cfg.rsiPeMax}</span>` },
     { label: `SuperTrend(${cfg.stPeriod},${cfg.stMultiplier})`, accent: "#a78bfa",
       value: `<span id="ajax-st" style="color:${stColor};">${stText}</span>`,
-      sub: `<span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">stops ${cfg.stSides === "NONE" ? "no side" : cfg.stSides}</span>` },
+      sub: `<span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">entry filter on ${cfg.stSides === "NONE" ? "no side" : cfg.stSides}</span>` },
     { label: "Warm-up", accent: diag.warmup ? "#f59e0b" : "#10b981",
       value: `<span id="ajax-warmup" style="color:${diag.warmup ? "#f59e0b" : "#10b981"};">${diag.bars} / ${diag.minBars}</span>`,
       sub: `<span id="ajax-warmup-sub" style="font-size:0.6rem;color:${diag.warmup ? "#f59e0b" : "#10b981"};">${diag.warmup ? (diag.readyAt ? `eligible from ${diag.readyAt}` : "waiting for bars") : "closed bars — ready"}</span>` },
     { label: "Win Rate", accent: "#a07010",
       value: `<span id="ajax-wr">${winRate != null ? winRate + "%" : "—"}</span>`,
       sub: `<span id="ajax-wr-sub" style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">best ${best == null ? "—" : best.toFixed(0)} / worst ${worst == null ? "—" : worst.toFixed(0)}</span>` },
-    { label: "Daily Loss Limit", accent: dailyLossHit ? "#ef4444" : "#10b981",
-      value: `<span id="ajax-daily-loss-val" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "HIT" : "OK"} <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);">/ -₹${maxLoss.toLocaleString("en-IN")}</span></span>`,
-      sub: `<span id="ajax-daily-loss-sub" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "KILLED — no entries" : "Active"}</span>` },
     { label: "WebSocket Ticks", accent: "#2a6080",
       value: `<span id="ajax-tick-count">${(state.tickCount || 0).toLocaleString()}</span>`,
       sub: `Last: <span id="ajax-last-tick">${state.lastTickPrice ? "₹" + state.lastTickPrice.toLocaleString("en-IN") : "—"}</span>` },
@@ -1607,7 +1334,6 @@ router.get("/status", (req, res) => {
     const optMove    = liveOpt != null ? (liveOpt - pos.optionEntryLtp) : null;
     const optMovePct = (liveOpt != null && pos.optionEntryLtp) ? (optMove / pos.optionEntryLtp) * 100 : null;
     const spotMove   = state.lastTickPrice != null ? (state.lastTickPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1) : null;
-    const stopless   = rsiPivotStrategy.isStoplessSide(pos.side, cfg);
     return `
     <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -1618,9 +1344,6 @@ router.get("/status", (req, res) => {
         </div>
         <button onclick="rpsHandleExit(this)" style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;">Exit Trade Now</button>
       </div>
-      ${stopless ? `<div style="background:#2a0a0a;border:1px solid #ef4444;color:#fca5a5;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.78rem;line-height:1.5;">
-        <b>THIS ${pos.side} TRADE HAS NO STOP.</b> The premium floor is off for ${pos.side}${pos.side === "PE" ? " and PE never carries a SuperTrend" : ""} — the only exit is the ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} square-off. The full premium is at risk.
-      </div>` : ""}
       <div style="background:#071a12;border:1px solid #134e35;border-radius:10px;padding:14px 18px;margin-bottom:16px;">
         <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -1664,8 +1387,6 @@ router.get("/status", (req, res) => {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY @ Entry</div><div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">₹${pos.entrySpot ? pos.entrySpot.toFixed(2) : "—"}</div></div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div><div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${state.lastTickPrice ? "₹" + state.lastTickPrice.toFixed(2) : "—"}</div><div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div></div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SuperTrend Stop</div><div id="ajax-sl-spot" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot != null ? "₹" + pos.slSpot.toFixed(2) : "not on " + pos.side}</div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">${pos.riskPts != null ? pos.riskPts.toFixed(1) + "pt risk" : ""}</div></div>
-        <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${pos.isFutures ? "Premium Floor" : `Premium Floor (${pos.premiumStopPct}%)`}</div><div id="ajax-prem-floor" style="font-size:1.05rem;font-weight:700;color:${Number.isFinite(pos.premiumFloor) ? "#c8d8f0" : "#8ba1c2"};">${Number.isFinite(pos.premiumFloor) ? "₹" + pos.premiumFloor.toFixed(2) : (pos.isFutures ? "n/a (futures)" : "OFF on " + pos.side)}</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${pos.isFutures ? "Peak Price" : "Peak Premium"}</div><div id="ajax-peak-prem" style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Pivots From</div><div style="font-size:0.95rem;font-weight:700;color:#c8d8f0;">${pos.pivotFrom || "—"}</div></div>
       </div>
@@ -1703,7 +1424,7 @@ ${bbRsiStyleCSS()}
 </style></head>
 <body>
 <div class="app-shell">
-${buildSidebar("rsiPivotStPaper", liveActive, state.running, {
+${buildSidebar("rsiPivotStPaper", false, state.running, {
   showStartBtn: !state.running, startBtnJs: `secretGo('/rsi-pivot-st-paper/start', this)`, startLabel: "▶ Start RSI Pivot ST",
   showStopBtn:  state.running,  stopBtnJs:  `secretGo('/rsi-pivot-st-paper/stop', this)`,  stopLabel:  "■ Stop RSI Pivot ST",
   showExitBtn:  state.running && !!pos, exitBtnJs: `rpsHandleExit(this)`, exitLabel: "🚪 Exit Trade",
@@ -1712,7 +1433,7 @@ ${buildSidebar("rsiPivotStPaper", liveActive, state.running, {
 
 ${bbRsiTopBar({
   title: "RSI Pivot ST — Paper",
-  metaLine: `${rsiPivotStrategy.NAME} · ${resMin}-min · CE ${_sideStopText("CE", cfg)} · PE ${_sideStopText("PE", cfg)} · Entry ${_envStr("RSI_PIVOT_ST_ENTRY_START", "09:30")}–${_envStr("RSI_PIVOT_ST_ENTRY_END", "15:00")} · Square-off ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} IST · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
+  metaLine: `${rsiPivotStrategy.NAME} · ${resMin}-min · Exit: profit lock · Entry ${_envStr("RSI_PIVOT_ST_ENTRY_START", "09:30")}–${_envStr("RSI_PIVOT_ST_ENTRY_END", "15:00")} · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
   running: state.running,
   primaryAction: { label: "Start RSI Pivot ST Paper", href: "/rsi-pivot-st-paper/start" },
   stopAction:    { label: "Stop Session",             href: "/rsi-pivot-st-paper/stop"  },
@@ -1875,7 +1596,6 @@ async function rpsHandleExit(btn) {
       mk(d.pp, '#64748b', 'PP');
       mk(d.s1, '#4ade80', 'S1');
       mk(d.entryPrice, '#38bdf8', 'Entry');
-      mk(d.stopLoss, '#fbbf24', 'SL');
     } catch (e) {}
   }
   fetchChart();
@@ -1987,9 +1707,6 @@ ${optionChart.optionChartScript({ dataUrl: '/rsi-pivot-st-paper/status/chart-dat
         }
       }
 
-      var dlossHit = d.maxDailyLoss > 0 && (d.sessionPnl || 0) <= -d.maxDailyLoss;
-      var dlEl = document.getElementById('ajax-daily-loss-val'); if (dlEl) { dlEl.style.color = dlossHit ? '#ef4444' : '#10b981'; }
-      var dlSub = document.getElementById('ajax-daily-loss-sub'); if (dlSub) { dlSub.textContent = dlossHit ? 'KILLED — no entries' : 'Active'; dlSub.style.color = dlossHit ? '#ef4444' : '#10b981'; }
       setText('ajax-tick-count', (d.tickCount || 0).toLocaleString());
       setText('ajax-last-tick', d.lastTickPrice ? INR(d.lastTickPrice) : '—');
 
@@ -2013,8 +1730,6 @@ ${optionChart.optionChartScript({ dataUrl: '/rsi-pivot-st-paper/status/chart-dat
         var ltpEl = document.getElementById('ajax-nifty-ltp'); if (ltpEl && d.lastTickPrice != null) ltpEl.textContent = INR(d.lastTickPrice);
         var movSub = document.getElementById('ajax-nifty-move');
         if (movSub && d.lastTickPrice != null && p.entrySpot) { var sm = (d.lastTickPrice - p.entrySpot) * (p.side === 'CE' ? 1 : -1); movSub.textContent = (sm >= 0 ? '▲' : '▼') + ' ' + Math.abs(sm).toFixed(1) + ' pts'; movSub.style.color = sm >= 0 ? '#10b981' : '#ef4444'; }
-        var slEl = document.getElementById('ajax-sl-spot'); if (slEl && p.slSpot != null) slEl.textContent = '₹' + p.slSpot.toFixed(2);
-        var pfEl = document.getElementById('ajax-prem-floor'); if (pfEl && p.premiumFloor != null) pfEl.textContent = '₹' + p.premiumFloor.toFixed(2);
         var pkEl = document.getElementById('ajax-peak-prem'); if (pkEl && p.peakPremium != null) pkEl.textContent = '₹' + p.peakPremium.toFixed(2);
       }
 
@@ -2044,7 +1759,6 @@ router.get("/history", (req, res) => {
     pageTitle: "🎯 RSI Pivot ST Paper Trade History",
     pageDocTitle: "RSI Pivot ST Paper — History",
     modalLabel: "RSI Pivot ST Paper",
-    liveActive: sharedSocketState.getRsiPivotStMode() === "RSI_PIVOT_ST_LIVE",
     sessions: data.sessions || [],
     capital: data.capital,
     totalPnl: data.totalPnl,
@@ -2203,10 +1917,8 @@ function _errorPage(title, message, backHref, backLabel) {
 <a href="${backHref}">${backLabel}</a></div></body></html>`;
 }
 
-// Exported for the live harness (it drives this router programmatically) and for
-// app.js's graceful shutdown, which looks up `stopSession` by that exact name on
-// the router object and awaits it.
-router._getState = () => state;
+// Exported for app.js's graceful shutdown, which looks up `stopSession` by that
+// exact name on the router object and awaits it.
 router.stopSession = stopSession;
 
 module.exports = router;

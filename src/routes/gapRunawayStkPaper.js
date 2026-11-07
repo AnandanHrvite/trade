@@ -4,8 +4,7 @@
  * The NIFTY strategy's rules run over a stock universe (default: every F&O
  * stock), and the best hits are paper-traded as INTRADAY SHARES (MIS):
  *   CE signal → BUY the shares (long) · PE signal → SHORT-SELL the shares.
- * NO real orders are placed — paper only (there is no live harness for this
- * page: the shared harness only knows options). Every RULE lives in
+ * NO real orders are placed — paper only. Every RULE lives in
  * src/strategies/gap_runaway.js (env prefix "GAP_RUNAWAY_STK"); this route
  * computes no indicator and makes no threshold comparison of its own.
  * Reference video: GAP_RUNAWAY_STK_REFERENCE_URL.
@@ -24,15 +23,14 @@
  *            price has already filled the gap is skipped (engine.entryStillValid)
  *            and the next one takes the slot. Fill = the current LTP; qty =
  *            floor(GAP_RUNAWAY_STK_TRADE_AMOUNT ÷ LTP). Entries stop at ENTRY_END.
- *   EXIT   : per price update (socket stream, REST fallback every 2s) — price
- *            back at yesterday's close = gap stop. Per CLOSED EXIT_TF-min candle
- *            (Fyers history, fetched just after each close) — close back through
- *            EMA21 = trail exit. GAP_RUNAWAY_STK_EOD_EXIT_TIME (15:15) square-off.
+ *   EXIT   : per price update (socket stream, REST fallback every 2s) — the
+ *            common profit lock on the SHARE price (a short is checked on the
+ *            price mirrored around its entry). It is the ONLY automatic exit;
+ *            otherwise a manual exit or the TRADE_STOP_TIME session auto-stop.
  *   P&L    : share price move × qty, minus Zerodha equity-intraday charges.
  *
  * COMMON RULES (user, 2026-10-28 — added after a +₹2.4k day closed at −₹1.9k):
- *   profit lock + breakeven (the common % applied to the SHARE price — a short
- *   is checked on the price mirrored around its entry), wait-after-exit,
+ *   profit lock, wait-after-exit (counted in COOLDOWN_RES_MIN-min candles),
  *   bid-ask spread check, portfolio daily cap.
  * DELIBERATELY NOT HERE: the common 10:00–14:00 trade window (the whole rule
  * is the 09:15 gap — the window would block every entry), lot multiplier
@@ -85,19 +83,18 @@ const LOOP_MS          = 1000;   // the engine loop — every check below is dri
 const QUOTE_POLL_MS    = 2000;   // REST price poll for held stocks whose stream is not fresh
 const OPEN_POLL_MS     = 5000;   // candidates' open quotes, until every open is known
 const OPEN_WAIT_MS     = 30000;  // a candidate with no open_price this long after the first read is dropped
-const TRAIL_FETCH_LAG_S = 20;    // fetch the exit-TF bar this long after it closes (Fyers finalises it)
+// Candle size the common wait-after-exit is counted in (EXIT_REENTRY_COOLDOWN_CANDLES × this).
+const COOLDOWN_RES_MIN = 5;
 const PREV_CLOSE_TOLERANCE = 0.02; // quote prev_close vs history close — beyond this the data is refused
 const QUOTE_BATCH      = 50;     // Fyers getQuotes accepts up to 50 symbols per call
 const SCAN_CONCURRENCY = 4;
 
 // ── Own settings ─────────────────────────────────────────────────────────────
-// The common profit lock / breakeven numbers (Settings → Common Rules), read
-// here only for the log lines — the checks themselves read them in tradeGuards.
+// The common profit lock numbers (Settings → Common Rules), read here only for
+// the log lines — the check itself reads them in tradeGuards.
 function _plArmPct()   { return parseFloat(process.env.PROFIT_LOCK_ARM_PCT || "8"); }
 function _plFloorPct() { return parseFloat(process.env.PROFIT_LOCK_FLOOR_PCT || "5"); }
-function _beArmPct()   { return parseFloat(process.env.BREAKEVEN_ARM_PCT || "5"); }
 function _plOn() { return String(process.env.PROFIT_LOCK_ENABLED ?? "true").toLowerCase() === "true"; }
-function _beOn() { return String(process.env.BREAKEVEN_STOP_ENABLED ?? "true").toLowerCase() === "true"; }
 function _tradeAmount() { const v = parseFloat(process.env.GAP_RUNAWAY_STK_TRADE_AMOUNT || "100000"); return Number.isFinite(v) && v > 0 ? v : 100000; }
 function _maxTrades()   { const v = parseInt(process.env.GAP_RUNAWAY_STK_MAX_TRADES || "3", 10); return Number.isFinite(v) && v >= 1 && v <= 20 ? v : 3; }
 function _universeKey() { return String(process.env.GAP_RUNAWAY_STK_UNIVERSE || "FNO").trim().toUpperCase() || "FNO"; }
@@ -114,10 +111,6 @@ function istNow() {
 function _todayStr() { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
 function _todayKey() { return engine._istDayOf(Math.floor(Date.now() / 1000)); }
 function _nowMins() { return engine._istMins(Math.floor(Date.now() / 1000)); }
-function _daysAgoStr(n) {
-  const d = new Date(Date.now() + 19800000 - n * 86400000);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
 function parseMins(envKey, def) {
   const [h, m] = String(process.env[envKey] || def).split(":").map(Number);
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
@@ -182,7 +175,7 @@ function _loadPositions() {
     if (!fs.existsSync(POS_FILE)) return [];
     const d = JSON.parse(fs.readFileSync(POS_FILE, "utf-8"));
     if (!d || d.savedDate !== _todayStr() || !Array.isArray(d.positions)) return [];
-    return d.positions.filter(p => p && p.stock && (p.side === "CE" || p.side === "PE") && engine._num(p.entryPrice) && engine._num(p.stopLoss) && p.qty > 0);
+    return d.positions.filter(p => p && p.stock && (p.side === "CE" || p.side === "PE") && engine._num(p.entryPrice) && p.qty > 0);
   } catch (_) { return []; }
 }
 
@@ -235,7 +228,7 @@ let st = {
 let _loopTimer = null;
 let _autoStopTimer = null;
 let _sessionGen = 0;
-let _busy = { quotes: false, opens: false, trail: false, entry: false };
+let _busy = { quotes: false, opens: false, entry: false };
 let _lastQuoteMs = 0, _lastOpenMs = 0;
 
 function log(msg) {
@@ -370,7 +363,7 @@ async function _fetchOpens(gen) {
     d.signal = engine.getSignal({ setup: d.setup, todayOpen: op, cfg: _cfg(), prefix: PREFIX });
     if (d.signal.signal === "BUY_CE" || d.signal.signal === "BUY_PE") {
       d.status = "signal";
-      log(`📈 [STK] SIGNAL ${d.stock} ${d.signal.side === "CE" ? "LONG" : "SHORT"} — RSI ${d.setup.prevRsi} (${d.setup.zone}) · prev close ₹${d.setup.prevClose} · open ₹${op} · gap ${d.signal.gapPts} pts (${d.signal.gapPct}%) · stop ₹${d.signal.slSpot}`);
+      log(`📈 [STK] SIGNAL ${d.stock} ${d.signal.side === "CE" ? "LONG" : "SHORT"} — RSI ${d.setup.prevRsi} (${d.setup.zone}) · prev close ₹${d.setup.prevClose} · open ₹${op} · gap ${d.signal.gapPts} pts (${d.signal.gapPct}%)`);
     } else {
       d.status = "none";
       d.note = d.signal.reason;
@@ -421,12 +414,10 @@ function _openPosition(d, price, spread) {
   const pos = {
     stock: d.stock, symbol: d.fyersSym, side: sig.side, direction: sig.side === "CE" ? "LONG" : "SHORT",
     qty, entryPrice: price, entryTime: istNow(), entryUnixSec: nowSec,
-    stopLoss: sig.slSpot, initialStopLoss: sig.slSpot,
     prevDate: d.setup.prevDate, prevClose: d.setup.prevClose, prevRsi: d.setup.prevRsi, prevEma: d.setup.prevEma, rsiZone: d.setup.zone,
     todayOpen: d.open, gapPts: sig.gapPts, gapPct: sig.gapPct,
     reason: sig.reason, ltp: price, ltpAt: Date.now(), best: price, mfe: 0, mae: 0,
-    lastTrailBarTime: null, trailEma: null, candlesHeld: 0,
-    spreadAtEntry: spread ? spread.spread : null, peakPnl: 0, plArmed: false, beArmed: false,
+    spreadAtEntry: spread ? spread.spread : null, peakPnl: 0, plArmed: false,
   };
   st.positions.set(d.stock, pos);
   capitalPool.block(MODE_KEY, qty * price, { side: pos.side, symbol: d.stock, qty, premium: price }, { add: true });
@@ -437,9 +428,9 @@ function _openPosition(d, price, spread) {
   _trackStream(pos);
   const dir = pos.side === "CE" ? 1 : -1;
   const lv = (pct) => _r2(price * (1 + dir * pct / 100));
-  log(`🎯 [STK] ENTRY ${pos.direction} ${qty} × ${d.stock} @ ₹${price} (₹${_r2(qty * price).toLocaleString("en-IN")}) | SL (prev close) ₹${pos.stopLoss} = risk ₹${_r2(Math.abs(price - pos.stopLoss) * qty)} | spread ${pos.spreadAtEntry != null ? pos.spreadAtEntry + "pt" : "n/a"} | RSI ${d.setup.prevRsi} · open ₹${d.open} · gap ${sig.gapPct}%`);
-  log(`   [STK] ${d.stock} levels — breakeven ${_beOn() ? `arms at ₹${lv(_beArmPct())}` : "OFF"} · profit lock ${_plOn() ? `arms at ₹${lv(_plArmPct())}, floor ₹${lv(_plFloorPct())} (then trails)` : "OFF"} | ${sig.reason}`);
-  notifyEntry({ mode: MODE_TAG, side: pos.side, symbol: d.fyersSym, spotAtEntry: price, stopLoss: pos.stopLoss, qty, reason: `${pos.direction} ${d.stock} — ${sig.reason}` });
+  log(`🎯 [STK] ENTRY ${pos.direction} ${qty} × ${d.stock} @ ₹${price} (₹${_r2(qty * price).toLocaleString("en-IN")}) | spread ${pos.spreadAtEntry != null ? pos.spreadAtEntry + "pt" : "n/a"} | RSI ${d.setup.prevRsi} · open ₹${d.open} · gap ${sig.gapPct}%`);
+  log(`   [STK] ${d.stock} levels — profit lock ${_plOn() ? `arms at ₹${lv(_plArmPct())}, floor ₹${lv(_plFloorPct())} (then trails)` : "OFF"} (the only automatic exit) | ${sig.reason}`);
+  notifyEntry({ mode: MODE_TAG, side: pos.side, symbol: d.fyersSym, spotAtEntry: price, qty, reason: `${pos.direction} ${d.stock} — ${sig.reason}` });
   return true;
 }
 
@@ -460,13 +451,11 @@ function _closePosition(stock, price, reason) {
     durationMs: (Date.now() - pos.entryUnixSec * 1000),
     pnl, pnlPoints: _r2((price - pos.entryPrice) * dir), charges, pnlMode: "share price (MIS)",
     exitReason: reason, entryReason: pos.reason,
-    stopLoss: pos.stopLoss, initialStopLoss: pos.initialStopLoss,
     prevDate: pos.prevDate, prevClose: pos.prevClose, prevRsi: pos.prevRsi, prevEma: pos.prevEma, rsiZone: pos.rsiZone,
     todayOpen: pos.todayOpen, gapPts: pos.gapPts, gapPct: pos.gapPct,
-    trailEmaAtExit: pos.trailEma, candlesHeld: pos.candlesHeld,
     bestPrice: pos.best, mfePts: pos.mfe, maePts: pos.mae,
     peakPnl: pos.peakPnl || 0, givenBack: _r2((pos.peakPnl || 0) - pnl),
-    profitLockArmed: !!pos.plArmed, breakevenArmed: !!pos.beArmed, spreadAtEntry: pos.spreadAtEntry,
+    profitLockArmed: !!pos.plArmed, spreadAtEntry: pos.spreadAtEntry,
     instrument: "NSE_EQUITY_MIS", strategy: PREFIX,
   };
   st.sessionTrades.push(trade);
@@ -478,10 +467,10 @@ function _closePosition(stock, price, reason) {
   if (d) { d.status = "exited"; d.note = `${reason} · ₹${pnl}`; }
   _savePositions();
   _saveDay();
-  // Common wait-after-exit: no new entry for N trail candles.
-  st._reentryBlockUntil = Math.max(st._reentryBlockUntil || 0, tradeGuards.reentryCooldownUntil(Date.now(), _cfg().EXIT_TF));
+  // Common wait-after-exit: no new entry for N × COOLDOWN_RES_MIN-min candles.
+  st._reentryBlockUntil = Math.max(st._reentryBlockUntil || 0, tradeGuards.reentryCooldownUntil(Date.now(), COOLDOWN_RES_MIN));
   log(`${pnl >= 0 ? "✅" : "❌"} [STK] EXIT ${pos.direction} ${pos.qty} × ${stock} @ ₹${price} | P&L ₹${pnl} (charges ₹${charges}) | ${reason}`);
-  log(`   [STK] ${stock} summary — best ₹${pos.best} (peak P&L ₹${trade.peakPnl}, gave back ₹${trade.givenBack}) · MFE ${pos.mfe} / MAE ${pos.mae} pts · ${pos.candlesHeld} candles, ${Math.round(trade.durationMs / 60000)} min · lock ${pos.plArmed ? "armed" : "not armed"} · breakeven ${pos.beArmed ? "armed" : "not armed"} · session ₹${st.sessionPnl}`);
+  log(`   [STK] ${stock} summary — best ₹${pos.best} (peak P&L ₹${trade.peakPnl}, gave back ₹${trade.givenBack}) · MFE ${pos.mfe} / MAE ${pos.mae} pts · ${Math.round(trade.durationMs / 60000)} min · lock ${pos.plArmed ? "armed" : "not armed"} · session ₹${st.sessionPnl}`);
   notifyExit({ mode: MODE_TAG, side: pos.side, symbol: pos.symbol, spotAtEntry: pos.entryPrice, spotAtExit: price, pnl, sessionPnl: st.sessionPnl, exitReason: reason, entryReason: pos.reason, entryTime: pos.entryTime, exitTime: trade.exitTime, qty: pos.qty });
 }
 
@@ -496,23 +485,14 @@ function _onPrice(stock, price, at) {
   if (fav < pos.mae) pos.mae = _r2(fav);
   if (pos.side === "CE" ? price > pos.best : price < pos.best) pos.best = price;
   pos.peakPnl = _r2(pos.mfe * pos.qty);
-  // Gap stop — price back at yesterday's close.
-  if (engine.stopHit(pos.side, price, pos.stopLoss)) {
-    _closePosition(stock, price, `Gap stop — price ${price} back at prev close ${pos.stopLoss}`);
-    return;
-  }
-  // Common profit lock, then breakeven — on the share price. The helpers are
-  // written for a rising premium, so a short is fed the price mirrored around
-  // its entry (a fall of x becomes a rise of x).
+  // Common profit lock — the ONLY automatic exit — on the share price. The
+  // helper is written for a rising premium, so a short is fed the price
+  // mirrored around its entry (a fall of x becomes a rise of x).
   const E = pos.entryPrice;
   const mir = (px) => (pos.side === "CE" ? px : 2 * E - px);
   const cur = mir(price), best = mir(pos.best);
   const gainPct = (best / E - 1) * 100;
   const floorPx = () => _r2(mir(tradeGuards.profitLockFloorLtp(E, best, _plFloorPct(), parseFloat(process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"))));
-  if (!pos.beArmed && _beOn() && gainPct >= _beArmPct()) {
-    pos.beArmed = true;
-    log(`🛡️ [STK] ${stock} breakeven ARMED — best ₹${pos.best} (+${_r2(gainPct)}%, ₹${pos.peakPnl}) · exit if price returns to entry ₹${E}`);
-  }
   if (!pos.plArmed && _plOn() && gainPct >= _plArmPct()) {
     pos.plArmed = true;
     log(`🔒 [STK] ${stock} profit lock ARMED — best ₹${pos.best} (+${_r2(gainPct)}%, ₹${pos.peakPnl}) · floor now ₹${floorPx()}, rises with the best price`);
@@ -520,10 +500,6 @@ function _onPrice(stock, price, at) {
   const pl = tradeGuards.checkProfitLock(E, cur, best);
   if (pl) {
     _closePosition(stock, price, `Profit lock — price ${price} hit the floor ${floorPx()} (best ${pos.best}, entry ${E}, armed at +${_plArmPct()}%)`);
-    return;
-  }
-  if (tradeGuards.checkBreakevenStop(E, cur, best)) {
-    _closePosition(stock, price, `Breakeven stop — price ${price} back to entry ${E} (best ${pos.best}, armed at +${_beArmPct()}%)`);
   }
 }
 function _trackStream(pos) {
@@ -541,41 +517,6 @@ async function _pollHeld(gen) {
   for (const p of stale) { const lp = _lpOf(q.get(p.symbol)); if (lp) _onPrice(p.stock, lp, Date.now()); }
 }
 
-// ── Trailing EMA on closed exit-TF candles ───────────────────────────────────
-async function _checkTrail(gen) {
-  const cfg = _cfg();
-  const nowSec = Math.floor(Date.now() / 1000);
-  const tfSec = cfg.EXIT_TF * 60;
-  for (const pos of [...st.positions.values()]) {
-    let bars;
-    try { bars = await swingScanner.fetchSeries(pos.symbol, String(cfg.EXIT_TF), _daysAgoStr(7), _todayStr()); }
-    catch (e) { log(`⚠️ [STK] ${pos.stock} ${cfg.EXIT_TF}-min history failed: ${e.message || e} — trail check skipped this bar (gap stop still active)`); continue; }
-    if (!st.running || gen !== _sessionGen || !st.positions.has(pos.stock)) continue;
-    const closed = (bars || []).filter(b => b.time + tfSec <= nowSec);
-    if (!closed.length) continue;
-    const ema = engine.computeTrailEma(closed, cfg);
-    // Every closed candle not yet tested, oldest first — a bar Fyers published
-    // late, or a fetch that failed, is caught on the next check instead of skipped.
-    for (let i = 0; i < closed.length; i++) {
-      const bar = closed[i];
-      if (engine._num(pos.lastTrailBarTime) && bar.time <= pos.lastTrailBarTime) continue;
-      pos.lastTrailBarTime = bar.time;
-      // Only candles that CLOSED after the entry.
-      if (bar.time + tfSec <= pos.entryUnixSec) continue;
-      pos.candlesHeld++;
-      pos.trailEma = engine._num(ema[i]) ? _r2(ema[i]) : null;
-      const ex = engine.trailExit(pos.side, bar, ema[i], cfg);
-      const dir = pos.side === "CE" ? 1 : -1;
-      const px = pos.ltp || bar.close;
-      log(`📊 [STK] ${pos.stock} ${cfg.EXIT_TF}m ${engine._fmtMins(engine._istMins(bar.time))} O ${bar.open} H ${bar.high} L ${bar.low} C ${bar.close} · EMA${cfg.TRAIL_EMA_LENGTH} ${pos.trailEma ?? "n/a"} (${pos.trailEma != null ? _r2((bar.close - pos.trailEma) * dir) : "?"} pts room) · ${ex.exit ? "EXIT" : "hold"} · LTP ₹${px} · open P&L ₹${_r2((px - pos.entryPrice) * dir * pos.qty)} · best ₹${pos.best} (peak ₹${pos.peakPnl})`);
-      if (ex.exit) {
-        _closePosition(pos.stock, pos.ltp || bar.close, `EMA trail — ${ex.reason}`);
-        break;
-      }
-    }
-  }
-}
-
 // ── The loop ─────────────────────────────────────────────────────────────────
 function _loop() {
   if (!st.running) return;
@@ -585,29 +526,13 @@ function _loop() {
   const nowSec = Math.floor(nowMs / 1000);
   const mins = engine._istMins(nowSec);
 
-  // EOD square-off — every position, then the day is over.
-  if (engine.isEodExit(nowSec, cfg)) {
-    for (const p of [...st.positions.values()]) _closePosition(p.stock, p.ltp || p.entryPrice, `EOD square-off ${engine._fmtMins(cfg.EOD_EXIT)}`);
-    if (!st._dayDone) { st._dayDone = true; st._dayDoneReason = `past the ${engine._fmtMins(cfg.EOD_EXIT)} square-off`; }
-    if (mins >= _stopMins()) { _stopSession("⏰ Auto-stop — market closed"); }
-    return;
-  }
+  // Session auto-stop at TRADE_STOP_TIME — squares off every position.
+  if (mins >= _stopMins()) { _stopSession("⏰ Auto-stop — market closed"); return; }
 
   // Prices for held stocks (stream-first, REST fallback).
   if (st.positions.size && !_busy.quotes && nowMs - _lastQuoteMs >= QUOTE_POLL_MS) {
     _busy.quotes = true; _lastQuoteMs = nowMs;
     _pollHeld(gen).catch(e => log(`⚠️ [STK] price poll error: ${e.message}`)).finally(() => { _busy.quotes = false; });
-  }
-  // Trail check just after each exit-TF close.
-  const tfSec = cfg.EXIT_TF * 60;
-  const sinceClose = (nowSec + 19800) % tfSec;
-  if (st.positions.size && !_busy.trail && sinceClose >= TRAIL_FETCH_LAG_S && sinceClose < TRAIL_FETCH_LAG_S + 30) {
-    const barKey = nowSec - sinceClose;
-    if (st._lastTrailKey !== barKey) {
-      st._lastTrailKey = barKey;
-      _busy.trail = true;
-      _checkTrail(gen).catch(e => log(`⚠️ [STK] trail check error: ${e.message}`)).finally(() => { _busy.trail = false; });
-    }
   }
 
   // ── Entries (inside the window only) ──
@@ -675,9 +600,9 @@ function _loop() {
         held++;
         continue;
       }
-      if (!engine.entryStillValid(d.signal.side, lp, d.signal.slSpot)) {
+      if (!engine.entryStillValid(d.signal.side, lp, d.setup.prevClose)) {
         d.status = "skipped";
-        d.note = `price ₹${lp} already filled the gap (prev close ₹${d.signal.slSpot})`;
+        d.note = `price ₹${lp} already filled the gap (prev close ₹${d.setup.prevClose})`;
         log(`⏭️ [STK] ${d.stock} ${d.signal.signal} skipped — ${d.note}`);
         skipLogger.appendSkipLog(MODE_KEY, { gate: "strategy", stock: d.stock, reason: d.note, signal: d.signal.signal });
         continue;
@@ -772,12 +697,12 @@ router.get("/start", async (req, res) => {
   st.sessionTrades = [];
   st.sessionPnl = 0; st.wins = 0; st.losses = 0;
   st._staleSession = false;
-  st._dayDone = false; st._dayDoneReason = null; st._entriesLogged = false; st._lastTrailKey = null;
+  st._dayDone = false; st._dayDoneReason = null; st._entriesLogged = false;
   st._reentryBlockUntil = 0; st._cooldownLogged = 0; st._pfLogged = false;
   st.updates = 0;
   st._tradedToday = new Set();
   st._priorTradesToday = 0;
-  _busy = { quotes: false, opens: false, trail: false, entry: false };
+  _busy = { quotes: false, opens: false, entry: false };
 
   // Restart recovery: today's earlier trades count toward the cap, and their
   // stocks are not traded again; today's still-open paper positions resume.
@@ -817,10 +742,10 @@ router.get("/start", async (req, res) => {
   log(`🟡 [STK] ${LABEL} paper started — ${engine.referenceUrl(PREFIX)}`);
   log(`   Universe  : ${_universeKey()} · ₹${_tradeAmount().toLocaleString("en-IN")} per trade · max ${_maxTrades()} trades/day · intraday shares (MIS)`);
   log(`   Setup     : daily RSI(${cfg.RSI_LENGTH}) on EMA(${cfg.EMA_LENGTH}) of yesterday — < ${cfg.RSI_LOWER} oversold → gap UP = BUY · > ${cfg.RSI_UPPER} overbought → gap DOWN = SHORT`);
-  log(`   Exit      : gap stop = prev close · ${cfg.EXIT_TF}-min close through EMA${cfg.TRAIL_EMA_LENGTH} · square-off ${engine._fmtMins(cfg.EOD_EXIT)} · window ${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`);
+  log(`   Exit      : common profit lock on the share price (the only automatic exit) · session end ${engine._fmtMins(_stopMins())} · window ${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`);
   const _onOff = (k) => String(process.env[k] ?? "true").toLowerCase() !== "false" ? "on" : "OFF";
-  log(`   Common    : profit lock ${_onOff("PROFIT_LOCK_ENABLED")} (arm +${_plArmPct()}% / floor +${_plFloorPct()}% of the share price, trail keeps ${process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"}% · tiers ${process.env.PROFIT_LOCK_TRAIL_TIERS ?? "20:85,40:80"}) · breakeven ${_onOff("BREAKEVEN_STOP_ENABLED")} (arm +${_beArmPct()}%)`);
-  log(`              wait-after-exit ${tradeGuards.reentryCooldownMs(cfg.EXIT_TF) / 60000} min · spread check ${_onOff("MAX_BID_ASK_SPREAD_ENABLED")} (max ${process.env.MAX_BID_ASK_SPREAD_PTS || "2"} pts) · portfolio cap ${portfolioRisk.checkPortfolioCap().disabled ? "OFF" : "on"} · trade window 10:00–14:00 NOT applied (09:15 gap rule)`);
+  log(`   Common    : profit lock ${_onOff("PROFIT_LOCK_ENABLED")} (arm +${_plArmPct()}% / floor +${_plFloorPct()}% of the share price, trail keeps ${process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"}% · tiers ${process.env.PROFIT_LOCK_TRAIL_TIERS ?? "20:85,40:80"})`);
+  log(`              wait-after-exit ${tradeGuards.reentryCooldownMs(COOLDOWN_RES_MIN) / 60000} min · spread check ${_onOff("MAX_BID_ASK_SPREAD_ENABLED")} (max ${process.env.MAX_BID_ASK_SPREAD_PTS || "2"} pts) · portfolio cap ${portfolioRisk.checkPortfolioCap().disabled ? "OFF" : "on"} · trade window 10:00–14:00 NOT applied (09:15 gap rule)`);
   if (st._dayDone) log(`   Today     : ${st._dayDoneReason}`);
   log(`════════════════════════════════════════════════════════════════════`);
 
@@ -874,7 +799,7 @@ function _statusPayload() {
     return {
       stock: p.stock, symbol: p.stock, direction: p.direction, side: p.direction, signalSide: p.side, qty: p.qty,
       entryPrice: p.entryPrice, entryTime: p.entryTime,
-      ltp: px, stopLoss: p.stopLoss, trailEma: p.trailEma, gapPct: p.gapPct, prevRsi: p.prevRsi,
+      ltp: px, best: p.best, gapPct: p.gapPct, prevRsi: p.prevRsi,
       pnl, livePnl: pnl,
     };
   });
@@ -893,8 +818,8 @@ function _statusPayload() {
     dayDone: st._dayDone ? st._dayDoneReason : null,
     updates: st.updates,
     config: { rsiLen: cfg.RSI_LENGTH, emaLen: cfg.EMA_LENGTH, rsiLower: cfg.RSI_LOWER, rsiUpper: cfg.RSI_UPPER, minGap: cfg.MIN_GAP_PTS,
-              window: `${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`, eod: engine._fmtMins(cfg.EOD_EXIT), exitTf: cfg.EXIT_TF, trailLen: cfg.TRAIL_EMA_LENGTH, universe: _universeKey(),
-              common: `profit lock ${_plOn() ? `+${_plArmPct()}% → floor +${_plFloorPct()}% (trails)` : "off"} · breakeven ${_beOn() ? `at +${_beArmPct()}%` : "off"} · wait ${tradeGuards.reentryCooldownMs(cfg.EXIT_TF) / 60000} min after exit · spread check · portfolio cap` },
+              window: `${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`, universe: _universeKey(),
+              common: `profit lock ${_plOn() ? `+${_plArmPct()}% → floor +${_plFloorPct()}% (trails)` : "off"} · wait ${tradeGuards.reentryCooldownMs(COOLDOWN_RES_MIN) / 60000} min after exit · spread check · portfolio cap` },
     scan: { status: st.scan.status, universe: st.scan.universe, total: st.scan.total, done: st.scan.done, ready: st.scan.ready, notReady: st.scan.notReady,
             failed: st.scan.failed.length, failedSample: st.scan.failed.slice(0, 5), candidates: st.scan.candidates.length, error: st.scan.error },
     decisions, positions,
@@ -1018,19 +943,19 @@ function render(d){
     + '<div class="sc"><div class="sc-label">' + (d.staleSession ? 'Trades (Last Session)' : 'Trades Today') + '</div><div class="sc-val">' + (d.tradeCount + d.positions.length + (d.priorTradesToday || 0)) + ' / ' + d.maxTrades + '</div><div class="sc-sub">' + d.wins + 'W \\u00b7 ' + d.losses + 'L \\u00b7 ' + d.positions.length + ' open</div></div>'
     + '<div class="sc"><div class="sc-label">Scan (' + esc(sc.universe || d.config.universe) + ')</div><div class="sc-val">' + sc.done + ' / ' + sc.total + '</div><div class="bar"><i style="width:' + pct + '%"></i></div><div class="sc-sub">' + esc(sc.status) + (sc.failed ? ' \\u00b7 ' + sc.failed + ' failed' : '') + (sc.error ? ' \\u00b7 ' + esc(sc.error) : '') + '</div></div>'
     + '<div class="sc"><div class="sc-label">Candidates</div><div class="sc-val">' + sc.candidates + '</div><div class="sc-sub">RSI &lt; ' + d.config.rsiLower + ' or &gt; ' + d.config.rsiUpper + ' yesterday</div></div>'
-    + '<div class="sc"><div class="sc-label">Today\\u2019s Decision</div><div class="sc-val" style="font-size:0.9rem;" class="' + (d.dayDone ? 'amb' : '') + '">' + (d.dayDone ? 'Decided' : 'Open') + '</div><div class="sc-sub">' + esc(d.dayDone || ('window ' + d.config.window + ' \\u00b7 square-off ' + d.config.eod)) + '</div></div>'
+    + '<div class="sc"><div class="sc-label">Today\\u2019s Decision</div><div class="sc-val" style="font-size:0.9rem;" class="' + (d.dayDone ? 'amb' : '') + '">' + (d.dayDone ? 'Decided' : 'Open') + '</div><div class="sc-sub">' + esc(d.dayDone || ('window ' + d.config.window)) + '</div></div>'
     + '<div class="sc"><div class="sc-label">Price Updates</div><div class="sc-val">' + d.updates + '</div><div class="sc-sub">stream + REST for held stocks</div></div>'
     + '<div class="sc"><div class="sc-label">Session Start</div><div class="sc-val" style="font-size:0.85rem;">' + esc(d.sessionStart || '\\u2014') + '</div></div>'
     + '</div>';
-  h += '<div class="card"><div class="note" style="margin-top:0;">Rules: yesterday\\u2019s daily RSI(' + d.config.rsiLen + ') on EMA(' + d.config.emaLen + ') below ' + d.config.rsiLower + ' + gap UP \\u2192 <b class="pos">BUY</b> \\u00b7 above ' + d.config.rsiUpper + ' + gap DOWN \\u2192 <b class="neg">SHORT</b>. Stop = yesterday\\u2019s close. Exit on a ' + d.config.exitTf + '-min close through EMA' + d.config.trailLen + ', or ' + d.config.eod + '. Biggest gaps first, max ' + d.maxTrades + ' a day. Common rules: ' + esc(d.config.common) + '.'
+  h += '<div class="card"><div class="note" style="margin-top:0;">Rules: yesterday\\u2019s daily RSI(' + d.config.rsiLen + ') on EMA(' + d.config.emaLen + ') below ' + d.config.rsiLower + ' + gap UP \\u2192 <b class="pos">BUY</b> \\u00b7 above ' + d.config.rsiUpper + ' + gap DOWN \\u2192 <b class="neg">SHORT</b>. Exit on the common profit lock only. Biggest gaps first, max ' + d.maxTrades + ' a day. Common rules: ' + esc(d.config.common) + '.'
     + (d.reference ? '<br>Reference: <a href="' + esc(d.reference) + '" target="_blank" rel="noopener" style="color:#60a5fa;">' + esc(d.reference) + '</a>' : '') + '</div></div>';
 
   h += '<div class="section-title">Open Positions</div>';
   if (!d.positions.length) h += '<div class="card mut" style="font-size:0.78rem;text-align:center;">\\ud83d\\udced FLAT \\u2014 ' + esc(d.dayDone || (d.running ? 'waiting for the 09:15 open' : 'not running')) + '</div>';
   else {
-    h += '<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Side</th><th>Qty</th><th>Entry</th><th>LTP</th><th>SL (prev close)</th><th>EMA' + d.config.trailLen + '</th><th>P&amp;L</th><th></th></tr></thead><tbody>';
+    h += '<div class="tbl-wrap"><table><thead><tr><th>Stock</th><th>Side</th><th>Qty</th><th>Entry</th><th>LTP</th><th>Best</th><th>P&amp;L</th><th></th></tr></thead><tbody>';
     d.positions.forEach(function(p){
-      h += '<tr><td><b>' + esc(p.stock) + '</b></td><td class="' + (p.direction === 'LONG' ? 'pos' : 'neg') + '">' + esc(p.direction) + '</td><td>' + p.qty + '</td><td>' + inr(p.entryPrice) + '</td><td>' + inr(p.ltp) + '</td><td class="amb">' + inr(p.stopLoss) + '</td><td>' + (p.trailEma != null ? inr(p.trailEma) : '\\u2014') + '</td><td class="' + cls(p.pnl) + '"><b>' + inr(p.pnl) + '</b></td>'
+      h += '<tr><td><b>' + esc(p.stock) + '</b></td><td class="' + (p.direction === 'LONG' ? 'pos' : 'neg') + '">' + esc(p.direction) + '</td><td>' + p.qty + '</td><td>' + inr(p.entryPrice) + '</td><td>' + inr(p.ltp) + '</td><td>' + inr(p.best) + '</td><td class="' + cls(p.pnl) + '"><b>' + inr(p.pnl) + '</b></td>'
         + '<td><button class="btn" onclick="grExit(this, \\'' + esc(p.stock) + '\\')">Exit</button></td></tr>';
     });
     h += '</tbody></table></div>';

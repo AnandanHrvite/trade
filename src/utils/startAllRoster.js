@@ -1,27 +1,16 @@
 /**
  * startAllRoster.js — the dashboard's Start-All roster, DISCOVERED not declared.
  * ─────────────────────────────────────────────────────────────────────────────
- * The three Start All buttons (Paper / Live / Live-Harness) used to read a
- * hand-written route table in app.js, so a new strategy silently sat out of them
+ * The Start All (Paper) button used to read a
+ * hand-written route table in app.js, so a new strategy silently sat out of it
  * until someone remembered to add a row. This module removes that step: it
  * records every `app.use(path, router)` mount, keeps the ones that actually
  * expose a `/start` route, and joins them to the enabled strategies from
  * sharedNav's STRATEGY_MODES. Mount a new strategy's routes the way every other
  * strategy is mounted and it takes part in Start All with no further wiring.
  *
- * Route-shape contract (already true of all 12 strategies):
+ * Route-shape contract (true of every strategy):
  *   /{slug}-paper/start           canonical paper engine
- *   /{slug}-live/start            live route — a real-order engine, OR the
- *                                 paper-wrapping harness for the eight
- *                                 strategies that have no separate live engine
- *   /{slug}-live-harness/start    paper-wrapping harness, when the strategy
- *                                 also has a real-order live engine
- * Which of the two a `-live` mount is, is DECLARED, not guessed: every harness
- * router sets `router.isLiveHarness = true`. Guessing it from the path would
- * mean the day someone mounts a real-order live engine at /{slug}-live with no
- * harness beside it, the 🧪 Start All (Harness) button fires real orders. An
- * unmarked `-live` mount is therefore treated as a real live engine — it joins
- * Start All (Live) and is left out of Start All (Harness).
  *
  * The mode key is matched to the route slug case- and separator-insensitively
  * (EMA_RSI_ST ↔ /ema_rsi_st-…, BN_PIVOT_RSI_ST ↔ /bn-pivot-rsi-st-…). A
@@ -67,9 +56,9 @@ function hasRoute(handler, path) {
 
 /**
  * The URL a human should land on for this router. The paper/backtest routers
- * render their page at `/status` and keep the mount root unrouted (a 404), while
- * the live-harness routers render at `/`. Probing the router instead of assuming
- * either shape is what keeps a tile link off a dead URL.
+ * render their page at `/status` and keep the mount root unrouted (a 404).
+ * Probing the router instead of assuming the shape is what keeps a tile link
+ * off a dead URL.
  * Falls back to the mount path when neither exists — no route to guess at.
  */
 function pageUrl(mountPath, handler) {
@@ -78,31 +67,22 @@ function pageUrl(mountPath, handler) {
   return mountPath;
 }
 
-// Longest suffix first — '/bb_rsi-live-harness' also ends in '-live'.
-const SUFFIXES = [['-live-harness', 'harness'], ['-live', 'live'], ['-paper', 'paper']];
-
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-// slug → { paper, live, harness } mount paths, for every startable router.
+// slug → { paper } mount path, for every startable paper router.
 function discoverStartRoutes() {
   const bySlug = new Map();
   for (const m of _mounts) {
     if (!hasStartRoute(m.handler)) continue;
-    for (const [suffix, slot] of SUFFIXES) {
-      if (!m.path.endsWith(suffix)) continue;
-      // A `-live` mount goes in the harness slot only when the router says so.
-      const kind = (slot === 'live' && m.handler.isLiveHarness) ? 'harness' : slot;
-      const key = norm(m.path.slice(0, m.path.length - suffix.length));
-      if (!key) break;
-      const entry = bySlug.get(key)
-        || { paper: null, live: null, harness: null, pages: {} };
-      if (!entry[kind]) {
-        entry[kind] = m.path;                      // first mount wins
-        entry.pages[kind] = pageUrl(m.path, m.handler);
-      }
-      bySlug.set(key, entry);
-      break;
+    if (!m.path.endsWith('-paper')) continue;
+    const key = norm(m.path.slice(0, m.path.length - '-paper'.length));
+    if (!key) continue;
+    const entry = bySlug.get(key) || { paper: null, pages: {} };
+    if (!entry.paper) {
+      entry.paper = m.path;                        // first mount wins
+      entry.pages.paper = pageUrl(m.path, m.handler);
     }
+    bySlug.set(key, entry);
   }
   return bySlug;
 }
@@ -120,10 +100,8 @@ function paperEnabled(s) {
  * Read per request — Settings saves mutate process.env live, and the dashboard
  * refetches this on every Start-All click.
  *
- * @returns {Array<{mode,label,paper,paperOff,live,harness}>} `paper` is always present
- *          (`paperOff` true when its paper toggle would refuse the start);
- *          `live` is null for a strategy with no real-order live engine, and
- *          `harness` is null for one with no declared harness.
+ * @returns {Array<{mode,label,paper,paperOff}>} `paper` is always present
+ *          (`paperOff` true when its paper toggle would refuse the start).
  */
 function startAllRoster() {
   const found = discoverStartRoutes();
@@ -143,8 +121,6 @@ function startAllRoster() {
       paper:   `${routes.paper}/start`,
       // Paper Start All skips it: its /start would only refuse with 403.
       paperOff: !paperEnabled(s),
-      live:    routes.live    ? `${routes.live}/start`    : null,
-      harness: routes.harness ? `${routes.harness}/start` : null,
     });
   }
   return roster;

@@ -19,7 +19,6 @@ const express  = require("express");
 const router   = express.Router();
 const { logStore, logEvents } = require("../services/logger");
 const logArchive = require("../services/logArchive");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
 // ── SSE — live log stream (kept for clients that support it) ─────────────────
@@ -147,12 +146,11 @@ router.get("/day", async (req, res) => {
 // ── Per-strategy view ─────────────────────────────────────────────────────────
 // logger.js tags each entry with `src` (the calling file, e.g. "orbPaper.js" →
 // "orb") or a tradeLogger mode key ("ema_rsi_st_v2"). Both normalise to the
-// same key, so one strategy's Paper/Live/Harness lines group together.
+// same key, so one strategy's Paper/Backtest lines group together.
 const tradeLogger = require("../utils/tradeLogger");
 const normSrc = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const STRATEGY_LABELS = new Map();
-for (const mode of Object.keys(tradeLogger.FILE_BY_MODE)) {
-  const m = mode.replace(/-live$/, "");
+for (const m of Object.keys(tradeLogger.FILE_BY_MODE)) {
   STRATEGY_LABELS.set(normSrc(m), m.toUpperCase());
 }
 STRATEGY_LABELS.set("commodity", "COMMODITY (MCX)");
@@ -260,7 +258,6 @@ router.post("/clear", (req, res) => {
 
 // ── Logs UI page ──────────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   // Embedded mode: rendered inside an <iframe> on the Logs (/trade-logs) page as a tab.
   // Drop the sidebar + own top-bar so only the content fills the frame.
   const embed = req.query.embed === "1" || req.query.embed === "true";
@@ -369,16 +366,16 @@ router.get("/", (req, res) => {
 <body>
 ${embed ? '<style>.main-content{margin-left:0 !important;} .top-bar{display:none !important;}</style>' : ''}
 <div class="app-shell">
-${embed ? '' : buildSidebar('tradeLogs', liveActive)}
+${embed ? '' : buildSidebar('tradeLogs', false)}
 <div class="main-content" style="display:flex;flex-direction:column;height:100vh;overflow:hidden;">
 
 <div class="top-bar">
   <div>
     <div class="top-bar-title">📜 Activity Logs</div>
-    <div class="top-bar-meta">Live SSE stream · all console output · ${liveActive ? '<span style="color:#ef4444;">LIVE TRADE ACTIVE</span>' : 'idle'}</div>
+    <div class="top-bar-meta">Live SSE stream · all console output</div>
   </div>
   <div class="top-bar-right">
-    ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE</span>' : '<span class="top-bar-badge">● IDLE</span>'}
+    <span class="top-bar-badge">● IDLE</span>
   </div>
 </div>
 
@@ -650,7 +647,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
         liveFrom   = total;     // live poll starts from here
 
         if (total === 0) {
-          if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
+          if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade.';
           startPoll(0);
           return;
         }

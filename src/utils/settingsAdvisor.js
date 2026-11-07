@@ -8,8 +8,8 @@
  * auditable, free, and cannot hallucinate a setting key that doesn't exist.
  *
  * WHAT it reads: exactly the trade set /edge-analytics renders — the same
- * per-strategy session files as /consolidation (paper) and /live-consolidation
- * (live), via edgeAnalytics.loadAllTrades(). Reusing that loader is what stops
+ * per-strategy paper session files as /consolidation, via
+ * edgeAnalytics.loadAllTrades(). Reusing that loader is what stops
  * the page and the advisor drifting apart. Read-only: this module never touches
  * a trade file and never mutates process.env — it only ever SUGGESTS a change,
  * so acting on a finding stays a manual Settings save with the usual audit trail.
@@ -43,50 +43,19 @@ const MIN_BUCKET = 5;
 /**
  * Per-strategy Settings keys a finding can point at. Every key here exists in
  * routes/settings.js — findings name real keys so the user can search for them
- * in the Settings page. Every strategy now has a *_LIVE_ENABLED key — it is the
- * second gate every live engine (native route or harness) checks before placing
- * a real order.
+ * in the Settings page.
  *
- * `lossStreak` and `slPause` are deliberately separate: a streak brake counts
- * LOSSES and stops/skips the day, while *_SL_PAUSE_CANDLES is a cool-off measured
- * in CANDLES after a stop. Advising "lower it to 3" against the wrong one of those
- * two would tell the user to change a setting that does something else entirely.
+ * Only entry-window keys: the profit lock is the only automatic exit
+ * and it is global, so there is no per-strategy stop, target, time stop, forced
+ * exit or daily-loss limit left to point at.
  */
 const MODE_KEYS = {
-  EMA_RSI_ST: {
-    entryStart: "TRADE_ENTRY_START", entryEnd: "TRADE_ENTRY_END",
-    maxDailyLoss: "MAX_DAILY_LOSS", maxDailyTrades: "MAX_DAILY_TRADES",
-    lossStreak: "EMA_RSI_ST_MAX_CONSEC_LOSSES", slPause: "EMA_RSI_ST_SL_PAUSE_CANDLES",
-    stopLoss: "EMA_RSI_ST_STOP_LOSS_PTS", live: "EMA_RSI_ST_LIVE_ENABLED",
-  },
-  BB_RSI: {
-    entryStart: "BB_RSI_ENTRY_START", entryEnd: "BB_RSI_ENTRY_END",
-    maxDailyLoss: "BB_RSI_MAX_DAILY_LOSS", maxDailyTrades: "BB_RSI_MAX_DAILY_TRADES",
-    slPause: "BB_RSI_SL_PAUSE_CANDLES", stopLoss: "BB_RSI_STOP_LOSS_PTS",
-    live: "BB_RSI_LIVE_ENABLED",
-  },
-  PA: {
-    entryStart: "PA_ENTRY_START", entryEnd: "PA_ENTRY_END",
-    maxDailyLoss: "PA_MAX_DAILY_LOSS", maxDailyTrades: "PA_MAX_DAILY_TRADES",
-    slPause: "PA_SL_PAUSE_CANDLES", live: "PA_LIVE_ENABLED",
-  },
-  ORB: {
-    entryEnd: "ORB_ENTRY_END", forcedExit: "ORB_FORCED_EXIT",
-    maxDailyLoss: "ORB_MAX_DAILY_LOSS", maxDailyTrades: "ORB_MAX_DAILY_TRADES",
-    lossStreak: "ORB_LOSS_STREAK_SKIP", live: "ORB_LIVE_ENABLED",
-  },
-  EMA9VWAP: {
-    entryStart: "EMA9VWAP_ENTRY_START", entryEnd: "EMA9VWAP_ENTRY_END",
-    maxDailyLoss: "EMA9VWAP_MAX_DAILY_LOSS", maxDailyTrades: "EMA9VWAP_MAX_DAILY_TRADES",
-    slPause: "EMA9VWAP_SL_PAUSE_CANDLES", stopLoss: "EMA9VWAP_STOP_LOSS_PTS",
-    live: "EMA9VWAP_LIVE_ENABLED",
-  },
-  TREND_PB: {
-    entryStart: "TREND_PB_ENTRY_START", entryEnd: "TREND_PB_ENTRY_END",
-    forcedExit: "TREND_PB_FORCED_EXIT", timeStop: "TREND_PB_TIME_STOP_CANDLES",
-    maxDailyLoss: "TREND_PB_MAX_DAILY_LOSS", maxDailyTrades: "TREND_PB_MAX_DAILY_TRADES",
-    lossStreak: "TREND_PB_LOSS_STREAK_SKIP", live: "TREND_PB_LIVE_ENABLED",
-  },
+  EMA_RSI_ST: { entryStart: "TRADE_ENTRY_START",    entryEnd: "TRADE_ENTRY_END" },
+  BB_RSI:     { entryStart: "BB_RSI_ENTRY_START",   entryEnd: "BB_RSI_ENTRY_END" },
+  PA:         { entryStart: "PA_ENTRY_START",       entryEnd: "PA_ENTRY_END" },
+  ORB:        {                                     entryEnd: "ORB_ENTRY_END" },
+  EMA9VWAP:   { entryStart: "EMA9VWAP_ENTRY_START", entryEnd: "EMA9VWAP_ENTRY_END" },
+  TREND_PB:   { entryStart: "TREND_PB_ENTRY_START", entryEnd: "TREND_PB_ENTRY_END" },
 };
 
 const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -211,9 +180,8 @@ function groupList(list, keyFn) {
 }
 
 /**
- * Longest run of losses WITHIN a single session. The daily-loss and streak
- * brakes all reset at the open, so a run measured across the whole window would
- * compare a multi-day figure against a per-day setting and advise nonsense.
+ * Longest run of losses WITHIN a single session — a per-day figure, so a run
+ * spanning several days is not reported as one streak.
  */
 function maxIntradayLossStreak(list) {
   let best = 0;
@@ -227,21 +195,6 @@ function maxIntradayLossStreak(list) {
   return best;
 }
 
-/** Worst single-day net loss (a positive rupee figure; 0 when no losing day). */
-function worstDay(list) {
-  let worst = { date: null, net: 0 };
-  for (const g of bucket(list, t => t.date).values()) {
-    if (g.net < worst.net) worst = { date: g.key, net: g.net };
-  }
-  return { date: worst.date, loss: worst.net < 0 ? -worst.net : 0 };
-}
-
-function envKeyValue(key) {
-  if (!key) return null;
-  const v = process.env[key];
-  return v === undefined || v === "" ? null : String(v);
-}
-
 /**
  * Which setting an exit reason points at. Exit-reason strings are free text and
  * differ per engine, so this matches on intent words rather than exact strings —
@@ -249,12 +202,14 @@ function envKeyValue(key) {
  */
 function keysForExitReason(reason, K) {
   const r = String(reason).toLowerCase();
-  if (/stop\s*loss|hard\s*stop|\bsl\b/.test(r))          return { keys: [K.stopLoss].filter(Boolean), hint: "the stop is being hit before the move develops — widen it, or tighten entry quality" };
-  if (/time\s*stop|flat|stagnan/.test(r))                return { keys: [K.timeStop, "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS"].filter(Boolean), hint: "trades are being timed out at a loss — review the time-stop window" };
-  if (/eod|square|forced|15:1|15:3/.test(r))             return { keys: [K.forcedExit, K.entryEnd].filter(Boolean), hint: "positions are still open at the close — stop entering this late" };
-  if (/trail/.test(r))                                   return { keys: [], hint: "the trail is giving back open profit — review the trail step" };
-  if (/reversal|flip|opposite|re-?entry|signal/.test(r)) return { keys: [], hint: "the signal is flipping against the position — this is an entry-quality issue, not an exit one" };
-  if (/target|profit/.test(r))                           return { keys: [], hint: "unexpected: a target exit should not be net negative — check the fill logic" };
+  // Session end is the only automatic close besides the profit lock — a trade
+  // still open at the close was entered too late to work.
+  if (/eod|square|forced|session|auto-?stop|15:1|15:3/.test(r)) return { keys: [K.entryEnd].filter(Boolean), hint: "positions are still open at the close — stop entering this late" };
+  if (/profit\s*lock|lock/.test(r))                    return { keys: [], hint: "unexpected: a profit-lock exit should never be net negative — check the fill logic" };
+  if (/manual/.test(r))                                 return { keys: [], hint: "manual exits are losing — review when you step in" };
+  // Stop, trail, target, time-stop and signal exits no longer exist; a bucket
+  // of them is history from before the profit-lock-only exit model.
+  if (/stop|\bsl\b|trail|target|flat|reversal|flip|opposite|signal/.test(r)) return { keys: [], hint: "this exit path has been removed — these trades predate the profit-lock-only exit model" };
   return { keys: [], hint: "review what this exit path is doing" };
 }
 
@@ -289,10 +244,7 @@ function findingsForMode(mode, label, list, minTrades) {
       `${label}: no edge yet — profit factor ${pf.toFixed(2)}`,
       `${s.n} trades, ${s.winRate.toFixed(0)}% win rate, net ${inr(s.net)} (${inr(s.expectancy)} per trade). ` +
       `It won ${inr(s.grossWin)} and lost ${inr(s.grossLoss)}.`,
-      K.live
-        ? `Do not turn on ${K.live}. Fix the biggest losing bucket in this list first, then collect a fresh clean sample.`
-        : `Keep this strategy on paper. Fix the biggest losing bucket in this list first, then collect a fresh clean sample.`,
-      [K.live]);
+      `Keep this strategy on paper. Fix the biggest losing bucket in this list first, then collect a fresh clean sample.`);
   } else if (pf < 1.2) {
     add("thin-edge", "medium",
       `${label}: thin edge — profit factor ${pf.toFixed(2)}`,
@@ -302,8 +254,8 @@ function findingsForMode(mode, label, list, minTrades) {
 
   // R2 — which exit path is doing the bleeding (top 2 worst).
   // Only asked of a strategy that is NOT clearly working: in a healthy strategy
-  // the stop-loss bucket is supposed to hold ~all of the losses, so flagging it
-  // there would be flagging the design working as intended.
+  // the losing exit bucket (session end / manual) is supposed to hold ~all of
+  // the losses, so flagging it there would be flagging the design working.
   if (pf < 1.5) {
     const reasons = [...bucket(list, t => t.exitReason || "—").values()]
       .filter(g => g.n >= MIN_BUCKET && g.net < 0 && s.grossLoss > 0 && -g.net >= s.grossLoss * 0.25)
@@ -380,55 +332,7 @@ function findingsForMode(mode, label, list, minTrades) {
       `If that is your weekly expiry day, theta decay is the usual explanation. There is no weekday switch in Settings — note it and watch whether it repeats.`);
   }
 
-  // R6 — the daily-loss cap is the one guard that limits a bad day. If a real
-  // day blew past it, the cap is either too loose or was not applied.
-  const wd  = worstDay(list);
-  const cap = num(envKeyValue(K.maxDailyLoss), null);
-  if (wd.loss > 0 && cap !== null && cap > 0 && wd.loss > cap * 1.15) {
-    add("cap-not-binding", "high",
-      `${label}: worst day lost ${inr(wd.loss)} but the cap is ${inr(cap)}`,
-      `${wd.date} closed at ${inr(-wd.loss)} — ${(wd.loss / cap).toFixed(1)}× the ${K.maxDailyLoss} limit.`,
-      `A cap only stops the NEXT entry, so one big open trade can still overshoot it. If the gap is large, lower ${K.maxDailyLoss} or ${K.maxDailyTrades}.`,
-      [K.maxDailyLoss, K.maxDailyTrades]);
-  }
-
-  // R7 — did anything brake a losing run inside one session? A streak brake
-  // (*_MAX_CONSEC_LOSSES / *_LOSS_STREAK_SKIP) counts losses and stops the day;
-  // *_SL_PAUSE_CANDLES is only a cool-off in candles after a stop. Different
-  // settings, so different advice — never suggest one in the other's language.
-  const runLen = maxIntradayLossStreak(list);
-  if (runLen >= 4) {
-    // Branch on which key the strategy HAS first, then on its value. Ordering it
-    // the other way round let a strategy that owns both keys (EMA_RSI_ST) fall
-    // through to the slPause branch whenever its brake was roughly holding — and
-    // that branch's text claims the strategy has no streak brake at all.
-    if (K.lossStreak) {
-      const brake = num(envKeyValue(K.lossStreak), 0);
-      if (brake <= 0) {
-        add("loss-streak", "medium",
-          `${label}: ${runLen} losses in a row in one session, with no streak brake`,
-          `${K.lossStreak} is off, so a chop day runs until the daily-loss cap or the clock stops it.`,
-          `Set ${K.lossStreak} to 3 — the day then stops after three straight losses instead of grinding on.`,
-          [K.lossStreak]);
-      } else if (runLen >= brake + 2) {
-        add("loss-streak", "medium",
-          `${label}: ${runLen} losses in a row in one session`,
-          `${K.lossStreak} is set to ${brake}, yet a single session still ran to ${runLen} straight losses.`,
-          `The brake is not stopping the day where you set it — check it is actually being applied by this engine before changing anything else.`,
-          [K.lossStreak]);
-      }
-      // brake set and roughly holding (runLen < brake + 2) → nothing to say.
-    } else if (K.slPause) {
-      const pause = num(envKeyValue(K.slPause), 0);
-      add("loss-streak", "medium",
-        `${label}: ${runLen} losses in a row in one session`,
-        `This strategy has no streak brake — the only cool-off is ${K.slPause} (currently ${pause || "0"} candle${pause === 1 ? "" : "s"} after a stop).`,
-        `Raise ${K.slPause} so re-entries are spaced further apart in chop, and lean on ${K.maxDailyLoss || "the daily loss cap"} to end the day.`,
-        [K.slPause, K.maxDailyLoss]);
-    }
-  }
-
-  // R8 — holding losers much longer than winners is the classic "cut losers" tell.
+  // R6 — holding losers much longer than winners is the classic "cut losers" tell.
   const winHold = [], lossHold = [];
   for (const t of list) {
     const h = heldMinutes(t);
@@ -443,8 +347,7 @@ function findingsForMode(mode, label, list, minTrades) {
       add("hold-asymmetry", "medium",
         `${label}: losers held ${Math.round(al)} min vs winners ${Math.round(aw)} min`,
         `Averaged over ${lossHold.length} losers and ${winHold.length} winners — losers are held ${(al / aw).toFixed(1)}× longer.`,
-        `A trade that has not worked within the winners' window rarely recovers. Tighten ${K.timeStop || "TIME_STOP_CANDLES"} / TIME_STOP_FLAT_PTS to cut flat trades sooner.`,
-        [K.timeStop || "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS"]);
+        `A trade that has not worked within the winners' window rarely recovers. There is no automatic stop — the profit lock only closes winners — so close flat trades manually sooner.`);
     }
   }
 
@@ -460,12 +363,11 @@ const SEVERITY_RANK = { high: 0, medium: 1, info: 2 };
  * Pure: reads trade files + process.env, writes nothing.
  *
  * @param {object}  [opts]
- * @param {string}  [opts.book='paper']    'paper' | 'live'
  * @param {number}  [opts.lookbackDays]    default ADVISOR_LOOKBACK_DAYS or 90
  * @param {number}  [opts.minTrades]       default ADVISOR_MIN_TRADES or 20
  */
 function analyze(opts = {}) {
-  const book         = opts.book === "live" ? "live" : "paper";
+  const book         = "paper";
   const lookbackDays = clamp(Math.round(num(opts.lookbackDays, num(process.env.ADVISOR_LOOKBACK_DAYS, 90))), 7, 3650);
   const minTrades    = clamp(Math.round(num(opts.minTrades,    num(process.env.ADVISOR_MIN_TRADES, 20))), 5, 500);
 
@@ -501,7 +403,7 @@ function analyze(opts = {}) {
       winRate: +st.winRate.toFixed(1),
       expectancy: Math.round(st.expectancy),
       profitFactor: st.profitFactor === Infinity ? null : +st.profitFactor.toFixed(2),
-      maxLossStreak: maxIntradayLossStreak(list), // per-session, to match the brakes
+      maxLossStreak: maxIntradayLossStreak(list), // longest losing run in one session
     });
     findings.push(...findingsForMode(s.mode, s.label, list, minTrades));
   }

@@ -3,7 +3,6 @@ const router  = express.Router();
 const { fetchCandles, fetchCandlesCachedBT, runBacktest } = require("../services/backtestEngine");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { saveResult } = require("../utils/resultStore");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
@@ -22,10 +21,8 @@ const fmtPnl   = (n, s) => {
 };
 
 // buildNav kept for backward-compat — now delegates to shared sidebar
-function buildNav(active, liveActive) {
-  const LIVE_BADGE = liveActive
-    // Delegated to sharedNav — this stub preserved for backward compat
-    return buildSidebar(active, liveActive);
+function buildNav(active) {
+  return buildSidebar(active, false);
 }
 
 
@@ -42,13 +39,6 @@ router.get("/idle", (req, res) => {
 });
 
 router.get("/", async (req, res) => {
-  // Block during ANY live session (not just EMA_RSI_ST_LIVE) — a heavy backtest sharing
-  // the box with a live engine competes for Fyers API + loads a second candle heap,
-  // risking an OOM kill on t3.micro. Check per-mode *_LIVE (paper sessions are fine).
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE"
-    || sharedSocketState.getBbRsiMode() === "BB_RSI_LIVE"
-    || sharedSocketState.getPAMode()    === "PA_LIVE"
-    || (sharedSocketState.getOrbMode && sharedSocketState.getOrbMode() === "ORB_LIVE");
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
@@ -58,35 +48,6 @@ router.get("/", async (req, res) => {
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = req.query.symbol     || "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";
-
-  // Block backtest while live trade is running — would compete for Fyers API calls
-  // and pollute the log viewer with backtest noise during a live session.
-  if (liveActive) {
-    res.setHeader("Content-Type", "text/html");
-    return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-      <meta name="viewport" content="width=device-width,initial-scale=1"/>
-      <title>Backtest blocked — Live trade active</title>
-      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
-      ${sidebarCSS()}
-      ${modalCSS()}
-      </style>
-      </head><body>
-<div class="app-shell">
-${buildSidebar('emaRsiStBacktest', true)}
-<div class="main-content">
-      <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
-        <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
-          <div style="font-size:2.5rem;margin-bottom:16px;">🔒</div>
-          <h2 style="color:#ef4444;margin-bottom:12px;font-size:1.1rem;">Backtest blocked</h2>
-          <p style="font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;">
-            Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
-            Stop the live trade first, then run your backtest.
-          </p>
-          <a href="/ema_rsi_st-live/status" style="background:#dc2626;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
-        </div>
-      </div>
-      </div></div></body></html>`);
-  }
 
   if (!process.env.ACCESS_TOKEN) {
     res.setHeader("Content-Type", "text/html");
@@ -173,7 +134,7 @@ ${buildSidebar('emaRsiStBacktest', true)}
   if (!job) return res.redirect('/ema_rsi_st-backtest');
   if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/ema_rsi_st-backtest', 'EMA_RSI_ST Backtest'));
   if (job.status === 'error') {
-    const errHtml = buildBacktestPageWithToast(from, to, resolution, job.error, liveActive);
+    const errHtml = buildBacktestPageWithToast(from, to, resolution, job.error);
     res.setHeader("Content-Type", "text/html");
     return res.status(200).send(errHtml);
   }
@@ -194,31 +155,12 @@ ${buildSidebar('emaRsiStBacktest', true)}
       exitTs:    typeof t.exitTs  === "number" ? t.exitTs  : 0,
       ePrice:    typeof t.entryPrice === "number" ? t.entryPrice : 0,
       xPrice:    typeof t.exitPrice  === "number" ? t.exitPrice  : 0,
-      sl:        (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null,
-      initialSL: (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss) : ((t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null),
       pnl:       typeof t.pnl === "number" ? t.pnl : null,
       spotPts:   typeof t.spotPnlPts === "number" ? t.spotPnlPts : null,
       pnlMode:   t.pnlMode || null,
       held:      typeof t.candlesHeld === "number" ? t.candlesHeld : null,
       reason:    String(t.exitReason || ""),
       entryReason: String(t.entryReason || ""),
-      risk_pts:  (() => {
-        const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
-                 : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
-        if (!sl) return null;
-        return parseFloat(Math.abs(t.entryPrice - sl).toFixed(2));
-      })(),
-      rr:        (() => {
-        if (typeof t.pnl !== "number") return null;
-        const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
-                 : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
-        if (!sl) return null;
-        const risk   = Math.abs(t.entryPrice - sl);
-        if (risk === 0) return null;
-        const rewardPts = typeof t.spotPnlPts === "number" ? Math.abs(t.spotPnlPts) : Math.abs(t.pnl);
-        const ratio = rewardPts / risk;
-        return (t.pnl >= 0 ? "1:" : "-1:") + ratio.toFixed(2);
-      })(),
     }));
     // Escape </script> in JSON to prevent early tag termination
     // Cap embedded trades for browser performance — summary stats use full array
@@ -322,7 +264,7 @@ ${buildSidebar('emaRsiStBacktest', true)}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('emaRsiStBacktest', liveActive)}
+${buildSidebar('emaRsiStBacktest', false)}
 <div class="main-content">
 
 <div class="page">
@@ -588,7 +530,6 @@ ${buildSidebar('emaRsiStBacktest', liveActive)}
         <th>Entry Time</th>
         <th onclick="doSort('xPrice')" id="h-xPrice">Exit (pts)</th>
         <th onclick="doSort('exit')"   id="h-exit">Exit Time</th>
-        <th onclick="doSort('sl')"     id="h-sl">SL</th>
         <th onclick="doSort('pnl')"    id="h-pnl">PnL ${s.optionSim ? "(₹ sim)" : "(pts)"}</th>
         <th>Entry Reason</th>
         <th>Exit Reason</th>
@@ -685,7 +626,7 @@ function render(){
   var tbody=document.getElementById('tbody');
   document.getElementById('cntLabel').textContent=filtered.length+' of '+TRADES.length+' trades';
   if(slice.length===0){
-    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>';
     document.getElementById('pagBar').innerHTML='';
     return;
   }
@@ -705,7 +646,6 @@ function render(){
       +'<td style="font-size:0.75rem;">'+fmtTime(t.entry)+'</td>'
       +'<td>'+fmt(t.xPrice)+'</td>'
       +'<td style="font-size:0.75rem;">'+fmtTime(t.exit)+'</td>'
-      +'<td style="color:#f59e0b;">'+(t.sl!=null?fmt(t.sl):'\u2014')+'</td>'
       +'<td style="color:'+pc+';font-weight:700;">'+fpts(t.pnl, t.spotPts)+'</td>'
       +'<td style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);cursor:default;" data-ereason="'+(t.entryReason||'').replace(/"/g,'&quot;')+'">'+ser+'</td>'
       +'<td style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);cursor:default;" data-reason="'+t.reason.replace(/"/g,'&quot;')+'">'+sr+'</td>'
@@ -872,9 +812,9 @@ function copyDayView(btn){
 }
 
 function copyTradeLog(btn){
-  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
+  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tPnL\\tEntry Reason\\tExit Reason'];
   TRADES.forEach(function(t){
-    lines.push(t.side+'\\t'+fmtDate(t.entry)+'\\t'+fmt(t.ePrice)+'\\t'+fmtTime(t.entry)+'\\t'+fmt(t.xPrice)+'\\t'+fmtTime(t.exit)+'\\t'+(t.sl!=null?fmt(t.sl):'—')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'—')+'\\t'+(t.entryReason||'—')+'\\t'+t.reason);
+    lines.push(t.side+'\\t'+fmtDate(t.entry)+'\\t'+fmt(t.ePrice)+'\\t'+fmtTime(t.entry)+'\\t'+fmt(t.xPrice)+'\\t'+fmtTime(t.exit)+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'—')+'\\t'+(t.entryReason||'—')+'\\t'+t.reason);
   });
   doCopy(lines.join('\\n'),btn,'Trade Log');
 }
@@ -1121,12 +1061,7 @@ function renderAnalytics(){
   var reasonMap={};
   trades.forEach(function(t){
     var r = t.reason;
-    if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
-    else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
-    else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
-    else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
-    else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
-    else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
+    if(r.indexOf('Profit lock')===0) r='Profit lock';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
     reasonMap[r].cnt++;
@@ -1452,12 +1387,7 @@ function renderAnalytics(){
     var lrMap={};
     lossTrades.forEach(function(t){
       var r=t.reason;
-      if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
-      else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
-      else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
-      else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
-      else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
-      else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
+      if(r.indexOf('Profit lock')===0) r='Profit lock';
       else if(r.indexOf('EOD')===0) r='EOD square-off';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
       lrMap[r].cnt++;
@@ -1556,8 +1486,6 @@ function showBTModal(t){
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
     +cell('Entry Time',     t.entry||'—',   '#c8d8f0')
     +cell('NIFTY Spot @ Entry', fmt(t.ePrice), '#fff', 'Spot price at signal')
-    +cell('Stop Loss',      t.sl!=null?fmt(t.sl):'—', '#f59e0b', 'NIFTY spot SL level')
-    +cell('Risk (pts)',     t.risk_pts!=null?'±'+t.risk_pts.toFixed(2)+' pts':'—', '#94a3b8', 'Entry to SL distance')
     +cell('Entry Signal',  t.entryReason||'—', '#a0b8d0', 'Strategy signal that triggered entry')
     +'</div></div>';
 
@@ -1571,7 +1499,6 @@ function showBTModal(t){
     +cell('Spot PnL (pts)',t.spotPts!=null?(t.spotPts>=0?'+':'')+t.spotPts.toFixed(2)+' pts':'—', t.spotPts!=null?(t.spotPts>=0?'#10b981':'#ef4444'):'#4a6080', 'Raw NIFTY index point move')
     +cell('Held (candles)',t.held!=null?t.held+' candles':'—', '#94a3b8', 'Candles held — affects theta decay')
     +cell('PnL Method',   t.pnlMode||'—', '#4a6080', 'How PnL was calculated')
-    +cell('R:R Ratio',     t.rr||'—', t.pnl!=null&&t.pnl>=0?'#10b981':'#ef4444', 'Reward ÷ Risk')
     +'</div></div>';
 
   var reasonHtml='<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
@@ -1596,14 +1523,14 @@ document.getElementById('btModal').addEventListener('click',function(e){
     console.error("Backtest error:", err.message, err.stack);
     // Re-render the backtest page with an inline error toast instead of navigating away.
     // User keeps their date/resolution settings and sees the error in the top-right corner.
-    const errHtml = buildBacktestPageWithToast(from, to, resolution, err.message, liveActive);
+    const errHtml = buildBacktestPageWithToast(from, to, resolution, err.message);
     res.setHeader("Content-Type", "text/html");
     return res.status(200).send(errHtml);
   }
 });
 
-function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
-  const nav = buildNav("backtest", liveActive);
+function buildBacktestPageWithToast(from, to, resolution, errMsg) {
+  const nav = buildNav("backtest");
   const resOptions = `<option value="5" selected>5-min</option>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">

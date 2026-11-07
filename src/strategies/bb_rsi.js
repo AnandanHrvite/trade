@@ -1,5 +1,5 @@
 /**
- * BB_RSI V8: Bollinger Band MEAN REVERSION + RSI extreme (2-opposite-candle exits)
+ * BB_RSI V8: Bollinger Band MEAN REVERSION + RSI extreme
  *
  * Replaces the V7 breakout engine outright (2026-08-14). V7 bought the BREAK — CE when
  * price closed ABOVE the upper band. V8 fades it: an extreme stretch away from the mean
@@ -14,13 +14,11 @@
  *     • fade     — as above. The V8 mean-reversion engine, unchanged.
  *     • breakout — the SAME two signal bars, opposite side: a close above the upper
  *       band buys CE, a close below the lower band buys PE (the V7 side mapping).
- *       Everything else — the chop guards, the signal-candle stop line, the
- *       opposite-candle stop/trail, the hard stop — is identical, which is the point:
- *       it makes fade-vs-break a controlled A/B over one backtest range rather than a
- *       comparison of two different engines. Two rules necessarily change with it:
- *       the middle-band target is skipped (the mean sits BEHIND a breakout entry, so
- *       targeting it would exit on the entry bar), and "STRONG" flips to mean RSI
- *       further WITH the break instead of further into the extreme.
+ *       Everything else — the chop guards and the signal-candle width cap — is
+ *       identical, which is the point: it makes fade-vs-break a controlled A/B over
+ *       one backtest range rather than a comparison of two different engines.
+ *       "STRONG" flips to mean RSI further WITH the break instead of further into
+ *       the extreme.
  *       The divergence filter below is a mean-reversion tell — it argues the move is
  *       exhausted — so leave it off in breakout mode; requiring it would keep only the
  *       breakouts that are already failing.
@@ -51,25 +49,13 @@
  *   turned back (CE: RSI rising vs the prior bar; PE: falling) — the earliest possible
  *   confirmation that the stretch is done.
  *
- *   Entry stop line = the signal candle's own extreme (CE → its low, PE → its high). It
- *   is recorded and displayed for sizing; it is NOT an intra-tick stop (the exits below
- *   are). BB_RSI_MAX_ENTRY_SL_PTS skips entries whose signal candle is wider than N pts
- *   from close, so one huge bar cannot open a position with uncapped risk.
+ *   Signal-candle width cap: BB_RSI_MAX_ENTRY_SL_PTS skips entries whose signal candle's
+ *   extreme (CE → its low, PE → its high) is more than N pts from close. The extreme is
+ *   also returned as `stopLoss` / the middle band as `target` — signal metadata only
+ *   (the swing scanner displays them); no engine trades on either.
  *
- * EXIT:
- *   1. Middle-band target (BB_RSI_TARGET_MIDDLE_BAND, default on) — the mean IS the
- *      objective of a mean-reversion trade. Per-tick; exits at the middle band line.
- *   2. Two-opposite-candle stop (BB_RSI_OPP_CANDLE_SL_ENABLED, default on) — on candle
- *      close, exit after BB_RSI_OPP_CANDLE_SL_COUNT consecutive candles closing against
- *      the position (CE: red bodies, PE: green). The initial stop.
- *   3. Two-opposite-candle trail (BB_RSI_OPP_CANDLE_TRAIL_ENABLED, default on) — the
- *      same rule with its own count, taking over once the trade has run
- *      BB_RSI_TRAIL_ARM_PTS in favour. Independently toggleable: turning the trail off
- *      leaves the initial stop live for the whole trade, and vice versa.
- *   4. Hard stop (BB_RSI_STOP_LOSS_PTS) and profit lock (BB_RSI_PROFIT_LOCK_*) remain
- *      as optional per-tick caps. Both default to the target/candle rules doing the
- *      work — set to 0 to disable.
- *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
+ * EXIT: none here. The only automatic exit in every BB_RSI engine is the global profit
+ * lock (tradeGuards.checkProfitLock); the session teardown closes anything still open.
  */
 
 const { BollingerBands, RSI, ADX } = require("technicalindicators");
@@ -437,8 +423,7 @@ function getSignal(candles, opts) {
       base.divergence = div;
     }
 
-    // Stop line = the signal candle's own extreme. Recorded/displayed for sizing; the
-    // live stop is the two-opposite-candle rule.
+    // Signal candle's own extreme — the width cap reads it; returned as metadata only.
     var slLine = isCE ? sc.low : sc.high;
     var slPts  = parseFloat(Math.abs(sc.close - slLine).toFixed(2));
     if (MAX_ENTRY_SL_PTS > 0 && slPts > MAX_ENTRY_SL_PTS) {
@@ -449,11 +434,9 @@ function getSignal(candles, opts) {
     var band  = stretchUp ? bb.upper : bb.lower;
     var _tag  = stretchUp ? "above BB upper(" + band.toFixed(0) + ")" : "below BB lower(" + band.toFixed(0) + ")";
     var _divTag = div && div.ok ? " + divergence(" + div.barsBack + " bars)" : "";
-    // A breakout entry has no fixed target — the mean is behind it, so the stop, the
-    // trail and EOD are the only ways out.
+    // Middle band as signal metadata (the mean sits behind a breakout entry).
     var _target = BREAKOUT ? null : parseFloat(bb.middle.toFixed(2));
-    var _tgtTag = BREAKOUT ? " | no fixed target (stop/trail exit)"
-                           : " | target BB mid(" + bb.middle.toFixed(0) + ")";
+    var _tgtTag = BREAKOUT ? "" : " | BB mid(" + bb.middle.toFixed(0) + ")";
     if (!silent) {
       console.log("[BB_RSI " + _ist + "] " + side + (BREAKOUT ? " BREAK" : " FADE") + ": close(" + sc.close + ") " + _tag
         + " + RSI=" + rsi.toFixed(1) + _divTag + _tgtTag + " SL line=" + slLine.toFixed(2) + " [" + slPts.toFixed(1) + "pts]");
@@ -498,129 +481,9 @@ function signalStrength(result) {
   return "MARGINAL";
 }
 
-// ── Profit lock (optional per-tick upside cap) ───────────────────────────────
-// Spot-POINTS ratcheting profit lock. Tracks the favourable spot move since entry
-// (CE = price−entry, PE = entry−price). Once the PEAK favourable move reaches
-// BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit as soon as it gives back below
-// BB_RSI_PROFIT_LOCK_PCT% of that peak. Defaults to 0 = OFF in V8: the middle-band
-// target and the two-candle trail are the intended upside exits, and a lock firing
-// before the mean is reached would cut the trade short of its whole objective.
-// Returns { hit, floor }.
-function profitLock(favPts, peakFavPts) {
-  var trigger = num("BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "0");
-  var pct     = num("BB_RSI_PROFIT_LOCK_PCT", "50");
-  if (trigger <= 0 || peakFavPts == null || peakFavPts < trigger) return { hit: false, floor: null };
-  var floor = parseFloat(((pct / 100) * peakFavPts).toFixed(2));
-  return { hit: favPts <= floor, floor: floor };
-}
-
-// ── Hard stop (catastrophic loss cap, per-tick, spot POINTS) ─────────────────
-// Backstop under the two-opposite-candle stop, which can only fire on a candle close:
-// a single violent bar against a fade can travel a long way before that close arrives.
-// Exit once the trade has moved BB_RSI_STOP_LOSS_PTS against entry. 0 disables.
-//   favPts — current favourable spot points (CE = price−entry, PE = entry−price)
-// Returns { hit, stop }.
-function hardStop(favPts) {
-  var stop = num("BB_RSI_STOP_LOSS_PTS", "30");
-  if (stop <= 0 || favPts == null) return { hit: false, stop: null };
-  return { hit: favPts <= -stop, stop: stop };
-}
-
-// ── Middle-band target (the objective of the fade) ───────────────────────────
-// The mean is what price is reverting TO, so reaching it completes the trade. Checked
-// per-tick against the band from COMPLETED candles (fixed during the forming bar), so
-// paper/live/backtest all measure the same line.
-//   middle — bb.middle from the caller's cached bbLevels()
-//   price  — current spot
-// Returns { hit, level }.
-function middleBandTarget(middle, side, price) {
-  // Breakout entries are ALREADY past the mean — a CE opened above the upper band is
-  // above the middle from its first tick, so honouring this target would close every
-  // trade on its entry bar. The direction gate comes before the toggle deliberately:
-  // it is not an operator preference, it is arithmetic.
-  if (isBreakout()) return { hit: false, level: null };
-  if (!cfgOn("BB_RSI_TARGET_MIDDLE_BAND", "true")) return { hit: false, level: null };
-  if (middle == null || price == null) return { hit: false, level: null };
-  // CE entered BELOW the lower band → reverting up to the middle. PE entered above → down.
-  var hit = side === "CE" ? price >= middle : price <= middle;
-  return { hit: hit, level: parseFloat(middle.toFixed(2)) };
-}
-
-// ── Opposite-candle counting ─────────────────────────────────────────────────
-// "Opposite" = the candle BODY closed against the position: CE is hurt by a red body
-// (close < open), PE by a green one (close > open). A doji (close === open) is not
-// opposite and breaks the streak — it is indecision, not a move against the trade.
-// Counts backwards from the last CLOSED candle.
-function countOppositeCandles(candles, side) {
-  var n = 0;
-  for (var i = candles.length - 1; i >= 0; i--) {
-    var c = candles[i];
-    var against = side === "CE" ? (c.close < c.open) : (c.close > c.open);
-    if (!against) break;
-    n++;
-  }
-  return n;
-}
-
-// ── Two-opposite-candle stop / trail (candle close) ──────────────────────────
-// One rule, two independently-toggleable phases:
-//   • before the trade has run BB_RSI_TRAIL_ARM_PTS in favour → the initial STOP
-//     (BB_RSI_OPP_CANDLE_SL_ENABLED / _COUNT)
-//   • after it has → the TRAIL (BB_RSI_OPP_CANDLE_TRAIL_ENABLED / _COUNT)
-// Turning the trail off leaves the initial stop live for the whole trade; turning the
-// stop off leaves the position unprotected until the trail arms (the hard stop still
-// applies either way). The reason string for the stop contains "SL" because that is
-// what arms the per-side cooldown in every route; the trail's deliberately does not —
-// a trail exit banks a profit and must not pause the side.
-//   mfeSpotPts — best favourable spot points seen this trade
-//   barsHeld   — candles CLOSED since entry (the routes' position.candlesHeld). Only
-//                those can count against the trade: without the cap the streak reaches
-//                back through the entry candle and the signal candle before it — on a
-//                CE fade both are typically RED, being the tail of the sell-off being
-//                faded — so a 2-candle stop would fire on the FIRST close after entry
-//                and kill a trade that never got a single bar to work. Pass a
-//                non-finite value only in unit tests that are exercising the streak
-//                logic itself.
-// Returns { hit, reason, count, need, armed }.
-function oppositeCandleExit(candles, side, mfeSpotPts, barsHeld) {
-  var slOn    = cfgOn("BB_RSI_OPP_CANDLE_SL_ENABLED", "true");
-  var slCount = int("BB_RSI_OPP_CANDLE_SL_COUNT", "2", 1);
-  var trOn    = cfgOn("BB_RSI_OPP_CANDLE_TRAIL_ENABLED", "true");
-  var trCount = int("BB_RSI_OPP_CANDLE_TRAIL_COUNT", "2", 1);
-  var armPts  = num("BB_RSI_TRAIL_ARM_PTS", "10");
-
-  var armed = trOn && (mfeSpotPts || 0) >= armPts;
-  var held  = Number.isFinite(barsHeld) ? Math.max(0, barsHeld) : Infinity;
-  var count = Math.min(countOppositeCandles(candles, side), held);
-
-  if (armed) {
-    if (count >= trCount) {
-      return { hit: true, reason: "Trail (" + trCount + " opposite candles)", count: count, need: trCount, armed: true };
-    }
-    return { hit: false, reason: null, count: count, need: trCount, armed: true };
-  }
-  if (slOn && count >= slCount) {
-    return { hit: true, reason: "SL (" + slCount + " opposite candles)", count: count, need: slCount, armed: false };
-  }
-  return { hit: false, reason: null, count: count, need: slCount, armed: false };
-}
-
-// Latest BB upper/middle/lower from the supplied (completed) candles, same inputs the
-// entry uses. Exposed so the routes can run the middle-band target intra-candle
-// (per-tick spot vs the mean) instead of only on candle close. null if insufficient data.
-function bbLevels(candles) {
-  var BB_PERIOD = int("BB_RSI_BB_PERIOD", "30", 2);
-  var BB_STDDEV = num("BB_RSI_BB_STDDEV", "2", 0.1);
-  var closes = candles.map(function(c) { return c.close; });
-  var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
-  if (bbArr.length < 1) return null;
-  return bbArr[bbArr.length - 1];
-}
-
 function reset() { _indicatorCache = { key: null, bb: null, rsiArr: null, adx: null }; }
 
 module.exports = {
   NAME, DESCRIPTION, getSignal, signalStrength, resolutionMin, direction,
-  profitLock, hardStop, middleBandTarget, countOppositeCandles, oppositeCandleExit,
-  bbLevels, reset,
+  reset,
 };

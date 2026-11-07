@@ -3,24 +3,23 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Date-range backtest on SAIL 5-minute candles (NSE:SAIL-EQ, SAIL_VWAP_ST_TF).
  * Every RULE — the session VWAP, the cross, the breakout confirmation, the
- * SuperTrend agreement, the entry window, the candle-close exit test and the
- * SuperTrend trail — comes from the SAME engine the paper route uses
- * (src/strategies/sail_vwap_st.js). There is no second copy of the rules here.
- * This file only re-creates the paper route's FILLS and its TICK exits, because
- * paper (src/routes/sailVwapStPaper.js) is canonical:
+ * SuperTrend agreement and the entry window — comes from the SAME engine the
+ * paper route uses (src/strategies/sail_vwap_st.js). There is no second copy of
+ * the rules here. This file only re-creates the paper route's FILLS and its
+ * ONLY automatic exit (the profit lock), because paper
+ * (src/routes/sailVwapStPaper.js) is canonical:
  *
  *   for each closed bar i (indicators computed ONCE over the whole array — both
  *   are causal, so this equals paper recomputing on the bars so far):
- *     in a position → the tick exits inside bar i (below), then on its CLOSE:
- *        engine.exitCheck(side, bar, supertrend[i], stop in force BEFORE bar i)
- *        → exit, filled at bar i+1's OPEN; else engine.trailStop() tightens.
+ *     in a position → the profit lock inside bar i (below); a position still
+ *        open on the day's last bar closes at that bar's close (paper's
+ *        TRADE_STOP_TIME session teardown).
  *     flat → engine.getSignal() on bar i's close → BUY_CE / BUY_PE
  *        → filled at bar i+1's OPEN.
  *
- * FILLS — paper fills an entry AND a candle-close exit at the first tick after
- * the candle closes. The backtest uses the NEXT bar's OPEN for both: the same
- * market moment. When there is no next bar the same IST day (data ends), a
- * candle-close exit fills at that bar's close and an entry is not taken.
+ * FILLS — paper fills an entry at the first tick after the candle closes. The
+ * backtest uses the NEXT bar's OPEN: the same market moment. When there is no
+ * next bar the same IST day (data ends), an entry is not taken.
  * SAIL_VWAP_ST_BT_SLIPPAGE_PTS (₹ of SAIL SPOT, default 0.05) is applied
  * ADVERSELY on both the entry and the exit fill.
  *
@@ -30,34 +29,29 @@
  *   SEED  = SAIL_VWAP_ST_BT_SEED_PREMIUM (₹5 / share), δ = SAIL_VWAP_ST_BT_DELTA
  *   (0.5), θ = SAIL_VWAP_ST_BT_THETA_DAY (₹0.1 / share / trading day). These are
  *   SAIL-specific on purpose: the global BACKTEST_DELTA / BACKTEST_THETA_DAY are
- *   NIFTY-scaled and would be nonsense on a ₹170 stock's ₹5 option. The P&L, the
- *   profit lock, the breakeven stop and the option stop are all measured on this
- *   SIMULATED premium. Treat ₹ as directional, not exact.
+ *   NIFTY-scaled and would be nonsense on a ₹170 stock's ₹5 option. The P&L and
+ *   the profit lock are both measured on this SIMULATED premium (peak tracked
+ *   bar by bar). Treat ₹ as directional, not exact.
  *
- * TICK EXITS (paper runs them on every tick, on the option premium, in this
- * order: EOD square-off → profit lock → breakeven → option stop). A bar's tick
- * path is unknown, so it is walked CONSERVATIVELY:
+ * PROFIT LOCK (paper runs tradeGuards.checkProfitLock on every tick, on the
+ * option premium). A bar's tick path is unknown, so it is walked CONSERVATIVELY:
  *     open → ADVERSE extreme (low for a CE, high for a PE) → favourable extreme
  *          → close
- *   • open: the premium at the open is tested first — a bar that OPENS beyond a
- *     level fills at the open, never at the better level;
- *   • open → adverse: the premium falls; the highest armed level is hit first
- *     (lock floor > entry premium [breakeven] > option stop) and fills AT that
- *     level (tradeGuards.profitLockFloorLtp gives the lock floor, the same helper
+ *   • open: the premium at the open is tested first — a bar that OPENS beyond
+ *     the floor fills at the open, never at the better level;
+ *   • open → adverse: the premium falls; an armed floor is crossed and fills AT
+ *     that level (tradeGuards.profitLockFloorLtp gives the floor, the same helper
  *     paper's checkProfitLock uses);
  *   • adverse → favourable: the peak premium rises; nothing exits on a rise;
- *   • favourable → close: a lock / breakeven armed by THIS bar's peak and given
- *     back by the close fills at the CLOSE (worse than the level — the path is
- *     unknown, so the level is not credited).
- *   EOD: the first bar starting at/after SAIL_VWAP_ST_EOD_EXIT_TIME exits at its
- *   open (paper: first tick at/after 15:15) — after any candle-close exit of the
- *   bar before, which paper processes first on that same tick.
+ *   • favourable → close: a lock armed by THIS bar's peak and given back by the
+ *     close fills at the CLOSE (worse than the level — the path is unknown, so
+ *     the level is not credited).
+ *   SESSION END: a position still open on the day's last bar closes at that
+ *   bar's close (paper's TRADE_STOP_TIME teardown), so every trade's P&L is defined.
  *
- * SESSION — entry window inside the engine; SAIL_VWAP_ST_MAX_DAILY_TRADES (1)
- * and SAIL_VWAP_ST_MAX_DAILY_LOSS checked at the signal close, exactly as paper.
- * A signal on the candle whose close triggered a candle-close exit is not taken
- * (paper's exitedThisBar). Size = SAIL_VWAP_ST_LOTS × SAIL lot (4700), the lot
- * count clamped by MAX_LOT_MULTIPLIER like paper's sailLotQty().
+ * SESSION — entry window inside the engine and the wait-after-exit cooldown,
+ * exactly as paper. Size = SAIL_VWAP_ST_LOTS × SAIL lot (4700), the lot count
+ * clamped by MAX_LOT_MULTIPLIER like paper's sailLotQty().
  *
  * WARM-UP — a runway of calendar days BEFORE `from` (sized like paper's own
  * preload fetch) is fetched so SuperTrend has a history on the first session;
@@ -92,12 +86,8 @@ const SAIL_SPOT_SYMBOL = _u().spot;   // NSE:SAIL-EQ
 
 /** Exit-reason categories — every trade's exitReason is exactly one of these. */
 const EXIT = {
-  ST_FLIP:   "SuperTrend flip",
-  ST_STOP:   "SuperTrend stop",
   LOCK:      "profit lock",
-  BREAKEVEN: "breakeven",
-  OPT_STOP:  "option stop",
-  EOD:       "EOD",
+  EOD:       "session end",
 };
 
 // ── Env readers — the same finite/range guards the engine uses ───────────────
@@ -117,7 +107,7 @@ function btConfig() {
     THETA_DAY:    _numEnv("SAIL_VWAP_ST_BT_THETA_DAY", 0.1, 0, 100),
   };
 }
-/** The repo-wide common exits, read live from tradeGuards (the getters paper's calls use). */
+/** The repo-wide profit lock, read live from tradeGuards (the getters paper's call uses). */
 function guardConfig() {
   return {
     lockEnabled:   tradeGuards.PROFIT_LOCK_ENABLED,
@@ -125,8 +115,6 @@ function guardConfig() {
     lockFloorPct:  tradeGuards.PROFIT_LOCK_FLOOR_PCT,
     lockTrailPct:  tradeGuards.PROFIT_LOCK_TRAIL_PCT,
     lockTiers:     tradeGuards.PROFIT_LOCK_TRAIL_TIERS,
-    beEnabled:     tradeGuards.BREAKEVEN_STOP_ENABLED,
-    beArmPct:      tradeGuards.BREAKEVEN_ARM_PCT,
   };
 }
 /** Contracts per trade — engine.lotQty() with paper's MAX_LOT_MULTIPLIER clamp on the lot count. */
@@ -161,17 +149,10 @@ function _shiftDate(dateStr, days) {
 /** Calendar days of runway fetched before `from` — the same sizing as paper's preload fetch. */
 function runwayCalendarDays() { return engine.warmupDays() * 2 + 7; }
 
-function _quantile(sorted, q) {
-  if (!sorted.length) return null;
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos), hi = Math.ceil(pos);
-  return _r2(sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo));
-}
-
 /**
  * simulate(candles, opts) — PURE. No broker, no network, no disk. Synchronous
- * and O(n): indicators are computed once, getSignal/trailStop read them through
- * their `precomputed` options.
+ * and O(n): indicators are computed once, getSignal reads them through its
+ * `precomputed` option.
  *
  *   candles — ascending closed bars { time (unix s), open, high, low, close, volume }
  *             on the trade timeframe, INCLUDING the warm-up runway.
@@ -181,9 +162,9 @@ function _quantile(sorted, q) {
  *   opts.tradeTo      — "YYYY-MM-DD": the last IST day a trade may be ENTERED.
  *   opts.cfgOverrides — merged over engine.getConfig() (e.g. { BREAKOUT_BARS: 2 }).
  *   opts.bt           — merged over btConfig() (SLIPPAGE_PTS/SEED_PREMIUM/DELTA/THETA_DAY).
- *   opts.guards       — merged over guardConfig() (profit lock / breakeven).
+ *   opts.guards       — merged over guardConfig() (profit lock).
  *
- * Returns { trades, stats, days, funnel, exitMix, stopDist, params }.
+ * Returns { trades, stats, days, funnel, exitMix, params }.
  */
 function simulate(candles, opts) {
   const o = opts || {};
@@ -194,7 +175,6 @@ function simulate(candles, opts) {
   const QTY = qtyFor(cfg);
   const SLIP = bt.SLIPPAGE_PTS, SEED = bt.SEED_PREMIUM, DELTA = bt.DELTA, THETA = bt.THETA_DAY;
   const lockOpts = { enabled: g.lockEnabled, armPct: g.lockArmPct, floorPct: g.lockFloorPct, trailPct: g.lockTrailPct, tiers: g.lockTiers };
-  const beOpts   = { enabled: g.beEnabled, armPct: g.beArmPct };
 
   const bars = (Array.isArray(candles) ? candles : [])
     .filter(c => c && Number.isFinite(c.time) && Number.isFinite(c.open) && Number.isFinite(c.high) &&
@@ -203,10 +183,9 @@ function simulate(candles, opts) {
   const n = bars.length;
   const funnel = {
     sessions: 0, runwaySessions: 0, confirmed: 0, entries: 0,
-    skipWindow: 0, skipStDisagrees: 0, blockedDayCap: 0, blockedDayLoss: 0,
-    blockedExitBar: 0, blockedPastEod: 0, noNextBar: 0, gapThroughStop: 0, blockedReentry: 0,
+    skipWindow: 0, skipStDisagrees: 0, noNextBar: 0, blockedReentry: 0,
   };
-  const empty = { trades: [], stats: computeBacktestStats([]), days: 0, funnel, exitMix: {}, stopDist: null, params: { cfg, bt, guards: g, qty: QTY } };
+  const empty = { trades: [], stats: computeBacktestStats([]), days: 0, funnel, exitMix: {}, params: { cfg, bt, guards: g, qty: QTY } };
   if (!n) return empty;
 
   const dayOf = bars.map(c => engine._istDayOf(c.time));
@@ -220,14 +199,13 @@ function simulate(candles, opts) {
 
   const series = engine.computeSeries(bars, cfg);
   const pre = { series, endIdx: 0, cfg };
-  const preTrail = { supertrend: series.supertrend, endIdx: 0 };
 
   const trades = [];
   let pos = null;
-  let curDay = null, dayTrades = 0, dayPnl = 0;
+  let curDay = null;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper measures it from the exit's clock time: a tick exit happens INSIDE the
-  // bar (≈ bar open here), a candle-close exit on the first tick after the close.
+  // bar (≈ bar open here).
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
   let _reentryBlockUntilTs = 0;
 
@@ -251,117 +229,81 @@ function simulate(candles, opts) {
     const exitPrem = _r2(premAt(exitSpot, t));
     const charges = getCharges({ isFutures: false, entryPremium: SEED, exitPremium: exitPrem, qty: QTY });
     const pnl = _r2((exitPrem - SEED) * QTY - charges);
-    dayPnl += pnl;
     trades.push({
       side: pos.side,
       signalBarTime: pos.signalBarTime, entryBarTime: pos.entryTime, exitBarTime,
       entrySpot: pos.entrySpot, exitSpot,
-      stopLoss: pos.initialStop, finalStop: pos.stop,
       entryPremium: SEED, exitPremium: exitPrem, peakPremium: _r2(pos.peak),
       qty: QTY, pnl, charges, exitReason: kind, exitDetail: detail,
-      stopDist: _r2(Math.abs(pos.entrySpot - pos.initialStop)),
       vwap: pos.vwap, crossLevel: pos.crossLevel,
       held: Math.max(0, Math.round((exitBarTime - pos.entryTime) / 60 / RES)),
       // backtestUI columns
       entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitBarTime),
       entryTs: pos.entryTime, exitTs: exitBarTime,
-      ePrice: pos.entrySpot, xPrice: exitSpot, sl: pos.initialStop, target: null,
+      ePrice: pos.entrySpot, xPrice: exitSpot, sl: null, target: null,
       reason: `${kind} — ${detail}`, entryReason: pos.entryReason, strength: "STRONG",
       eOpt: SEED, xOpt: exitPrem,
     });
     pos = null;
     // Wait-after-any-exit cooldown — every exit reason, both sides. exitBarTime is
-    // the bar's open for a tick exit and the close / next open for a candle-close one.
+    // the bar's open for a profit-lock exit.
     if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitBarTime + _REENTRY_COOLDOWN_SECS;
   }
 
-  /** The common premium exits on one simulated tick. Returns the category or null. */
+  /** The profit lock on one simulated tick. Returns { kind, detail } or null. */
   function tickExitKind(cur) {
     const lock = tradeGuards.checkProfitLock(SEED, cur, pos.peak, lockOpts);
     if (lock) return { kind: EXIT.LOCK, detail: lock };
-    const be = tradeGuards.checkBreakevenStop(SEED, cur, pos.peak, beOpts);
-    if (be) return { kind: EXIT.BREAKEVEN, detail: be };
-    if (cfg.OPT_STOP_PCT > 0) {
-      const stopLtp = parseFloat((SEED * (1 - cfg.OPT_STOP_PCT)).toFixed(2));
-      if (cur <= stopLtp) return { kind: EXIT.OPT_STOP, detail: `Option stop ${(cfg.OPT_STOP_PCT * 100).toFixed(0)}% — simulated premium ₹${_r2(cur)} ≤ ₹${stopLtp}`, level: stopLtp };
-    }
     return null;
   }
-  /** The premium level each kind fills at when crossed on the way down (open → adverse leg). */
-  function levelFor(hit) {
-    if (hit.kind === EXIT.LOCK) return tradeGuards.profitLockFloorLtp(SEED, pos.peak, g.lockFloorPct, g.lockTrailPct, g.lockTiers);
-    if (hit.kind === EXIT.BREAKEVEN) return SEED;
-    return hit.level;
+  /** The premium level the lock fills at when crossed on the way down (open → adverse leg). */
+  function levelFor() {
+    return tradeGuards.profitLockFloorLtp(SEED, pos.peak, g.lockFloorPct, g.lockTrailPct, g.lockTiers);
   }
 
   for (let i = 0; i < n; i++) {
     const c = bars[i];
     const day = dayOf[i];
-    if (day !== curDay) { curDay = day; dayTrades = 0; dayPnl = 0; _reentryBlockUntilTs = 0; }
+    if (day !== curDay) { curDay = day; _reentryBlockUntilTs = 0; }
     const barEnd = c.time + RES * 60;
-    const startMin = engine._istMins(c.time);
 
-    // ── 1. Tick exits inside this bar (the position may have opened at its open). ──
+    // ── 1. The profit lock inside this bar (the position may have opened at its open). ──
     if (pos) {
       const isCE = pos.side === "CE";
-      if (startMin >= cfg.EOD_EXIT) {
-        close(c.open, c.time, c.time, EXIT.EOD, `square-off ${_fmtMins(cfg.EOD_EXIT)} at the bar's open ${c.open}`);
+      // a) the open
+      const pOpen = premAt(c.open, c.time);
+      if (pOpen > pos.peak) pos.peak = pOpen;
+      let hit = tickExitKind(pOpen);
+      if (hit) {
+        close(c.open, c.time, c.time, hit.kind, `${hit.detail} (bar opened through it — filled at the open ${c.open})`);
       } else {
-        // a) the open
-        const pOpen = premAt(c.open, c.time);
-        if (pOpen > pos.peak) pos.peak = pOpen;
-        let hit = tickExitKind(pOpen);
+        // b) open → adverse extreme: an armed floor is crossed on the way down.
+        const adv = isCE ? c.low : c.high;
+        const pAdv = premAt(adv, barEnd);
+        hit = tickExitKind(pAdv);
         if (hit) {
-          close(c.open, c.time, c.time, hit.kind, `${hit.detail} (bar opened through it — filled at the open ${c.open})`);
+          const lvl = levelFor();
+          const raw = spotForPrem(lvl, barEnd);
+          // Never better than the open (the open did not trigger, so the level lies past it).
+          const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
+          close(fill, barEnd, c.time, hit.kind, `${hit.detail} — level premium ₹${_r2(lvl)} ≈ spot ${_r2(raw)}`);
         } else {
-          // b) open → adverse extreme: the highest armed level is crossed first.
-          const adv = isCE ? c.low : c.high;
-          const pAdv = premAt(adv, barEnd);
-          hit = tickExitKind(pAdv);
-          if (hit) {
-            const lvl = levelFor(hit);
-            const raw = spotForPrem(lvl, barEnd);
-            // Never better than the open (the open did not trigger, so the level lies past it).
-            const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
-            close(fill, barEnd, c.time, hit.kind, `${hit.detail} — level premium ₹${_r2(lvl)} ≈ spot ${_r2(raw)}`);
-          } else {
-            // c) adverse → favourable extreme: the peak rises, nothing exits.
-            const pFav = premAt(isCE ? c.high : c.low, c.time);
-            if (pFav > pos.peak) pos.peak = pFav;
-            // d) favourable → close: a lock/breakeven armed by THIS peak and given back.
-            const pClose = premAt(c.close, barEnd);
-            hit = tickExitKind(pClose);
-            if (hit) close(c.close, barEnd, c.time, hit.kind, `${hit.detail} (armed and given back inside the bar — filled at the close ${c.close})`);
-          }
-        }
-        // Mid-bar square-off (EOD not on a bar boundary): out at this bar's close.
-        if (pos && engine._istMins(barEnd) > cfg.EOD_EXIT && startMin < cfg.EOD_EXIT) {
-          close(c.close, barEnd, c.time, EXIT.EOD, `square-off ${_fmtMins(cfg.EOD_EXIT)} falls inside this bar — filled at its close ${c.close}`);
+          // c) adverse → favourable extreme: the peak rises, nothing exits.
+          const pFav = premAt(isCE ? c.high : c.low, c.time);
+          if (pFav > pos.peak) pos.peak = pFav;
+          // d) favourable → close: a lock armed by THIS peak and given back.
+          const pClose = premAt(c.close, barEnd);
+          hit = tickExitKind(pClose);
+          if (hit) close(c.close, barEnd, c.time, hit.kind, `${hit.detail} (armed and given back inside the bar — filled at the close ${c.close})`);
         }
       }
     }
 
-    // ── 2. Candle-close exit test, then the trail. ────────────────────────────
+    // ── 2. Session end: the day's last bar closes anything still open (paper's
+    //    TRADE_STOP_TIME teardown), so every trade's P&L is defined.
     const next = i + 1 < n && dayOf[i + 1] === day ? bars[i + 1] : null;
-    let exitedThisBar = false;
-    if (pos) {
-      const stBar = series.supertrend[i] || null;
-      const ex = engine.exitCheck(pos.side, c, stBar, pos.stop);
-      if (ex.exit) {
-        const kind = /flipped/.test(ex.reason) ? EXIT.ST_FLIP : EXIT.ST_STOP;
-        if (next) close(next.open, next.time, next.time, kind, `${ex.reason} (stop in force ${pos.stop}) — filled at the next open ${next.open}`);
-        else      close(c.close, barEnd, barEnd, kind, `${ex.reason} (stop in force ${pos.stop}) — no next bar today, filled at the close`);
-        exitedThisBar = true;
-      } else {
-        preTrail.endIdx = i;
-        const tr = engine.trailStop(bars, pos.side, pos.stop, cfg, preTrail);
-        if (tr && tr.changed && Number.isFinite(tr.stop)) pos.stop = tr.stop;
-      }
-    }
-
-    // A day's data that ends with the position still open (half day / gap in data).
     if (pos && !next) {
-      close(c.close, barEnd, barEnd, EXIT.EOD, `the day's candles ended at ${istHHMMSS(barEnd)} before the square-off — filled at the last close`);
+      close(c.close, barEnd, barEnd, EXIT.EOD, `session end — the day's last candle closed at ${istHHMMSS(barEnd)}, filled at its close ${c.close}`);
     }
 
     // ── 3. The entry question on this bar's close. ────────────────────────────
@@ -375,25 +317,17 @@ function simulate(candles, opts) {
       continue;
     }
     funnel.confirmed++;
-    if (exitedThisBar) { funnel.blockedExitBar++; continue; }
-    if (cfg.MAX_DAILY_LOSS > 0 && dayPnl <= -cfg.MAX_DAILY_LOSS) { funnel.blockedDayLoss++; continue; }
-    if (dayTrades >= cfg.MAX_DAILY_TRADES) { funnel.blockedDayCap++; continue; }
     if (!next) { funnel.noNextBar++; continue; }
-    if (engine._istMins(next.time) >= cfg.EOD_EXIT) { funnel.blockedPastEod++; continue; }
     // Paper's simulateBuy checks the cooldown at the fill — the next bar's open.
     if (next.time < _reentryBlockUntilTs) { funnel.blockedReentry++; continue; }
 
     const side = sig.signal === "BUY_CE" ? "CE" : "PE";
     const dir = side === "CE" ? 1 : -1;
     const entrySpot = _r2(next.open + dir * SLIP);         // buy into the adverse side
-    // Paper does not refuse a fill that opened beyond the stop; neither does this.
-    if ((side === "CE" && next.open <= sig.stopLoss) || (side === "PE" && next.open >= sig.stopLoss)) funnel.gapThroughStop++;
     pos = {
-      side, signalBarTime: c.time, entryTime: next.time, entrySpot,
-      stop: sig.stopLoss, initialStop: sig.stopLoss, peak: SEED,
+      side, signalBarTime: c.time, entryTime: next.time, entrySpot, peak: SEED,
       vwap: sig.vwap, crossLevel: sig.crossLevel, entryReason: sig.reason,
     };
-    dayTrades++;
     funnel.entries++;
   }
   // The array ended with a position open (cannot happen once each day's last bar closes it).
@@ -404,13 +338,11 @@ function simulate(candles, opts) {
 
   const exitMix = {};
   for (const t of trades) exitMix[t.exitReason] = (exitMix[t.exitReason] || 0) + 1;
-  const dists = trades.map(t => t.stopDist).filter(Number.isFinite).sort((a, b) => a - b);
-  const stopDist = dists.length ? { p10: _quantile(dists, 0.1), median: _quantile(dists, 0.5), p90: _quantile(dists, 0.9) } : null;
   return {
     trades,
     stats: computeBacktestStats(trades),
     days: funnel.sessions,
-    funnel, exitMix, stopDist,
+    funnel, exitMix,
     params: { cfg, bt, guards: g, qty: QTY },
   };
 }
@@ -433,7 +365,6 @@ function _renderResults(res, from, to, trades, stats, meta) {
   const bt = btConfig();
   const f = meta.funnel || {};
   const mix = meta.exitMix || {};
-  const sd = meta.stopDist;
   const u = _u();
   const html = renderBacktestResults({
     mode: "SAIL_VWAP_ST",
@@ -447,8 +378,6 @@ function _renderResults(res, from, to, trades, stats, meta) {
     extraTradeColumns: [
       { key: "vwap", label: "VWAP" },
       { key: "crossLevel", label: "Cross lvl" },
-      { key: "stopDist", label: "Stop ₹" },
-      { key: "finalStop", label: "Final stop" },
       { key: "exitReason", label: "Exit" },
       { key: "held", label: "Held" },
     ],
@@ -457,14 +386,12 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Expectancy /trade", value: `₹${stats.expectancy}` },
       { label: "Max Drawdown", value: `₹${stats.maxDrawdown}` },
       { label: "Sessions scanned", value: f.sessions || 0, sub: `${f.runwaySessions || 0} warm-up session(s) before ${escHtml(from)} — never traded` },
-      { label: "Breakouts confirmed", value: f.confirmed || 0, sub: `${f.entries || 0} entered · ${f.blockedDayCap || 0} day-cap · ${f.blockedDayLoss || 0} loss-cap · ${f.blockedExitBar || 0} exit-bar` },
+      { label: "Breakouts confirmed", value: f.confirmed || 0, sub: `${f.entries || 0} entered · ${f.blockedReentry || 0} wait-after-exit` },
       { label: "Skipped — outside window", value: f.skipWindow || 0 },
       { label: "Skipped — SuperTrend disagreed", value: f.skipStDisagrees || 0 },
       { label: "Exit mix", value: Object.keys(mix).length ? Object.entries(mix).map(([k, v]) => `${escHtml(k)} ${v}`).join(" · ") : "—" },
-      { label: "Stop distance (₹ SAIL)", value: sd ? `${sd.median}` : "—", sub: sd ? `p10 ${sd.p10} · p90 ${sd.p90}` : "" },
-      { label: "Entry opened past the stop", value: f.gapThroughStop || 0, sub: "taken anyway — paper does not refuse them" },
     ],
-    notes: `<b>Instrument:</b> ${escHtml(u.label)} stock (<code>${escHtml(u.spot)}</code>) ${cfg.TRADE_RES}-min candles with volume; ATM monthly SAIL options, lot ${u.lotSize} × ${cfg.LOTS} lot(s). <b>Entry:</b> a candle closes across the session VWAP (hlc3, volume-weighted, restarts daily), then within ${cfg.BREAKOUT_BARS} candles one closes beyond the cross candle's high (CE) / low (PE) with every close staying on that side of VWAP, and SuperTrend(${cfg.ST_PERIOD},${cfg.ST_MULT}) agrees. Signal-candle close ${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)}; filled at the NEXT bar's open (= paper's first tick after the close). <b>Exits:</b> on each candle close a SuperTrend flip or a close through the trailed SuperTrend stop (filled at the next open); on ticks the profit lock, breakeven and a ${(cfg.OPT_STOP_PCT * 100).toFixed(0)}% option stop; square-off ${_fmtMins(cfg.EOD_EXIT)}. Max ${cfg.MAX_DAILY_TRADES} trade(s)/day, day ends on a ₹${cfg.MAX_DAILY_LOSS} loss. <b>THE OPTION PREMIUM IS SIMULATED</b> — there is no historical option chain: premium = ₹${bt.SEED_PREMIUM} seed + δ ${bt.DELTA} × spot move − θ ₹${bt.THETA_DAY}/day (<code>SAIL_VWAP_ST_BT_SEED_PREMIUM</code> / <code>_BT_DELTA</code> / <code>_BT_THETA_DAY</code>), and the P&amp;L, the profit lock, the breakeven and the option stop are all measured on that number, plus ₹${bt.SLIPPAGE_PTS} of SAIL spot slippage EACH way (<code>SAIL_VWAP_ST_BT_SLIPPAGE_PTS</code>). <b>Intra-bar ordering is conservative:</b> the adverse extreme is walked before the favourable one, a bar that opens through a level fills at the open, and a lock armed and given back inside one bar fills at the close. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded, paper or live, and no threshold in it has been fitted.</b>`,
+    notes: `<b>Instrument:</b> ${escHtml(u.label)} stock (<code>${escHtml(u.spot)}</code>) ${cfg.TRADE_RES}-min candles with volume; ATM monthly SAIL options, lot ${u.lotSize} × ${cfg.LOTS} lot(s). <b>Entry:</b> a candle closes across the session VWAP (hlc3, volume-weighted, restarts daily), then within ${cfg.BREAKOUT_BARS} candles one closes beyond the cross candle's high (CE) / low (PE) with every close staying on that side of VWAP, and SuperTrend(${cfg.ST_PERIOD},${cfg.ST_MULT}) agrees. Signal-candle close ${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)}; filled at the NEXT bar's open (= paper's first tick after the close). <b>Exit:</b> the profit lock only (on the simulated premium, peak tracked bar by bar); anything still open closes at the day's last candle (paper's session teardown). No stop loss, trail, target, signal exit or daily limit. <b>THE OPTION PREMIUM IS SIMULATED</b> — there is no historical option chain: premium = ₹${bt.SEED_PREMIUM} seed + δ ${bt.DELTA} × spot move − θ ₹${bt.THETA_DAY}/day (<code>SAIL_VWAP_ST_BT_SEED_PREMIUM</code> / <code>_BT_DELTA</code> / <code>_BT_THETA_DAY</code>), and the P&amp;L and the profit lock are both measured on that number, plus ₹${bt.SLIPPAGE_PTS} of SAIL spot slippage EACH way (<code>SAIL_VWAP_ST_BT_SLIPPAGE_PTS</code>). <b>Intra-bar ordering is conservative:</b> the adverse extreme is walked before the favourable one, a bar that opens through a level fills at the open, and a lock armed and given back inside one bar fills at the close. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded, paper or live, and no threshold in it has been fitted.</b>`,
   });
   res.send(html);
 }
@@ -517,14 +444,14 @@ router.get("/", async (req, res) => {
         stats.delta = result.params.bt.DELTA;
         stats.thetaPerDay = result.params.bt.THETA_DAY;
         for (const t of result.trades) {
-          console.log(`   ${t.pnl >= 0 ? "🟢" : "🔴"} ${t.entry} ${t.side} | spot ${t.entrySpot} → ${t.exitSpot} | SL ${t.stopLoss} → ${t.finalStop}` +
+          console.log(`   ${t.pnl >= 0 ? "🟢" : "🔴"} ${t.entry} ${t.side} | spot ${t.entrySpot} → ${t.exitSpot}` +
                       ` | prem ₹${t.entryPremium} → ₹${t.exitPremium} | ₹${t.pnl} | ${t.exitReason}`);
         }
 
         try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: res_ } }); }
         catch (e) { console.warn("[sail_vwap_st-backtest] saveResult failed:", e.message); }
 
-        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, funnel: result.funnel, exitMix: result.exitMix, stopDist: result.stopDist } });
+        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, funnel: result.funnel, exitMix: result.exitMix } });
         console.log(`✅ SAIL_VWAP_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
       } catch (err) {
         console.error("[sail_vwap_st-backtest] job error:", err);
@@ -539,7 +466,7 @@ router.get("/", async (req, res) => {
   if (job.status === "running") return res.send(backtestJobs.buildProgressPage(jobId, ENDPOINT, TITLE));
   if (job.status === "error")   return res.status(500).send(renderErrorPage(job.error, from, to));
   const { trades, stats, meta } = job.result;
-  return _renderResults(res, from, to, trades, stats, meta || { days: 0, funnel: {}, exitMix: {}, stopDist: null });
+  return _renderResults(res, from, to, trades, stats, meta || { days: 0, funnel: {}, exitMix: {} });
 });
 
 function _errLightAttr() {

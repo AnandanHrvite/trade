@@ -1,10 +1,9 @@
 /**
- * realtime.js — Unified real-time monitor for PAPER or LIVE trades
+ * realtime.js — Unified real-time monitor for PAPER trades
  * ─────────────────────────────────────────────────────────────────────────────
  * Read-only single screen that shows current state for every strategy that is
  * enabled in Settings (EMA_RSI_ST / BB_RSI / PA / ORB), side-by-side,
- * with a common rollup P&L table below. Toggle at the top switches between
- * PAPER and LIVE data sources. Every 4s the page polls each strategy's existing
+ * with a common rollup P&L table below. Every 4s the page polls each strategy's existing
  * /status/data endpoint — the same source the dedicated pages use — plus this
  * router's own /capital, the one piece that cannot come from a per-strategy
  * page because it is cross-strategy by nature (see utils/capitalPool.js). The
@@ -28,58 +27,54 @@ const { resolveTheme } = require("../utils/theme");
 // hasDayLog: only strategies that expose /download/{trades,skips}/:date show
 // the Copy Day Log button. TREND_PB still exposes cumulative JSONL only.
 const STRATEGY_DEFS = [
-  { key:'EMA_RSI_ST',    label:'EMA_RSI_ST',        accentClass:'ema_rsi_st',    accent:'#3b82f6', paperPrefix:'/ema_rsi_st-paper',    livePrefix:'/ema_rsi_st-live',    hasDayLog:true,  modeFlag:'EMA_RSI_ST_MODE_ENABLED'    },
+  { key:'EMA_RSI_ST',    label:'EMA_RSI_ST',        accentClass:'ema_rsi_st',    accent:'#3b82f6', paperPrefix:'/ema_rsi_st-paper',    hasDayLog:true,  modeFlag:'EMA_RSI_ST_MODE_ENABLED'    },
   // EMA_RSI_ST_V2: a clone of EMA_RSI_ST with its own rules and its own
-  // EMA_RSI_ST_V2_* settings. It has NO legacy /ema_rsi_st_v2-live route — live runs
-  // through the paper-wrapping harness — so livePrefix points at that harness.
+  // EMA_RSI_ST_V2_* settings.
   // defaultOff: unlike every other row it stays hidden until explicitly enabled.
-  { key:'EMA_RSI_ST_V2', label:'EMA_RSI_ST_V2', accentClass:'emarsistv2', accent:'#38bdf8', paperPrefix:'/ema_rsi_st_v2-paper', livePrefix:'/ema_rsi_st_v2-live-harness', hasDayLog:true, modeFlag:'EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
-  { key:'BB_RSI',    label:'BB_RSI',        accentClass:'bb_rsi',    accent:'#f59e0b', paperPrefix:'/bb_rsi-paper',    livePrefix:'/bb_rsi-live',    hasDayLog:true,  modeFlag:'BB_RSI_MODE_ENABLED'    },
-  { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       livePrefix:'/pa-live',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
-  { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:true,  modeFlag:'ORB_MODE_ENABLED'      },
-  { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', livePrefix:'/ema9vwap-live', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
-  { key:'TREND_PB', label:'TREND PB',     accentClass:'trendpb',  accent:'#ec4899', paperPrefix:'/trend-pb-paper', livePrefix:'/trend-pb-live', hasDayLog:false, modeFlag:'TREND_PB_MODE_ENABLED' },
-  { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', livePrefix:'/trend-day-scalp-live', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
-  { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      livePrefix:'/ha-scalp-live',        hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
-  { key:'PREV_ORB_SCALP', label:'PREV ORB SCALP', accentClass:'prevorb', accent:'#e879f9', paperPrefix:'/prev-orb-scalp-paper', livePrefix:'/prev-orb-scalp-live', hasDayLog:true, modeFlag:'PREV_ORB_SCALP_MODE_ENABLED' },
-  { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', livePrefix:'/rsi-pivot-st-live', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
+  { key:'EMA_RSI_ST_V2', label:'EMA_RSI_ST_V2', accentClass:'emarsistv2', accent:'#38bdf8', paperPrefix:'/ema_rsi_st_v2-paper', hasDayLog:true, modeFlag:'EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
+  { key:'BB_RSI',    label:'BB_RSI',        accentClass:'bb_rsi',    accent:'#f59e0b', paperPrefix:'/bb_rsi-paper',    hasDayLog:true,  modeFlag:'BB_RSI_MODE_ENABLED'    },
+  { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
+  { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      hasDayLog:true,  modeFlag:'ORB_MODE_ENABLED'      },
+  { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
+  { key:'TREND_PB', label:'TREND PB',     accentClass:'trendpb',  accent:'#ec4899', paperPrefix:'/trend-pb-paper', hasDayLog:false, modeFlag:'TREND_PB_MODE_ENABLED' },
+  { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
+  { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
+  { key:'PREV_ORB_SCALP', label:'PREV ORB SCALP', accentClass:'prevorb', accent:'#e879f9', paperPrefix:'/prev-orb-scalp-paper', hasDayLog:true, modeFlag:'PREV_ORB_SCALP_MODE_ENABLED' },
+  { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
   // Same rules as RSI_PIVOT_ST, different underlying: BN_PIVOT_RSI_ST (NIFTY BANK,
   // monthly options). Its Entry/Live Spot come from its OWN /status/data — this page
   // never sources a spot price of its own, so the NIFTY BANK level it shows is the one
-  // the BN paper/live engine actually decided on.
-  { key:'BN_PIVOT_RSI_ST', label:'BN PIVOT RSI ST', accentClass:'bnpivotrsist', accent:'#818cf8', paperPrefix:'/bn-pivot-rsi-st-paper', livePrefix:'/bn-pivot-rsi-st-live', hasDayLog:true, modeFlag:'BN_PIVOT_RSI_ST_MODE_ENABLED' },
-  // BN_EMA_RSI_ST_V2: EMA_RSI_ST_V2's rules on NIFTY BANK. No legacy live route
-  // either, so livePrefix points at its harness. defaultOff like its sibling.
-  { key:'BN_EMA_RSI_ST_V2', label:'BN EMA_RSI_ST_V2', accentClass:'bnemarsistv2', accent:'#2dd4bf', paperPrefix:'/bn_ema_rsi_st_v2-paper', livePrefix:'/bn_ema_rsi_st_v2-live-harness', hasDayLog:true, modeFlag:'BN_EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
-  // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. Like V2 it has no
-  // legacy live route — livePrefix is its paper-wrapping harness. defaultOff like V2.
-  { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', livePrefix:'/st_rsi_piv_bb-live', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
+  // the BN paper engine actually decided on.
+  { key:'BN_PIVOT_RSI_ST', label:'BN PIVOT RSI ST', accentClass:'bnpivotrsist', accent:'#818cf8', paperPrefix:'/bn-pivot-rsi-st-paper', hasDayLog:true, modeFlag:'BN_PIVOT_RSI_ST_MODE_ENABLED' },
+  // BN_EMA_RSI_ST_V2: EMA_RSI_ST_V2's rules on NIFTY BANK. defaultOff like its sibling.
+  { key:'BN_EMA_RSI_ST_V2', label:'BN EMA_RSI_ST_V2', accentClass:'bnemarsistv2', accent:'#2dd4bf', paperPrefix:'/bn_ema_rsi_st_v2-paper', hasDayLog:true, modeFlag:'BN_EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
+  // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. defaultOff like V2.
+  { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
   // SAIL_VWAP_ST: SAIL stock options (VWAP cross + breakout, SuperTrend stop).
   // Its Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
-  // livePrefix is its paper-wrapping harness. defaultOff like V2.
-  { key:'SAIL_VWAP_ST', label:'SAIL VWAP+ST', accentClass:'sailvwapst', accent:'#fda4af', paperPrefix:'/sail_vwap_st-paper', livePrefix:'/sail_vwap_st-live', hasDayLog:true, modeFlag:'SAIL_VWAP_ST_MODE_ENABLED', defaultOff:true },
-  // PIVOT_EMA_ST family: pivot zone + EMA20/50 cross + SuperTrend. No legacy live
-  // route — livePrefix is each one's paper-wrapping harness. Default ON (no defaultOff).
-  { key:'PIVOT_EMA_ST', label:'PIVOT_EMA_ST', accentClass:'pivotemast', accent:'#38bdf8', paperPrefix:'/pivot_ema_st-paper', livePrefix:'/pivot_ema_st-live', hasDayLog:true, modeFlag:'PIVOT_EMA_ST_MODE_ENABLED' },
-  { key:'BN_PIVOT_EMA_ST', label:'BN PIVOT_EMA_ST', accentClass:'bnpivotemast', accent:'#f472b6', paperPrefix:'/bn_pivot_ema_st-paper', livePrefix:'/bn_pivot_ema_st-live', hasDayLog:true, modeFlag:'BN_PIVOT_EMA_ST_MODE_ENABLED' },
+  // defaultOff like V2.
+  { key:'SAIL_VWAP_ST', label:'SAIL VWAP+ST', accentClass:'sailvwapst', accent:'#fda4af', paperPrefix:'/sail_vwap_st-paper', hasDayLog:true, modeFlag:'SAIL_VWAP_ST_MODE_ENABLED', defaultOff:true },
+  // PIVOT_EMA_ST family: pivot zone + EMA20/50 cross + SuperTrend. Default ON (no defaultOff).
+  { key:'PIVOT_EMA_ST', label:'PIVOT_EMA_ST', accentClass:'pivotemast', accent:'#38bdf8', paperPrefix:'/pivot_ema_st-paper', hasDayLog:true, modeFlag:'PIVOT_EMA_ST_MODE_ENABLED' },
+  { key:'BN_PIVOT_EMA_ST', label:'BN PIVOT_EMA_ST', accentClass:'bnpivotemast', accent:'#f472b6', paperPrefix:'/bn_pivot_ema_st-paper', hasDayLog:true, modeFlag:'BN_PIVOT_EMA_ST_MODE_ENABLED' },
   // SAIL: Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
-  { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', livePrefix:'/sail_pivot_ema_st-live', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
-  // GAP_RUNAWAY (GAP_runAway__Kirubakaran): NIFTY options; livePrefix is its paper-wrapping harness.
-  { key:'GAP_RUNAWAY', label:'GAP_runAway__Kirubakaran', accentClass:'gaprunaway', accent:'#a78bfa', paperPrefix:'/gap_runaway-paper', livePrefix:'/gap_runaway-live', hasDayLog:true, modeFlag:'GAP_RUNAWAY_MODE_ENABLED' },
-  // Its stock scanner — intraday shares, paper only. noLive: unlike COMMODITY (paperOnly) it is a
-  // NSE-session strategy, so it stays in the NIFTY start/stop roster; it just has no LIVE source.
+  { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
+  // GAP_RUNAWAY (GAP_runAway__Kirubakaran): NIFTY options.
+  { key:'GAP_RUNAWAY', label:'GAP_runAway__Kirubakaran', accentClass:'gaprunaway', accent:'#a78bfa', paperPrefix:'/gap_runaway-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_MODE_ENABLED' },
+  // Its stock scanner — intraday shares. Unlike COMMODITY (paperOnly) it is a
+  // NSE-session strategy, so it stays in the NIFTY start/stop roster.
   // Its /status/data returns positions[] in the cash-equity row shape (like EarlyBird).
-  { key:'GAP_RUNAWAY_STK', label:'GAP_runAway Stocks', accentClass:'gaprunawaystk', accent:'#c084fc', paperPrefix:'/gap_runaway_stk-paper', livePrefix:null, noLive:true, hasDayLog:true, modeFlag:'GAP_RUNAWAY_STK_MODE_ENABLED' },
-  { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
+  { key:'GAP_RUNAWAY_STK', label:'GAP_runAway Stocks', accentClass:'gaprunawaystk', accent:'#c084fc', paperPrefix:'/gap_runaway_stk-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_STK_MODE_ENABLED' },
+  { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
   // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
   // returns `positions[]`, not a single `position`, so renderColumn below
   // draws an aggregate block for it instead of the option-shaped one.
-  { key:'EARLYBIRD', label:'EarlyBird', accentClass:'earlybird', accent:'#14b8a6', paperPrefix:'/early-bird-paper', livePrefix:'/early-bird-live', hasDayLog:true, modeFlag:'EARLYBIRD_MODE_ENABLED' },
+  { key:'EARLYBIRD', label:'EarlyBird', accentClass:'earlybird', accent:'#14b8a6', paperPrefix:'/early-bird-paper', hasDayLog:true, modeFlag:'EARLYBIRD_MODE_ENABLED' },
 ];
 
 // COMMODITY (MCX) pages — one row per switched-on commodity engine, read from
 // the engines themselves so a new commodity page appears here with no wiring.
-// paperOnly: there is no live route, so the LIVE source shows nothing for them.
+// paperOnly: MCX keeps its own hours, so they get their own start/stop buttons.
 function commodityStrategies() {
   const { visibleEngines } = require("../utils/commodityPaperRouter");
   return visibleEngines().map((e) => {
@@ -138,18 +133,12 @@ router.get("/capital", (req, res) => {
 });
 
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
-  res.send(renderPage({ liveActive, sidebarKey: "dashboard", autoFlipBack: false }));
+  res.send(renderPage({ sidebarKey: "dashboard", autoFlipBack: false }));
 });
 
-function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false } = {}) {
-  const sidebar = buildSidebar(sidebarKey, liveActive);
+function renderPage({ sidebarKey = "realtime", autoFlipBack = false } = {}) {
+  const sidebar = buildSidebar(sidebarKey, false);
   const strategies = enabledStrategies();
-  // Mid-session the PAPER/LIVE source toggle is hidden — the running session
-  // decides the source, so letting it be switched would only mislead. (The
-  // broker-balance ribbon used to be hidden here too; it now stays up, because
-  // while trading is exactly when "how much is left" matters.)
-  const sessionActive = sharedSocketState.isAnyActive() || require("../utils/commodityPaperRouter").anyRunning();
   const hasCommodity  = strategies.some(s => s.paperOnly);
   // While only COMMODITY runs this page still stands in for the Dashboard, so it
   // must also be able to start the NIFTY paper roster (the Dashboard's button is
@@ -158,37 +147,24 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
 
   const endpointsJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status/data'])),
-    // null = paper-only (COMMODITY): nothing to poll under the LIVE source.
-    LIVE:  Object.fromEntries(strategies.map(s => [s.key, (s.paperOnly || s.noLive) ? null : s.livePrefix + '/status/data'])),
   });
   const statusPagesJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status'])),
-    LIVE:  Object.fromEntries(strategies.map(s => [s.key, ((s.paperOnly || s.noLive) ? s.paperPrefix : s.livePrefix) + '/status'])),
   });
-  // Manual square-off targets. The LIVE prefixes for the newer strategies are
-  // paper-wrapping harnesses with no /exit of their own — the paper engine owns
-  // the position and the harness mirrors its exit to the broker, so exiting the
-  // PAPER route is what closes a live trade too. Hence LIVE falls back to the
-  // paper prefix wherever the live router exposes no /exit.
-  const LIVE_HAS_OWN_EXIT = new Set(['EMA_RSI_ST', 'BB_RSI', 'PA', 'ORB']);
+  // Manual square-off targets.
   const exitUrlsJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/exit'])),
-    LIVE:  Object.fromEntries(strategies.map(s => [s.key,
-      (LIVE_HAS_OWN_EXIT.has(s.key) ? s.livePrefix : s.paperPrefix) + '/exit'])),
   });
   const labelsJson      = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.label])));
   const accentsJson     = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.accentClass])));
   const dayLogPrefixes  = JSON.stringify(Object.fromEntries(strategies.filter(s => s.hasDayLog).map(s => [s.key, s.paperPrefix])));
   const strategyOrder   = JSON.stringify(strategies.map(s => s.key));
-  // Stop-all hits BOTH prefixes for every strategy, regardless of which source
-  // the PAPER/LIVE toggle is showing — "stop everything" has to mean everything,
-  // or a live harness keeps trading because the page happened to be on PAPER.
+  // Stop-all hits every strategy's paper prefix.
   // statusUrl is probed first so the report can name what was ACTUALLY running:
   // most paper /stop handlers redirect unconditionally (their stopSession() is a
   // no-op when idle), so the HTTP response alone cannot tell running from idle.
   const stopUrlsJson    = JSON.stringify(strategies.map(s => ([
     { key: s.key, mode: 'PAPER', url: s.paperPrefix + '/stop', statusUrl: s.paperPrefix + '/status/data' },
-    ...((s.paperOnly || s.noLive) ? [] : [{ key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop', statusUrl: s.livePrefix  + '/status/data' }]),
   ])).flat());
   const paperOnlyJson   = JSON.stringify(strategies.filter(s => s.paperOnly).map(s => s.key));
 
@@ -262,13 +238,8 @@ ${faviconLink()}
   .top-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
   .top-bar h1 { margin:0; font-size:1.4rem; font-weight:600; letter-spacing:0.2px; }
   .top-bar .sub { color:#7d8aa3; font-size:0.78rem; margin-top:2px; }
-  .toggle { display:inline-flex; background:#0a1628; border:1px solid #1c2c47; border-radius:8px; padding:3px; }
-  .toggle button { background:transparent; border:none; color:#9aa9c2; font-size:0.82rem; font-weight:600; padding:7px 18px; border-radius:6px; cursor:pointer; transition:all 0.15s; letter-spacing:0.5px; }
-  .toggle button.active[data-mode="PAPER"] { background:#2563eb; color:#fff; }
-  .toggle button.active[data-mode="LIVE"]  { background:#dc2626; color:#fff; }
 
-  /* Stop NIFTY / Stop Commodity — the panic buttons. Kept visually distinct from the PAPER/LIVE
-     toggle so it can never be hit while aiming for a mode switch. */
+  /* Stop NIFTY / Stop Commodity — the panic buttons. */
   .top-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .stop-all { background:#7f1d1d; border:1px solid #b91c1c; color:#fee2e2; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
   .stop-all:hover:not(:disabled) { background:#b91c1c; color:#fff; }
@@ -472,8 +443,8 @@ ${faviconLink()}
   .rollup tr.earlybird td:first-child { color:#5eead4; }
   .rollup tr.cmx td:first-child { color:#fde68a; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
-  /* Strategy name links to that strategy's own status page (PAPER or LIVE,
-     following the toggle). Colour is inherited so the per-strategy accent
+  /* Strategy name links to that strategy's own paper status page.
+     Colour is inherited so the per-strategy accent
      rules above keep working in both themes. */
   .rollup td:first-child a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
   .rollup td:first-child a:hover { border-bottom-style:solid; }
@@ -570,16 +541,12 @@ ${sidebar}
       <div class="sub">Live view of all enabled strategies — polls every 4s <span id="pulse" class="pulse"></span></div>
     </div>
     <div class="top-actions">
-      ${!sessionActive ? `<div class="toggle" id="mode-toggle">
-        <button data-mode="PAPER" class="active">PAPER</button>
-        <button data-mode="LIVE">LIVE</button>
-      </div>` : ''}
       ${hasCommodity ? `<!-- MCX keeps its own hours, so it starts on its own button — and it has to be
            here as well as on the Dashboard: while a NIFTY session runs, this page
            IS the Dashboard. Hidden by the poll once every commodity page is up. -->
       <button type="button" class="cmx-start" id="cmx-start" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet" hidden>🛢 Start All (Commodity)</button>` : ''}
       ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled NIFTY / BANK NIFTY paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
-      ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every NIFTY and BANK NIFTY strategy, PAPER and LIVE — commodity keeps running">🛑 Stop NIFTY</button>` : ''}
+      ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every NIFTY and BANK NIFTY paper strategy — commodity keeps running">🛑 Stop NIFTY</button>` : ''}
       ${hasCommodity ? `<button type="button" class="stop-all" id="stop-cmx" title="Stop every COMMODITY (MCX) paper page — NIFTY keeps running">🛑 Stop Commodity</button>` : ''}
     </div>
   </div>
@@ -635,8 +602,8 @@ const STRATEGY_ACCENTS = ${accentsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
 const STOP_URLS        = ${stopUrlsJson};
-const PAPER_ONLY       = ${paperOnlyJson};   // COMMODITY — no LIVE source
-let mode = 'PAPER';
+const PAPER_ONLY       = ${paperOnlyJson};   // COMMODITY — own MCX start/stop
+const mode = 'PAPER';
 let timer = null;
 
 function updateOpenLinks() {
@@ -714,7 +681,6 @@ function renderPositionStandard(d, pos) {
   const entryPrice = pos.entryPrice ?? pos.entrySpot ?? null;
   const optionEntry = pos.optionEntryLtp ?? null;
   const optionCurrent = pos.optionCurrentLtp ?? pos.currentOptLtp ?? null;
-  const stopLoss = pos.stopLoss ?? pos.slSpot ?? null;
   const liveClose = pos.liveClose ?? d.lastTickPrice ?? null;
   const sideMult = pos.side === 'CE' ? 1 : (pos.side === 'PE' ? -1 : 0);
   const pointsMoved = pos.pointsMoved != null
@@ -745,7 +711,6 @@ function renderPositionStandard(d, pos) {
         <div class="lbl">Curr Opt</div><div class="val">\${fmtNum(optionCurrent)}</div>\`}
         <div class="lbl">Live Spot</div><div class="val">\${fmtNum(liveClose)}</div>
         <div class="lbl">Pts Moved</div><div class="val \${cls(pointsMoved)}">\${fmtNum(pointsMoved)}</div>
-        <div class="lbl">Stop Loss</div><div class="val">\${fmtNum(stopLoss)}</div>
         <div class="lbl">Entry Time</div><div class="val">\${pos.entryTime || '—'}</div>
       </div>
     </div>\`;
@@ -835,10 +800,6 @@ function renderColumn(strategy, d) {
   const statsEl = document.getElementById('stats-' + strategy);
   const metaEl  = document.getElementById('meta-' + strategy);
 
-  // Paper-only strategy under the LIVE source: there is nothing to show, and
-  // OFFLINE would read as a fault.
-  if (d && d.notApplicable) { showCard(strategy, false); return; }
-
   renderActivity(strategy, d);
 
   if (!d) {
@@ -924,7 +885,7 @@ function renderCardsEmpty() {
 }
 
 // Strategy name in the rollup doubles as a link to that strategy's status page,
-// following the PAPER/LIVE toggle — same target as the card's "Open Status".
+// same target as the card's "Open Status".
 // Falls back to plain text if the strategy has no page for the current source.
 function nameCell(key, label) {
   const href = (STATUS_PAGES[mode] || {})[key];
@@ -942,7 +903,6 @@ function renderRollup(all) {
     const d = all[key];
     const accent = STRATEGY_ACCENTS[key] || key.toLowerCase();
     const label = STRATEGY_LABELS[key];
-    if (d && d.notApplicable) continue;
     if (!d) {
       html += \`<tr class="\${accent}" data-key="\${key}"><td>\${nameCell(key, label)}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;
       continue;
@@ -1013,11 +973,8 @@ function isMarketRunning() {
 // holding and the P&L of a session that has not been saved yet.
 //   headline = free to trade   ·   Pool = investment + P&L   ·   In use = blocked
 function renderPools(d) {
-  // The pool is paper money only — there is no live-margin equivalent, so the
-  // ribbon has nothing honest to say in LIVE mode. Hide it rather than show
-  // paper rupees under a LIVE heading.
   const box = document.getElementById('wallets');
-  if (box) box.style.display = (mode === 'LIVE' || isMarketRunning()) ? 'none' : '';
+  if (box) box.style.display = isMarketRunning() ? 'none' : '';
   const pools = (d && d.pools) || null;
   if (!pools) return;   // failed poll — keep the last good numbers on screen
   const set = (id, text, klass) => {
@@ -1061,9 +1018,6 @@ function renderCapitalAlert(d) {
   }).join('');
 
   box.innerHTML =
-      // Says PAPER explicitly: unlike the ribbon this banner stays up under the
-      // LIVE toggle (an alert you can hide by switching tabs is not an alert),
-      // so it must name whose money ran out.
       '<div class="cap-alert-head">❌ Paper capital pool exhausted — entries are being refused</div>'
     + '<div class="cap-alert-sub">'
     + (poolLine || 'A paper entry cost more than the broker pool had left, so it was not taken.')
@@ -1082,10 +1036,8 @@ async function poll() {
   // A COMMODITY page answers with its session under "monitor", already in the
   // field names the NIFTY strategies use.
   const results = await Promise.all(
-    STRATEGY_KEYS.map(k => eps[k]
-      ? fetchOne(eps[k]).then(d => (d && d.monitor) ? d.monitor : d)
-      : Promise.resolve({ notApplicable: true })
-    ).concat(fetchOne('/realtime/capital'))
+    STRATEGY_KEYS.map(k => fetchOne(eps[k]).then(d => (d && d.monitor) ? d.monitor : d))
+      .concat(fetchOne('/realtime/capital'))
   );
   const capital = results.pop();
   const all = {};
@@ -1098,30 +1050,18 @@ async function poll() {
   renderCapitalAlert(capital);
 }
 
-document.querySelectorAll('#mode-toggle button').forEach(b => {
-  b.addEventListener('click', () => {
-    if (b.classList.contains('active')) return;
-    document.querySelectorAll('#mode-toggle button').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    mode = b.dataset.mode;
-    updateOpenLinks();
-    poll();
-  });
-});
-
 // ── Stop NIFTY / Stop Commodity ─────────────────────────────────────────────
 // Two buttons, one per market: NSE and MCX keep different hours, so closing
 // NIFTY at 15:30 must not also flatten a commodity session that runs to 23:30.
-// Each fans out GET /stop across its own strategies (NIFTY: PAPER and LIVE
-// both; COMMODITY: paper only). Each engine's own /stop is reused verbatim, so
+// Each fans out GET /stop across its own paper strategies. Each engine's own /stop is reused verbatim, so
 // an open position is squared off by the same code path its Stop button uses.
 //
-// Two clicks: the first arms, the second fires. This squares off real money in
-// LIVE — a stray click on a phone must not be able to flatten the book.
+// Two clicks: the first arms, the second fires — a stray click on a phone must
+// not be able to flatten the book.
 const STOP_SCOPES = {
   nse: { btnId: 'stop-nse', label: '🛑 Stop NIFTY',     name: 'Stop NIFTY',
-         what: 'every <b>NIFTY and BANK NIFTY</b> strategy in <b>both</b> PAPER and LIVE',
-         none: 'no NIFTY / BANK NIFTY strategy is running in PAPER or LIVE',
+         what: 'every <b>NIFTY and BANK NIFTY</b> paper strategy',
+         none: 'no NIFTY / BANK NIFTY strategy is running',
          has: t => PAPER_ONLY.indexOf(t.key) === -1 },
   cmx: { btnId: 'stop-cmx', label: '🛑 Stop Commodity', name: 'Stop Commodity',
          what: 'every <b>COMMODITY (MCX)</b> paper page',
@@ -1184,11 +1124,6 @@ async function stopScope(scope) {
       if (!r.ok) { live.push(t); return; }          // can't tell → stop it anyway
       const d = await r.json();
       if (!d) { live.push(t); return; }
-      // The harness LIVE routes spread the underlying paper engine's status, so
-      // their "running" is true whenever PAPER is running — even with no harness
-      // installed. "installed" is the only field that means LIVE is armed; the
-      // paper entry already covers the paper session itself.
-      if (typeof d.installed === 'boolean') { if (d.installed) live.push(t); return; }
       if (d.running) live.push(t);
     } catch (e) { live.push(t); }
   }));
@@ -1208,8 +1143,8 @@ async function stopScope(scope) {
       // remembers for the session, and returns null if the prompt is cancelled.
       const r = await secretFetch(t.url, { cache:'no-store', redirect:'follow' });
       if (!r) { failed.push({ ...t, status: 403 }); continue; }
-      // 400 = "not running" / "harness not installed" for the harness routes —
-      // it raced us to idle, which is the outcome we wanted anyway.
+      // 400 = "not running" — it raced us to idle, which is the outcome we
+      // wanted anyway.
       if (r.ok || r.status === 400) stopped.push(t);
       else failed.push({ ...t, status: r.status });
     } catch (e) {
@@ -1249,16 +1184,16 @@ function renderCmxStart(all) {
   // Stop Commodity is the other half: shown only once a commodity page runs, and
   // never mid-start — Start and Stop side by side reads as "both at once".
   const stop = document.getElementById('stop-cmx');
-  // Hidden only on a clear "nothing runs": the LIVE tab has no commodity source
-  // and a failed status read proves nothing, so neither may hide a panic button.
+  // Hidden only on a clear "nothing runs": a failed status read proves nothing,
+  // so it may not hide a panic button.
   if (stop && !stopBusy) {
-    const known = mode !== 'LIVE' && PAPER_ONLY.every(k => all[k] && !all[k].notApplicable);
+    const known = PAPER_ONLY.every(k => all[k]);
     if (cmxBusy) stop.hidden = true;
     else if (PAPER_ONLY.some(k => all[k] && all[k].running)) stop.hidden = false;
     else if (known) stop.hidden = true;
   }
   if (!btn || cmxBusy) return;
-  btn.hidden = mode === 'LIVE' || !PAPER_ONLY.some(k => !(all[k] && all[k].running));
+  btn.hidden = !PAPER_ONLY.some(k => !(all[k] && all[k].running));
 }
 async function startAllCmx() {
   const btn = document.getElementById('cmx-start');
@@ -1296,13 +1231,12 @@ function nseStartWindow() {
 function renderNseStart(all) {
   const btn = document.getElementById('nse-start');
   const nseRunning = STRATEGY_KEYS.some(k => PAPER_ONLY.indexOf(k) === -1 && all[k] && all[k].running);
-  // Stop NIFTY stays up all through market hours (it is the panic button, and
-  // this tab cannot see the other mode). After the 15:30 close it hides once
+  // Stop NIFTY stays up all through market hours (it is the panic button). After the 15:30 close it hides once
   // nothing NSE runs here, so a commodity-only evening shows only Stop Commodity.
   const stop = document.getElementById('stop-nse');
   if (stop && !stopBusy) stop.hidden = !nseRunning && !nseStartWindow();
   if (!btn || nseBusy) return;
-  btn.hidden = mode === 'LIVE' || nseRunning || !nseStartWindow();
+  btn.hidden = nseRunning || !nseStartWindow();
 }
 async function startAllNse() {
   const btn = document.getElementById('nse-start');
@@ -1351,8 +1285,7 @@ async function fetchText(url) {
   }
 }
 
-// Manual square-off from the monitor. Confirms first (this spends real money in
-// LIVE), then hits the strategy's /exit through secretFetch — the exit routes
+// Manual square-off from the monitor. Confirms first, then hits the strategy's /exit through secretFetch — the exit routes
 // are NOT in app.js OPEN_PATHS, so a plain fetch or a link navigation would 403.
 //
 // symbol is EarlyBird-only: its /exit takes ?symbol= to close one leg and closes
@@ -1365,9 +1298,7 @@ async function exitPosition(strategy, btn, symbol) {
     icon: '🚪',
     title: 'Exit ' + label + '?',
     message: 'Square off ' + what + ' now at market, in ' + mode + ' mode.\\n\\n'
-           + (mode === 'LIVE'
-              ? 'This places a real exit order with the broker (unless the dry-run harness is on).'
-              : 'This closes the paper position and books its P&L.'),
+           + 'This closes the paper position and books its P&L.',
     confirmText: 'Exit now',
   });
   if (!ok) return;

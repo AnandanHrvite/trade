@@ -13,10 +13,11 @@
  * each symbol's PREVIOUS DAILY CLOSE (the 2% gap rule needs it). It hands the
  * lot to earlyBird.buildDayPlan(), which decides whether the day is a LONG day
  * or a SHORT day and which stocks confirmed. Each confirming stock becomes a
- * PENDING SETUP with frozen entry / stop / target levels. From then on the
- * route only executes: a pending setup fills the first time its stock trades
- * through the entry LEVEL, and an open position exits on its stop, its target
- * or the 13:00 square-off.
+ * PENDING SETUP with a frozen entry level. From then on the route only
+ * executes: a pending setup fills the first time its stock trades through the
+ * entry LEVEL, and an open position exits ONLY on the global profit lock
+ * (tradeGuards.checkProfitLock on the share price, a SHORT mirrored around its
+ * entry), a manual exit, or the session's TRADE_STOP_TIME auto-stop.
  *
  * ── WHAT GETS TRADED — EARLYBIRD_TRADE_MODE ─────────────────────────────────
  * The default, and everything described above, is the STOCK leg:
@@ -37,13 +38,11 @@
  *              even when zero stocks confirm, because it never needed them.
  *
  * ── THE OPTION LEG, IN ONE PARAGRAPH ────────────────────────────────────────
- * earlyBird.buildNiftyOptionSetup() reads entry / stop / target off NIFTY's
- * 09:15 candle exactly as a stock's are read off its own. EVERY ONE OF THOSE IS
- * A NIFTY SPOT LEVEL — the trigger, the stop and the 1:2 target are all tested
- * against SPOT, never against the premium, which is what keeps the option leg
- * comparable to the stock leg and reproducible in Replay. Spot arrives on the
- * shared NIFTY tick feed (onTick). The premium is fetched only twice — once to
- * price the entry, once to price the exit — and P&L is
+ * earlyBird.buildNiftyOptionSetup() reads the entry level off NIFTY's 09:15
+ * candle exactly as a stock's is read off its own. The trigger is a NIFTY SPOT
+ * level, tested against SPOT on the shared NIFTY tick feed (onTick). Once open,
+ * the premium is polled every cycle and the global profit lock is applied to
+ * it — that is the leg's only automatic exit. P&L is
  * (exitPremium − entryPremium) × qty for the BOUGHT option, so a bought PE
  * PROFITS when spot falls. earlyBird.computePnl() is NOT used for it: that one
  * is cash-equity and direction-signed, and would report a PE win as a loss.
@@ -159,11 +158,7 @@ function _pollMs()          { return _intEnv(process.env.EARLYBIRD_POLL_MS, 2000
 function _historyLagMs()    { return _intEnv(process.env.EARLYBIRD_HISTORY_LAG_MS, 5000, 0, 120000); }
 /** Calendar days of daily history to reach back for the previous close. */
 function _warmupDays()      { return _intEnv(process.env.EARLYBIRD_WARMUP_DAYS, 10, 3, 120); }
-function _maxDailyTrades()  { return _intEnv(process.env.EARLYBIRD_MAX_DAILY_TRADES, 5, 1, 100); }
-function _maxDailyLoss()    { return _floatEnv(process.env.EARLYBIRD_MAX_DAILY_LOSS, 5000); }
-function _maxDailyLosses()  { return _intEnv(process.env.EARLYBIRD_MAX_DAILY_LOSSES, 3, 0, 100); }
 function _dailyProfitLock() { return _floatEnv(process.env.EARLYBIRD_DAILY_PROFIT_LOCK, 0); }
-function _maxWeeklyLoss()   { return _floatEnv(process.env.EARLYBIRD_MAX_WEEKLY_LOSS, 0); }
 /** Symbols per getQuotes call. Fyers accepts a comma list; keep it modest. */
 function _quoteChunk()      { return _intEnv(process.env.EARLYBIRD_QUOTE_CHUNK, 20, 1, 50); }
 /** A quote older than this stops being used to test an exit. */
@@ -214,7 +209,6 @@ function _freshState() {
     sessionTrades:  [],
     sessionPnl:     0,
     tradesTaken:    0,
-    stopOuts:       0,
 
     // Multi-position bookkeeping
     positions:      new Map(),   // symbol -> open position
@@ -240,6 +234,7 @@ function _freshState() {
     optionAttempted: false,  // one option trade per day — no re-entry, ever
     optionDropped:   null,   // setup that never triggered by the entry cut-off
     optionLtp:       null,   // last premium seen (entry, then exit)
+    optionLtpAt:     null,   // when optionLtp was last refreshed (ms) — the lock needs a fresh one
     optionEntryLock: false,  // in-flight guard: the entry has an unavoidable await
     optionLtpFailAt: null,   // last premium-fetch failure (ms) — throttles the retry
     optionLtpFails:  0,
@@ -355,7 +350,6 @@ function rehydrateSessionFromJsonl() {
     state._staleSession = stale;
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
-    state.stopOuts = trades.filter(t => String(t.exitType || "") === "SL").length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
     // The two legs have separate "already traded" locks. A recovered OPTION
@@ -369,7 +363,7 @@ function rehydrateSessionFromJsonl() {
       if (t.leg === "option") { state.optionAttempted = true; optRecovered++; continue; }
       if (t.symbol) state.attempted.add(String(t.symbol));
     }
-    console.log(`♻️ ${LOG_TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl}, ${state.stopOuts} stop-out(s))${optRecovered ? `, including ${optRecovered} OPTION trade(s) — no option re-entry today` : ""}`);
+    console.log(`♻️ ${LOG_TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})${optRecovered ? `, including ${optRecovered} OPTION trade(s) — no option re-entry today` : ""}`);
   } catch (err) {
     console.warn(`${LOG_TAG} session rehydrate failed: ${err.message}`);
   }
@@ -739,7 +733,7 @@ function _logPlanFunnel(plan, cfg, universeKey, fetchFailures, elapsedMs) {
   log(`✅ ${LOG_TAG} ACCEPTED ${plan.candidates.length} of ${plan.scanned} — need ${cfg.minConfirmingStocks}, cap ${cfg.maxConcurrent} concurrent`);
   for (const s of (plan.candidates || [])) {
     const cd = s.candle || {};
-    log(`   ✅ ${s.symbol} ${s.side} — candle O ${cd.open} H ${cd.high} L ${cd.low} C ${cd.close} · ${s.detail ? s.detail.shape : "—"} · entry ${s.entry} · SL ${s.stop} (${s.slBasis}${s.bigCandle ? ", BIG-CANDLE rule" : ""}) · target ${s.target} · risk ₹${s.riskPts}/sh × ${s.qty} = ₹${_r2(s.riskPts * s.qty)} · gap ${s.gapPct}% vs prev close ${s.prevClose}`);
+    log(`   ✅ ${s.symbol} ${s.side} — candle O ${cd.open} H ${cd.high} L ${cd.low} C ${cd.close} · ${s.detail ? s.detail.shape : "—"} · entry ${s.entry} · candle range ₹${s.rangePts} · qty ${s.qty} · gap ${s.gapPct}% vs prev close ${s.prevClose}`);
   }
   log(`🚫 ${LOG_TAG} REJECTED ${plan.rejected.length} — per-symbol reasons follow`);
   for (const r of (plan.rejected || [])) {
@@ -762,7 +756,6 @@ function _rejectGroup(reason) {
   if (/doji/i.test(r))                           return "doji";
   if (/flat candle/i.test(r))                    return "flat candle";
   if (/range .* < required/i.test(r))            return "range too small";
-  if (/risk is zero/i.test(r))                   return "zero risk";
   return "other";
 }
 
@@ -770,7 +763,7 @@ function _r2(x) { return Math.round(x * 100) / 100; }
 
 /**
  * Turn the plan's candidates into PENDING SETUPS. Frozen at 09:30, never
- * recomputed. Only the first maxConcurrent (already ranked tightest-risk-first
+ * recomputed. Only the first maxConcurrent (already ranked tightest-candle-first
  * by the engine) are armed — arming more would let the cap be decided by
  * whichever stock happened to trigger first.
  */
@@ -786,12 +779,7 @@ function _armPendingSetups(plan, cfg) {
       side:          s.side,
       qty:           s.qty,
       entry:         s.entry,
-      stop:          s.stop,
-      target:        s.target,
-      riskPts:       s.riskPts,
-      rewardPts:     s.rewardPts,
-      bigCandle:     s.bigCandle,
-      slBasis:       s.slBasis,
+      rangePts:      s.rangePts,
       gapPct:        s.gapPct,
       prevClose:     s.prevClose,
       shape:         s.detail ? s.detail.shape : null,
@@ -809,7 +797,7 @@ function _armPendingSetups(plan, cfg) {
 
   log(`🎯 ${LOG_TAG} ARMED ${armed.length} pending setup(s) — ${plan.side} day, entries allowed until ${_fmtMins(cfg.entryEndMin)}, cap ${cap} concurrent, qty ${cfg.qty}/stock`);
   for (const s of armed) {
-    log(`   🎯 ${s.symbol} ${s.side} — waiting for price to ${s.side === "LONG" ? "trade UP through" : "trade DOWN through"} ₹${s.entry}. SL ₹${s.stop}, target ₹${s.target}, risk ₹${_r2(s.riskPts * s.qty)}.`);
+    log(`   🎯 ${s.symbol} ${s.side} — waiting for price to ${s.side === "LONG" ? "trade UP through" : "trade DOWN through"} ₹${s.entry}. Exit: profit lock only.`);
   }
   if (plan.candidates.length > armed.length) {
     const skippedNames = plan.candidates.slice(armed.length).map(x => x.symbol).join(", ");
@@ -844,11 +832,11 @@ function _itmStepsLabel() {
 // first line, and no option module, symbol or quote is ever touched.
 //
 // The rules live in the engine (buildNiftyOptionSetup / isEntryTriggered /
-// checkExitOnTick). Nothing here compares a price to a level or invents one.
+// checkProfitLockExit). Nothing here compares a price to a level or invents one.
 //
-// THE ONE THING THAT IS DIFFERENT FROM THE STOCK LEG: every level is a NIFTY
+// THE ONE THING THAT IS DIFFERENT FROM THE STOCK LEG: the entry level is a NIFTY
 // SPOT level and is tested against SPOT (state.lastTickPrice, from the shared
-// tick feed), but the P&L is on the PREMIUM. A bought PE profits when spot
+// tick feed), but the P&L and the profit lock are on the PREMIUM. A bought PE profits when spot
 // FALLS, because its premium RISES — so earlyBird.computePnl (cash-equity,
 // direction-signed) must not be used, and is not.
 // ═════════════════════════════════════════════════════════════════════════════
@@ -904,12 +892,7 @@ function _armOptionSetup(plan, cfg) {
     side:          s.side,          // LONG | SHORT — the SPOT direction
     optionSide:    s.optionSide,    // CE | PE      — what we BUY
     entry:         s.entry,
-    stop:          s.stop,
-    target:        s.target,
-    riskPts:       s.riskPts,
-    rewardPts:     s.rewardPts,
-    bigCandle:     s.bigCandle,
-    slBasis:       s.slBasis,
+    rangePts:      s.rangePts,
     lots:          cfg.optionLots,
     qty,
     shape:         s.detail ? s.detail.shape : null,
@@ -926,9 +909,8 @@ function _armOptionSetup(plan, cfg) {
   log(`🎯 ${LOG_TAG} OPTION LEG ARMED — BUY NIFTY ${s.optionSide} on a ${s.side} signal. NO stock confirmation is used or required for this leg.`);
   log(`   ├─ Signal : NIFTY ${_fmtMins(cfg.sessionStartMin)} candle O ${c.open} H ${c.high} L ${c.low} C ${c.close} · ${state.optionPending.shape || "—"}`);
   log(`   ├─ Trigger: SPOT must ${s.side === "LONG" ? "trade UP through" : "trade DOWN through"} ${s.entry} (a NIFTY SPOT level, not a premium)`);
-  log(`   ├─ Stop   : SPOT ${s.stop} (${s.slBasis}${s.bigCandle ? " — BIG-CANDLE rule moved it onto the body" : ""}) · risk ${s.riskPts} spot pts`);
-  log(`   ├─ Target : SPOT ${s.target} @ 1:${cfg.targetRR} · reward ${s.rewardPts} spot pts`);
-  log(`   └─ Size   : ${cfg.optionLots} lot(s) = ${qty} qty · entries allowed until ${_fmtMins(cfg.entryEndMin)} · square-off ${_fmtMins(cfg.forcedExitMin)} · ONE option trade per day, no re-entry`);
+  log(`   ├─ Exit   : the global profit lock on the PREMIUM — no stop, target or square-off time of its own`);
+  log(`   └─ Size   : ${cfg.optionLots} lot(s) = ${qty} qty · entries allowed until ${_fmtMins(cfg.entryEndMin)} · ONE option trade per day, no re-entry`);
   _persist();
 }
 
@@ -953,9 +935,9 @@ async function _fetchOptionPremium(symbol) {
 }
 
 /**
- * The option leg's per-poll step: trigger, then exit.
+ * The option leg's per-poll step: exit (profit lock), then trigger.
  *
- * EXITS ARE CHECKED FIRST, for the same reason the stock leg does it — a stop
+ * EXITS ARE CHECKED FIRST, for the same reason the stock leg does it — an exit
  * must never queue behind a new fill.
  *
  * ASYNC, because pricing an option needs a round-trip that the stock leg never
@@ -972,21 +954,29 @@ async function _stepOptionLeg() {
   const nowMins = getISTMinutes();
   const spot = state.lastTickPrice;
 
-  // ── EXIT first ────────────────────────────────────────────────────────────
+  // ── EXIT first — the global profit lock on the TRADED price ───────────────
+  // That is the premium for an option (a bought CE or PE both gain as it rises)
+  // and the index level for futures (a SHORT is mirrored around its entry).
+  // Only a FRESH price is used: a lock fired on a frozen premium would book a
+  // price the market is no longer offering.
   if (state.optionPosition) {
-    if (typeof spot === "number" && Number.isFinite(spot) && spot > 0) {
-      _trackOptionExcursion(state.optionPosition, spot);
-      const ex = earlyBird.checkExitOnTick(state.optionPosition, spot, { nowMins, cfg });
-      if (ex && ex.exit) { await _closeOptionPosition(ex); return; }
-    } else if (Number.isFinite(nowMins) && nowMins >= cfg.forcedExitMin) {
-      // The square-off clock must fire even with a dead spot feed, exactly as the
-      // stock leg's does — a position is never held past it for want of a tick.
-      log(`⚠️ ${LOG_TAG} OPTION — forced exit is due but there is no fresh NIFTY spot tick. Squaring off on the clock.`);
-      await _closeOptionPosition({
-        exitType: "EOD",
-        reason: `Forced exit at ${_fmtMins(cfg.forcedExitMin)} (no spot tick — squared off on the clock)`,
-        price: state.optionPosition.entrySpot,
-      });
+    const pos = state.optionPosition;
+    if (typeof spot === "number" && Number.isFinite(spot) && spot > 0) _trackOptionExcursion(pos, spot);
+    const ltp = state.optionLtp;
+    const fresh = typeof ltp === "number" && Number.isFinite(ltp) && ltp > 0
+      && state.optionLtpAt && (Date.now() - state.optionLtpAt) / 1000 <= _quoteStaleSec();
+    if (fresh) {
+      const lockSide = pos.isFutures ? pos.side : "LONG";
+      if (!(pos.bestPremium > 0)) pos.bestPremium = pos.optionEntryLtp;
+      if (lockSide === "SHORT" ? ltp < pos.bestPremium : ltp > pos.bestPremium) pos.bestPremium = ltp;
+      const ex = earlyBird.checkProfitLockExit(lockSide, pos.optionEntryLtp, ltp, pos.bestPremium);
+      if (ex) {
+        // `price` is what _closeOptionPosition reads as the SPOT (the index level
+        // itself for futures); the exit premium is fetched there.
+        ex.price = pos.isFutures ? ltp : spot;
+        log(`🔒 ${LOG_TAG} OPTION ${ex.reason}`);
+        await _closeOptionPosition(ex);
+      }
     }
     return;                            // one option position, so nothing else to do
   }
@@ -1000,7 +990,6 @@ async function _stepOptionLeg() {
   if (!Number.isFinite(nowMins)) return;
   if (nowMins < cfg.entryStartMin) return;
   if (nowMins > cfg.entryEndMin) { _dropExpiredOptionSetup(cfg, spot); return; }
-  if (state.tradesTaken >= _maxDailyTrades()) { _applyDayBreakers(); return; }
   if (typeof spot !== "number" || !Number.isFinite(spot) || spot <= 0) return;
   if (!earlyBird.isEntryTriggered(state.optionPending, spot)) return;
   // Triggered inside the wait-after-exit cooldown: counts as the day's one
@@ -1157,13 +1146,9 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
     optionEntryLtp: premium,
     entrySpot,                           // the FROZEN level, not the trigger tick
     triggerSpot,
-    // These three are what earlyBird.checkExitOnTick reads. They are SPOT levels.
-    stop:           setup.stop,
-    target:         setup.target,
-    riskPts:        setup.riskPts,
-    rewardPts:      setup.rewardPts,
-    bigCandle:      setup.bigCandle,
-    slBasis:        setup.slBasis,
+    rangePts:       setup.rangePts,
+    // Best premium since entry — the profit lock's peak.
+    bestPremium:    premium,
     shape:          setup.shape,
     signalOpen:     setup.signalOpen,
     signalHigh:     setup.signalHigh,
@@ -1184,6 +1169,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   state.optionPending   = null;
   state.optionAttempted = true;
   state.optionLtp       = premium;
+  state.optionLtpAt     = Date.now();
   state.optionLtpFails  = 0;
   state.optionLtpFailAt = null;
   state.tradesTaken++;
@@ -1195,15 +1181,14 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   log(`🟢 ${LOG_TAG} OPTION FILL — BUY ${qty}× ${optInfo.symbol} @ ₹${premium} premium`);
   log(`   ├─ Strike : ${optInfo.strike} ${optionSide} · expiry ${optInfo.expiry} · ${setup.lots} lot(s) × ${instrumentConfig.getLotQty()} = ${qty} qty · ₹${_r2(qty * premium)} deployed`);
   log(`   ├─ Spot   : entered on the frozen ${entrySpot} level (the trigger tick printed ${triggerSpot}, ${slip} away). ${setup.side} signal → bought a ${optionSide}.`);
-  log(`   ├─ Stop   : SPOT ${setup.stop} (${setup.slBasis}${setup.bigCandle ? " — BIG-CANDLE rule" : ""}) · ${setup.riskPts} spot pts`);
-  log(`   ├─ Target : SPOT ${setup.target} @ 1:${cfg.targetRR} · ${setup.rewardPts} spot pts`);
-  log(`   └─ P&L    : measured on the PREMIUM — (exit − ₹${premium}) × ${qty}. A ${optionSide} bought on a ${setup.side} signal gains when its PREMIUM rises${optionSide === "PE" ? ", which is when spot FALLS" : ""}. Trades used today: ${state.tradesTaken}/${_maxDailyTrades()}.`);
+  log(`   ├─ Exit   : the global profit lock on the premium — nothing else closes it but a manual exit or the session stop`);
+  log(`   └─ P&L    : measured on the PREMIUM — (exit − ₹${premium}) × ${qty}. A ${optionSide} bought on a ${setup.side} signal gains when its PREMIUM rises${optionSide === "PE" ? ", which is when spot FALLS" : ""}. Trades taken today: ${state.tradesTaken}.`);
 
   notifyEntry({
     mode: "EARLYBIRD-PAPER",
     side: optionSide, symbol: optInfo.symbol,
     spotAtEntry: entrySpot, optionEntryLtp: premium,
-    qty, stopLoss: setup.stop, target: setup.target,
+    qty,
     entryTime: pos.entryTime,
     entryReason: setup.entryReason,
   });
@@ -1215,7 +1200,6 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
       ts: Date.now(),
       side: optionSide, symbol: optInfo.symbol, qty,
       spotEntry: entrySpot, optionEntry: premium,
-      stopLoss: setup.stop, target: setup.target,
       reason: setup.entryReason,
     });
   } catch (_) {}
@@ -1238,13 +1222,13 @@ function _trackOptionExcursion(pos, spot) {
 }
 
 /**
- * Book the option position. `ex` is the engine's exit verdict, whose `price` is
- * a SPOT level — the exit PREMIUM is fetched separately, because that is what
- * the P&L is made of. A premium fetch that fails falls back to the last one
+ * Book the option position. `ex` is the exit verdict (profit lock / manual /
+ * session stop), whose `price` is the SPOT at exit — the exit PREMIUM is fetched
+ * separately, because that is what the P&L is made of. A premium fetch that fails falls back to the last one
  * seen and says so out loud rather than leaving the position open forever.
  */
 // Remembers the square-off in flight on its own session, so a /stop landing
-// during an SL or /exit premium fetch waits for that trade before saving.
+// during a profit-lock or /exit premium fetch waits for that trade before saving.
 function _closeOptionPosition(ex) {
   const s = state;
   const p = _closeOptionPositionInner(ex);
@@ -1268,8 +1252,7 @@ async function _closeOptionPositionInner(ex) {
   let released = false;
   let bookedPnl = 0;
   // The position is claimed (cleared) above BEFORE notifyExit below; a throw in
-  // between (premium fetch, P&L, trade log) used to skip the notify, and the live
-  // harness — which only sees notifyExit — never closed the REAL position.
+  // between (premium fetch, P&L, trade log) used to skip the notify.
   let _exitNotified = false;
   try {
     const cfg = earlyBird.getConfig();
@@ -1315,7 +1298,6 @@ async function _closeOptionPositionInner(ex) {
     bookedPnl = pnl;
 
     s.sessionPnl = _r2(s.sessionPnl + pnl);
-    if (ex.exitType === "SL") s.stopOuts++;
 
     const trade = {
       leg:            "option",
@@ -1340,17 +1322,12 @@ async function _closeOptionPositionInner(ex) {
       pnl,
       grossPnl:       gross,
       charges,
-      pnlMode:        `option premium: BUY ${pos.optionSide} ${qty} × ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}); every level measured on NIFTY SPOT`,
+      pnlMode:        `option premium: BUY ${pos.optionSide} ${qty} × ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}); entry level measured on NIFTY SPOT`,
       exitReason:     ex.reason,
       exitType:       ex.exitType,
       entryReason:    pos.entryReason,
-      stopLoss:       pos.stop,
-      initialStopLoss: pos.stop,
-      target:         pos.target,
-      riskPts:        pos.riskPts,
-      rewardPts:      pos.rewardPts,
-      bigCandle:      pos.bigCandle,
-      slBasis:        pos.slBasis,
+      rangePts:       pos.rangePts,
+      bestPremium:    pos.bestPremium,
       shape:          pos.shape,
       signalOpen:     pos.signalOpen,
       signalHigh:     pos.signalHigh,
@@ -1378,10 +1355,10 @@ async function _closeOptionPositionInner(ex) {
 
     const held = Math.round(trade.durationMs / 1000);
     log(`${pnl >= 0 ? "✅" : "❌"} ${LOG_TAG} OPTION EXIT [${ex.exitType}] ${pos.optionSide} ${qty}×${pos.symbol} — ${ex.reason}`);
-    log(`   ├─ Spot   : ${pos.entrySpot} → ${exitSpot} (${_r2(exitSpot - pos.entrySpot)} pts) · the level that fired this exit`);
+    log(`   ├─ Spot   : ${pos.entrySpot} → ${exitSpot} (${_r2(exitSpot - pos.entrySpot)} pts)`);
     log(`   ├─ Premium: ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}) · ${_r2(exitPremium - pos.optionEntryLtp)}/qty × ${qty}`);
     log(`   ├─ P&L    : gross ₹${gross} − charges ₹${charges} = ₹${pnl} · held ${held}s · MFE ${trade.mfePts} spot pts / MAE ${trade.maePts} spot pts`);
-    log(`   └─ Book   : session ₹${s.sessionPnl} · ${s.stopOuts} stop-out(s) · ${s.positions.size} stock position(s) still open · no option re-entry today`);
+    log(`   └─ Book   : session ₹${s.sessionPnl} · ${s.positions.size} stock position(s) still open · no option re-entry today`);
 
     _exitNotified = true;
     notifyExit({
@@ -1436,26 +1413,23 @@ function _dropExpiredOptionSetup(cfg, spot) {
     gate: "option_never_triggered", leg: "option",
     reason: `spot entry ${setup.entry} never touched by ${_fmtMins(cfg.entryEndMin)}`,
     side: setup.side, optionSide: setup.optionSide,
-    entry: setup.entry, stop: setup.stop, target: setup.target,
+    entry: setup.entry,
     lastSpot: state.optionDropped.lastSpot,
   });
   _persist();
 }
 
 /**
- * Mark the open option to market, for the screen only.
- *
- * NO EXIT READS THIS. Every exit level is a SPOT level and is tested against the
- * tick feed in _stepOptionLeg — this poll exists so the status page can show a
- * live premium and a live P&L, and so a stale premium is never what a trade is
- * booked at when the exit's own fetch fails.
+ * Mark the open option to market. This IS the price the profit lock reads (in
+ * _stepOptionLeg, which runs right after it each poll), and also what the status
+ * page shows as the live premium / P&L.
  */
 async function _pollOptionPremium() {
   if (!state.optionPosition) return;
   if (!earlyBird.tradesOption()) return;
   if (state.optionPosition.isFutures) {
     // Futures mark on the shared spot feed — nothing to poll.
-    if (state.lastTickPrice > 0) state.optionLtp = state.lastTickPrice;
+    if (state.lastTickPrice > 0) { state.optionLtp = state.lastTickPrice; state.optionLtpAt = state.lastTickTime || Date.now(); }
     return;
   }
   const sym = state.optionPosition.symbol;
@@ -1463,9 +1437,10 @@ async function _pollOptionPremium() {
     const ltp = await _fetchOptionPremium(sym);
     if (typeof ltp === "number" && Number.isFinite(ltp) && ltp > 0) {
       state.optionLtp = ltp;
+      state.optionLtpAt = Date.now();
       try { tickRecorder.recordOptionLtp(sym, ltp, "early-bird-paper"); } catch (_) {}
     }
-  } catch (_) { /* the exit path has its own fetch + fallback; a mark-to-market miss is not an event */ }
+  } catch (_) { /* a miss leaves optionLtpAt old, so the lock waits for a fresh premium */ }
 }
 
 /** Live premium + P&L for the status surfaces. Null-safe, never a guess. */
@@ -1487,12 +1462,7 @@ function _optionView() {
       side:       state.optionSetup.side,
       optionSide: state.optionSetup.optionSide,
       entry:      state.optionSetup.entry,
-      stop:       state.optionSetup.stop,
-      target:     state.optionSetup.target,
-      riskPts:    state.optionSetup.riskPts,
-      rewardPts:  state.optionSetup.rewardPts,
-      bigCandle:  !!state.optionSetup.bigCandle,
-      slBasis:    state.optionSetup.slBasis,
+      rangePts:   state.optionSetup.rangePts,
       shape:      state.optionSetup.detail ? state.optionSetup.detail.shape : null,
       reason:     state.optionSetup.reason || state.optionSetup.skipReason,
     } : null,
@@ -1511,8 +1481,7 @@ function _optionView() {
       optionEntryLtp: pos.optionEntryLtp,
       optionLtp:      ltp,
       entrySpot:      pos.entrySpot,
-      stop:           pos.stop,
-      target:         pos.target,
+      bestPremium:    pos.bestPremium,
       entryTime:      pos.entryTime,
       heldSec:        Math.round((Date.now() - pos.entryTimeMs) / 1000),
       // Premium P&L — the same arithmetic the exit books, so the screen and the
@@ -1552,7 +1521,7 @@ function _logShortlist() {
  * Attribution is STRICTLY by symbol — never "whatever is left over". A row with
  * no identifiable symbol is DROPPED, except when a single-symbol request came
  * back with a single row, where there is nothing to confuse it with. Writing
- * one stock's price into another's slot would fire the wrong stop.
+ * one stock's price into another's slot would fire the wrong exit.
  *
  * Exported for the offline test harness: this decides the price every exit is
  * measured against, so it is tested rather than trusted.
@@ -1650,16 +1619,17 @@ function startPolling() {
     try { await _pollQuotes(); }
     catch (e) { console.error(`🚨 ${LOG_TAG} quote poll error: ${e.message}`); }
 
-    // 3. Exits BEFORE entries — a stop must never wait behind a new fill.
+    // 3. Exits BEFORE entries — an exit must never wait behind a new fill.
     try { _checkExits(); } catch (e) { console.error(`🚨 ${LOG_TAG} exit-check error: ${e.message}`); }
     try { _checkTriggers(); } catch (e) { console.error(`🚨 ${LOG_TAG} trigger-check error: ${e.message}`); }
     try { _dropExpiredSetups(); } catch (e) { console.error(`🚨 ${LOG_TAG} setup-expiry error: ${e.message}`); }
 
     // 4. The OPTION leg (EARLYBIRD_TRADE_MODE=option|both). A no-op in the
     //    default "stock" mode — it returns on its first line. Awaited so a slow
-    //    premium fetch cannot overlap the next poll's copy of itself.
-    try { await _stepOptionLeg(); } catch (e) { console.error(`🚨 ${LOG_TAG} option-leg error: ${e.message}`); }
+    //    premium fetch cannot overlap the next poll's copy of itself. The premium
+    //    is marked FIRST so the profit lock in _stepOptionLeg reads this poll's.
     try { await _pollOptionPremium(); } catch (e) { console.error(`🚨 ${LOG_TAG} option premium poll error: ${e.message}`); }
+    try { await _stepOptionLeg(); } catch (e) { console.error(`🚨 ${LOG_TAG} option-leg error: ${e.message}`); }
 
     if (!_pollStopped && gen === _pollGen) _pollTimer = setTimeout(poll, _pollMs());
   };
@@ -1683,7 +1653,7 @@ function stopPolling() {
  * there is no await in the fill path at all, because the fill price is the
  * setup's frozen entry LEVEL, not something that has to be fetched. With
  * several positions the guards are per-symbol (an entry lock plus the
- * `attempted` set) AND global (the concurrency cap and the day breakers).
+ * `attempted` set) AND global (the concurrency cap and the day-closed latch).
  */
 function _checkTriggers() {
   if (!state.running || state.dayClosed) return;
@@ -1696,7 +1666,6 @@ function _checkTriggers() {
 
   for (const setup of Array.from(state.pending.values())) {
     if (state.positions.size >= cfg.maxConcurrent) return;
-    if (state.tradesTaken >= _maxDailyTrades()) { _applyDayBreakers(); return; }
     if (state.positions.has(setup.symbol)) continue;
     if (state.attempted.has(setup.symbol)) { state.pending.delete(setup.symbol); continue; }
     if (state._entryLocks.has(setup.symbol)) continue;
@@ -1756,12 +1725,7 @@ function _openPosition(setup, triggerPrice, nowMins) {
     qty,
     entryPrice:    fillPrice,
     triggerPrice,
-    stop:          setup.stop,
-    target:        setup.target,
-    riskPts:       setup.riskPts,
-    rewardPts:     setup.rewardPts,
-    bigCandle:     setup.bigCandle,
-    slBasis:       setup.slBasis,
+    rangePts:      setup.rangePts,
     gapPct:        setup.gapPct,
     prevClose:     setup.prevClose,
     shape:         setup.shape,
@@ -1791,18 +1755,16 @@ function _openPosition(setup, triggerPrice, nowMins) {
   const slip = _r2(Math.abs(triggerPrice - fillPrice));
   log(`🟢 ${LOG_TAG} FILL ${setup.side} ${qty}×${setup.symbol} @ ₹${fillPrice} (the frozen entry LEVEL; the trigger tick printed ₹${triggerPrice}, ${slip} away)`);
   log(`   ├─ Signal : ${setup.shape || "—"} · candle O ${setup.signalOpen} H ${setup.signalHigh} L ${setup.signalLow} C ${setup.signalClose} · gap ${setup.gapPct}% vs prev close ₹${setup.prevClose}`);
-  log(`   ├─ Stop   : ₹${setup.stop} (${setup.slBasis}${setup.bigCandle ? " — BIG-CANDLE rule moved it onto the body" : ""}) · risk ₹${setup.riskPts}/sh = ₹${_r2(setup.riskPts * qty)} total`);
-  log(`   ├─ Target : ₹${setup.target} @ 1:${cfg.targetRR} · reward ₹${setup.rewardPts}/sh = ₹${_r2(setup.rewardPts * qty)} total`);
-  log(`   └─ Book   : ${state.positions.size}/${cfg.maxConcurrent} open · ${state.pending.size} still pending · ${state.tradesTaken}/${_maxDailyTrades()} trades used today`);
+  log(`   ├─ Exit   : the global profit lock on the share price${setup.side === "SHORT" ? " (mirrored around entry for a short)" : ""} — nothing else closes it but a manual exit or the session stop`);
+  log(`   └─ Book   : ${state.positions.size}/${cfg.maxConcurrent} open · ${state.pending.size} still pending · ${state.tradesTaken} trade(s) taken today`);
 
   notifyEntry({
     mode: "EARLYBIRD-PAPER",
     side: setup.side, symbol: setup.symbol,
-    // The harness orders on brokerSymbol: a bare "RELIANCE" is not a Fyers symbol.
-    // isSpot marks the cash-equity leg (INTRADAY product; side LONG/SHORT → BUY/SELL).
-    brokerSymbol: setup.fyersSymbol, isSpot: true,
+    // isSpot marks the cash-equity leg.
+    isSpot: true,
     spotAtEntry: fillPrice, optionEntryLtp: fillPrice,
-    qty, stopLoss: setup.stop, target: setup.target,
+    qty,
     entryTime: pos.entryTime,
     entryReason: setup.entryReason,
   });
@@ -1814,7 +1776,6 @@ function _openPosition(setup, triggerPrice, nowMins) {
       ts: Date.now(),
       side: setup.side, symbol: setup.fyersSymbol, qty,
       spotEntry: fillPrice, optionEntry: fillPrice,
-      stopLoss: setup.stop, target: setup.target,
       reason: setup.entryReason,
     });
   } catch (_) {}
@@ -1840,7 +1801,7 @@ function _dropExpiredSetups() {
       gate: "never_triggered",
       reason: `entry ${setup.entry} never touched by ${_fmtMins(cfg.entryEndMin)}`,
       symbol: setup.symbol, side: setup.side,
-      entry: setup.entry, stop: setup.stop, target: setup.target,
+      entry: setup.entry,
       lastPrice: last,
     });
   }
@@ -1852,9 +1813,9 @@ function _dropExpiredSetups() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Every open position, tested against its own latest price. The engine owns
- * the whole test (SL / TARGET / forced-exit clock) — nothing here compares a
- * price to a level.
+ * Every open position, tested against its own latest price. The ONLY automatic
+ * exit is the global profit lock (earlyBird.checkProfitLockExit → tradeGuards),
+ * on the share price — a SHORT is mirrored around its entry.
  *
  * A position whose price is missing or stale is NOT exited and NOT silently
  * ignored: it keeps its `noPriceSince` stamp, which the status page shows and
@@ -1862,29 +1823,12 @@ function _dropExpiredSetups() {
  */
 function _checkExits() {
   if (!state.positions.size) return;
-  const cfg = earlyBird.getConfig();
-  const nowMins = getISTMinutes();
 
   for (const pos of Array.from(state.positions.values())) {
     const price = _priceOf(pos.symbol);
 
     if (price == null) {
       if (!pos.noPriceSince) pos.noPriceSince = Date.now();
-      // The forced-exit clock must still fire without a price, or a dead quote
-      // feed would hold a position past the square-off. The engine's own EOD
-      // branch needs a price for its exit fill, so the last known one is used
-      // and the log says so.
-      if (nowMins >= cfg.forcedExitMin) {
-        const rec = state.prices.get(pos.symbol);
-        const fallback = rec && typeof rec.price === "number" && Number.isFinite(rec.price) && rec.price > 0
-          ? rec.price : pos.entryPrice;
-        log(`⚠️ ${LOG_TAG} ${pos.symbol} — forced exit is due but the quote feed is stale. Squaring off at the last known price ₹${fallback}.`);
-        _closePosition(pos, {
-          exitType: "EOD",
-          reason: `Forced exit at ${_fmtMins(cfg.forcedExitMin)} (quote feed stale — filled at the last known price)`,
-          price: fallback,
-        });
-      }
       continue;
     }
     if (pos.noPriceSince) {
@@ -1894,12 +1838,16 @@ function _checkExits() {
 
     _trackExcursion(pos, price);
 
-    const ex = earlyBird.checkExitOnTick(pos, price, { nowMins, cfg });
-    if (ex && ex.exit) _closePosition(pos, ex);
+    const best = pos.side === "SHORT" ? pos.troughPrice : pos.peakPrice;
+    const ex = earlyBird.checkProfitLockExit(pos.side, pos.entryPrice, price, best);
+    if (ex) {
+      log(`🔒 ${LOG_TAG} ${pos.symbol} ${ex.reason}`);
+      _closePosition(pos, ex);
+    }
   }
 }
 
-/** MFE / MAE bookkeeping. Pure analytics — no decision reads these. */
+/** MFE / MAE bookkeeping. peakPrice / troughPrice are also the profit lock's best price. */
 function _trackExcursion(pos, price) {
   const dir = pos.side === "SHORT" ? -1 : 1;
   const favPts = (price - pos.entryPrice) * dir;
@@ -1919,7 +1867,7 @@ function _trackExcursion(pos, price) {
 }
 
 /**
- * Book one position. `ex` is the engine's exit verdict (or a route-built one for
+ * Book one position. `ex` is the profit-lock verdict (or a route-built one for
  * a manual / session-stop exit), always carrying { exitType, reason, price }.
  */
 function _closePosition(pos, ex) {
@@ -1933,7 +1881,6 @@ function _closePosition(pos, ex) {
   const pnl = _r2(gross - charges);
 
   state.sessionPnl = _r2(state.sessionPnl + pnl);
-  if (ex.exitType === "SL") state.stopOuts++;
 
   const trade = {
     symbol:         pos.symbol,
@@ -1954,13 +1901,7 @@ function _closePosition(pos, ex) {
     exitReason:     ex.reason,
     exitType:       ex.exitType,
     entryReason:    pos.entryReason,
-    stopLoss:       pos.stop,
-    initialStopLoss: pos.stop,
-    target:         pos.target,
-    riskPts:        pos.riskPts,
-    rewardPts:      pos.rewardPts,
-    bigCandle:      pos.bigCandle,
-    slBasis:        pos.slBasis,
+    rangePts:       pos.rangePts,
     gapPct:         pos.gapPct,
     prevClose:      pos.prevClose,
     shape:          pos.shape,
@@ -1986,7 +1927,7 @@ function _closePosition(pos, ex) {
   state.positions.delete(pos.symbol);
   _armReentryBlock(state);   // wait-after-exit cooldown, once the whole book is flat
   // Removed from the book FIRST; a throw below (trade log, persist) would skip
-  // notifyExit and leave the live harness's REAL position open. Guaranteed below.
+  // notifyExit. Guaranteed below.
   let _exitNotified = false;
   try {
   state.sessionTrades.push(trade);
@@ -1997,13 +1938,13 @@ function _closePosition(pos, ex) {
   const held = Math.round(trade.durationMs / 1000);
   log(`${pnl >= 0 ? "✅" : "❌"} ${LOG_TAG} EXIT [${ex.exitType}] ${pos.side} ${qty}×${pos.symbol} @ ₹${exitPrice} — ${ex.reason}`);
   log(`   ├─ P&L    : gross ₹${gross} − charges ₹${charges} = ₹${pnl} · held ${held}s · MFE ₹${trade.mfePnl} / MAE ₹${trade.maePnl}`);
-  log(`   └─ Book   : ${state.positions.size} open · ${state.pending.size} pending · session ₹${state.sessionPnl} · ${state.stopOuts} stop-out(s)`);
+  log(`   └─ Book   : ${state.positions.size} open · ${state.pending.size} pending · session ₹${state.sessionPnl}`);
 
   _exitNotified = true;
   notifyExit({
     mode: "EARLYBIRD-PAPER",
     side: pos.side, symbol: pos.symbol,
-    brokerSymbol: pos.fyersSymbol, isSpot: true,   // must match the entry's order symbol
+    isSpot: true,
     spotAtEntry: pos.entryPrice, spotAtExit: exitPrice,
     optionEntryLtp: pos.entryPrice, optionExitLtp: exitPrice,
     pnl, sessionPnl: state.sessionPnl,
@@ -2016,7 +1957,7 @@ function _closePosition(pos, ex) {
       try {
         notifyExit({
           mode: "EARLYBIRD-PAPER",
-          side: pos.side, symbol: pos.symbol, brokerSymbol: pos.fyersSymbol, isSpot: true,
+          side: pos.side, symbol: pos.symbol, isSpot: true,
           spotAtEntry: pos.entryPrice, spotAtExit: exitPrice,
           pnl, sessionPnl: state.sessionPnl, qty,
           exitReason: `${ex.reason} (exit bookkeeping failed)`, entryReason: pos.entryReason,
@@ -2062,33 +2003,17 @@ function _equityCharges(qty, entryPrice, exitPrice) {
   return _r2(brokerage + stt + txn + sebi + stamp + gst);
 }
 
-// ── Day-level breakers ───────────────────────────────────────────────────────
+// ── Day-level breaker ────────────────────────────────────────────────────────
 /**
- * Evaluated after every exit. Each one CLOSES the day for NEW entries. Open
- * positions are deliberately left to their own stop / target / square-off — a
- * breaker is a "stop opening risk" signal, not a panic button, and dumping five
- * live positions at market on a loss cap is how a bad day becomes a worse one.
+ * Evaluated after every exit. The daily PROFIT lock closes the day for NEW
+ * entries; open positions are left to the profit lock / manual exit / session
+ * stop. (Loss-based day limits were removed — the profit lock is the only exit.)
  */
 function _applyDayBreakers() {
   if (state.dayClosed) return;
-  const maxLoss = _maxDailyLoss();
-  const lock    = _dailyProfitLock();
-  const maxOuts = _maxDailyLosses();
-
-  if (maxLoss > 0 && state.sessionPnl <= -maxLoss) {
-    _closeDay(`Daily loss cap hit (₹${state.sessionPnl} ≤ -₹${maxLoss})`);
-    return;
-  }
+  const lock = _dailyProfitLock();
   if (lock > 0 && state.sessionPnl >= lock) {
     _closeDay(`Daily profit lock hit (₹${state.sessionPnl} ≥ ₹${lock}) — banking the day`);
-    return;
-  }
-  if (maxOuts > 0 && state.stopOuts >= maxOuts) {
-    _closeDay(`${state.stopOuts} stop-out(s) ≥ ${maxOuts} — no more entries today`);
-    return;
-  }
-  if (state.tradesTaken >= _maxDailyTrades()) {
-    _closeDay(`Daily trade budget spent (${state.tradesTaken}/${_maxDailyTrades()})`);
   }
 }
 
@@ -2105,7 +2030,7 @@ function _closeDay(reason) {
   }
   // A day breaker stops NEW risk of every kind, so an un-triggered option setup
   // is cancelled with the stock ones. An OPEN option position is deliberately
-  // left to its own stop / target / square-off, exactly as open stocks are.
+  // left to the profit lock / manual exit / session stop, exactly as open stocks are.
   let optCancelled = false;
   if (state.optionPending) {
     log(`   ⏸️ ${LOG_TAG} Pending OPTION setup cancelled — ${state.optionPending.side} ${state.optionPending.optionSide} @ spot ${state.optionPending.entry} (${reason})`);
@@ -2113,17 +2038,12 @@ function _closeDay(reason) {
     optCancelled = true;
   }
   if (dropped || optCancelled) _persist();
-  log(`⏸️ ${LOG_TAG} ${reason} — no more entries today${dropped ? `, ${dropped} pending setup(s) cancelled` : ""}. ${state.positions.size} open position(s) still run to their own stop/target/square-off.`);
+  log(`⏸️ ${LOG_TAG} ${reason} — no more entries today${dropped ? `, ${dropped} pending setup(s) cancelled` : ""}. ${state.positions.size} open position(s) still run under the profit lock.`);
   skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl });
 }
 
-/** Weekly / portfolio caps, checked once at session start. */
+/** Portfolio cap, checked once at session start. */
 function _checkRiskCapsAtStart() {
-  const maxWeek = _maxWeeklyLoss();
-  if (maxWeek > 0) {
-    const wk = weeklyPnl();
-    if (wk <= -maxWeek) { _closeDay(`Weekly loss cap hit (week P&L ₹${wk} ≤ -₹${maxWeek})`); return; }
-  }
   try {
     const pf = require("../utils/portfolioRisk").checkPortfolioCap();
     if (pf.blocked) _closeDay(pf.reason);
@@ -2138,11 +2058,10 @@ function _checkRiskCapsAtStart() {
 //     not an input to either. The callback is then a heartbeat, and the reason
 //     the session shows up as a socket consumer.
 //
-//   option / both — `lastTickPrice` IS the option leg's price feed. Every level
-//     of that leg (entry trigger, stop, 1:2 target) is a NIFTY SPOT level, and
-//     this is where the spot comes from. A stale or absent tick therefore stops
-//     the option leg from entering — and its square-off still fires on the clock
-//     (see _stepOptionLeg), so a dead feed cannot hold a position past 13:00.
+//   option / both — `lastTickPrice` IS the option leg's entry feed: the entry
+//     trigger is a NIFTY SPOT level, and this is where the spot comes from. A
+//     stale or absent tick therefore stops the option leg from entering. (Its
+//     exit, the profit lock, reads the polled premium, not this.)
 function onTick(tick) {
   if (!state.running) return;
   const price = tick && tick.ltp;
@@ -2166,28 +2085,6 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The EARLY_BIRD-LIVE harness fires REAL orders on this engine's notify tag. It used to be
-// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
-// SIGTERM and stayed armed: the next paper start then placed real orders. Every
-// session-ending path now releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit — an exit already in flight runs to
-// completion after uninstall), and /start drops a stale one unless the harness
-// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
-const LIVE_HARNESS_MODE = "EARLY_BIRD-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
-}
-
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -2200,14 +2097,6 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
-  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   if (state.running || _stopping) return res.redirect("/early-bird-paper/status");
 
   if (String(process.env.EARLYBIRD_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -2227,9 +2116,6 @@ router.get("/start", async (req, res) => {
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/early-bird-paper/status", "← Back"));
 
   const cfg = earlyBird.getConfig();
-  if (getISTMinutes() >= cfg.forcedExitMin) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${_fmtMins(cfg.forcedExitMin)} IST — EarlyBird squares everything off by then`, "/early-bird-paper/status", "← Back"));
-  }
 
   if (_stopping) return res.redirect("/early-bird-paper/status");   // a stop began during the awaits above
   state = _freshState();
@@ -2252,14 +2138,14 @@ router.get("/start", async (req, res) => {
     log(`⚙️ ${LOG_TAG} Stock leg : NSE CASH EQUITY of F&O stocks — ${cfg.qty} shares per position, up to ${cfg.maxConcurrent} at once. NIFTY is a FILTER, never traded.`);
   }
   if (_tradesOption) {
-    log(`⚙️ ${LOG_TAG} Option leg: BUY ${cfg.optionLots} lot(s) = ${_optionQty(cfg)} qty of ONE NIFTY CE (bullish candle) or PE (bearish candle). Entry trigger, stop and 1:${cfg.targetRR} target are all NIFTY **SPOT** levels off NIFTY's own ${_fmtMins(cfg.sessionStartMin)} candle; P&L is on the PREMIUM, so a bought PE profits when spot falls. ONE option trade per day, no re-entry. It does NOT count against the ${cfg.maxConcurrent}-position stock cap.`);
+    log(`⚙️ ${LOG_TAG} Option leg: BUY ${cfg.optionLots} lot(s) = ${_optionQty(cfg)} qty of ONE NIFTY CE (bullish candle) or PE (bearish candle). The entry trigger is a NIFTY **SPOT** level off NIFTY's own ${_fmtMins(cfg.sessionStartMin)} candle; P&L and the profit lock are on the PREMIUM, so a bought PE profits when spot falls. ONE option trade per day, no re-entry. It does NOT count against the ${cfg.maxConcurrent}-position stock cap.`);
   }
   log(`⚙️ ${LOG_TAG} Universe  : "${cfg.universe}" — ${universeSize} symbol(s)`);
   log(`⚙️ ${LOG_TAG} Signal    : the day's FIRST ${cfg.resolutionMins}-min candle (${_fmtMins(cfg.sessionStartMin)}→${_fmtMins(cfg.sessionStartMin + cfg.resolutionMins)}) for NIFTY and every stock. Body ≥${cfg.minBodyPct}% of range, opposing wick ≤${cfg.maxOpposingWickPct}%. ≥${cfg.minConfirmingStocks} stock(s) must match NIFTY's direction.`);
   log(`⚙️ ${LOG_TAG} Gap rule  : a stock opening more than ${cfg.maxGapPct}% from its previous daily close is dropped either way.`);
-  log(`⚙️ ${LOG_TAG} Levels    : entry = signal high/low ±${cfg.entryBufferPts} · stop = the other end ±${cfg.entryBufferPts}, moved onto the BODY edge if the wick risk exceeds ₹${cfg.maxSlPts} · target = 1:${cfg.targetRR} of the actual risk. All frozen at ${_fmtMins(cfg.sessionStartMin + cfg.resolutionMins)}, never trailed.`);
-  log(`⚙️ ${LOG_TAG} Windows   : entries ${_fmtMins(cfg.entryStartMin)}–${_fmtMins(cfg.entryEndMin)} · everything squared off at ${_fmtMins(cfg.forcedExitMin)}`);
-  log(`⚙️ ${LOG_TAG} Breakers  : max ${_maxDailyTrades()} trade(s)/day · loss cap ₹${_maxDailyLoss()} · ${_maxDailyLosses()} stop-out(s) · profit lock ${_dailyProfitLock() > 0 ? "₹" + _dailyProfitLock() : "off"} · weekly cap ${_maxWeeklyLoss() > 0 ? "₹" + _maxWeeklyLoss() : "off"}`);
+  log(`⚙️ ${LOG_TAG} Levels    : entry = signal high/low ±${cfg.entryBufferPts}, frozen at ${_fmtMins(cfg.sessionStartMin + cfg.resolutionMins)}. Exit = the global profit lock only (no stop, target or square-off time).`);
+  log(`⚙️ ${LOG_TAG} Windows   : entries ${_fmtMins(cfg.entryStartMin)}–${_fmtMins(cfg.entryEndMin)} · open positions close at the session auto-stop (TRADE_STOP_TIME)`);
+  log(`⚙️ ${LOG_TAG} Breakers  : daily profit lock ${_dailyProfitLock() > 0 ? "₹" + _dailyProfitLock() : "off"}`);
   log(`⚙️ ${LOG_TAG} Prices    : REST quote poll every ${_pollMs()}ms for the SHORTLIST only (candidates + open positions, ${_quoteChunk()} symbols per call). No second socket — that is a repo invariant — and socketManager.subscribeExtra is reserved for option contracts.`);
   log(`⏳ ${LOG_TAG} Waiting for ${_fmtMins(cfg.sessionStartMin + cfg.resolutionMins)} + ${_historyLagMs()}ms before the one and only scan of the day.`);
 
@@ -2307,9 +2193,8 @@ router.get("/start", async (req, res) => {
       `Universe  : ${cfg.universe} — ${universeSize} symbols`,
       `Signal    : the ${_fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle, NIFTY-confirmed`,
       `Size      : ${cfg.qty} shares × up to ${cfg.maxConcurrent} stocks`,
-      `Levels    : entry ±${cfg.entryBufferPts} · target 1:${cfg.targetRR} · no trail`,
-      `Windows   : entries ${_fmtMins(cfg.entryStartMin)}–${_fmtMins(cfg.entryEndMin)} · square-off ${_fmtMins(cfg.forcedExitMin)}`,
-      `Max trades: ${_maxDailyTrades()}/day · loss cap ₹${_maxDailyLoss()}`,
+      `Levels    : entry ±${cfg.entryBufferPts} · exit = profit lock only`,
+      `Windows   : entries ${_fmtMins(cfg.entryStartMin)}–${_fmtMins(cfg.entryEndMin)}`,
     ].join("\n"),
   });
 
@@ -2330,7 +2215,7 @@ async function stopSession() {
   // Pin the session being stopped: the option square-off below is awaited, and
   // everything after it must act on THIS session, never a newer one.
   const s = state;
-  if (!s.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!s.running) return;
   _stopping = true;
   try {
 
@@ -2377,10 +2262,7 @@ async function stopSession() {
     // _closeOptionPosition ends in a _persist(), which would otherwise re-create
     // the file and leave a phantom snapshot for the next boot.
     if (optionClose) await optionClose;
-    if (s._optionClosing) await s._optionClosing;   // an SL / /exit square-off already in flight
-    // Released only now: the option leg's notifyExit fires AFTER an awaited premium
-    // fetch, so releasing any earlier would drop the hook before its closing order.
-    _releaseLiveHarness("session end");
+    if (s._optionClosing) await s._optionClosing;   // a profit-lock / /exit square-off already in flight
     try { require("../utils/positionPersist").clearEarlyBirdPositions(); } catch (_) {}
 
     if (s.sessionTrades.length > 0) {
@@ -2467,9 +2349,7 @@ function _positionsView() {
     const rec = state.prices.get(p.symbol);
     return {
       symbol: p.symbol, side: p.side, qty: p.qty,
-      entryPrice: p.entryPrice, stop: p.stop, target: p.target,
-      riskPts: p.riskPts, rewardPts: p.rewardPts,
-      bigCandle: p.bigCandle, slBasis: p.slBasis,
+      entryPrice: p.entryPrice, rangePts: p.rangePts,
       gapPct: p.gapPct, shape: p.shape,
       ltp: price, ltpAgeSec: rec ? Math.round((Date.now() - rec.ts) / 1000) : null,
       stale: price == null,
@@ -2486,9 +2366,7 @@ function _pendingView() {
     const price = _priceOf(s.symbol);
     return {
       symbol: s.symbol, side: s.side, qty: s.qty,
-      entry: s.entry, stop: s.stop, target: s.target,
-      riskPts: s.riskPts, rewardPts: s.rewardPts,
-      bigCandle: s.bigCandle, slBasis: s.slBasis,
+      entry: s.entry, rangePts: s.rangePts,
       gapPct: s.gapPct, shape: s.shape,
       ltp: price,
       distance: price != null ? _r2(Math.abs(s.entry - price)) : null,
@@ -2504,9 +2382,8 @@ function _scanRows() {
   for (const c of (plan.candidates || [])) {
     rows.push({
       symbol: c.symbol, verdict: "ACCEPTED", reason: c.reason,
-      side: c.side, entry: c.entry, stop: c.stop, target: c.target,
-      riskPts: c.riskPts, gapPct: c.gapPct, slBasis: c.slBasis,
-      bigCandle: c.bigCandle, shape: c.detail ? c.detail.shape : null,
+      side: c.side, entry: c.entry, rangePts: c.rangePts, gapPct: c.gapPct,
+      shape: c.detail ? c.detail.shape : null,
       open: c.candle ? c.candle.open : null, high: c.candle ? c.candle.high : null,
       low: c.candle ? c.candle.low : null, close: c.candle ? c.candle.close : null,
       group: "accepted",
@@ -2515,8 +2392,7 @@ function _scanRows() {
   for (const r of (plan.rejected || [])) {
     rows.push({
       symbol: r.symbol, verdict: "REJECTED", reason: r.reason,
-      side: null, entry: null, stop: null, target: null,
-      riskPts: null, gapPct: null, slBasis: null, bigCandle: false, shape: null,
+      side: null, entry: null, rangePts: null, gapPct: null, shape: null,
       open: null, high: null, low: null, close: null,
       group: _rejectGroup(r.reason),
     });
@@ -2573,8 +2449,7 @@ router.get("/status/data", (req, res) => {
     maxConcurrent: cfg.maxConcurrent,
 
     // ── OPTION LEG. `null` in the default "stock" mode, so every existing
-    //    consumer (the live-harness page proxies this response verbatim) simply
-    //    sees a field that is not there and renders exactly what it did before.
+    //    consumer simply sees a field that is not there and renders exactly what it did before.
     tradeMode: cfg.tradeMode,
     tradesStock: earlyBird.tradesStock(cfg),
     tradesOption: earlyBird.tradesOption(cfg),
@@ -2609,18 +2484,14 @@ router.get("/status/data", (req, res) => {
     shortlistSize: _shortlist().size,
 
     dayClosed: state.dayClosed, dayClosedReason: state.dayClosedReason,
-    stopOuts: state.stopOuts, maxDailyLosses: _maxDailyLosses(),
-    maxDailyTrades: _maxDailyTrades(),
-    dailyProfitLock: _dailyProfitLock(), maxDailyLoss: _maxDailyLoss(),
+    dailyProfitLock: _dailyProfitLock(),
 
     cfg: {
       resMin: cfg.resolutionMins,
       universe: cfg.universe,
       qty: cfg.qty,
       maxConcurrent: cfg.maxConcurrent,
-      targetRR: cfg.targetRR,
       entryBufferPts: cfg.entryBufferPts,
-      maxSlPts: cfg.maxSlPts,
       maxGapPct: cfg.maxGapPct,
       minBodyPct: cfg.minBodyPct,
       maxOpposingWickPct: cfg.maxOpposingWickPct,
@@ -2628,7 +2499,6 @@ router.get("/status/data", (req, res) => {
       sessionStart: _fmtMins(cfg.sessionStartMin),
       entryStart: _fmtMins(cfg.entryStartMin),
       entryEnd: _fmtMins(cfg.entryEndMin),
-      forcedExit: _fmtMins(cfg.forcedExitMin),
       pollMs: _pollMs(),
     },
 
@@ -2639,7 +2509,7 @@ router.get("/status/data", (req, res) => {
 /**
  * Chart data. EarlyBird reads ONE bar per symbol per day, so there is no candle
  * series to draw — the meaningful picture is the per-position level ladder
- * (entry / stop / target against the live price) plus the session P&L curve.
+ * (entry against the live price) plus the session P&L curve.
  * Sent as data, not as a candle chart that would have three bars in it.
  */
 router.get("/status/chart-data", (req, res) => {
@@ -2653,11 +2523,11 @@ router.get("/status/chart-data", (req, res) => {
       equity,
       ladders: _positionsView().map(p => ({
         symbol: p.symbol, side: p.side,
-        entry: p.entryPrice, stop: p.stop, target: p.target, ltp: p.ltp,
+        entry: p.entryPrice, ltp: p.ltp,
       })),
       pending: _pendingView().map(p => ({
         symbol: p.symbol, side: p.side,
-        entry: p.entry, stop: p.stop, target: p.target, ltp: p.ltp,
+        entry: p.entry, ltp: p.ltp,
       })),
     });
   } catch (e) {
@@ -2670,7 +2540,6 @@ router.get("/status/chart-data", (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getEarlyBirdMode() === "EARLY_BIRD_LIVE";
   const data = loadData();
   const cfg  = earlyBird.getConfig();
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
@@ -2745,13 +2614,13 @@ router.get("/status", (req, res) => {
 }
 </style>
 </head><body>
-${buildSidebar('earlyBirdPaper', liveActive)}
+${buildSidebar('earlyBirdPaper', false)}
 <div class="main-content">
 ${bbRsiTopBar({
   title: "🐦 EarlyBird — Paper",
   metaLine: `${earlyBird.tradesStock(cfg)
       ? `NSE CASH EQUITY of F&O stocks · NIFTY is the filter, never traded · ${cfg.qty} shares × up to ${cfg.maxConcurrent} stocks`
-      : `NIFTY ${_itmStepsLabel()} CE/PE · ${cfg.optionLots} lot(s) · no stock is scanned`} · the ${_fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle decides the whole day · target 1:${cfg.targetRR} · square-off ${_fmtMins(cfg.forcedExitMin)}`,
+      : `NIFTY ${_itmStepsLabel()} CE/PE · ${cfg.optionLots} lot(s) · no stock is scanned`} · the ${_fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle decides the whole day · exit = profit lock only`,
   running: state.running,
   primaryAction: { href: "/early-bird-paper/start", label: "▶ Start", color: "#0369a1" },
   stopAction:    { href: "/early-bird-paper/stop",  label: "■ Stop" },
@@ -2777,15 +2646,15 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
     ${earlyBird.tradesStock(cfg)
       ? `<li><b>2. Then pick the stocks.</b> A stock joins in only if its own first candle looks the same and points the same way as NIFTY, and it did not open more than ${cfg.maxGapPct}% away from yesterday's close. At least ${cfg.minConfirmingStocks} must qualify, and at most ${cfg.maxConcurrent} are traded.${earlyBird.tradesOption(cfg) ? " The NIFTY option leg does not wait for this — it trades even if no stock qualifies." : ""}</li>`
       : `<li><b>2. No stocks are checked.</b> This mode trades NIFTY's own candle, so it does not wait for any stock to agree. The stock list, the gap rule and the confirming count do nothing here.</li>`}
-    <li><b>3. Enter ₹${cfg.entryBufferPts} beyond that candle</b> — above it on a green day, below it on a red one. The order waits there and fills the moment price reaches it. The <b>stop</b> sits ₹${cfg.entryBufferPts} beyond the other end of the candle — or on the candle's body instead, if the candle was so big that the wick would risk more than ₹${cfg.maxSlPts}. The <b>target</b> is ${cfg.targetRR}× whatever the stop is risking.</li>
-    <li><b>4. Exit.</b> Whichever comes first — target, stop, or ${_fmtMins(cfg.forcedExitMin)} square-off. No new trades after ${_fmtMins(cfg.entryEndMin)}. The stop never moves once set, and a stopped-out name is not re-entered that day.</li>
+    <li><b>3. Enter ₹${cfg.entryBufferPts} beyond that candle</b> — above it on a green day, below it on a red one. The order waits there and fills the moment price reaches it.</li>
+    <li><b>4. Exit.</b> Only the common profit lock closes a trade on its own — there is no stop, target or square-off time. Anything still open is closed by hand or at the session stop. No new trades after ${_fmtMins(cfg.entryEndMin)}, and an exited name is not re-entered that day.</li>
   </ul>
 </div>
 
 ${bbRsiStatGrid([
   { label: "Session P&L", value: inr(state.sessionPnl), color: state.sessionPnl >= 0 ? "#10b981" : "#ef4444" },
   { label: "Open / Cap", value: `${state.positions.size}/${cfg.maxConcurrent}` },
-  { label: "Trades", value: `${state.tradesTaken}/${_maxDailyTrades()}` },
+  { label: "Trades", value: String(state.tradesTaken) },
   { label: "W / L", value: `${wins} / ${losses}` },
   ...(earlyBird.tradesStock(cfg)
     ? [{ label: "Universe", value: `${cfg.universe} (${universeSize})` },
@@ -2802,29 +2671,29 @@ ${earlyBird.tradesOption(cfg) ? `
   </div>
   <div style="font-size:0.73rem;color:var(--muted-1,#8ba1c2);margin-top:8px;line-height:1.6;">
     <b style="color:#cbd5e1;">No stock confirmation is used for this leg.</b> If NIFTY's own ${_fmtMins(cfg.sessionStartMin)} candle is a signal candle we buy ONE NIFTY ${"CE"} (bullish) or ${"PE"} (bearish), ${cfg.optionLots} lot(s) = ${_optionQty(cfg)} qty.
-    The trigger, the stop and the 1:${cfg.targetRR} target are all <b style="color:#cbd5e1;">NIFTY SPOT levels</b>; the <b style="color:#cbd5e1;">P&amp;L is on the premium</b>, so a bought PE gains when spot falls. One trade per day, no re-entry, and it does not use a slot of the ${cfg.maxConcurrent}-stock cap.
+    The trigger is a <b style="color:#cbd5e1;">NIFTY SPOT level</b>; the <b style="color:#cbd5e1;">P&amp;L and the profit lock are on the premium</b>, so a bought PE gains when spot falls. One trade per day, no re-entry, and it does not use a slot of the ${cfg.maxConcurrent}-stock cap.
   </div>
   <div class="eb-optgrid" id="eb-optsetup" style="margin-top:10px;"><div class="eb-mut">Waiting for the ${_fmtMins(cfg.sessionStartMin)} candle to close…</div></div>
   <div id="eb-optreason" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-top:8px;"></div>
   <div class="eb-tblwrap" style="margin-top:10px;"><table class="eb-tbl">
-    <thead><tr><th>Contract</th><th>Side</th><th>Qty</th><th>Entry ₹</th><th>Now ₹</th><th>P&amp;L</th><th>Spot in</th><th>SL spot</th><th>Tgt spot</th><th>Held</th></tr></thead>
-    <tbody id="eb-opttbody"><tr><td colspan="10" class="eb-mut">No option position.</td></tr></tbody>
+    <thead><tr><th>Contract</th><th>Side</th><th>Qty</th><th>Entry ₹</th><th>Now ₹</th><th>P&amp;L</th><th>Spot in</th><th>Best ₹</th><th>Held</th></tr></thead>
+    <tbody id="eb-opttbody"><tr><td colspan="9" class="eb-mut">No option position.</td></tr></tbody>
   </table></div>
 </div>` : ""}
 
 <div class="eb-card">
   <div class="eb-title">Open positions${earlyBird.tradesOption(cfg) ? " — stock leg" : ""} <span id="eb-poscount" class="eb-mut"></span></div>
   <div class="eb-tblwrap"><table class="eb-tbl">
-    <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>LTP</th><th>Stop</th><th>Target</th><th>Live P&L</th><th>Held</th><th>SL basis</th></tr></thead>
-    <tbody id="eb-postbody"><tr><td colspan="10" class="eb-mut">No open positions.</td></tr></tbody>
+    <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>LTP</th><th>Live P&L</th><th>Held</th></tr></thead>
+    <tbody id="eb-postbody"><tr><td colspan="7" class="eb-mut">No open positions.</td></tr></tbody>
   </table></div>
 </div>
 
 <div class="eb-card">
   <div class="eb-title">Pending setups — armed, waiting for the trigger <span id="eb-pendcount" class="eb-mut"></span></div>
   <div class="eb-tblwrap"><table class="eb-tbl">
-    <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>LTP</th><th>Distance</th><th>Stop</th><th>Target</th><th>Risk/sh</th><th>Gap %</th><th>Shape</th></tr></thead>
-    <tbody id="eb-pendtbody"><tr><td colspan="10" class="eb-mut">Nothing armed yet.</td></tr></tbody>
+    <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>LTP</th><th>Distance</th><th>Range</th><th>Gap %</th><th>Shape</th></tr></thead>
+    <tbody id="eb-pendtbody"><tr><td colspan="8" class="eb-mut">Nothing armed yet.</td></tr></tbody>
   </table></div>
   <div id="eb-dropped" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-top:8px;"></div>
 </div>
@@ -2842,7 +2711,7 @@ ${earlyBird.tradesOption(cfg) ? `
   <div id="eb-scangroups" style="margin-top:8px;"></div>
   <div id="eb-scanbox" style="display:none;margin-top:10px;">
     <div class="eb-tblwrap"><table class="eb-tbl">
-      <thead><tr><th>Symbol</th><th>Verdict</th><th>Side</th><th>O</th><th>H</th><th>L</th><th>C</th><th>Entry</th><th>Stop</th><th>Target</th><th>Risk</th><th>Gap %</th><th>Reason</th></tr></thead>
+      <thead><tr><th>Symbol</th><th>Verdict</th><th>Side</th><th>O</th><th>H</th><th>L</th><th>C</th><th>Entry</th><th>Range</th><th>Gap %</th><th>Reason</th></tr></thead>
       <tbody id="eb-scantbody"></tbody>
     </table></div>
     <div id="eb-scanmore" style="margin-top:8px;"></div>
@@ -2909,15 +2778,15 @@ function ebRenderScan(){
   });
   var shown = rows.slice(0, EB_SCAN_LIMIT);
   var tb = document.getElementById('eb-scantbody');
-  if (!shown.length) { tb.innerHTML = '<tr><td colspan="13" class="eb-mut">No rows.</td></tr>'; document.getElementById('eb-scanmore').innerHTML = ''; return; }
+  if (!shown.length) { tb.innerHTML = '<tr><td colspan="11" class="eb-mut">No rows.</td></tr>'; document.getElementById('eb-scanmore').innerHTML = ''; return; }
   tb.innerHTML = shown.map(function(r){
     var vc = r.verdict === 'ACCEPTED' ? 'eb-ok' : 'eb-mut';
     return '<tr><td>' + ebEsc(r.symbol) + '</td>'
       + '<td class="' + vc + '">' + ebEsc(r.verdict) + '</td>'
       + '<td>' + ebEsc(r.side || '—') + '</td>'
       + '<td>' + ebFmt(r.open) + '</td><td>' + ebFmt(r.high) + '</td><td>' + ebFmt(r.low) + '</td><td>' + ebFmt(r.close) + '</td>'
-      + '<td>' + ebFmt(r.entry) + '</td><td>' + ebFmt(r.stop) + '</td><td>' + ebFmt(r.target) + '</td>'
-      + '<td>' + ebFmt(r.riskPts) + '</td><td>' + ebFmt(r.gapPct) + '</td>'
+      + '<td>' + ebFmt(r.entry) + '</td><td>' + ebFmt(r.rangePts) + '</td>'
+      + '<td>' + ebFmt(r.gapPct) + '</td>'
       + '<td class="eb-mut" style="white-space:normal;">' + ebEsc(r.reason) + '</td></tr>';
   }).join('');
   document.getElementById('eb-scanmore').innerHTML = rows.length > shown.length
@@ -2953,9 +2822,7 @@ function ebRenderOption(d){
       box.innerHTML =
         cell('Buy', ebEsc(s.optionSide) + ' <span class="eb-mut" style="font-weight:400;">(' + ebEsc(s.side) + ')</span>')
         + cell('Entry spot', ebFmt(s.entry))
-        + cell('Stop spot', ebFmt(s.stop))
-        + cell('Target spot', ebFmt(s.target))
-        + cell('Risk / reward', ebFmt(s.riskPts) + ' / ' + ebFmt(s.rewardPts) + ' pt')
+        + cell('Candle range', ebFmt(s.rangePts) + ' pt')
         + cell('NIFTY now', ebFmt(o.spot))
         + (o.distance !== null && o.distance !== undefined ? cell('Spot to go', ebFmt(o.distance) + ' pt') : '')
         + cell('Size', ebFmt(o.lots) + ' lot × ' + ebFmt(o.lotQty));
@@ -2965,7 +2832,6 @@ function ebRenderOption(d){
   if (rs) {
     var bits = [];
     if (s && s.reason) bits.push(s.reason);
-    if (s && s.ok && s.bigCandle) bits.push('BIG-CANDLE rule moved the stop onto the candle body (' + ebEsc(s.slBasis) + ').');
     if (o.dropped) bits.push('Never triggered: spot did not reach ' + ebFmt(o.dropped.entry) + ' inside the entry window' + (o.dropped.lastSpot != null ? ' (last spot ' + ebFmt(o.dropped.lastSpot) + ')' : '') + '.');
     if (o.ltpFails) bits.push('Premium unavailable ' + o.ltpFails + '× — the entry is deferred, never taken without a fill price.');
     rs.textContent = bits.join(' ');
@@ -2974,7 +2840,7 @@ function ebRenderOption(d){
   if (tb) {
     var p = o.position;
     if (!p) {
-      tb.innerHTML = '<tr><td colspan="10" class="eb-mut">' + (o.triggered ? 'Option trade closed — no re-entry today.' : 'No option position.') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="9" class="eb-mut">' + (o.triggered ? 'Option trade closed — no re-entry today.' : 'No option position.') + '</td></tr>';
     } else {
       var pc = (typeof p.livePnl === 'number' && p.livePnl < 0) ? 'eb-bad' : 'eb-ok';
       tb.innerHTML = '<tr><td>' + ebEsc(p.symbol) + '</td>'
@@ -2984,7 +2850,7 @@ function ebRenderOption(d){
         + '<td>' + (p.optionLtp === null ? '<span class="eb-mut">—</span>' : ebFmt(p.optionLtp)) + '</td>'
         + '<td class="' + pc + '">' + ebMoney(p.livePnl) + '</td>'
         + '<td>' + ebFmt(p.entrySpot) + '</td>'
-        + '<td>' + ebFmt(p.stop) + '</td><td>' + ebFmt(p.target) + '</td>'
+        + '<td>' + ebFmt(p.bestPremium) + '</td>'
         + '<td>' + ebFmt(p.heldSec) + 's</td></tr>';
     }
   }
@@ -3041,11 +2907,9 @@ async function ebRefresh(){
         + '<td><span class="eb-pill ' + (p.side === 'LONG' ? 'eb-long' : 'eb-short') + '">' + ebEsc(p.side) + '</span></td>'
         + '<td>' + ebFmt(p.qty) + '</td><td>' + ebFmt(p.entryPrice) + '</td>'
         + '<td>' + (p.stale ? '<span class="eb-bad">stale</span>' : ebFmt(p.ltp)) + '</td>'
-        + '<td>' + ebFmt(p.stop) + '</td><td>' + ebFmt(p.target) + '</td>'
         + '<td class="' + pc + '">' + ebMoney(p.livePnl) + '</td>'
-        + '<td>' + ebFmt(p.heldSec) + 's</td>'
-        + '<td class="eb-mut">' + ebEsc(p.slBasis) + '</td></tr>';
-    }).join('') : '<tr><td colspan="10" class="eb-mut">No open positions.</td></tr>';
+        + '<td>' + ebFmt(p.heldSec) + 's</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="eb-mut">No open positions.</td></tr>';
 
     var pend = d.pending || [];
     document.getElementById('eb-pendcount').textContent = pend.length ? '(' + pend.length + ')' : '';
@@ -3053,9 +2917,9 @@ async function ebRefresh(){
       return '<tr><td>' + ebEsc(p.symbol) + '</td>'
         + '<td><span class="eb-pill ' + (p.side === 'LONG' ? 'eb-long' : 'eb-short') + '">' + ebEsc(p.side) + '</span></td>'
         + '<td>' + ebFmt(p.entry) + '</td><td>' + ebFmt(p.ltp) + '</td><td>' + ebFmt(p.distance) + '</td>'
-        + '<td>' + ebFmt(p.stop) + '</td><td>' + ebFmt(p.target) + '</td><td>' + ebFmt(p.riskPts) + '</td>'
+        + '<td>' + ebFmt(p.rangePts) + '</td>'
         + '<td>' + ebFmt(p.gapPct) + '</td><td class="eb-mut">' + ebEsc(p.shape) + '</td></tr>';
-    }).join('') : '<tr><td colspan="10" class="eb-mut">Nothing armed yet.</td></tr>';
+    }).join('') : '<tr><td colspan="8" class="eb-mut">Nothing armed yet.</td></tr>';
 
     var drop = d.dropped || [];
     document.getElementById('eb-dropped').textContent = drop.length
@@ -3086,7 +2950,6 @@ setInterval(ebRefresh, 4000);
 // ── History + daily-file viewers + restore + reset ────────────────────────────
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getEarlyBirdMode() === "EARLY_BIRD_LIVE";
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/early-bird-paper",
@@ -3096,7 +2959,6 @@ router.get("/history", (req, res) => {
     pageDocTitle: "EarlyBird Paper — History",
     modalLabel: "EarlyBird Paper",
     broker: "fyers",
-    liveActive,
     sessions: data.sessions || [],
     totalPnl: data.totalPnl,
     startCap,

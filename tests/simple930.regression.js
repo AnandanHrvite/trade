@@ -41,6 +41,15 @@ Object.assign(process.env, {
   LOT_MULTIPLIER:     "1",
   MAX_LOT_MULTIPLIER: "10",
   INSTRUMENT:         "NIFTY_OPTIONS",
+  // The global profit lock is this strategy's only exit — pin it so the
+  // developer's .env cannot decide whether the backtest cases pass.
+  PROFIT_LOCK_ENABLED:     "true",
+  PROFIT_LOCK_ARM_PCT:     "8",
+  PROFIT_LOCK_FLOOR_PCT:   "5",
+  PROFIT_LOCK_TRAIL_PCT:   "0",
+  PROFIT_LOCK_TRAIL_TIERS: "",
+  TRADE_STOP_TIME:         "15:30",
+  EXIT_REENTRY_COOLDOWN_CANDLES: "0",
   STRIKE_OFFSET_CE:   "0",
   STRIKE_OFFSET_PE:   "0",
 });
@@ -64,22 +73,24 @@ function freshEnv(over) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 section("Config — the shipped defaults ARE the rule");
-check("09:25 select · 09:25–09:35 entry · 09:45 sideways · 15:15 EOD", () => {
+check("09:25 select · 09:25–09:35 entry", () => {
   const c = freshEnv();
   assert.strictEqual(c.selectionMin,  9 * 60 + 25);
   assert.strictEqual(c.entryStartMin, 9 * 60 + 25);
   assert.strictEqual(c.entryEndMin,   9 * 60 + 35);
-  assert.strictEqual(c.sidewaysMin,   9 * 60 + 45);
-  assert.strictEqual(c.forcedExitMin, 15 * 60 + 15);
 });
-check("trigger ₹180 · box ₹160–₹220 · stop 20pt · trail 20pt", () => {
+check("trigger ₹180", () => {
   const c = freshEnv();
   assert.strictEqual(c.triggerPremium, 180);
-  assert.strictEqual(c.bandUp, 220);
-  assert.strictEqual(c.bandDown, 160);
-  assert.strictEqual(c.slPts, 20);
-  assert.strictEqual(c.trailPts, 20);
-  assert.strictEqual(c.trailEnabled, true);
+});
+check("no exit of its own: no stop / trail / box / EOD config is exposed", () => {
+  const c = freshEnv();
+  for (const k of ["slPts", "trailPts", "trailEnabled", "trailArmAtBandUp", "bandUp", "bandDown", "sidewaysMin", "forcedExitMin"]) {
+    assert.ok(!(k in c), `getConfig() still exposes ${k}`);
+  }
+  for (const fn of ["computeInitialStop", "computeTrailStop", "isTrailArmed", "describeTrail", "isExpanded", "bandLevels", "exitCheck"]) {
+    assert.strictEqual(S[fn], undefined, `the engine still exports ${fn}`);
+  }
 });
 check("the three optional guards ship OFF, so the default IS the rule", () => {
   const c = freshEnv();
@@ -87,40 +98,23 @@ check("the three optional guards ship OFF, so the default IS the rule", () => {
   assert.strictEqual(c.minPremium, 0);
   assert.strictEqual(c.sustainPolls, 1);
 });
-check("moving the trigger moves the whole box with it", () => {
-  const c = freshEnv({ SIMPLE930_TRIGGER_PREMIUM: "200" });
-  assert.strictEqual(c.bandUp, 240);
-  assert.strictEqual(c.bandDown, 180);
-});
-check("both box offsets are independently configurable", () => {
-  const c = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "50", SIMPLE930_BAND_DOWN_OFFSET: "30" });
-  assert.strictEqual(c.bandUp, 230);
-  assert.strictEqual(c.bandDown, 150);
-});
 check("every clock key is configurable", () => {
   const c = freshEnv({
     SIMPLE930_SELECTION_TIME: "09:20", SIMPLE930_ENTRY_START: "09:30",
-    SIMPLE930_ENTRY_END: "09:40", SIMPLE930_SIDEWAYS_CHECK: "10:00",
-    SIMPLE930_FORCED_EXIT: "14:30",
+    SIMPLE930_ENTRY_END: "09:40",
   });
   assert.deepStrictEqual(
-    [c.selectionMin, c.entryStartMin, c.entryEndMin, c.sidewaysMin, c.forcedExitMin],
-    [560, 570, 580, 600, 870]);
+    [c.selectionMin, c.entryStartMin, c.entryEndMin],
+    [560, 570, 580]);
 });
 check("a malformed HH:MM falls back to the default, never to midnight", () => {
-  const c = freshEnv({ SIMPLE930_ENTRY_END: "9-35", SIMPLE930_FORCED_EXIT: "99:99" });
+  const c = freshEnv({ SIMPLE930_ENTRY_END: "9-35", SIMPLE930_SELECTION_TIME: "99:99" });
   assert.strictEqual(c.entryEndMin, 9 * 60 + 35);
-  assert.strictEqual(c.forcedExitMin, 15 * 60 + 15);
+  assert.strictEqual(c.selectionMin, 9 * 60 + 25);
 });
-check("garbage numbers fall back instead of disarming the stop", () => {
-  const c = freshEnv({ SIMPLE930_SL_PTS: "0", SIMPLE930_TRAIL_PTS: "-5", SIMPLE930_TRIGGER_PREMIUM: "abc" });
-  assert.strictEqual(c.slPts, 20);
-  assert.strictEqual(c.trailPts, 20);
+check("a garbage trigger falls back to the default", () => {
+  const c = freshEnv({ SIMPLE930_TRIGGER_PREMIUM: "abc" });
   assert.strictEqual(c.triggerPremium, 180);
-});
-check("the trail can be switched off", () => {
-  assert.strictEqual(freshEnv({ SIMPLE930_TRAIL_ENABLED: "false" }).trailEnabled, false);
-  assert.strictEqual(freshEnv({ SIMPLE930_TRAIL_ENABLED: "true" }).trailEnabled, true);
 });
 check("getConfig is never cached — a Settings save applies without a restart", () => {
   freshEnv();
@@ -279,220 +273,6 @@ check("the entry window is inclusive at both edges and shut outside them", () =>
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-section("Stop and trail");
-check("the stop is a DISTANCE off the FILL — the rule's own 181 → 161", () => {
-  const c = freshEnv();
-  assert.strictEqual(S.computeInitialStop(181, c), 161);
-  assert.strictEqual(S.computeInitialStop(186, c), 166);
-  assert.strictEqual(S.computeInitialStop(220, c), 200);
-});
-check("a stop that would land at or below ZERO refuses the trade", () => {
-  // Clamping to 0 was worse than useless: `_num(0)` is true so the entry guard
-  // passed, and `ltp <= 0` can never be true for a live premium — the position
-  // rode with its risk switched off and only 15:15 could close it. Reachable
-  // whenever SL_PTS is at or above TRIGGER_PREMIUM.
-  assert.strictEqual(S.computeInitialStop(12, freshEnv()), null, "a 12-20 stop must refuse, not clamp to 0");
-  assert.strictEqual(S.computeInitialStop(20, freshEnv()), null, "exactly zero is not a stop");
-  assert.strictEqual(S.computeInitialStop(20.5, freshEnv()), 0.5, "a positive stop is still returned");
-  const tiny = freshEnv({ SIMPLE930_TRIGGER_PREMIUM: "10", SIMPLE930_SL_PTS: "20" });
-  assert.strictEqual(S.computeInitialStop(11, tiny), null);
-});
-check("the sideways box floor can never go negative", () => {
-  // "premium never left ₹-10–₹50" printed in a real exit reason.
-  const c = freshEnv({ SIMPLE930_TRIGGER_PREMIUM: "10", SIMPLE930_BAND_DOWN_OFFSET: "20" });
-  assert.strictEqual(c.bandDown, 0);
-  assert.ok(c.bandDown >= 0);
-});
-check("an unusable fill yields NO stop, so the caller must refuse the trade", () => {
-  const c = freshEnv();
-  assert.strictEqual(S.computeInitialStop(null, c), null);
-  assert.strictEqual(S.computeInitialStop(0, c), null);
-  assert.strictEqual(S.computeInitialStop(NaN, c), null);
-});
-check("the trail stays PARKED until the peak reaches the top of the box", () => {
-  const c = freshEnv();                        // trigger 180 → bandUp 220
-  const init = S.computeInitialStop(181, c);   // 161
-  // 190 and 200 are real gains, but neither has touched 220 — the flat stop is
-  // still the only risk on the trade.
-  assert.strictEqual(S.isTrailArmed(190, c), false);
-  assert.strictEqual(S.computeTrailStop(190, init, c), 161);
-  assert.strictEqual(S.computeTrailStop(200, init, c), 161);
-  // 220 touches the box top: the trail arms and takes over from there.
-  assert.strictEqual(S.isTrailArmed(220, c), true);
-  assert.strictEqual(S.computeTrailStop(220, init, c), 200);
-  assert.strictEqual(S.computeTrailStop(240, init, c), 220);
-});
-check("the live regression: a 6-point wobble must NOT tighten the stop", () => {
-  // The 2026-08-27 session — filled 185.05, peaked 191.85, and the arm-on-entry
-  // trail walked the stop up to 171.85 and closed it for a loss while the real
-  // 165.05 stop had never been touched.
-  const c = freshEnv();
-  const init = S.computeInitialStop(185.05, c);
-  assert.strictEqual(init, 165.05);
-  assert.strictEqual(S.computeTrailStop(191.85, init, c), 165.05);
-});
-check("the trail RATCHETS — it never drops back below the initial stop", () => {
-  const c = freshEnv();
-  const init = S.computeInitialStop(181, c);   // 161
-  assert.strictEqual(S.computeTrailStop(181, init, c), 161);
-  assert.strictEqual(S.computeTrailStop(170, init, c), 161);
-});
-check("arming reads the POSITION's frozen band, not a mid-trade config change", () => {
-  const c = freshEnv();                        // cfg.bandUp = 220
-  const init = S.computeInitialStop(181, c);
-  // A trade opened under a 200 box arms at 200 even though config now says 220.
-  const pos = { bandUp: 200, bandDown: 160, trailArmAtBandUp: true };
-  assert.strictEqual(S.isTrailArmed(205, c, pos), true);
-  assert.strictEqual(S.computeTrailStop(205, init, c, pos), 185);
-  // And a trade opened with arming OFF keeps trailing from the fill.
-  const legacy = { bandUp: 220, bandDown: 160, trailArmAtBandUp: false };
-  assert.strictEqual(S.computeTrailStop(190, init, c, legacy), 170);
-});
-check("the trail arms on EXACTLY the condition that releases the 09:45 exit", () => {
-  // Both read `peak >= bandUp`, so the two rules can never disagree: a trade
-  // whose trail is live has always escaped the box, and a trade still on the
-  // flat stop is always still subject to the sideways exit. If these ever drift
-  // apart a trade could run on a trail it was never meant to have, or be closed
-  // at 09:45 with a trail already tightening under it.
-  const c = freshEnv();
-  for (const peak of [180, 190, 200, 214, 215, 219, 220, 221, 260]) {
-    const armed    = S.isTrailArmed(peak, c);
-    const expanded = S.isExpanded(peak, peak, c);   // trough = peak: only the top edge can fire
-    assert.strictEqual(armed, expanded,
-      `peak ${peak}: trail armed=${armed} but expanded=${expanded}`);
-  }
-});
-check("a trade still on the flat stop is the one the 09:45 exit closes", () => {
-  // The 2026-08-27 session, carried through to its real conclusion: peak 191.85
-  // never reached the 215 box top, so the trail stayed parked AND the sideways
-  // exit still owned the trade at 09:45.
-  const c = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "35" });   // bandUp 215
-  const pos = {
-    optionEntryLtp: 185.05, initialStop: 165.05, stop: 165.05,
-    peak: 191.85, trough: 171.75, bandUp: 215, bandDown: 160,
-    entryMin: 9 * 60 + 25, trailArmAtBandUp: true,
-  };
-  assert.strictEqual(S.isTrailArmed(pos.peak, c, pos), false);
-  assert.strictEqual(S.computeTrailStop(pos.peak, pos.initialStop, c, pos), 165.05);
-  // 171.75 is the tick that closed the real trade. It is now well clear.
-  assert.strictEqual(S.exitCheck(pos, 171.75, 9 * 60 + 28, c).exit, false);
-  // At 09:45, still boxed, the sideways rule closes it — as the rule intends.
-  const v = S.exitCheck(pos, 171.75, 9 * 60 + 45, c);
-  assert.strictEqual(v.exit, true);
-  assert.strictEqual(v.kind, "SIDEWAYS");
-});
-check("arming can be switched off to restore the arm-on-entry trail", () => {
-  const c = freshEnv({ SIMPLE930_TRAIL_ARM_AT_BAND_UP: "false" });
-  const init = S.computeInitialStop(181, c);
-  assert.strictEqual(S.isTrailArmed(190, c), true);
-  assert.strictEqual(S.computeTrailStop(190, init, c), 170);
-});
-check("with the trail off the stop stays exactly where it started", () => {
-  assert.strictEqual(S.computeTrailStop(400, 161, freshEnv({ SIMPLE930_TRAIL_ENABLED: "false" })), 161);
-});
-check("a separate trail distance is honoured once armed", () => {
-  // 220 touches the default box top, so the trail is armed; 10pt behind → 210.
-  assert.strictEqual(S.computeTrailStop(220, 161, freshEnv({ SIMPLE930_TRAIL_PTS: "10" })), 210);
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-section("The 09:45 box");
-check("touching an edge counts as leaving the box", () => {
-  const c = freshEnv();
-  assert.strictEqual(S.isExpanded(220, 175, c), true);
-  assert.strictEqual(S.isExpanded(219.95, 175, c), false);
-  assert.strictEqual(S.isExpanded(200, 160, c), true);
-  assert.strictEqual(S.isExpanded(200, 160.05, c), false);
-});
-check("null peak / trough cannot fake an expansion", () => {
-  assert.strictEqual(S.isExpanded(null, null, freshEnv()), false);
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-section("exitCheck — the ONLY exit decision");
-const POS = (over) => Object.assign({
-  side: "CE", symbol: "s", stop: 161, initialStop: 161, peak: 181, trough: 181,
-}, over);
-check("the stop fires at or below its level", () => {
-  const c = freshEnv();
-  assert.strictEqual(S.exitCheck(POS(), 161, 9 * 60 + 40, c).kind, "STOP");
-  assert.strictEqual(S.exitCheck(POS(), 160.5, 9 * 60 + 40, c).kind, "STOP");
-  assert.strictEqual(S.exitCheck(POS(), 161.5, 9 * 60 + 40, c).exit, false);
-});
-check("a stop that has trailed reports as TRAIL, not STOP", () => {
-  const v = S.exitCheck(POS({ stop: 200, peak: 220 }), 199, 10 * 60, freshEnv());
-  assert.strictEqual(v.kind, "TRAIL");
-  assert.ok(/Trailing stop/.test(v.reason));
-});
-check("the 09:45 exit fires only while the trade is still boxed", () => {
-  const c = freshEnv();
-  assert.strictEqual(S.exitCheck(POS({ peak: 210, trough: 170 }), 205, 9 * 60 + 45, c).kind, "SIDEWAYS");
-  assert.strictEqual(S.exitCheck(POS({ peak: 225, trough: 170 }), 205, 9 * 60 + 45, c).exit, false);
-});
-check("before 09:45 a boxed trade is left alone", () => {
-  assert.strictEqual(S.exitCheck(POS({ peak: 210, trough: 170 }), 205, 9 * 60 + 44, freshEnv()).exit, false);
-});
-check("the stop OUTRANKS the 09:45 exit on the same observation", () => {
-  assert.strictEqual(S.exitCheck(POS({ peak: 210, trough: 170 }), 155, 9 * 60 + 45, freshEnv()).kind, "STOP");
-});
-check("a position opened AT/AFTER the check time is not closed by the box", () => {
-  // Out of the box the windows cannot overlap (09:35 entry end vs 09:45 check),
-  // but both are settable. Without this guard, widening ENTRY_END past
-  // SIDEWAYS_CHECK closes every trade on its very first quote.
-  const c = freshEnv({ SIMPLE930_ENTRY_END: "10:00" });
-  const late = POS({ peak: 181, trough: 181, entryMin: 9 * 60 + 50 });
-  assert.strictEqual(S.exitCheck(late, 181, 9 * 60 + 51, c).exit, false);
-  // ...while a trade that DID run into the check is still closed
-  const early = POS({ peak: 181, trough: 181, entryMin: 9 * 60 + 31 });
-  assert.strictEqual(S.exitCheck(early, 181, 9 * 60 + 51, c).kind, "SIDEWAYS");
-});
-check("a Settings save cannot re-arm the 09:45 exit on an OPEN trade", () => {
-  // The trade below already cleared a 220 box. Widening the box to 260 mid-trade
-  // must not drag it back inside and close a winner the rule had released.
-  const wide = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "80" });   // box top now 260
-  const pos = POS({ peak: 225, trough: 178, bandUp: 220, bandDown: 160, entryMin: 9 * 60 + 30, stop: 205 });
-  assert.strictEqual(S.isExpanded(pos.peak, pos.trough, wide, pos), true, "the frozen box was ignored");
-  assert.strictEqual(S.exitCheck(pos, 215, 9 * 60 + 46, wide).exit, false);
-  // ...while a position carrying no frozen box still follows the live config
-  const unfrozen = POS({ peak: 225, trough: 178, entryMin: 9 * 60 + 30, stop: 205 });
-  assert.strictEqual(S.isExpanded(unfrozen.peak, unfrozen.trough, wide), false);
-});
-check("the frozen box is quoted in the exit reason, not the live one", () => {
-  const wide = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "80" });
-  const pos = POS({ peak: 190, trough: 178, bandUp: 220, bandDown: 160, entryMin: 9 * 60 + 30 });
-  const v = S.exitCheck(pos, 185, 9 * 60 + 46, wide);
-  assert.strictEqual(v.kind, "SIDEWAYS");
-  assert.ok(/₹160–₹220/.test(v.reason), `reason quotes the live box, not the trade's: ${v.reason}`);
-});
-check("a position with no entryMin keeps the old box behaviour", () => {
-  const v = S.exitCheck(POS({ peak: 210, trough: 170 }), 205, 9 * 60 + 45, freshEnv());
-  assert.strictEqual(v.kind, "SIDEWAYS");
-});
-check("EOD squares off whatever survived everything else", () => {
-  assert.strictEqual(S.exitCheck(POS({ peak: 300, trough: 175, stop: 280 }), 290, 15 * 60 + 15, freshEnv()).kind, "EOD");
-});
-check("a NULL stop cannot exit on the first quote (the `ltp <= null` trap)", () => {
-  const v = S.exitCheck(POS({ stop: null, initialStop: null, peak: 300, trough: 175 }), 250, 10 * 60, freshEnv());
-  assert.strictEqual(v.exit, false);
-});
-check("a null or zero premium decides nothing at all", () => {
-  const c = freshEnv();
-  assert.strictEqual(S.exitCheck(POS(), null, 16 * 60, c).exit, false);
-  assert.strictEqual(S.exitCheck(POS(), 0, 16 * 60, c).exit, false);
-});
-check("no position → no exit", () => {
-  assert.strictEqual(S.exitCheck(null, 100, 16 * 60, freshEnv()).exit, false);
-});
-check("every exit branch names a rupee figure the operator can check", () => {
-  const c = freshEnv();
-  for (const v of [
-    S.exitCheck(POS(), 155, 10 * 60, c),
-    S.exitCheck(POS({ peak: 210, trough: 170 }), 205, 9 * 60 + 45, c),
-    S.exitCheck(POS({ peak: 300, trough: 175, stop: 280 }), 290, 15 * 60 + 15, c),
-  ]) assert.ok(/₹\d/.test(v.reason), `reason carries no rupee figure: ${v.reason}`);
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
 section("Paper route — quote attribution decides every price");
 check("a quote is attributed STRICTLY by symbol", () => {
   const m = PP.attributeQuotes({ s: "ok", d: [{ n: "A", v: { lp: 10 } }, { n: "B", v: { lp: 20 } }] }, ["A", "B"]);
@@ -541,7 +321,7 @@ const mkLeg = (side, strike, bars) => ({ strike, side, steps: 1, moneyness: "ITM
 const QTY = 75;
 const NOSLIP = { SIMPLE930_BT_SLIPPAGE_PTS: "0" };
 
-check("a clean break → 20pt stop off the fill (the rule's 181 → 161)", () => {
+check("a clean break fills at the trigger-breaking premium, with no stop of its own", () => {
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) ce.push(flat(m, m === 9 * 60 + 30 ? 181 : 178));
@@ -550,7 +330,7 @@ check("a clean break → 20pt stop off the fill (the rule's 181 → 161)", () =>
   assert.ok(trade, "expected a trade");
   assert.strictEqual(trade.side, "CE");
   assert.strictEqual(trade.ePrice, 181);
-  assert.strictEqual(trade.sl, 161);
+  assert.strictEqual(trade.sl, null);
 });
 check("a bar that only TOUCHES ₹180 does not fill", () => {
   const c = freshEnv(NOSLIP);
@@ -565,7 +345,6 @@ check("a bar that OPENS above the trigger fills at the open, not at the trigger"
   for (let m = SEL + 1; m <= END; m++) ce.push(bar(m, 195, 200, 190, 195));
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
   assert.strictEqual(trade.ePrice, 195);
-  assert.strictEqual(trade.sl, 175);
 });
 check("slippage is charged on BOTH sides, always adversely", () => {
   const c = freshEnv({ SIMPLE930_BT_SLIPPAGE_PTS: "2" });
@@ -575,73 +354,76 @@ check("slippage is charged on BOTH sides, always adversely", () => {
   assert.strictEqual(trade.ePrice, 183);              // 181 + 2 paid up on the buy
   assert.ok(trade.xPrice <= 181 - 2 + 1e-9);          // and given up on the sell
 });
-check("the 09:45 sideways exit fires when the premium never left the box", () => {
+check("a trade the profit lock never arms runs to the session end", () => {
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) ce.push(bar(m, 190, 200, 185, 190));
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-  assert.strictEqual(trade.exitKind, "SIDEWAYS");
-  assert.strictEqual(trade.expanded, "no");
-  assert.strictEqual(trade.xPrice, 190);              // the 09:45 bar's OPEN
+  assert.strictEqual(trade.ePrice, 190);
+  assert.strictEqual(trade.exitKind, "SESSION_END");   // peak 200 < arm 205.2
+  assert.strictEqual(trade.xPrice, 190);               // the 15:30 bar's OPEN
 });
-check("a trade that touched ₹220 survives 09:45 and runs on the trail", () => {
+check("once armed, a bar LOW through the lock floor fills at the floor", () => {
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) {
-    if (m === SEL + 1)      ce.push(flat(m, 181));
-    else if (m === 9 * 60 + 30) ce.push(bar(m, 200, 225, 200, 220));   // clears the box
-    else if (m === 10 * 60)     ce.push(bar(m, 220, 220, 200, 200));   // gives back to the trail
+    if (m === SEL + 1)          ce.push(flat(m, 181));
+    else if (m === 9 * 60 + 30) ce.push(bar(m, 200, 225, 200, 220));   // arms the lock (≥ 195.48)
+    else if (m === 10 * 60)     ce.push(bar(m, 200, 200, 185, 186));   // falls through 181 × 1.05
     else                        ce.push(bar(m, 215, 218, 212, 215));
   }
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-  assert.strictEqual(trade.expanded, "yes");
-  assert.strictEqual(trade.exitKind, "TRAIL");
-  assert.strictEqual(trade.xPrice, 205);              // peak 225 − 20
-  assert.ok(trade.trailMoves > 0);
+  assert.strictEqual(trade.exitKind, "PROFIT_LOCK");
+  assert.strictEqual(trade.xPrice, 190.05);
+  assert.ok(/Profit lock/.test(trade.reason), trade.reason);
 });
-check("the stop is tested on the bar LOW before the trail is lifted from the HIGH", () => {
+check("the floor is tested on the bar LOW before the peak is lifted from the HIGH", () => {
+  // A spike-and-dive bar: the low came first (lock not armed yet), so the exit
+  // books at the CLOSE once the high has armed the lock — never at the floor.
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) {
     if (m === SEL + 1)      ce.push(flat(m, 181));
-    else if (m === SEL + 2) ce.push(bar(m, 181, 260, 150, 200));       // spikes AND dives
+    else if (m === SEL + 2) ce.push(bar(m, 181, 260, 150, 189));       // spikes AND dives
     else                    ce.push(flat(m, 200));
   }
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-  assert.strictEqual(trade.exitKind, "STOP");         // NOT a 240 trail — the loss books
-  assert.strictEqual(trade.xPrice, 161);
+  assert.strictEqual(trade.exitKind, "PROFIT_LOCK");
+  assert.strictEqual(trade.xPrice, 189);
 });
-check("a bar that opened below the stop fills at the OPEN, never at the better stop", () => {
+check("a bar that opened below the lock floor fills at the OPEN, never at the better floor", () => {
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
-  for (let m = SEL + 1; m <= END; m++) ce.push(m === SEL + 1 ? flat(m, 181) : bar(m, 140, 145, 138, 142));
+  for (let m = SEL + 1; m <= END; m++) {
+    if (m === SEL + 1)      ce.push(flat(m, 181));
+    else if (m === SEL + 2) ce.push(bar(m, 181, 230, 181, 229));       // arms the lock
+    else                    ce.push(bar(m, 140, 145, 138, 142));
+  }
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
+  assert.strictEqual(trade.exitKind, "PROFIT_LOCK");
   assert.strictEqual(trade.xPrice, 140);
 });
-check("the entry bar's own low can stop the trade out — no free ride", () => {
+check("a losing trade is NOT closed by any stop — only the session end closes it", () => {
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
-  for (let m = SEL + 1; m <= END; m++) ce.push(m === SEL + 1 ? bar(m, 178, 185, 155, 160) : flat(m, 200));
+  for (let m = SEL + 1; m <= END; m++) ce.push(m === SEL + 1 ? bar(m, 178, 185, 155, 160) : flat(m, 120));
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
   assert.strictEqual(trade.ePrice, 180);              // intrabar cross fills at the trigger
-  assert.strictEqual(trade.exitKind, "STOP");
-  assert.strictEqual(trade.xPrice, 160);
+  assert.strictEqual(trade.exitKind, "SESSION_END");
+  assert.strictEqual(trade.xPrice, 120);
 });
 check("the entry bar's OPEN printed BEFORE the fill and can never be the exit price", () => {
   // 09:26 opens at 150, rallies through the trigger (the fill at 180) and holds
-  // 200 all day. The open is a PRE-ENTRY print: booking it as a "gapped through
-  // the stop" fill exits at a price this trade could never have got. The honest
-  // worst case is the bar's own low taking out the ₹160 stop.
+  // 200 all day. The open is a PRE-ENTRY print and must never be booked.
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) ce.push(m === SEL + 1 ? bar(m, 150, 190, 148, 185) : flat(m, 200));
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
   assert.strictEqual(trade.ePrice, 180);
-  assert.strictEqual(trade.sl, 160);
-  assert.strictEqual(trade.exitKind, "STOP");
-  assert.strictEqual(trade.xPrice, 160, "exited at the entry bar's open — a price that printed before the fill");
+  assert.strictEqual(trade.exitKind, "SESSION_END");
+  assert.strictEqual(trade.xPrice, 200, "exited at the entry bar's open — a price that printed before the fill");
 });
-check("a bar with no usable OPEN cannot fill an entry — a NaN fill computes no stop", () => {
+check("a bar with no usable OPEN cannot fill an entry — a NaN fill prices nothing", () => {
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) {
@@ -651,7 +433,7 @@ check("a bar with no usable OPEN cannot fill an entry — a NaN fill computes no
   assert.strictEqual(trade, null, "filled off a bar with no open");
   assert.strictEqual(audit.outcome, "no_trigger");
 });
-check("a null or zero OPEN mid-trade decides nothing (the `open <= stop` trap)", () => {
+check("a null or zero OPEN mid-trade decides nothing (the `open <= floor` trap)", () => {
   for (const badOpen of [null, 0]) {
     const c = freshEnv(NOSLIP);
     const ce = [flat(SEL, 178)];
@@ -661,7 +443,7 @@ check("a null or zero OPEN mid-trade decides nothing (the `open <= stop` trap)",
       else                    ce.push(flat(m, 200));
     }
     const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-    assert.strictEqual(trade.exitKind, "SIDEWAYS", `open=${badOpen} invented an exit`);
+    assert.strictEqual(trade.exitKind, "SESSION_END", `open=${badOpen} invented an exit`);
     assert.strictEqual(trade.xPrice, 200, `open=${badOpen} priced the exit at ₹${trade.xPrice}`);
   }
 });
@@ -672,42 +454,19 @@ check("a 09:25 index bar with no usable open is refused, not rounded to a NaN st
   assert.strictEqual(trade, null);
   assert.ok(/no usable open|ATM strike cannot be derived/.test(audit.note), `unhelpful note: ${audit.note}`);
 });
-check("the backtest mirrors the guard: a late entry is not boxed out at once", () => {
-  const c = freshEnv({ ...NOSLIP, SIMPLE930_ENTRY_START: "09:50", SIMPLE930_ENTRY_END: "10:00" });
-  const ce = [flat(SEL, 178)];
-  for (let m = SEL + 1; m <= END; m++) ce.push(flat(m, m >= 9 * 60 + 50 ? 185 : 178));
-  const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-  assert.ok(trade, "expected a trade");
-  assert.notStrictEqual(trade.exitKind, "SIDEWAYS");
-  assert.strictEqual(trade.exitKind, "EOD");
-});
-check("EOD squares off a runner that cleared the box and never gave back the trail", () => {
+check("the session end closes a runner the profit lock never caught", () => {
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   let px = 236;
   for (let m = SEL + 1; m <= END; m++) {
     if (m === SEL + 1)      ce.push(flat(m, 181));                  // entry
-    else if (m === SEL + 2) ce.push(bar(m, 181, 235, 181, 235));    // clears ₹220 → survives 09:45
-    // monotonic grind up: the low never reaches peak−20, so the trail never fires
+    else if (m === SEL + 2) ce.push(bar(m, 181, 235, 181, 235));    // arms the lock
+    // monotonic grind up: the low never reaches the floor
     else { ce.push(bar(m, px, px + 1, px, px + 1)); px += 1; }
   }
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-  assert.strictEqual(trade.expanded, "yes");
-  assert.strictEqual(trade.exitKind, "EOD");
+  assert.strictEqual(trade.exitKind, "SESSION_END");
   assert.ok(trade.pnl > 0);
-});
-check("a PROFITABLE trade that never touched \u20b9220 is still closed at 09:45", () => {
-  // The rule is explicit: sideways means it did not leave the box, whatever the
-  // P&L. A +19pt trade that peaked at \u20b9201 is closed all the same.
-  const c = freshEnv(NOSLIP);
-  const ce = [flat(SEL, 178)];
-  let px = 181;
-  for (let m = SEL + 1; m <= END; m++) { ce.push(bar(m, px, px + 1, px - 0.5, px + 1)); px += 1; }
-  const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-  assert.strictEqual(trade.exitKind, "SIDEWAYS");
-  assert.strictEqual(trade.expanded, "no");
-  assert.ok(trade.peak < 220, `peak ${trade.peak} should never have reached the box top`);
-  assert.ok(trade.pnl > 0, "this one happens to be a winner, and is closed anyway");
 });
 check("whichever leg is further through the level is the one bought", () => {
   const c = freshEnv(NOSLIP);
@@ -738,7 +497,7 @@ check("the ONE-trade-a-day cap survives a /stop then /start inside the window", 
   // close the day at once and produce zero trades.
   const guard = src.slice(src.indexOf("let _dayGuard"), src.indexOf("let state = _freshState()"));
   assert.ok(!/readDailyTrades/.test(guard), "the day guard reads the day file — that would break a same-day replay");
-  assert.ok(/state\.tradesTaken >= _maxDailyTrades\(\)/.test(src), "the entry path does not enforce the cap");
+  assert.ok(/state\.tradesTaken >= TRADES_PER_DAY/.test(src), "the entry path does not enforce the one-trade rule");
 });
 check("no option data is reported as UNFETCHABLE, not as a flat day", () => {
   const { trade, audit } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, [])] }), freshEnv(), QTY);
@@ -836,24 +595,6 @@ check("both routes read their levels from the engine's getConfig()", () => {
     assert.ok(/strategy\.getConfig\(\)/.test(read(f)), `${f} never calls getConfig()`);
   }
 });
-check("the live harness re-implements no rule at all", () => {
-  const src = read("routes/simple930LiveHarness.js");
-  assert.ok(!/computeInitialStop|computeTrailStop|evaluateTrigger|exitCheck|selectWatchlist/.test(src));
-});
-check("live orders stay triple-gated (own switch + global dry-run + hold-back)", () => {
-  const src = decomment(read("routes/simple930LiveHarness.js"));
-  assert.ok(/liveDryRun\.isDryRun\("SIMPLE930"\)/.test(src), "does not consult the shared dry-run gate");
-  assert.ok(/SIMPLE930_LIVE_ENABLED/.test(src), "does not check its own live switch");
-  assert.ok(/zerodhaBroker\.isAuthenticated\(\)/.test(src), "does not require broker auth for real orders");
-});
-check("the live-harness log key matches tradeLogger's key character for character", () => {
-  const harness = decomment(read("routes/simple930LiveHarness.js"));
-  const m = /liveLogKey:\s*(null|"([^"]+)")/.exec(harness);
-  assert.ok(m, "the harness declares no liveLogKey at all");
-  if (m[1] === "null") return;   // by design: live trades are not logged to disk
-  const logger = read("utils/tradeLogger.js");
-  assert.ok(logger.includes(`"${m[2]}"`), `tradeLogger has no entry for "${m[2]}" — every live trade would be silently dropped`);
-});
 check("the paper route persists and clears its position snapshot", () => {
   const src = decomment(read("routes/simple930Paper.js"));
   assert.ok(/saveSimple930Position/.test(src));
@@ -883,19 +624,18 @@ check("the backtest reuses the engine's IST helpers rather than its own copy", (
   assert.ok(!/function _istMins/.test(src), "the backtest still defines its own IST minute helper");
 });
 check("the backtest DISCLOSES that it takes at most one trade a session", () => {
-  // simulateDay returns one trade unconditionally, so raising MAX_DAILY_TRADES
-  // makes it report FEWER entries than paper without saying so.
   const src = read("routes/simple930Backtest.js");
-  assert.ok(/MAX_DAILY_TRADES is set to/.test(src), "the results page never mentions the divergence");
+  assert.ok(/One trade a session/.test(src), "the results page never states the one-trade rule");
 });
 check("the backtest's recorded peak/trough include the bar it exited on", () => {
-  // The three open-priced exit branches break before folding their bar in, so
-  // the extremes stopped one bar short — paper folds the exiting tick in.
+  // The open-priced exit branches break before folding their bar in, so the
+  // extremes stopped one bar short — paper folds the exiting tick in.
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) {
     if (m === SEL + 1) ce.push(flat(m, 181));
-    else if (m === SEL + 2) ce.push(bar(m, 140, 145, 138, 142));   // gaps through the stop
+    else if (m === SEL + 2) ce.push(bar(m, 181, 230, 181, 229));   // arms the lock
+    else if (m === SEL + 3) ce.push(bar(m, 140, 145, 138, 142));   // gaps through the floor
     else ce.push(flat(m, 142));
   }
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
@@ -912,25 +652,28 @@ check("the backtest DISCLOSES that it cannot model SUSTAIN_POLLS", () => {
 check("every config field getConfig() returns is actually read somewhere", () => {
   const cfg = S.getConfig();
   const hay = ["strategies/simple930.js", "routes/simple930Paper.js",
-               "routes/simple930Backtest.js", "routes/simple930LiveHarness.js",
+               "routes/simple930Backtest.js",
                "../tools/genSimple930GuideData.js"]
     .map(f => { try { return f.startsWith("../") ? fs.readFileSync(path.join(__dirname, f.slice(3)), "utf-8") : read(f); } catch (_) { return ""; } })
     .join("\n");
   const dead = Object.keys(cfg).filter(k => !new RegExp(`\\.${k}\\b`).test(hay));
   assert.deepStrictEqual(dead, [], `getConfig() returns fields nothing reads: ${dead.join(", ")}`);
 });
-check("_checkExits judges the box the SAME way exitCheck does", () => {
-  // The exit froze the box to the trade; the flag did not. A Settings change
-  // mid-trade made the page, the decision trail and the crash snapshot all say
-  // "the band broke" while the engine still closed the trade at 09:45.
-  const src = decomment(read("routes/simple930Paper.js"));
-  assert.ok(/isExpanded\(pos\.peak, pos\.trough, cfg, pos\)/.test(src),
-    "_checkExits calls isExpanded without the position — the flag and the exit can disagree");
-  // and prove the two forms really do differ, so the assertion above is not cosmetic
-  const wide = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "10" });
-  const pos = { peak: 200, trough: 178, bandUp: 220, bandDown: 160 };
-  assert.strictEqual(S.isExpanded(pos.peak, pos.trough, wide), true);
-  assert.strictEqual(S.isExpanded(pos.peak, pos.trough, wide, pos), false);
+check("the global profit lock is the ONLY automatic exit — paper and backtest alike", () => {
+  const paper = decomment(read("routes/simple930Paper.js"));
+  const bt    = decomment(read("routes/simple930Backtest.js"));
+  const fn = paper.slice(paper.indexOf("function _checkExits"), paper.indexOf("function _closeIfWindowMissed"));
+  assert.ok(/tradeGuards\.checkProfitLock\(pos\.optionEntryLtp, ltp, pos\.peak\)/.test(fn), "paper's per-poll exit does not call the profit lock");
+  assert.ok(/tradeGuards\.checkProfitLock\(/.test(bt), "the backtest does not apply the profit lock");
+  for (const [f, src] of [["paper", paper], ["backtest", bt]]) {
+    assert.ok(!/checkBreakevenStop|checkTimeStop|exitCheck|computeInitialStop|computeTrailStop|isExpanded/.test(src), `${f} still calls a removed exit`);
+  }
+  const all = ["strategies/simple930.js", "routes/simple930Paper.js", "routes/simple930Backtest.js"].map(read).join("\n");
+  for (const k of ["SIMPLE930_SL_PTS", "SIMPLE930_TRAIL_PTS", "SIMPLE930_TRAIL_ENABLED", "SIMPLE930_TRAIL_ARM_AT_BAND_UP",
+                   "SIMPLE930_BAND_UP_OFFSET", "SIMPLE930_BAND_DOWN_OFFSET", "SIMPLE930_SIDEWAYS_CHECK", "SIMPLE930_FORCED_EXIT",
+                   "SIMPLE930_MAX_DAILY_TRADES", "SIMPLE930_MAX_DAILY_LOSS"]) {
+    assert.ok(!all.includes(k), `${k} is still read`);
+  }
 });
 check("the day budget is seeded at MODULE LOAD, not only on /stop then /start", () => {
   // /start zeroes tradesTaken, and every deploy restarts the process — so a
@@ -982,7 +725,7 @@ check("every entry guard is synchronous — no await before the position is clai
 check("a session that ended DURING the fill cannot still open the position", () => {
   // The entry re-quote is the only await in the buy path, and /stop (or the
   // 15:30 auto-stop) can land inside it. Committing afterwards leaves a real
-  // broker order with no poll chain left to trail it, stop it or square it off.
+  // broker order with no poll chain left to manage it or square it off.
   const src = decomment(read("routes/simple930Paper.js"));
   const fn  = src.slice(src.indexOf("async function simulateBuy"), src.indexOf("function simulateSell"));
   const firstAwait = fn.indexOf("await");
@@ -995,7 +738,7 @@ check("a session that ended DURING the fill cannot still open the position", () 
 
 // ═══════════════════════════════════════════════════════════════════════════
 section("Wiring invariants — the parts that rot silently");
-check("sharedSocketState keeps paper and live mutually exclusive", () => {
+check("sharedSocketState keeps a second paper session out", () => {
   const sss = require("../src/utils/sharedSocketState");
   sss.clearSimple930();
   assert.strictEqual(sss.canStart("SIMPLE930_PAPER").allowed, true);
@@ -1003,7 +746,6 @@ check("sharedSocketState keeps paper and live mutually exclusive", () => {
   assert.strictEqual(sss.isSimple930Active(), true);
   assert.strictEqual(sss.getSimple930Mode(), "SIMPLE930_PAPER");
   assert.strictEqual(sss.isAnyActive(), true);
-  assert.strictEqual(sss.canStart("SIMPLE930_LIVE").allowed, false);
   assert.strictEqual(sss.canStart("SIMPLE930_PAPER").allowed, false);
   sss.clearSimple930();
   assert.strictEqual(sss.isAnyActive(), false);
@@ -1023,16 +765,10 @@ check("skip and trade loggers both know the mode", () => {
   const trade = require("../src/utils/tradeLogger");
   assert.doesNotThrow(() => skip.filePathFor("simple930", "2026-01-01"));
   assert.doesNotThrow(() => trade.filePathFor("simple930"));
-  // Live trades are deliberately NOT logged to disk — the harness passes
-  // liveLogKey:null, so the "-live" mode key must stay unknown to tradeLogger.
-  assert.throws(() => trade.filePathFor("simple930-live"));
-  assert.throws(() => trade.dailyFilePathFor("simple930-live", "2026-01-01"));
 });
 check("Telegram routes this strategy's alerts to its own group", () => {
   const notify = require("../src/utils/notify");
   assert.strictEqual(notify.modeGroup("SIMPLE930-PAPER"), "SIMPLE930");
-  assert.strictEqual(notify.modeGroup("SIMPLE930-LIVE"), "SIMPLE930");
-  assert.strictEqual(notify.modeGroup("SIMPLE930-LIVE (DRY-RUN)"), "SIMPLE930");
   // and the plain "PAPER" tag must still belong to EMA_RSI_ST, not to us
   assert.strictEqual(notify.modeGroup("PAPER"), "EMA_RSI_ST");
 });
@@ -1073,34 +809,31 @@ check("every read-only page of this strategy is in app.js OPEN_PATHS/PREFIXES", 
   const app = read("app.js");
   for (const p of [
     "/simple930-paper/status", "/simple930-paper/status/data", "/simple930-paper/status/chart-data",
-    "/simple930-paper/history", "/simple930-live", "/simple930-live/status/data",
+    "/simple930-paper/history",
     "/simple930-backtest", "/simple930-backtest/status", "/simple930-backtest/idle",
   ]) assert.ok(app.includes(`"${p}"`), `${p} is missing from OPEN_PATHS`);
   for (const p of ["/simple930-paper/view/", "/simple930-paper/download/"]) {
     assert.ok(app.includes(`"${p}"`), `${p} is missing from OPEN_PREFIXES`);
   }
 });
-check("all three routes are mounted", () => {
+check("both routes are mounted", () => {
   const app = read("app.js");
   for (const [path, mod] of [
     ["/simple930-paper", "simple930Paper"],
     ["/simple930-backtest", "simple930Backtest"],
-    ["/simple930-live", "simple930LiveHarness"],
   ]) assert.ok(new RegExp(`app\\.use\\("${path}"[\\s\\S]{0,80}${mod}`).test(app), `${path} is not mounted`);
 });
-check("the crash snapshot carries the LIVE trail state, not just the entry", () => {
-  // Without peak/stop/trailMoves/expanded a restart would wind the stop back to
-  // its initial value and re-arm an already-settled 09:45 check.
+check("the crash snapshot carries the running peak the profit lock reads, not just the entry", () => {
   const src = decomment(read("utils/positionPersist.js"));
   const blk = src.slice(src.indexOf("function saveSimple930Position"), src.indexOf("function loadSimple930Position"));
-  for (const f of ["peak", "trough", "stop", "initialStop", "trailMoves", "expanded", "bandUp", "bandDown"]) {
+  for (const f of ["optionEntryLtp", "peak", "trough"]) {
     assert.ok(new RegExp(`\\b${f}:`).test(blk), `the SIMPLE_9:30 snapshot drops "${f}"`);
   }
 });
 check("Settings exposes every SIMPLE930_ key the code reads", () => {
   const settings = read("routes/settings.js");
   const sources = ["strategies/simple930.js", "routes/simple930Paper.js",
-                   "routes/simple930Backtest.js", "routes/simple930LiveHarness.js"].map(read).join("\n");
+                   "routes/simple930Backtest.js"].map(read).join("\n");
   const keys = new Set((sources.match(/SIMPLE930_[A-Z0-9_]+/g) || [])
     .filter(k => !["SIMPLE930_PAPER", "SIMPLE930_LIVE", "SIMPLE930_BACKTEST"].includes(k)));
   const missing = [...keys].filter(k => !settings.includes(`"${k}"`));

@@ -95,9 +95,9 @@ function isMasterEnabled() {
   return !isOff(process.env.TG_ENABLED);
 }
 
-/** Map a mode string ("PAPER", "LIVE", "BB_RSI-PAPER", "PA-LIVE", "ORB-LIVE (DRY-RUN)", ...) to group.
+/** Map a mode string ("PAPER", "BB_RSI-PAPER", "PA-PAPER", "ORB-PAPER", ...) to group.
  *  The dash in "PA-" matters — plain "PAPER" would otherwise be misread as PA.
- *  Live modes can carry a " (DRY-RUN)" suffix, so prefix matching (startsWith) is used.
+ *  Prefix matching (startsWith) is used.
  */
 function modeGroup(mode) {
   if (!mode) return "EMA_RSI_ST";
@@ -428,52 +428,30 @@ function modeLabel(mode) {
   if (!mode) return "";
   const m = String(mode).toUpperCase();
   if (m === "PAPER")        return "📄 EMA_RSI_ST PAPER";
-  if (m === "LIVE")         return "⚡ EMA_RSI_ST LIVE";
   if (m === "BB_RSI-PAPER")  return "📄 BB_RSI PAPER";
-  if (m === "BB_RSI-LIVE")   return "⚡ BB_RSI LIVE";
   if (m === "PA-PAPER")     return "📄 PA PAPER";
-  if (m === "PA-LIVE")      return "⚡ PA LIVE";
-  // ORB live modes may carry a " (DRY-RUN)" suffix — match by prefix
-  // and preserve the suffix so the alert still shows the dry-run flag.
-  // PREV ORB SCALP — the harness tags itself "PREV_ORB_SCALP-LIVE", paper uses
-  // "PREV-ORB-SCALP-PAPER"; both spellings are matched.
+  // Matched by prefix and any suffix is preserved.
+  // PREV ORB SCALP — both "PREV-ORB-SCALP-PAPER" and "PREV_ORB_SCALP-PAPER"
+  // spellings are matched.
   if (m.startsWith("PREV-ORB-SCALP-PAPER")) return "📐 PREV ORB SCALP PAPER" + m.slice("PREV-ORB-SCALP-PAPER".length);
   if (m.startsWith("PREV_ORB_SCALP-PAPER")) return "📐 PREV ORB SCALP PAPER" + m.slice("PREV_ORB_SCALP-PAPER".length);
-  if (m.startsWith("PREV-ORB-SCALP-LIVE"))  return "🔴 PREV ORB SCALP LIVE" + m.slice("PREV-ORB-SCALP-LIVE".length);
-  if (m.startsWith("PREV_ORB_SCALP-LIVE"))  return "🔴 PREV ORB SCALP LIVE" + m.slice("PREV_ORB_SCALP-LIVE".length);
   if (m.startsWith("ORB-PAPER"))       return "📄 ORB PAPER" + m.slice("ORB-PAPER".length);
-  if (m.startsWith("ORB-LIVE"))        return "⚡ ORB LIVE" + m.slice("ORB-LIVE".length);
   if (m.startsWith("EMA9VWAP-PAPER"))  return "📄 EMA9+VWAP PAPER" + m.slice("EMA9VWAP-PAPER".length);
-  if (m.startsWith("EMA9VWAP-LIVE"))   return "⚡ EMA9+VWAP LIVE" + m.slice("EMA9VWAP-LIVE".length);
   if (m.startsWith("TREND_PB-PAPER"))  return "📈 TREND PB PAPER" + m.slice("TREND_PB-PAPER".length);
-  if (m.startsWith("TREND_PB-LIVE"))   return "⚡ TREND PB LIVE" + m.slice("TREND_PB-LIVE".length);
   if (m.startsWith("TREND-DAY-SCALP-PAPER")) return "⚡ TREND DAY SCALP PAPER" + m.slice("TREND-DAY-SCALP-PAPER".length);
-  if (m.startsWith("TREND-DAY-SCALP-LIVE"))  return "🔴 TREND DAY SCALP LIVE" + m.slice("TREND-DAY-SCALP-LIVE".length);
   if (m.startsWith("HA-SCALP-PAPER")) return "🕯 HA SCALP PAPER" + m.slice("HA-SCALP-PAPER".length);
-  if (m.startsWith("HA-SCALP-LIVE"))  return "🔴 HA SCALP LIVE" + m.slice("HA-SCALP-LIVE".length);
   if (m.startsWith("SIMPLE930-PAPER")) return "🎯 SIMPLE 9:30 PAPER" + m.slice("SIMPLE930-PAPER".length);
-  if (m.startsWith("SIMPLE930-LIVE"))  return "🔴 SIMPLE 9:30 LIVE" + m.slice("SIMPLE930-LIVE".length);
   if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
-  if (m.startsWith("RSI_PIVOT_ST-LIVE"))  return "⚡ RSI PIVOT ST LIVE" + m.slice("RSI_PIVOT_ST-LIVE".length);
   if (m.startsWith("BN_PIVOT_RSI_ST-PAPER")) return "🎯 BN PIVOT RSI ST PAPER" + m.slice("BN_PIVOT_RSI_ST-PAPER".length);
-  if (m.startsWith("BN_PIVOT_RSI_ST-LIVE"))  return "⚡ BN PIVOT RSI ST LIVE" + m.slice("BN_PIVOT_RSI_ST-LIVE".length);
   if (m.startsWith("BN_EMA_RSI_ST_V2-PAPER")) return "📄 BN EMA_RSI_ST_V2 PAPER" + m.slice("BN_EMA_RSI_ST_V2-PAPER".length);
-  if (m.startsWith("BN_EMA_RSI_ST_V2-LIVE"))  return "⚡ BN EMA_RSI_ST_V2 LIVE" + m.slice("BN_EMA_RSI_ST_V2-LIVE".length);
   if (m.startsWith("EMA_RSI_ST_V2-PAPER")) return "📄 EMA_RSI_ST_V2 PAPER" + m.slice("EMA_RSI_ST_V2-PAPER".length);
-  if (m.startsWith("EMA_RSI_ST_V2-LIVE"))  return "⚡ EMA_RSI_ST_V2 LIVE" + m.slice("EMA_RSI_ST_V2-LIVE".length);
   if (m.startsWith("ST_RSI_PIV_BB-PAPER")) return "📄 ST_RSI_PIV_BB PAPER" + m.slice("ST_RSI_PIV_BB-PAPER".length);
-  if (m.startsWith("ST_RSI_PIV_BB-LIVE"))  return "⚡ ST_RSI_PIV_BB LIVE" + m.slice("ST_RSI_PIV_BB-LIVE".length);
   if (m.startsWith("SAIL_VWAP_ST-PAPER")) return "📄 SAIL_VWAP_ST PAPER" + m.slice("SAIL_VWAP_ST-PAPER".length);
-  if (m.startsWith("SAIL_VWAP_ST-LIVE"))  return "⚡ SAIL_VWAP_ST LIVE" + m.slice("SAIL_VWAP_ST-LIVE".length);
   if (m.startsWith("SAIL_PIVOT_EMA_ST-PAPER")) return "📄 SAIL_PIVOT_EMA_ST PAPER" + m.slice("SAIL_PIVOT_EMA_ST-PAPER".length);
-  if (m.startsWith("SAIL_PIVOT_EMA_ST-LIVE"))  return "⚡ SAIL_PIVOT_EMA_ST LIVE" + m.slice("SAIL_PIVOT_EMA_ST-LIVE".length);
   if (m.startsWith("BN_PIVOT_EMA_ST-PAPER")) return "📄 BN_PIVOT_EMA_ST PAPER" + m.slice("BN_PIVOT_EMA_ST-PAPER".length);
-  if (m.startsWith("BN_PIVOT_EMA_ST-LIVE"))  return "⚡ BN_PIVOT_EMA_ST LIVE" + m.slice("BN_PIVOT_EMA_ST-LIVE".length);
   if (m.startsWith("PIVOT_EMA_ST-PAPER")) return "📄 PIVOT_EMA_ST PAPER" + m.slice("PIVOT_EMA_ST-PAPER".length);
-  if (m.startsWith("PIVOT_EMA_ST-LIVE"))  return "⚡ PIVOT_EMA_ST LIVE" + m.slice("PIVOT_EMA_ST-LIVE".length);
   if (m.startsWith("GAP_RUNAWAY_STK-PAPER")) return "📄 GAP_RUNAWAY STOCKS PAPER" + m.slice("GAP_RUNAWAY_STK-PAPER".length);
   if (m.startsWith("GAP_RUNAWAY-PAPER")) return "📄 GAP_runAway__Kirubakaran PAPER" + m.slice("GAP_RUNAWAY-PAPER".length);
-  if (m.startsWith("GAP_RUNAWAY-LIVE"))  return "⚡ GAP_runAway__Kirubakaran LIVE" + m.slice("GAP_RUNAWAY-LIVE".length);
   return m;
 }
 
@@ -495,50 +473,6 @@ function notifyStarted({ mode, text }) {
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_STARTED`)) return;
   sendTelegram(text);
-}
-
-// ── Live-order hooks ────────────────────────────────────────────────────────
-// The live harness registers entry/exit hooks here so it can place real broker
-// orders off the SAME notify call paper already makes. We invoke the hook from
-// INSIDE notifyEntry/notifyExit (rather than reassigning the export) because
-// paper modules destructure `const { notifyEntry } = require('./notify')` at
-// load time — reassigning notify.notifyEntry would never reach those bindings,
-// but the body of this stable function is always what they call.
-// Keyed by harness id (e.g. "EMA_RSI_ST-LIVE") so multiple harnesses can register
-// concurrently. Each hook filters by its own mode, so they never collide —
-// this is what lets all harnesses run in parallel.
-const _orderHooks = new Map();   // id → { entry, exit }
-
-/** Register live-order hooks under an id. Pass { entry, exit } (either may be null). */
-function setOrderHooks(id, { entry = null, exit = null } = {}) {
-  _orderHooks.set(id, { entry, exit });
-}
-/** Remove the live-order hooks registered under an id. */
-function clearOrderHooks(id) {
-  _orderHooks.delete(id);
-}
-function _fireEntryHooks(p) {
-  for (const h of _orderHooks.values()) {
-    if (h.entry) {
-      try {
-        const _r = h.entry(p);
-        if (_r && typeof _r.catch === "function") _r.catch((e) => console.error(`[notify] entry hook rejection: ${e && e.message}`));
-      } catch (e) { console.error(`[notify] entry hook error: ${e.message}`); }
-    }
-  }
-}
-function _fireExitHooks(p) {
-  for (const h of _orderHooks.values()) {
-    if (h.exit) {
-      // The exit hook is async — a sync try/catch won't catch a rejected promise,
-      // so attach a .catch to keep any future unguarded await out of the global
-      // unhandledRejection path.
-      try {
-        const _r = h.exit(p);
-        if (_r && typeof _r.catch === "function") _r.catch((e) => console.error(`[notify] exit hook rejection: ${e && e.message}`));
-      } catch (e) { console.error(`[notify] exit hook error: ${e.message}`); }
-    }
-  }
 }
 
 /**
@@ -567,10 +501,6 @@ function _isFuturesAlert(p) {
 }
 
 function notifyEntry(p) {
-  // Fire the live-order hook FIRST — must run regardless of Telegram gating
-  // (a mode with TG entry alerts disabled must still place its real order).
-  _fireEntryHooks(p);
-
   const group = modeGroup(p.mode);
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_ENTRY`)) return;
@@ -622,9 +552,6 @@ function notifyEntry(p) {
  *   candlesHeld  — completed candles held; fallback when heldMs is absent
  */
 function notifyExit(p) {
-  // Fire the live-order hook FIRST — see notifyEntry note on Telegram gating.
-  _fireExitHooks(p);
-
   const group = modeGroup(p.mode);
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_EXIT`)) return;
@@ -896,6 +823,4 @@ module.exports = {
   notifyDayReport,
   notifyConsolidatedDayReport,
   notifyAuthError,
-  setOrderHooks,
-  clearOrderHooks,
 };

@@ -13,9 +13,7 @@
  *            yesterday's HIGH (CE); otherwise no trade that day
  *   entry  : the FIRST 3-min close beyond the 09:15 candle's low (PE) / high (CE),
  *            at that close; entries until 14:30; one trade a day
- *   stop   : break candle's high (PE) / low (CE)
- *   target : break candle size from the entry; then SL → target, trail each
- *            closed candle's high (PE) / low (CE)
+ *   exit   : the global profit lock only — no stop, target or trail
  */
 
 process.env.TZ = "Asia/Calcutta";
@@ -93,8 +91,6 @@ test("defaults", () => {
   assert.strictEqual(c.sessionStartMin, 555);
   assert.strictEqual(c.entryStartMin, 570);
   assert.strictEqual(c.entryEndMin, 870);
-  assert.strictEqual(c.forcedExitMin, 915);
-  assert.strictEqual(c.trailAfterTarget, true);
 });
 
 test("dayLevels: yesterday high/low and 09:15 aggregate", () => {
@@ -159,10 +155,7 @@ test("PE: first 3-min close below the 09:15 low fires, levels exact", () => {
   assert.strictEqual(s.signal, "BUY_PE");
   assert.strictEqual(s.side, "PE");
   assert.strictEqual(s.entrySpot, 22885);
-  assert.strictEqual(s.slSpot, 22915);
-  assert.strictEqual(s.slPts, 30);
   assert.strictEqual(s.candleSize, 35);
-  assert.strictEqual(s.targetSpot, 22850);
   assert.strictEqual(s.breakLevel, 22900);
   assert.strictEqual(s.prevLow, 22950);
   assert.strictEqual(s.signalBarTime, brk.time);
@@ -202,13 +195,11 @@ test("CE: 09:15 closes above yesterday's high, first close above its high fires"
   const brk = bar(TODAY, 9, 30, 23090, 23130, 23085, 23120); // size 45
   const s = strat.getSignal(base.concat([brk]), { silent: true });
   assert.strictEqual(s.signal, "BUY_CE");
-  assert.strictEqual(s.slSpot, 23085);
   assert.strictEqual(s.candleSize, 45);
-  assert.strictEqual(s.targetSpot, 23165);
   assert.strictEqual(s.breakLevel, 23100);
 });
 
-// ── window + budget ─────────────────────────────────────────────────────────
+// ── window ──────────────────────────────────────────────────────────────────
 function lateBreak(hh, mm) {
   const bars = peDay();
   for (let t = 9 * 60 + 30; t < hh * 60 + mm; t += 3) bars.push(bar(TODAY, Math.floor(t / 60), t % 60, 22920, 22925, 22905, 22910));
@@ -223,10 +214,6 @@ test("break candle closing after 14:30 is refused (and spent)", () => {
   assert.strictEqual(s.signal, "NONE");
   assert.strictEqual(s.spent, true);
   assert.ok(/cut-off/.test(s.skipReason));
-});
-test("alreadyTraded → no entry", () => {
-  const s = strat.getSignal(lateBreak(9, 33), { silent: true, alreadyTraded: true });
-  assert.strictEqual(s.signal, "NONE");
 });
 
 // ── refusals ────────────────────────────────────────────────────────────────
@@ -250,12 +237,6 @@ test("NaN bar in the 09:15 window → day dead, never a price of 0", () => {
   const s = strat.getSignal(yesterday().concat(ob, [bar(TODAY, 9, 30, 22910, 22915, 22880, 22885)]), { silent: true });
   assert.strictEqual(s.signal, "NONE");
 });
-test("break candle closing at its own high (zero risk) is refused", () => {
-  const s = strat.getSignal(peDay().concat([bar(TODAY, 9, 30, 22880, 22890, 22870, 22890)]), { silent: true });
-  // close 22890 < 22900 break, high 22890 == close → zero risk
-  assert.strictEqual(s.signal, "NONE");
-  assert.ok(/zero-risk/.test(s.skipReason), s.skipReason);
-});
 test("unusable last candle refused", () => {
   const s = strat.getSignal(peDay().concat([{ time: ist(TODAY, 9, 30), open: 1, high: null, low: 1, close: 1 }]), { silent: true });
   assert.strictEqual(s.signal, "NONE");
@@ -263,39 +244,6 @@ test("unusable last candle refused", () => {
 test("empty / non-array input", () => {
   assert.strictEqual(strat.getSignal([], { silent: true }).warmup, true);
   assert.strictEqual(strat.getSignal(null, { silent: true }).warmup, true);
-});
-
-// ── exits ───────────────────────────────────────────────────────────────────
-test("stopHit / targetHit guards and sides", () => {
-  assert.strictEqual(strat.stopHit("PE", 22915, 22915), true);
-  assert.strictEqual(strat.stopHit("PE", 22914, 22915), false);
-  assert.strictEqual(strat.stopHit("CE", 23085, 23085), true);
-  assert.strictEqual(strat.stopHit("PE", 22920, null), false);
-  assert.strictEqual(strat.stopHit("PE", NaN, 1), false);
-  assert.strictEqual(strat.targetHit("PE", 22850, 22850), true);
-  assert.strictEqual(strat.targetHit("PE", 22851, 22850), false);
-  assert.strictEqual(strat.targetHit("CE", 23165, 23165), true);
-  assert.strictEqual(strat.targetHit("CE", 23000, undefined), false);
-});
-test("onTarget: trail ON → LOCK at target; OFF → EXIT", () => {
-  const pos = { side: "PE", slSpot: 22915, targetSpot: 22850 };
-  assert.deepStrictEqual(strat.onTarget(pos), { action: "LOCK", stop: 22850 });
-  process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET = "false";
-  assert.deepStrictEqual(strat.onTarget(pos), { action: "EXIT" });
-  delete process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET;
-  assert.strictEqual(strat.onTarget({ side: "PE", slSpot: 1, targetSpot: null }), null);
-});
-test("trailStop: only after target, ratchets only, both sides", () => {
-  const pe = { side: "PE", slSpot: 22850, targetReached: false };
-  const b = bar(TODAY, 10, 0, 22840, 22845, 22820, 22825);
-  assert.strictEqual(strat.trailStop(pe, b), null);
-  pe.targetReached = true;
-  assert.deepStrictEqual(strat.trailStop(pe, b), { stop: 22845 });
-  assert.strictEqual(strat.trailStop({ ...pe, slSpot: 22845 }, bar(TODAY, 10, 3, 22840, 22848, 22830, 22832)), null);
-  const ce = { side: "CE", slSpot: 23165, targetReached: true };
-  assert.deepStrictEqual(strat.trailStop(ce, bar(TODAY, 10, 0, 23170, 23190, 23168, 23185)), { stop: 23168 });
-  assert.strictEqual(strat.trailStop(ce, bar(TODAY, 10, 0, 23170, 23190, 23160, 23185)), null);
-  assert.strictEqual(strat.trailStop({ ...ce, slSpot: null }, b), null);
 });
 
 // ── config is live ──────────────────────────────────────────────────────────
@@ -319,7 +267,6 @@ test("5-min resolution works end to end", () => {
   const s = strat.getSignal(y.concat(t), { silent: true });
   delete process.env.PREV_ORB_SCALP_RESOLUTION;
   assert.strictEqual(s.signal, "BUY_PE");
-  assert.strictEqual(s.targetSpot, 22845);
 });
 
 // ── backtest ────────────────────────────────────────────────────────────────
@@ -334,92 +281,21 @@ function fillDay(bars, fromMin, px) {
   return bars.sort((a, b) => a.time - b.time);
 }
 
-test("backtest: PE target reached → SL to target → trailed stop exit", async () => {
+test("backtest: no stop/target — an open trade is closed at the day's last candle", async () => {
   const bars = peDay().concat([
-    bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),   // break: SL 22915, target 22850
-    bar(TODAY, 9, 33, 22884, 22890, 22860, 22865),   // fill at open 22884
-    bar(TODAY, 9, 36, 22865, 22870, 22845, 22848),   // target touched → SL 22850, trail → 22870? no: high 22870 > 22850 keeps 22850
-    bar(TODAY, 9, 39, 22848, 22849, 22820, 22825),   // trail → 22849
-    bar(TODAY, 9, 42, 22825, 22830, 22800, 22805),   // trail → 22830
-    bar(TODAY, 9, 45, 22806, 22840, 22800, 22835),   // high 22840 ≥ 22830 → stop at 22830
+    bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
+    bar(TODAY, 9, 33, 22884, 22990, 22880, 22980),   // runs well past the old stop — no exit
   ]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 48, 22835), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22980), TODAY, NOLOCK);
   assert.strictEqual(r.trades.length, 1);
-  const t = r.trades[0];
-  assert.strictEqual(t.side, "PE");
-  assert.strictEqual(t.ePrice, 22884);
-  assert.strictEqual(t.sl, 22915);
-  assert.strictEqual(t.target, 22850);
-  assert.strictEqual(t.targetReached, "yes");
-  assert.strictEqual(t.exitCode, "TRAIL_STOP");
-  assert.strictEqual(t.xPrice, 22830);
-  assert.ok(t.pnl > 0);
-});
-
-test("backtest: stop tested BEFORE target on a bar that does both", async () => {
-  const bars = peDay().concat([
-    bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
-    bar(TODAY, 9, 33, 22884, 22920, 22840, 22900),
-  ]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22900), TODAY, NOLOCK);
-  assert.strictEqual(r.trades[0].exitCode, "STOP");
-  assert.strictEqual(r.trades[0].xPrice, 22915);
-});
-
-test("backtest: gap through the stop fills at the open, not the level", async () => {
-  const bars = peDay().concat([
-    bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
-    bar(TODAY, 9, 33, 22884, 22890, 22880, 22889),
-    bar(TODAY, 9, 36, 22940, 22950, 22935, 22945),
-  ]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22945), TODAY, NOLOCK);
-  assert.strictEqual(r.trades[0].exitCode, "STOP");
-  assert.strictEqual(r.trades[0].xPrice, 22940);
-});
-
-test("backtest: fill already through the stop is aborted (paper parity)", async () => {
-  const bars = peDay().concat([
-    bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
-    bar(TODAY, 9, 33, 22920, 22925, 22900, 22910),
-  ]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22910), TODAY, NOLOCK);
-  assert.strictEqual(r.trades.length, 0);
-  assert.strictEqual(r.funnel.abortedPastStop, 1);
-});
-
-test("backtest: target touched then closed back through → TARGET_LOCK at target", async () => {
-  const bars = peDay().concat([
-    bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
-    bar(TODAY, 9, 33, 22884, 22890, 22845, 22870),
-  ]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22870), TODAY, NOLOCK);
-  assert.strictEqual(r.trades[0].exitCode, "TARGET_LOCK");
-  assert.strictEqual(r.trades[0].xPrice, 22850);
-});
-
-test("backtest: trail OFF → exit at target", async () => {
-  process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET = "false";
-  const bars = peDay().concat([
-    bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
-    bar(TODAY, 9, 33, 22884, 22890, 22845, 22870),
-  ]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22870), TODAY, NOLOCK);
-  delete process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET;
-  assert.strictEqual(r.trades[0].exitCode, "TARGET");
-  assert.strictEqual(r.trades[0].xPrice, 22850);
-});
-
-test("backtest: EOD square-off at 15:15 open", async () => {
-  const bars = peDay().concat([bar(TODAY, 9, 30, 22910, 22915, 22880, 22885)]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 33, 22880), TODAY, NOLOCK);
-  assert.strictEqual(r.trades[0].exitCode, "EOD");
-  assert.strictEqual(r.trades[0].exit.slice(-8), "15:15:00");
+  assert.strictEqual(r.trades[0].exitCode, "SESSION_END");
+  assert.strictEqual(r.trades[0].exit.slice(-8), "15:27:00");
 });
 
 test("backtest: one trade a day, warm-up day never trades, inside-range day counted", async () => {
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
-    bar(TODAY, 9, 33, 22884, 22920, 22880, 22918),   // stopped
+    bar(TODAY, 9, 33, 22884, 22920, 22880, 22918),
     bar(TODAY, 9, 36, 22918, 22920, 22870, 22875),   // second close below — must NOT trade
   ]);
   const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22875), TODAY, NOLOCK);
@@ -430,16 +306,10 @@ test("backtest: one trade a day, warm-up day never trades, inside-range day coun
   assert.strictEqual(r2.funnel.insideRange, 1);
 });
 
-test("backtest: every trade's stop is on the losing side of its entry", async () => {
-  const bars = peDay().concat([bar(TODAY, 9, 30, 22910, 22915, 22880, 22885)]);
-  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 33, 22880), TODAY, NOLOCK);
-  for (const t of r.trades) assert.ok(t.side === "PE" ? t.sl > t.ePrice : t.sl < t.ePrice);
-});
-
 test("backtest: simulated profit lock fires on a give-back", async () => {
   // δ 0.55, seed 260: arm +8% = +20.8 premium ≈ 37.8 spot pts; floor +5% ≈ 23.6 pts.
   const bars = peDay().concat([
-    bar(TODAY, 9, 30, 22910, 22915, 22800, 22805),   // break: SL 22915, size 115 → target 22690
+    bar(TODAY, 9, 30, 22910, 22915, 22800, 22805),   // break candle
     bar(TODAY, 9, 33, 22804, 22806, 22760, 22765),   // fill 22804, favourable 44pt → arms lock
     bar(TODAY, 9, 36, 22766, 22790, 22765, 22788),   // back to 22790 → through floor (~22780)
   ]);
@@ -458,8 +328,7 @@ function paperPos(extra) {
   return Object.assign({
     isFutures: false, side: "PE", symbol: "NSE:NIFTY26MAR22900PE", qty: 75,
     entrySpot: 22885, entryPrice: 22885, optionEntryLtp: 200, entryTime: "x", entryTimeMs: Date.now(),
-    entryBarTime: ist(TODAY, 9, 33), slSpot: 22915, initialSlSpot: 22915, slPts: 30, riskPts: 30,
-    targetSpot: 22850, targetReached: false, candleSize: 35, signalBarTime: ist(TODAY, 9, 30),
+    entryBarTime: ist(TODAY, 9, 33), candleSize: 35, signalBarTime: ist(TODAY, 9, 30),
     peakPremium: 200, mfeSpotPts: 0, mfePnl: 0, maeSpotPts: 0, maePnl: 0, secsToMFE: 0, secsToMAE: 0,
   }, extra || {});
 }
@@ -470,49 +339,15 @@ function freshRun(pos) {
   return s;
 }
 
-test("paper: stop at the break candle high", () => {
+test("paper: no stop/target — a move either way never exits on its own", () => {
   const s = freshRun(paperPos());
-  s.lastTickPrice = 22916;
-  paper._test.checkExits(22916);
-  assert.strictEqual(s.position, null);
-  assert.ok(/Stop hit/.test(s.sessionTrades[0].exitReason));
-  assert.strictEqual(s.dayClosed, true);
-});
-
-test("paper: target → SL jumps to target, trail on candle close, then exit", () => {
-  const s = freshRun(paperPos());
-  paper._test.checkExits(22850);
-  assert.ok(s.position, "must not exit at target when trailing");
-  assert.strictEqual(s.position.targetReached, true);
-  assert.strictEqual(s.position.slSpot, 22850);
+  s.lastTickPrice = 22990; paper._test.checkExits(22990);   // far through the break candle's high
+  assert.ok(s.position);
+  s.lastTickPrice = 22700; paper._test.checkExits(22700);   // far past the old target
+  assert.ok(s.position);
   s.candles = [bar(TODAY, 9, 36, 22845, 22847, 22830, 22835)];
-  paper._test.onCandleClose(s.candles[0], false);
-  assert.strictEqual(s.position.slSpot, 22847);
-  s.lastTickPrice = 22848;
-  paper._test.checkExits(22848);
-  assert.strictEqual(s.position, null);
-  assert.ok(/trailed stop/.test(s.sessionTrades[0].exitReason), s.sessionTrades[0].exitReason);
-  assert.strictEqual(s.sessionTrades[0].targetReached, true);
-});
-
-test("paper: trail OFF → exits at target", () => {
-  process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET = "false";
-  const s = freshRun(paperPos());
-  paper._test.checkExits(22849);
-  delete process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET;
-  assert.strictEqual(s.position, null);
-  assert.ok(/Target hit/.test(s.sessionTrades[0].exitReason));
-});
-
-test("paper: trail never loosens and ignores the signal bar", () => {
-  const s = freshRun(paperPos({ targetReached: true, slSpot: 22840 }));
-  s.candles = [bar(TODAY, 9, 30, 22910, 22915, 22880, 22885)];
-  paper._test.onCandleClose(s.candles[0], false);   // signal bar — ignored
-  assert.strictEqual(s.position.slSpot, 22840);
-  const b = bar(TODAY, 9, 39, 22830, 22845, 22820, 22825);
-  s.candles.push(b);
-  paper._test.onCandleClose(b, false);             // high 22845 > 22840 — no loosen
-  assert.strictEqual(s.position.slSpot, 22840);
+  paper._test.onCandleClose(s.candles[0], false);           // a closed bar never exits either
+  assert.ok(s.position);
 });
 
 test("paper: global profit lock exits on premium give-back", () => {
@@ -553,7 +388,7 @@ test("paper: quote attribution is by symbol only", () => {
 
 // ── no rule duplicated in the routes ───────────────────────────────────────
 test("routes never re-implement the break/target maths", () => {
-  for (const f of ["prevOrbScalpPaper.js", "prevOrbScalpBacktest.js", "prevOrbScalpLiveHarness.js"]) {
+  for (const f of ["prevOrbScalpPaper.js", "prevOrbScalpBacktest.js"]) {
     const src = fs.readFileSync(path.join(__dirname, "..", "src", "routes", f), "utf8");
     assert.ok(!/\.high\s*-\s*\w*\.low/.test(src), `${f} computes a candle size itself`);
     assert.ok(!/prevDay\.low\s*[<>]/.test(src) && !/orLow\s*[<>]/.test(src), `${f} compares setup levels itself`);

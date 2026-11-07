@@ -244,15 +244,6 @@ check("ORB's per-trade rupee cap does not exit a WINNING futures short", () => {
   } finally { if (prev === undefined) delete process.env.ORB_MAX_TRADE_LOSS; else process.env.ORB_MAX_TRADE_LOSS = prev; }
 });
 
-check("ORB's premium disaster stop still fires on a real option collapse", () => {
-  const orbExits = require("../src/strategies/orbExits");
-  const pos = { isFutures: false, side: "PE", entrySpot: 24000, optionEntryLtp: 200,
-                qty: 65, slSpot: 24040, peakPremium: 200, entryTimeMs: Date.now() };
-  const d = orbExits.evaluateTickExits(pos, { spotPrice: 24010, optionLtp: 100 });
-  assert.strictEqual(d.exit, true, "a 50% premium collapse must still exit");
-  assert.ok(/Premium disaster stop/.test(d.reason), d.reason);
-});
-
 check("ORB's premium disaster stop cannot fire on futures", () => {
   const orbExits = require("../src/strategies/orbExits");
   // optionLtp mirrors the SPOT in futures mode, so an unguarded premium stop
@@ -319,7 +310,7 @@ check("the trade-history modal reads each TRADE's own instrument, not a global",
 });
 
 check("consolidation carries the trade's instrument through to the row", () => {
-  for (const f of ["routes/consolidation.js", "routes/liveConsolidation.js"]) {
+  for (const f of ["routes/consolidation.js"]) {
     const src = decomment(read(f));
     assert.ok(/instrument:\s*t\.instrument \|\| s\.instrument/.test(src),
       `${f} takes the instrument from the SESSION, so a mode flip mid-history mislabels rows`);
@@ -486,64 +477,6 @@ for (const file of btRoutes) {
     assert.ok((deltaOne && thetaZero) || futBranch,
       `${file} must either collapse δ→1 / θ→0 in futures mode, or price futures ` +
       `in a dedicated branch that skips the premium simulation`);
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-section("Native live routes send the right product type on a REAL order");
-
-// These place real broker orders directly (not through the paper-wrapping
-// harness). A wrong isFutures here reaches the exchange: an option order sent
-// as MARGIN, or a futures order sent as INTRADAY.
-const liveRoutes = fs.readdirSync(ROUTES)
-  .filter(f => /Live\.js$/.test(f))
-  .sort();
-
-check("the discovery found the native live routes", () => {
-  assert.ok(liveRoutes.length >= 3, `expected native live routes, found ${liveRoutes.length}`);
-});
-
-for (const file of liveRoutes) {
-  const src = decomment(read(path.join("routes", file)));
-  check(`${file} never sends a hardcoded isFutures:false to the broker`, () => {
-    const bad = /place(Market|SLM)Order\([^)]*isFutures:\s*false/.test(src);
-    assert.ok(!bad,
-      `${file} hardcodes isFutures:false on a broker call — a futures order would ` +
-      `be sent as INTRADAY instead of MARGIN`);
-  });
-  check(`${file} resolves the instrument the toggle asks for`, () => {
-    const seesToggle = /instrumentMode\.isFutures\(\)/.test(src) ||
-                       /INSTRUMENT\s*===\s*["']NIFTY_FUTURES["']/.test(src);
-    assert.ok(seesToggle, `${file} never tests INSTRUMENT before placing an order`);
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-section("Live harnesses pass the real product type to the broker");
-
-const harnesses = fs.readdirSync(ROUTES).filter(f => /LiveHarness\.js$/.test(f)).sort();
-
-check("the discovery found the live harnesses", () => {
-  assert.ok(harnesses.length >= 8, `expected the harnesses, found ${harnesses.length}`);
-});
-
-for (const file of harnesses) {
-  const src = decomment(read(path.join("routes", file)));
-  check(`${file} derives isFutures from the toggle`, () => {
-    const m = src.match(/isFutures:\s*([^\n]+)/);
-    assert.ok(m, `${file} passes no isFutures to installHarness`);
-    const expr = m[1];
-    if (/^\s*false\s*,?\s*$/.test(expr)) {
-      // A hardcoded false is only acceptable for a declared opt-out, and the
-      // reason must be written down next to it in the source.
-      const raw = read(path.join("routes", file));
-      assert.ok(/premium-denominated|no futures form|premium levels/i.test(raw),
-        `${file} hardcodes isFutures:false with no documented reason — the broker ` +
-        `would get INTRADAY for a futures order that needs MARGIN`);
-    } else {
-      assert.ok(/NIFTY_FUTURES/.test(expr),
-        `${file} passes "${expr.trim()}" — it must consult INSTRUMENT`);
-    }
   });
 }
 

@@ -1,5 +1,5 @@
 /**
- * RSI_PIVOT_ST — RSI extreme + Standard Pivot R1/S1 breakout, SuperTrend-stopped
+ * RSI_PIVOT_ST — RSI extreme + Standard Pivot R1/S1 breakout, SuperTrend-filtered
  * ═════════════════════════════════════════════════════════════════════════════
  * Single-leg NIFTY option buying, intraday, 5-minute bars, Zerodha. Two levels
  * decide the whole day, and they are fixed before the open:
@@ -45,33 +45,19 @@
  * rounded to the nearest 50-point NIFTY strike, and a 1% move that rounds to 0
  * steps falls back to ATM rather than inventing a strike.
  *
- * ── STOPS — deliberately ASYMMETRIC, because the user's rules are ───────────
- *   CE:  TWO stops, both live, whichever triggers first wins:
- *          (a) SuperTrend(10, 2) on the 5-min SPOT chart — initial SL and trail.
- *              The line only ever moves in the trade's favour (a SuperTrend that
- *              ticks down mid-trade is ignored); a trail that can loosen is not
- *              a trail.
- *          (b) 25% of the ENTRY PREMIUM — a premium floor at 0.75 × entry LTP,
- *              trailed up as the premium makes new highs (high-water × 0.75).
- *   PE:  ONE stop — the 25% premium rule only. No SuperTrend on the PE side.
- *        This is the user's rule, not an oversight: do not "balance" it.
+ * ── SUPERTREND — an ENTRY filter only ───────────────────────────────────────
+ * On the sides RSI_PIVOT_ST_ST_SIDES covers (CE by default), SuperTrend(10, 2)
+ * on the 5-min SPOT chart must agree with the trade — bullish for a CE, bearish
+ * for a PE — or the setup is refused.
  *
- * Both stops are levels, and both are recomputed from values the route already
- * persists, so a crash-recovered position resumes on the same numbers.
- *
- * ── DELIBERATELY NOT HERE (do not "helpfully" add these) ────────────────────
- * No VIX gate, no OI filter, no ADX, no volume test, no EMA, no VWAP, no ATR
- * sizing, no multi-timeframe bias, no re-entry
- * after a stop, no breakeven jump, no partial booking, no fixed target, no
- * expiry-day rule, no quality score. There is no profit target at all — the
- * trade runs until a stop trails into it or the session forces it out.
+ * ── EXITS — none here ───────────────────────────────────────────────────────
+ * This engine decides ENTRIES only. The routes exit through the global profit
+ * lock (tradeGuards.checkProfitLock), the manual exit and the session teardown.
+ * There is no stop loss, trail, target, breakeven or signal exit in this file.
  *
  * ── DETERMINISM ────────────────────────────────────────────────────────────
  * Every value the decision reads comes from CLOSED 5-minute candle OHLC and from
  * the PREVIOUS day's completed daily bar. Never a live tick, never a live spot.
- * The premium stop is the one exception by necessity — it reads the option LTP,
- * which is a tick — but it reads it only for the EXIT, never the entry, and the
- * route records those ticks so Replay reproduces them.
  *
  * ── NOT MARKET-VALIDATED ───────────────────────────────────────────────────
  * Zero trades, paper or live. Every threshold here is the user's stated rule or
@@ -84,11 +70,9 @@
  *   computePivots(dailyCandles, opts)  -> { pp, r1, s1, r2, s2, from } for TODAY
  *   computeRsi(candles, period)        -> { values, offset } time-aligned
  *   computeSuperTrendSeries(candles,c) -> per-candle { value, trend }
- *   getSignal(candles, opts)           -> { signal, side, entrySpot, slSpot, ... }
+ *   getSignal(candles, opts)           -> { signal, side, entrySpot, superTrend, ... }
  *   strikeForSide(spot, side, cfg)     -> the strike this strategy wants
- *   premiumStop(entryLtp, highLtp,cfg) -> the 25% premium floor, trailed
- *   superTrendStop(side, series, prev) -> the SuperTrend stop, ratcheted
- *   stopHit(side, price, stop)         -> the ONLY spot-stop test
+ *   stApplies(side, cfg)               -> does the SuperTrend filter cover this side
  */
 
 const { RSI } = require("technicalindicators");
@@ -97,7 +81,7 @@ const { computeSuperTrend } = require("../utils/supertrend");
 const NAME = "RSI_PIVOT_ST";
 const DESCRIPTION =
   "RSI_PIVOT_ST — RSI(14) extreme plus a 5-min candle crossing and closing beyond the previous day's " +
-  "Standard Pivot R1 (CE) or S1 (PE); CE is stopped by SuperTrend and a 25% premium floor, PE by the premium floor alone";
+  "Standard Pivot R1 (CE) or S1 (PE), with SuperTrend agreement on the sides it covers";
 
 // ── primitives ───────────────────────────────────────────────────────────────
 function _r2(x) { return Math.round(x * 100) / 100; }
@@ -157,14 +141,8 @@ function _okBar(c) {
 
 const STRIKE_MODES = ["ATM", "ITM", "OTM"];
 
-// Which sides the premium stop applies to. "NONE" is a real, supported choice:
-// it removes the floor entirely, which on PE leaves the trade with no stop at
-// all (PE never carries the SuperTrend). Callers must warn, not substitute.
-const PREMIUM_STOP_SIDES = ["BOTH", "CE", "PE", "NONE"];
-
-// Which sides carry the SuperTrend stop. CE is the historical default — the
-// strategy was written with the SuperTrend on the CE side alone. "PE"/"BOTH"
-// mirror it: the line sits ABOVE price and a flip to BULLISH is the PE's exit.
+// Which sides the SuperTrend entry filter covers. CE is the historical default.
+// "PE"/"BOTH" mirror it: a PE needs the line ABOVE price (bearish).
 const ST_SIDES = ["BOTH", "CE", "PE", "NONE"];
 
 /** NIFTY strikes are struck every 50 points. Not configurable anywhere in this repo. */
@@ -176,7 +154,6 @@ const STRIKE_STEP = 50;
  */
 function getConfig() {
   const rawStrike = String(process.env.RSI_PIVOT_ST_STRIKE_MODE || "OTM").trim().toUpperCase();
-  const rawPremSides = String(process.env.RSI_PIVOT_ST_PREMIUM_SL_SIDES || "BOTH").trim().toUpperCase();
   // SuperTrend sides. The new selector wins; when it is absent we fall back to
   // the legacy CE on/off flag so an old .env is not silently re-enabled.
   const rawStSides = String(process.env.RSI_PIVOT_ST_ST_SIDES || "").trim().toUpperCase();
@@ -206,10 +183,10 @@ function getConfig() {
     strikeMode:      STRIKE_MODES.includes(rawStrike) ? rawStrike : "OTM",
     strikePct:       _numEnv("RSI_PIVOT_ST_STRIKE_PCT", 1, 0, 20),
 
-    // SuperTrend — CE stop only. 10/2 is the user's stated setting.
+    // SuperTrend — entry filter. 10/2 is the user's stated setting.
     stPeriod:        _intEnv("RSI_PIVOT_ST_ST_PERIOD", 10, 2, 100),
     stMultiplier:    _numEnv("RSI_PIVOT_ST_ST_MULT", 2, 0.1, 10),
-    // Which sides carry the SuperTrend stop: BOTH / CE (default, the original
+    // Which sides the SuperTrend filter covers: BOTH / CE (default, the original
     // rule) / PE / NONE. Legacy RSI_PIVOT_ST_ST_CE_ENABLED=false still means
     // "no SuperTrend on CE" when the newer key is not set, so an existing .env
     // keeps behaving as it did.
@@ -219,19 +196,6 @@ function getConfig() {
     stCeEnabled:     stSides === "BOTH" || stSides === "CE",
     stPeEnabled:     stSides === "BOTH" || stSides === "PE",
 
-    // The 25% premium stop — initial AND trailing. Which SIDES carry it is a
-    // toggle: BOTH (default) / CE / PE / NONE. A side left out simply has no
-    // premium floor; on PE, where the SuperTrend never applies, that means the
-    // trade has NO stop at all and runs to the EOD square-off. That is allowed
-    // on purpose, and the routes warn loudly about it rather than silently
-    // inventing a substitute stop.
-    premiumStopPct:  _numEnv("RSI_PIVOT_ST_PREMIUM_SL_PCT", 25, 1, 90),
-    premiumStopSides: PREMIUM_STOP_SIDES.includes(rawPremSides) ? rawPremSides : "BOTH",
-
-    // Session risk. Route-level, but read here so one config describes the mode.
-    maxDailyTrades:  _intEnv("RSI_PIVOT_ST_MAX_TRADES", 5, 1, 50),
-    maxDailyLoss:    _numEnv("RSI_PIVOT_ST_MAX_DAILY_LOSS", 5000, 0),
-    exitTime:        _parseHHMM(process.env.RSI_PIVOT_ST_EXIT_TIME, 15 * 60 + 15),
   };
 }
 
@@ -353,62 +317,9 @@ function strikeForSide(spot, side, cfg) {
   };
 }
 
-// ── stops ────────────────────────────────────────────────────────────────────
+// ── SuperTrend filter ────────────────────────────────────────────────────────
 /**
- * The 25% premium stop, as an option-LTP level.
- *
- * Which sides carry it is configurable (`RSI_PIVOT_ST_PREMIUM_SL_SIDES`):
- * BOTH (default) / CE / PE / NONE. When `side` is given and it is not covered,
- * this returns null — the same value it returns for an unusable entry LTP — so
- * every existing `Number.isFinite` guard at the call sites disables the floor
- * without any of them needing to know about the toggle.
- *
- * `side` is OPTIONAL for backwards compatibility: called without it (the old
- * two/three-arg form) the level is computed unconditionally, because a caller
- * that does not say which side it is asking about cannot be filtered.
- *
- * Initial  = entryLtp × (1 − pct/100)
- * Trailing = the SAME percentage below the highest premium the trade has seen,
- *            so the floor ratchets up with the position and never comes back
- *            down. `highLtp` is the caller's high-water mark, which the route
- *            persists, so crash recovery resumes on the same floor.
- *
- * @returns {number|null} the LTP at or below which the trade must exit, or null
- *          when this side does not carry a premium stop.
- */
-function premiumStop(entryLtp, highLtp, cfg, side) {
-  cfg = cfg || getConfig();
-  if (side != null && !premiumStopApplies(side, cfg)) return null;
-  if (!_num(entryLtp) || entryLtp <= 0) return null;
-  const anchor = _num(highLtp) && highLtp > entryLtp ? highLtp : entryLtp;
-  return _r2(anchor * (1 - cfg.premiumStopPct / 100));
-}
-
-/**
- * Does the premium stop apply to `side`? The single place the BOTH/CE/PE/NONE
- * toggle is interpreted — routes ask this rather than comparing the string.
- */
-function premiumStopApplies(side, cfg) {
-  cfg = cfg || getConfig();
-  const sides = cfg.premiumStopSides;
-  if (sides === "NONE") return false;
-  if (sides === "BOTH") return true;
-  return sides === side;
-}
-
-/**
- * Does `side` end up with NO stop of any kind — neither the premium floor nor
- * the SuperTrend? Such a trade can only be closed by the EOD square-off, so
- * every route warns about it rather than substituting a stop of its own.
- */
-function isStoplessSide(side, cfg) {
-  cfg = cfg || getConfig();
-  if (premiumStopApplies(side, cfg)) return false;
-  return !stApplies(side, cfg);
-}
-
-/**
- * Does the SuperTrend stop apply to `side`? The single place the
+ * Does the SuperTrend entry filter apply to `side`? The single place the
  * BOTH/CE/PE/NONE selector is interpreted.
  */
 function stApplies(side, cfg) {
@@ -419,77 +330,11 @@ function stApplies(side, cfg) {
   return sides === side;
 }
 
-/**
- * The SuperTrend stop as a SPOT level, ratcheted. Mirrored per side:
- *
- *   CE (a long on spot) — the line must sit BELOW price (trend = 1, acting as
- *     support). A flip to bearish is not a stop level, it IS the exit, and the
- *     level only ever ratchets UP.
- *   PE (a short on spot) — the exact mirror: the line must sit ABOVE price
- *     (trend = −1, acting as resistance), a flip to BULLISH is the exit, and
- *     the level only ever ratchets DOWN.
- *
- * `prevStop` is the stop already in force; the returned level never loosens,
- * because a trail that can loosen is not a trail.
- *
- * @returns {{ stop, trend, flipped } | null}
- */
-function superTrendStop(side, stSeries, prevStop, cfg) {
-  cfg = cfg || getConfig();
-  if (side !== "CE" && side !== "PE") return null;
-  if (!stApplies(side, cfg)) return null;
-  if (!Array.isArray(stSeries) || stSeries.length === 0) return null;
-
-  const last = stSeries[stSeries.length - 1];
-  if (!last || !_num(last.value) || last.trend == null) return null;
-
-  // The trend that KEEPS this trade alive: bullish for a CE, bearish for a PE.
-  const wantTrend = side === "CE" ? 1 : -1;
-
-  if (last.trend !== wantTrend) {
-    // The line has crossed to the wrong side of price — the trade's premise is gone.
-    return { stop: _num(prevStop) ? prevStop : null, trend: last.trend, flipped: true };
-  }
-  const raw = last.value;
-  // CE ratchets up (Math.max), PE ratchets down (Math.min). Same rule, mirrored.
-  const stop = _num(prevStop)
-    ? (side === "CE" ? Math.max(prevStop, raw) : Math.min(prevStop, raw))
-    : raw;
-  return { stop: _r2(stop), trend: wantTrend, flipped: false };
-}
-
-/**
- * Spot-stop test. CE is stopped when spot falls to the level, PE when it rises
- * to it. The level must be finite first: `price <= null` is `price <= 0`, which
- * would book a stop on the very first tick.
- *
- * Both numbers must also be POSITIVE. A feed hiccup that reports 0 (or a
- * negative) is not a price NIFTY ever traded at, but it compares as "below the
- * stop" and would book a phantom CE stop-out on garbage data. Callers already
- * guard this, but the rule belongs here so no future caller has to remember it.
- */
-function stopHit(side, price, stop) {
-  if (!_num(price) || !_num(stop)) return false;
-  if (price <= 0 || stop <= 0) return false;
-  return side === "CE" ? price <= stop : price >= stop;
-}
-
-/**
- * Premium-stop test. Identical for both sides — the option only ever falls.
- * Same positivity guard as stopHit: a 0 LTP is a missing quote, not a worthless
- * option, and must never be read as the floor being breached.
- */
-function premiumStopHit(ltp, stop) {
-  if (!_num(ltp) || !_num(stop)) return false;
-  if (ltp <= 0 || stop <= 0) return false;
-  return ltp <= stop;
-}
-
 // ── the entry signal ─────────────────────────────────────────────────────────
 function _baseSignal(cfg) {
   return {
     signal: "NONE", side: null, reason: "", skipReason: "", warmup: false,
-    entrySpot: null, slSpot: null, slPts: null, signalStrength: null,
+    entrySpot: null, signalStrength: null,
     rsi: null, rsiPrev: null,
     pivots: null, pp: null, r1: null, s1: null,
     crossedLevel: null, prevClose: null,
@@ -521,7 +366,7 @@ function minBarsFor(cfg) {
  * @param {Array} candles ascending 5-min IST NIFTY SPOT bars. The LAST element
  *        is the just-CLOSED signal candle — never a forming bar (the caller
  *        decides that).
- * @param {object} opts { cfg, dailyCandles, pivots, silent, alreadyTraded }
+ * @param {object} opts { cfg, dailyCandles, pivots, silent }
  *        Either `pivots` (pre-computed, preferred — the route freezes them at
  *        session start) or `dailyCandles` must be supplied. Without one of the
  *        two there are no levels and the engine refuses to decide.
@@ -568,10 +413,6 @@ function getSignal(candles, opts) {
   }
   if (closeMins > cfg.entryEndMin) {
     base.skipReason = base.reason = `Past ${_fmtMins(cfg.entryEndMin)} — no new entries`;
-    return base;
-  }
-  if (o.alreadyTraded) {
-    base.skipReason = base.reason = "Daily trade budget spent — no new entries";
     return base;
   }
 
@@ -706,52 +547,27 @@ function getSignal(candles, opts) {
   base.strikeMode = strikeInfo.mode;
   base.strikeSteps = strikeInfo.steps;
 
-  // ── The SPOT stop: SuperTrend, on whichever sides ST_SIDES covers. ───────
-  // Mirrored for PE — the line must sit ABOVE the entry rather than below it,
-  // and "not bearish" is the refusal instead of "not bullish". A setup whose
-  // SuperTrend is on the wrong side of price, or already through the entry, is
-  // REFUSED rather than entered with no stop (unchanged rule, now per side).
+  // ── SuperTrend filter, on whichever sides ST_SIDES covers. ───────────────
+  // CE needs the line bullish (below price), PE bearish (above price). A setup
+  // whose SuperTrend disagrees, or is still warming up, is refused.
   if (stApplies(side, cfg)) {
     const isCE = side === "CE";
     const stSeries = computeSuperTrendSeries(candles, cfg);
-    const st = superTrendStop(side, stSeries, null, cfg);
-    base.superTrend = st && _num(st.stop) ? _r2(st.stop) : null;
-    base.superTrendTrend = st ? st.trend : null;
-
-    const wantWord  = isCE ? "bullish" : "bearish";
-    const wrongSide = isCE ? "line sits above price" : "line sits below price";
-    const level     = isCE ? ceLevel : peLevel;
-
-    if (!st || st.flipped || !_num(st.stop)) {
+    const last = stSeries.length ? stSeries[stSeries.length - 1] : null;
+    const ok = !!last && _num(last.value) && last.trend != null;
+    base.superTrend = ok ? _r2(last.value) : null;
+    base.superTrendTrend = ok ? last.trend : null;
+    if (!ok || last.trend !== (isCE ? 1 : -1)) {
       base.skipReason = base.reason =
-        `${side} setup at ${isCE ? "R1" : "S1"} ${level} with RSI ${base.rsi}, but SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) is not ${wantWord} ` +
-        `(${st && st.trend != null ? wrongSide : "still warming up"}) — no initial stop, refusing to enter`;
+        `${side} setup at ${isCE ? "R1" : "S1"} ${isCE ? ceLevel : peLevel} with RSI ${base.rsi}, but SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) is not ${isCE ? "bullish" : "bearish"} ` +
+        `(${ok ? (isCE ? "line sits above price" : "line sits below price") : "still warming up"}) — refusing to enter`;
       return base;
     }
-    // CE is stopped BELOW the entry, PE ABOVE it. Either way, a stop already on
-    // the wrong side of the fill would be hit on the trade's first tick.
-    const throughEntry = isCE ? st.stop >= entry : st.stop <= entry;
-    if (throughEntry) {
-      base.skipReason = base.reason =
-        `${side} setup valid but SuperTrend ${_r2(st.stop)} is at or ${isCE ? "above" : "below"} the entry ${entry} — the trade would be stopped on its first tick`;
-      return base;
-    }
-    base.slSpot = _r2(st.stop);
-    base.slPts = _r2(Math.abs(entry - st.stop));
   }
 
   base.signal = side === "CE" ? "BUY_CE" : "BUY_PE";
   base.signalStrength = "STRONG";
 
-  // Stop description — reflects the premium-stop side toggle, so the trade
-  // record never claims a floor the trade does not actually carry.
-  const hasPrem = premiumStopApplies(side, cfg);
-  const stopParts = [];
-  if (_num(base.slSpot)) stopParts.push(`SuperTrend ${base.slSpot} (${base.slPts}pt)`);
-  if (hasPrem) stopParts.push(`${cfg.premiumStopPct}% premium floor`);
-  const stopText = stopParts.length
-    ? `SL = ${stopParts.join(" + ")}`
-    : `SL = NONE — no SuperTrend on ${side} and the premium stop is OFF for this side; EOD square-off is the only exit`;
   // How the entry came about — with confirmation ON that is a two-candle
   // story (breakout, then close beyond its extreme), and the record says so.
   const crossText = cfg.confirmEnabled
@@ -761,11 +577,12 @@ function getSignal(candles, opts) {
       `(${_r2(prevBar.close)} → ${entry}, pivots from ${pivots.from})`;
   base.reason =
     `RSI_PIVOT_ST ${side}: RSI ${base.rsi} ${side === "CE" ? `> ${cfg.rsiCeMin}` : `< ${cfg.rsiPeMax}`} and ${crossText} | ` +
-    `strike ${base.strike} (${strikeInfo.mode}${strikeInfo.steps ? `, ${strikeInfo.steps} step${strikeInfo.steps > 1 ? "s" : ""} = ${strikeInfo.distancePts}pt`: ""}) | ${stopText}`;
+    `strike ${base.strike} (${strikeInfo.mode}${strikeInfo.steps ? `, ${strikeInfo.steps} step${strikeInfo.steps > 1 ? "s" : ""} = ${strikeInfo.distancePts}pt`: ""})` +
+    (_num(base.superTrend) ? ` | SuperTrend ${base.superTrend}` : "");
 
   if (!o.silent) {
     const ist = new Date(bar.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-    console.log(`[RSI_PIVOT_ST ${ist}] ENTER ${side} @ ${entry} | ${side === "CE" ? `ST ${base.slSpot}` : "premium-stop only"} | strike ${base.strike} | RSI ${base.rsi}`);
+    console.log(`[RSI_PIVOT_ST ${ist}] ENTER ${side} @ ${entry} | strike ${base.strike} | RSI ${base.rsi}`);
   }
   return base;
 }
@@ -774,7 +591,6 @@ module.exports = {
   NAME,
   DESCRIPTION,
   STRIKE_MODES,
-  PREMIUM_STOP_SIDES,
   ST_SIDES,
   STRIKE_STEP,
   getConfig,
@@ -782,13 +598,7 @@ module.exports = {
   computeRsi,
   computeSuperTrendSeries,
   strikeForSide,
-  premiumStop,
-  premiumStopHit,
-  premiumStopApplies,
   stApplies,
-  isStoplessSide,
-  superTrendStop,
-  stopHit,
   getSignal,
   minBarsFor,
   // shared time helpers (routes must not re-derive IST arithmetic)

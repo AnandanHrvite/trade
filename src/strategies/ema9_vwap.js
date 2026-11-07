@@ -10,12 +10,9 @@
  *   CE entry : EMA9 crosses ABOVE the VWAP top line (VWAP + mult·σ)
  *   PE entry : EMA9 crosses BELOW the VWAP bottom line (VWAP − mult·σ)
  *
- * Exit is a PURE signal exit (no SL / target / trail — the engine owns EOD):
- *   CE exit  : EMA9 crosses back BELOW the top line (re-enters the band)
- *   PE exit  : EMA9 crosses back ABOVE the bottom line (re-enters the band)
- *
- * The engine (paper/live-harness/backtest) reads `signal` for entries and
- * `exitCE` / `exitPE` for exits, so all three surfaces stay identical.
+ * This module produces ENTRIES only. The engines (paper/backtest)
+ * read `signal`; the only automatic exit is the global profit lock
+ * (tradeGuards.checkProfitLock), owned by each engine.
  *
  * ── Why equal-weight (TWAP), and why it is NOT optional ─────────────────────
  * This VWAP is an EQUAL-WEIGHTED mean of HLC3 over the session, with σ bands from
@@ -48,7 +45,7 @@
  *
  * Contract: getSignal(candles, opts) → {
  *   signal: "BUY_CE" | "BUY_PE" | "NONE", side, reason, stopLoss(=null),
- *   signalStrength, ema9, vwap, vwapUpper, vwapLower, stdev, exitCE, exitPE
+ *   signalStrength, ema9, vwap, vwapUpper, vwapLower, stdev
  * }
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -194,7 +191,6 @@ function getSignal(candles, opts) {
     signal: "NONE", side: null, reason: "warming up", stopLoss: null,
     signalStrength: "STRONG",
     ema9: null, vwap: null, vwapUpper: null, vwapLower: null, stdev: null,
-    exitCE: false, exitPE: false,
   };
 
   if (!candles || candles.length < period + 2) return base;
@@ -231,15 +227,11 @@ function getSignal(candles, opts) {
   // Series crossovers (EMA9 vs the band line, comparing each at its own candle).
   const crossAboveTop    = ema9Prev <= upPrev && ema9Now > upNow;   // CE entry
   const crossBelowBottom = ema9Prev >= loPrev && ema9Now < loNow;   // PE entry
-  const crossBackInsideTop    = ema9Prev >= upPrev && ema9Now < upNow; // CE exit
-  const crossBackInsideBottom = ema9Prev <= loPrev && ema9Now > loNow; // PE exit
 
   const result = {
     ...base,
     ema9: _round2(ema9Now),
     vwap: bandsNow.vwap, vwapUpper: upNow, vwapLower: loNow, stdev: bandsNow.stdev,
-    exitCE: crossBackInsideTop,
-    exitPE: crossBackInsideBottom,
   };
 
   if (crossAboveTop) {
@@ -257,8 +249,8 @@ function getSignal(candles, opts) {
   }
 
   // Strength filter (default OFF): drop WEAK crosses so only meaningful breaks
-  // trade. Applied here in the shared strategy so paper / live-harness / backtest
-  // all behave identically. Exits (exitCE/exitPE) are left untouched.
+  // trade. Applied here in the shared strategy so paper / backtest
+  // all behave identically.
   if (result.signal !== "NONE" && result.signalStrength === "WEAK" && _strengthFilterOn()) {
     result.reason = `filtered WEAK ${result.side} break — ${result.reason}`;
     result.signal = "NONE"; result.side = null;

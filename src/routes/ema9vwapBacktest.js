@@ -4,7 +4,6 @@ const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngi
 const { runEma9VwapBacktest } = require("../services/ema9vwapBacktestEngine");
 const ACTIVE = "EMA9_VWAP";
 const { saveResult } = require("../utils/resultStore");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
@@ -23,10 +22,8 @@ const fmtPnl   = (n, s) => {
 };
 
 // buildNav kept for backward-compat — now delegates to shared sidebar
-function buildNav(active, liveActive) {
-  const LIVE_BADGE = liveActive
-    // Delegated to sharedNav — this stub preserved for backward compat
-    return buildSidebar(active, liveActive);
+function buildNav(active) {
+  return buildSidebar(active, false);
 }
 
 
@@ -43,13 +40,6 @@ router.get("/idle", (req, res) => {
 });
 
 router.get("/", async (req, res) => {
-  // Block during ANY live session (not just EMA_RSI_ST_LIVE) — a heavy backtest sharing
-  // the box with a live engine competes for Fyers API + loads a second candle heap,
-  // risking an OOM kill on t3.micro. Check per-mode *_LIVE (paper sessions are fine).
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE"
-    || sharedSocketState.getBbRsiMode() === "BB_RSI_LIVE"
-    || sharedSocketState.getPAMode()    === "PA_LIVE"
-    || (sharedSocketState.getOrbMode && sharedSocketState.getOrbMode() === "ORB_LIVE");
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
@@ -63,35 +53,6 @@ router.get("/", async (req, res) => {
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = req.query.symbol     || "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";
-
-  // Block backtest while live trade is running — would compete for Fyers API calls
-  // and pollute the log viewer with backtest noise during a live session.
-  if (liveActive) {
-    res.setHeader("Content-Type", "text/html");
-    return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-      <meta name="viewport" content="width=device-width,initial-scale=1"/>
-      <title>Backtest blocked — Live trade active</title>
-      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
-      ${sidebarCSS()}
-      ${modalCSS()}
-      </style>
-      </head><body>
-<div class="app-shell">
-${buildSidebar('ema9vwapBacktest', true)}
-<div class="main-content">
-      <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
-        <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
-          <div style="font-size:2.5rem;margin-bottom:16px;">🔒</div>
-          <h2 style="color:#ef4444;margin-bottom:12px;font-size:1.1rem;">Backtest blocked</h2>
-          <p style="font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;">
-            Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
-            Stop the live trade first, then run your backtest.
-          </p>
-          <a href="/ema9vwap-live" style="background:#dc2626;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
-        </div>
-      </div>
-      </div></div></body></html>`);
-  }
 
   if (!process.env.ACCESS_TOKEN) {
     res.setHeader("Content-Type", "text/html");
@@ -177,7 +138,7 @@ ${buildSidebar('ema9vwapBacktest', true)}
   if (!job) return res.redirect('/ema9vwap-backtest');
   if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/ema9vwap-backtest', 'EMA9+VWAP Backtest'));
   if (job.status === 'error') {
-    const errHtml = buildBacktestPageWithToast(from, to, resolution, job.error, liveActive);
+    const errHtml = buildBacktestPageWithToast(from, to, resolution, job.error);
     res.setHeader("Content-Type", "text/html");
     return res.status(200).send(errHtml);
   }
@@ -326,7 +287,7 @@ ${buildSidebar('ema9vwapBacktest', true)}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('ema9vwapBacktest', liveActive)}
+${buildSidebar('ema9vwapBacktest', false)}
 <div class="main-content">
 
 <div class="page">
@@ -1125,13 +1086,8 @@ function renderAnalytics(){
   var reasonMap={};
   trades.forEach(function(t){
     var r = t.reason;
-    if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
-    else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
-    else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
-    else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
-    else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
-    else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
-    else if(r.indexOf('EOD')===0) r='EOD square-off';
+    if(r.indexOf('Profit lock')===0) r='Profit lock';
+    else if(r.indexOf('EOD')===0) r='EOD session close';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
     reasonMap[r].cnt++;
     reasonMap[r].pnl+=(t.pnl||0);
@@ -1456,13 +1412,8 @@ function renderAnalytics(){
     var lrMap={};
     lossTrades.forEach(function(t){
       var r=t.reason;
-      if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
-      else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
-      else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
-      else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
-      else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
-      else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
-      else if(r.indexOf('EOD')===0) r='EOD square-off';
+      if(r.indexOf('Profit lock')===0) r='Profit lock';
+      else if(r.indexOf('EOD')===0) r='EOD session close';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
       lrMap[r].cnt++;
       lrMap[r].pnl+=t.pnl;
@@ -1600,14 +1551,14 @@ document.getElementById('btModal').addEventListener('click',function(e){
     console.error("Backtest error:", err.message, err.stack);
     // Re-render the backtest page with an inline error toast instead of navigating away.
     // User keeps their date/resolution settings and sees the error in the top-right corner.
-    const errHtml = buildBacktestPageWithToast(from, to, resolution, err.message, liveActive);
+    const errHtml = buildBacktestPageWithToast(from, to, resolution, err.message);
     res.setHeader("Content-Type", "text/html");
     return res.status(200).send(errHtml);
   }
 });
 
-function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
-  const nav = buildNav("backtest", liveActive);
+function buildBacktestPageWithToast(from, to, resolution, errMsg) {
+  const nav = buildNav("backtest");
   const resOptions = `<option value="5" selected>5-min</option>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">

@@ -60,7 +60,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     side: t.side, symbol: t.symbol || "", strike: t.strike || "", expiry: t.expiry || "",
     lots: t.lots, qty: t.lots * t.multiplier,
     entry: istStamp(t.entryTime), exit: istStamp(t.exitTime),
-    eSpot: t.spotAtEntry, eOpt: t.optionEntryLtp, eSl: t.initialStopLoss != null ? t.initialStopLoss : t.stopLoss,
+    eSpot: t.spotAtEntry, eOpt: t.optionEntryLtp,
     xSpot: t.spotAtExit, xOpt: t.optionExitLtp, peakOpt: t.bestOptionLtp != null ? t.bestOptionLtp : null,
     pnl: typeof t.pnl === "number" ? t.pnl : null, charges: t.charges,
     entryReason: t.reason || "", reason: t.exitReason || "",
@@ -76,7 +76,6 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     const p = s.position;
     const unreal = p && s.optLtp ? Math.round((s.optLtp - p.optionEntryLtp) * p.multiplier * p.lots * 100) / 100 : null;
     const priceAge = s.lastQuoteAt ? Math.round((Date.now() - s.lastQuoteAt) / 1000) : null;
-    const lossHit = c.maxLoss > 0 && s.sessionPnl <= -c.maxLoss;
     const prev = s.prevBar;
 
     const capital = bbRsiCapitalStrip({
@@ -85,9 +84,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     });
     const stats = bbRsiStatGrid([
       { label: "Today P&L", value: rs(s.sessionPnl), color: pnlColor(s.sessionPnl) },
-      { label: "Trades", value: `${s.trades.length} / ${c.maxTrades}`, sub: `${wins}W · ${losses}L` },
-      { label: "Loss streak", value: s.consecLimit ? `${s.consecLosses} / ${s.consecLimit}` : String(s.consecLosses), sub: s.consecLimit && s.consecLosses >= s.consecLimit ? "🛑 Done for today" : "✅ OK" },
-      { label: "Daily loss limit", value: c.maxLoss > 0 ? `-₹${c.maxLoss.toLocaleString("en-IN")}` : "Off", sub: lossHit ? "🛑 Hit" : "✅ Active" },
+      { label: "Trades", value: String(s.trades.length), sub: `${wins}W · ${losses}L` },
       { label: "Candles loaded", value: String(s.candles), sub: s.running ? (s.candles ? `${c.res}m candles` : "⚠️ Warming up…") : "Loads on Start" },
       { label: `${esc(s.underlying.label)} future`, value: s.futLtp != null ? String(s.futLtp) : "—", sub: priceAge != null ? `${priceAge}s ago` : "Last: —" },
       { label: "Session start", value: s.startedAt ? new Date(new Date(s.startedAt).getTime() + 19800000).toISOString().slice(0, 16).replace("T", " ") : "—" },
@@ -106,7 +103,6 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     <div><span class="k">Now</span>${s.optLtp != null ? "₹" + s.optLtp : "—"}</div>
     <div><span class="k">Open P&L</span><b style="color:${pnlColor(unreal || 0)}">${rs(unreal)}</b></div>
     <div><span class="k">Future at entry</span>${p.spotAtEntry}</div>
-    <div><span class="k">${s.strategy === "PIVOT" ? "Stop (future, on close)" : "Stop (future)"}</span>${p.stopLoss != null ? p.stopLoss : "—"}</div>
     <div><span class="k">Candles held</span>${p.candlesHeld}</div>
   </div>
   <div style="margin-top:10px;"><a class="cx-btn cx-red" href="${base}/exit" onclick="return confirm('Exit this paper trade now?')">Exit now</a></div>
@@ -121,9 +117,8 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
 </div>`;
 
     const armed = s.armed ? `<div class="cx-note">🎯 ${s.armed.side} signal armed — enters if the future crosses ${s.armed.triggerLevel} during this candle.</div>` : "";
-    const halted = s.halted ? `<div class="cx-note cx-warn">⏸️ ${esc(s.halted)}</div>` : "";
     const err = s.lastError ? `<div class="cx-note cx-warn">⚠️ ${esc(s.lastError)}</div>` : "";
-    return `${capital}${stats}${halted}${err}${armed}${s.strategy === "PIVOT" ? pivotChecklist(s) : ""}${posCard}`;
+    return `${capital}${stats}${err}${armed}${s.strategy === "PIVOT" ? pivotChecklist(s) : ""}${posCard}`;
   }
 
   // PIVOT_EMA_ST only: today's pivots and the last closed candle's 3-box
@@ -172,7 +167,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
   <div class="cx-muted">${contract}</div>
   <ul class="rule-list">${rulesText}
     <li><b>Buys</b> the at-the-money ${esc(s.underlying.label)} option, ${c.lots} lot (1 lot = ${esc(s.underlying.unit)}). P&L = premium change × ${s.underlying.multiplier} per lot − ₹${c.charges} charges.</li>
-    <li><b>Day guards:</b> max ${c.maxTrades} trades, stop for the day at −₹${c.maxLoss} — for this page alone. Paper only — no real orders, and separate from all NIFTY strategies.</li>
+    <li><b>Exits:</b> the global profit lock on the option premium is the only automatic exit — no stop loss, trail, target, signal exit or daily loss / trade cap. Otherwise a trade closes by hand, when the session ends (${fmtMins(c.sessEnd)}) or when the prices go dead. Paper only — no real orders, and separate from all NIFTY strategies.</li>
   </ul>
 </div>`;
   }
@@ -197,7 +192,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
   <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;-webkit-overflow-scrolling:touch;">
     <table style="width:100%;border-collapse:collapse;min-width:900px;">
       <thead><tr style="background:#0a0f1c;">
-        ${th("Side ▲▼", "side")}${th("Date ▼", "entry")}${th("Entry")}${th("Entry Time")}${th("Exit")}${th("Exit Time ▲▼", "exit")}${th("SL")}${th("PnL ₹ ▲▼", "pnl")}${th("Entry Reason")}${th("Exit Reason")}${th("Action", null, "center")}
+        ${th("Side ▲▼", "side")}${th("Date ▼", "entry")}${th("Entry")}${th("Entry Time")}${th("Exit")}${th("Exit Time ▲▼", "exit")}${th("PnL ₹ ▲▼", "pnl")}${th("Entry Reason")}${th("Exit Reason")}${th("Action", null, "center")}
       </tr></thead>
       <tbody id="ptBody" style="font-family:monospace;font-size:0.78rem;"></tbody>
     </table>
@@ -254,7 +249,7 @@ function ptRender(){
   window._ptSlice=slice;
   var td='padding:8px 12px;';
   document.getElementById('ptBody').innerHTML = slice.length===0
-    ? '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">'+(PT_ALL.length?'No trades match filters.':'No trades yet today.')+'</td></tr>'
+    ? '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">'+(PT_ALL.length?'No trades match filters.':'No trades yet today.')+'</td></tr>'
     : slice.map(function(t,i){
         var sc=t.side==='CE'?'#10b981':'#ef4444', pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
         return '<tr style="border-top:1px solid #1a2236;vertical-align:top;">'
@@ -264,7 +259,6 @@ function ptRender(){
           +'<td style="'+td+'font-size:0.75rem;">'+ptFmtTime(t.entry)+'</td>'
           +'<td style="'+td+'font-weight:700;">'+ptFmt(t.xSpot)+'</td>'
           +'<td style="'+td+'font-size:0.75rem;">'+ptFmtTime(t.exit)+'</td>'
-          +'<td style="'+td+'color:#f59e0b;">'+(t.eSl!=null?ptFmt(t.eSl):'—')+'</td>'
           +'<td style="'+td+'"><div style="font-size:1rem;font-weight:800;color:'+pc+';">'+(t.pnl!=null?(t.pnl>=0?'+':'')+ptFmt(t.pnl):'—')+'</div></td>'
           +'<td style="'+td+'font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="'+ptEsc(t.entryReason)+'">'+(ptEsc(ptCut(t.entryReason,25))||'—')+'</td>'
           +'<td style="'+td+'font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="'+ptEsc(t.reason)+'">'+(ptEsc(ptCut(t.reason,35))||'—')+'</td>'
@@ -307,8 +301,7 @@ function showPTModal(t){
       +cell('Option Type',ptEsc(t.side),sc)+cell('Qty / Lots',t.qty?t.qty+' qty ('+t.lots+' lot)':'—','#c8d8f0'))
     +box('🟢 Entry','#60a5fa','#060c18','#0d2040',
       cell('Entry Time',ptEsc(t.entry),'#c8d8f0')+cell(ptEsc(PT_FUT)+' @ Entry',ptFmt(t.eSpot),'#fff')
-      +cell('Option LTP @ Entry',ptFmt(t.eOpt),'#60a5fa','Option premium paid')+cell('Initial Stop Loss',t.eSl!=null?ptFmt(t.eSl):'—','#f59e0b','Future price SL level')
-      +cell('SL Distance',(t.eSl!=null&&t.eSpot!=null)?Math.abs(t.eSpot-t.eSl).toFixed(2)+' pts':'—','#f59e0b')+cell('Entry Signal',ptEsc(t.entryReason),'#a0b8d0'))
+      +cell('Option LTP @ Entry',ptFmt(t.eOpt),'#60a5fa','Option premium paid')+cell('Entry Signal',ptEsc(t.entryReason),'#a0b8d0'))
     +box('🔴 Exit','#f87171','#0c0608','#3a0d12',
       cell('Exit Time',ptEsc(t.exit),'#c8d8f0')+cell(ptEsc(PT_FUT)+' @ Exit',ptFmt(t.xSpot),'#fff')
       +cell('Option LTP @ Exit',ptFmt(t.xOpt),'#60a5fa')
@@ -323,9 +316,9 @@ function showPTModal(t){
 }
 document.getElementById('ptModal').addEventListener('click',function(e){ if(e.target===this) this.style.display='none'; });
 function copyTradeLog(btn){
-  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
+  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tPnL\\tEntry Reason\\tExit Reason'];
   PT_ALL.forEach(function(t){
-    lines.push([t.side,ptFmtDate(t.entry),t.eSpot,ptFmtTime(t.entry),t.xSpot,ptFmtTime(t.exit),t.eSl==null?'':t.eSl,t.pnl!=null?t.pnl.toFixed(2):'',t.entryReason,t.reason].join('\\t'));
+    lines.push([t.side,ptFmtDate(t.entry),t.eSpot,ptFmtTime(t.entry),t.xSpot,ptFmtTime(t.exit),t.pnl!=null?t.pnl.toFixed(2):'',t.entryReason,t.reason].join('\\t'));
   });
   var text=lines.join('\\n'), orig=btn.textContent;
   function ok(){ btn.classList.add('copied'); btn.textContent='✅ Copied!'; setTimeout(function(){ btn.classList.remove('copied'); btn.textContent=orig; },2000); }
@@ -403,7 +396,7 @@ ${buildSidebar(navKey, false, s.running)}
 <div class="main-content">
 ${bbRsiTopBar({
   title: `${icon} ${title} — Paper`,
-  metaLine: `${esc(s.underlying.label)} (MCX) · ${c.res}m candles · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · exit ${fmtMins(c.eodExit)} · ${c.lots} lot`,
+  metaLine: `${esc(s.underlying.label)} (MCX) · ${c.res}m candles · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · session ends ${fmtMins(c.sessEnd)} · ${c.lots} lot`,
   running: s.running,
   primaryAction: modeOn() ? { href: `${base}/start`, label: "▶ Start", color: "#0369a1" } : null,
   stopAction: { href: `${base}/stop`, label: "■ Stop" },
@@ -418,7 +411,7 @@ ${bbRsiCurrentBar({ bar: s.formingBar, resMin: c.res })}
   <div class="cx-legend">
     <span style="color:#3b82f6;">▲ Entry</span> &nbsp; <span style="color:#10b981;">▼ Win</span> &nbsp; <span style="color:#ef4444;">▼ Loss</span> &nbsp;
     <span style="color:#fbbf24;">── <span id="lg-fast">Fast EMA</span></span> &nbsp; <span style="color:#3b82f6;">── <span id="lg-slow">Slow EMA</span></span> &nbsp;
-    <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp; ${s.strategy === "PIVOT" ? `<span style="color:#a78bfa;">╌╌ PP</span> <span style="color:#10b981;">R1</span> <span style="color:#ef4444;">S1</span>` : `<span style="color:#22d3ee;">── RSI</span>`} &nbsp; <span style="color:#f59e0b;">╌╌ SL</span>
+    <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp; ${s.strategy === "PIVOT" ? `<span style="color:#a78bfa;">╌╌ PP</span> <span style="color:#10b981;">R1</span> <span style="color:#ef4444;">S1</span>` : `<span style="color:#22d3ee;">── RSI</span>`}
   </div>
 </div>
 ${sessionTradesHTML(s)}
@@ -488,7 +481,7 @@ ${bbRsiActivityLog({ logsJSON: jsonForScript(s.logs.slice().reverse()) })}
       candles.setMarkers(k(d.markers).sort(function(a,b){return a.time-b.time;}));
       lines.forEach(function(l){candles.removePriceLine(l);}); lines=[];
       var pl=function(p,c,t){ if(p!=null) lines.push(candles.createPriceLine({price:p,color:c,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:t})); };
-      pl(d.stopLoss,'#f59e0b','SL'); pl(d.entry,'#3b82f6','Entry'); pl(d.armed,'#a855f7','Trigger');${s.strategy === "PIVOT" ? "\n      if(d.pivots){ pl(d.pivots.pp,'#a78bfa','PP'); pl(d.pivots.r1,'#10b981','R1'); pl(d.pivots.s1,'#ef4444','S1'); }" : ""}
+      pl(d.entry,'#3b82f6','Entry'); pl(d.armed,'#a855f7','Trigger');${s.strategy === "PIVOT" ? "\n      if(d.pivots){ pl(d.pivots.pp,'#a78bfa','PP'); pl(d.pivots.r1,'#10b981','R1'); pl(d.pivots.s1,'#ef4444','S1'); }" : ""}
       if(first){ chart.timeScale().fitContent(); first=false; }
     }).catch(function(){});
   }
@@ -570,17 +563,14 @@ ${bbRsiActivityLog({ logsJSON: jsonForScript(s.logs.slice().reverse()) })}
 const RULES = {
   V1: `
     <li><b>Signal:</b> the EMA_RSI_ST rules — EMA20/50 trend + RSI + SuperTrend on the future, using the same settings as the NIFTY EMA_RSI_ST.</li>
-    <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>
-    <li><b>Exits:</b> previous-candle stop trailed on EMA21, EMA21 touch-back, negative-candle stop, option stop (Settings → Risk), profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
+    <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>`,
   V2: `
     <li><b>Signal:</b> the EMA_RSI_ST_V2 rules — EMA20 vs EMA50 + close beyond EMA20 + RSI on the future, using the same settings as the NIFTY EMA_RSI_ST_V2.</li>
-    <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>
-    <li><b>Exits:</b> SuperTrend trailing stop, option stop (Settings → Risk), profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
+    <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>`,
   PIVOT: `
     <li><b>Signal:</b> the PIVOT_EMA_ST rules on the future's closed candles, using the same EMA / SuperTrend settings as the NIFTY PIVOT_EMA_ST. CE: close between PP and R1, EMA20 crosses above EMA50 on that candle, inside PP–R1, SuperTrend green. PE: close between S1 and PP, EMA20 crosses below EMA50 inside S1–PP, SuperTrend red. A close above R1 or below S1 never enters.</li>
     <li><b>Pivots:</b> PP / R1 / S1 from the previous MCX day's daily high / low / close of the same future. No pivots → no entries.</li>
-    <li><b>Entry:</b> on the signal candle's close — no confirmation candle and no EMA-gap / RSI trend filter.</li>
-    <li><b>Exits:</b> SuperTrend stop checked on candle close only (SuperTrend flips, or the close crosses the stop; the stop trails to SuperTrend, tighten-only), option stop (Settings → Risk), profit lock / breakeven, and the day's exit time.</li>`,
+    <li><b>Entry:</b> on the signal candle's close — no confirmation candle and no EMA-gap / RSI trend filter.</li>`,
 };
 const STRATS = { V1: "EMA_RSI_ST", V2: "EMA_RSI_ST_V2", PIVOT: "PIVOT_EMA_ST" };
 const NAV_STRATS = { V1: "EmaRsiSt", V2: "EmaRsiStV2", PIVOT: "PivotEmaSt" };
@@ -626,7 +616,7 @@ function monitorView(s) {
       qty: `${p.lots} lot (${p.lots * p.multiplier} units)`,
       entryPrice: p.spotAtEntry, liveClose: s.futLtp,
       optionEntryLtp: p.optionEntryLtp, optionCurrentLtp: s.optLtp,
-      stopLoss: p.stopLoss, entryTime: ist(p.entryTime),
+      entryTime: ist(p.entryTime),
     } : null,
   };
 }

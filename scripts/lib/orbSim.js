@@ -7,8 +7,11 @@
  * every sweep result incomparable with the validation numbers, which is how the
  * "+346 spot points, no losers" era happened.
  *
- * It drives the real getSignal() plus the shipped exit engine (orbExits) and the
- * real stop resolver (orbStopRisk). It writes nothing and places no orders.
+ * It drives the real getSignal() and the shipped exit engine (orbExits — whose
+ * only rule since 2026-11-07 is the global profit lock), simulated on a
+ * δ-modelled premium exactly as src/routes/orbBacktest.js
+ * does, with anything still open closed at the day's last candle (paper's
+ * TRADE_STOP_TIME session teardown). It writes nothing and places no orders.
  *
  * All ORB_* tuning is read from process.env by the engine itself, so a caller
  * sweeps configs by setting env keys and calling simulate() again.
@@ -17,7 +20,7 @@
 const path = require("path");
 const orb = require(path.join(__dirname, "../../src/strategies/orb_breakout"));
 const orbExits = require(path.join(__dirname, "../../src/strategies/orbExits"));
-const orbStopRisk = require(path.join(__dirname, "../../src/utils/orbStopRisk"));
+const tradeGuards = require(path.join(__dirname, "../../src/utils/tradeGuards"));
 
 const r2 = x => Math.round(x * 100) / 100;
 const DAY = t => Math.floor((t + 19800) / 86400);
@@ -56,89 +59,65 @@ function stats(list) {
  * @returns {{trades: Array, sessions: number}}
  */
 function simulate(candles) {
-  const { toINR, qty } = costModel();
+  const { toINR, delta } = costModel();
+  // Premium model for the lock — the same δ model and seed the backtest route uses.
+  const SEED = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");
+  const premAt = (side, entry, spot) => Math.max(0.05, SEED + (side === "CE" ? spot - entry : entry - spot) * delta);
+  const spotForPrem = (side, entry, prem) => {
+    const move = delta > 0 ? (prem - SEED) / delta : 0;
+    return side === "CE" ? entry + move : entry - move;
+  };
+  // Wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), in unix seconds.
+  const COOLDOWN = tradeGuards.reentryCooldownMs(5) / 1000;
   const IDX = new Map(candles.map((c, i) => [c.time, i]));
   const DAYS = [...new Set(candles.map(c => DAY(c.time)))].sort((a, b) => a - b);
-  const EOD = (() => { const [h, m] = (process.env.ORB_FORCED_EXIT || "15:15").split(":").map(Number); return h * 60 + m; })();
 
   const trades = [];
   for (const d of DAYS) {
     const dayC = candles.filter(c => DAY(c.time) === d);
-    // Re-entry after a stop-out (ORB_REENTRY_AFTER_SL, ships off). Same shared helper
-    // paper/live/backtest use, so a sweep of this key measures the shipped rule rather
-    // than a fifth hand-written copy of it. Empty ⇒ plan is a no-op and the day still
-    // stops at its first trade, exactly as before.
-    const dayExits = [];
-    const baseMax = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
-    let taken = 0;
+    let blockUntil = 0;
     for (let j = 0; j < dayC.length; j++) {
-      const plan = orb.reentryPlan(dayExits, baseMax);
-      if (taken >= plan.maxTrades) break;
+      if (blockUntil && dayC[j].time < blockUntil) continue;
       const gi = IDX.get(dayC[j].time);
       const win = candles.slice(Math.max(0, gi - 199), gi + 1);
-      const sig = orb.getSignal(win, { silent: true, alreadyTraded: false, rearmAfterTime: plan.rearmAfterTime });
+      const sig = orb.getSignal(win, { silent: true });
       if (sig.signal === "NONE") continue;
 
       const bar = dayC[j], side = sig.side, entry = bar.close;
-      const st = orbStopRisk.resolveInitialStop({
-        side, entrySpot: entry, strategyStop: sig.slSpot, qty,
-        fallbackStop: side === "CE" ? sig.orl : sig.orh,
-      });
-      // ── Exit model. Driven by the SHARED exit engine (src/strategies/orbExits.js)
-      //    — the same functions paper, live and the backtest route run, so the
-      //    statistics this produces describe the shipped strategy rather than a
-      //    fourth hand-written copy of it.
-      //
-      //    ORDER MIRRORS PAPER'S REAL TIMELINE:
-      //      per TICK   (_checkExits)            → rupee cap / premium stop / hard SL
-      //      per CLOSE  (_managePositionOnClose) → opposite candle → breakeven → EMA
-      //    so intrabar exits get first refusal inside a candle and a close-based rule
-      //    can only fire on a bar that never touched the stop. The rupee cap is
-      //    already folded into the stop by orbStopRisk above (it clamps to the level
-      //    ORB_MAX_TRADE_LOSS allows), so the spot SL here IS the cap.
-      const pos = {
-        side, entrySpot: entry, slSpot: st.slSpot,
-        orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts,
-        breakevenArmed: false, emaArmed: false, lastEma: null,
-      };
-      // `exitReason` carries the FULL reason string (not just the short `why` code)
-      // because orb.reentryPlan classifies re-entry eligibility off it via
-      // orbExits.isStopOutExit — the same strings paper and the backtest emit.
-      let exit = null, why = null, mae = 0, mfe = 0, exitIdx = dayC.length - 1, exitReason = null;
+      // ── Exit model: the profit lock only. A bar is replayed as open → adverse
+      //    extreme → favourable extreme → close (the conservative path), as in the
+      //    backtest route: a lock tripped on the way down fills at its floor's spot
+      //    level (never better than the open); one armed and given back inside the
+      //    bar fills at the close. A trade the lock never closes ends at the day's
+      //    last candle close.
+      // The same position shape and per-tick decision paper/live run.
+      const pos = { isFutures: false, side, optionEntryLtp: SEED, peakPremium: SEED };
+      const lock = prem => orbExits.evaluateTickExits(pos, { optionLtp: prem }).exit;
+      let exit = null, why = null, mae = 0, mfe = 0, exitIdx = dayC.length - 1, exitClock = null;
       for (let k = j + 1; k < dayC.length; k++) {
         const c = dayC[k];
         exitIdx = k;
-        // EOD squares off at the first tick at/after ORB_FORCED_EXIT — this bar's
-        // OPEN, not the close of the last bar before it.
-        if (MIN(c.time) >= EOD) { exit = c.open; why = "EOD"; exitReason = "EOD square-off"; break; }
-
         const fav = side === "CE" ? c.high - entry : entry - c.low;
         const adv = side === "CE" ? entry - c.low : c.high - entry;
         mfe = Math.max(mfe, fav); mae = Math.max(mae, adv);
 
-        // 1. intrabar hard SL (gap-through fills at the open, as in paper/backtest)
-        if (orbExits.isHardSlHit(side, side === "CE" ? c.low : c.high, pos.slSpot)) {
-          exit = side === "CE" ? Math.min(pos.slSpot, c.open) : Math.max(pos.slSpot, c.open);
-          why = pos.breakevenArmed ? "BE" : "SL";
-          exitReason = `Hard SL hit (${pos.slSpot})`;
-          break;
+        const pOpen = premAt(side, entry, c.open);
+        if (pOpen > pos.peakPremium) pos.peakPremium = pOpen;
+        if (lock(pOpen)) { exit = c.open; why = "lock"; exitClock = c.time; break; }
+        if (lock(premAt(side, entry, side === "CE" ? c.low : c.high))) {
+          const floor = tradeGuards.profitLockFloorLtp(SEED, pos.peakPremium, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+          const raw = spotForPrem(side, entry, floor);
+          exit = side === "CE" ? Math.min(c.open, raw) : Math.max(c.open, raw);
+          why = "lock"; exitClock = c.time; break;
         }
-        // 2-4. close: opposite candle → breakeven → EMA trail, from the shared engine.
-        //      The EMA window is the same multi-day slice getSignal received, so the
-        //      trail is seeded before the open exactly as paper's preload makes it.
-        const ci = IDX.get(c.time);
-        const dec = orbExits.evaluateCloseExits(pos, c, candles.slice(Math.max(0, ci - 199), ci + 1));
-        if (dec.exit) {
-          exit = c.close;
-          why = /EMA/.test(dec.reason) ? "trail" : "opp";
-          exitReason = dec.reason;
-          break;
-        }
+        const pFav = premAt(side, entry, side === "CE" ? c.high : c.low);
+        if (pFav > pos.peakPremium) pos.peakPremium = pFav;
+        if (lock(premAt(side, entry, c.close))) { exit = c.close; why = "lock"; exitClock = c.time + 5 * 60; break; }
       }
       if (exit == null) {
         const rest = dayC.slice(j + 1);
         exit = (rest[rest.length - 1] || bar).close;
-        why = "EOD"; exitReason = "EOD (end of day candles)";
+        why = "EOD";
       }
 
       const pts = r2(side === "CE" ? exit - entry : entry - exit);
@@ -151,14 +130,10 @@ function simulate(candles) {
         mae: r2(mae), mfe: r2(mfe),
         orPts: sig.rangePts, gap: sig.gapPts, atr5: sig.atr5,
         orAtr: sig.atr15 ? r2(sig.rangePts / sig.atr15) : null,
-        clamped: st.clamped,
       });
-      taken++;
-      dayExits.push({ reason: exitReason, atUnixSec: dayC[exitIdx].time });
-      // Resume the hunt from the EXIT bar. With re-entry off the plan check at the
-      // top of the loop breaks out immediately, so this is the old `break` — with it
-      // on, the engine's re-arm makes every bar up to and including the exit invisible
-      // and only a genuinely fresh breakout can open the next trade.
+      if (why === "EOD") break;               // the session is over
+      // Resume the hunt from the EXIT bar, behind the wait-after-exit cooldown.
+      if (COOLDOWN > 0) blockUntil = exitClock + COOLDOWN;
       j = exitIdx;
     }
   }

@@ -20,8 +20,8 @@
  *   "both"   — both legs run at once, independently. The option leg fires even
  *            when zero stocks confirm, because it never needed confirmation.
  *
- * The two legs share the SAME level maths — entry buffer, the big-candle
- * body-edge stop, and the 1:2 target — so they are directly comparable.
+ * The two legs share the SAME entry maths (the buffer beyond the signal
+ * candle), so they are directly comparable.
  *
  * Consequences that are load-bearing and must not be "tidied away":
  *
@@ -32,10 +32,14 @@
  *     (exitLtp − entryLtp) × qty for BOTH sides. A bought PE profits when spot
  *     FALLS because its premium rises — do NOT run it through computePnl(),
  *     which is the direction-signed cash-equity formula.
- *   • EVERY LEVEL IN BOTH LEGS IS A SPOT LEVEL. The option leg's trigger, stop
- *     and target are NIFTY index points tested against spot, never against the
- *     premium: premium moves with IV and theta, so a premium-based stop could
- *     not be reproduced from recorded data and would break Paper ≡ Replay.
+ *   • THE ENTRY LEVEL IN BOTH LEGS IS A SPOT LEVEL. The option leg's trigger is
+ *     a NIFTY index level tested against spot, never against the premium.
+ *   • THE ONLY AUTOMATIC EXIT IS THE GLOBAL PROFIT LOCK
+ *     (tradeGuards.checkProfitLock), applied by the routes to the TRADED price:
+ *     the share price for the stock leg (a SHORT is mirrored around its entry),
+ *     the premium for the option leg. There is no stop, no target and no
+ *     strategy square-off time; anything still open is closed by the session's
+ *     own teardown (TRADE_STOP_TIME auto-stop) or by hand.
  *   • The 2% gap rule applies to the STOCK leg only — it is a rule about a
  *     stock opening away from its previous close.
  *   • NIFTY is traded ONLY as the option leg. In "stock" mode the index remains
@@ -94,42 +98,16 @@
  *     scan is handed a `prevClose` per symbol; a stock with no prevClose is
  *     dropped rather than guessed at, because "unknown gap" is not "no gap".
  *
- *  5. ENTRY / STOP / TARGET — all read off the stock's OWN signal candle, and
- *     all are LEVELS frozen at the moment the setup is built. They never move.
+ *  5. ENTRY — read off the stock's OWN signal candle, as a LEVEL frozen at the
+ *     moment the setup is built. It never moves.
  *
  *       LONG   entry = signal candle HIGH + buffer
- *              stop  = signal candle LOW  − buffer
  *       SHORT  entry = signal candle LOW  − buffer
- *              stop  = signal candle HIGH + buffer
  *
- *     buffer = EARLYBIRD_ENTRY_BUFFER_PTS (default 5), in RUPEES, applied to
- *     both ends — the user's "a little above the breakout candle" for entry and
- *     "same, a little above" for the stop.
+ *     buffer = EARLYBIRD_ENTRY_BUFFER_PTS (default 5), in RUPEES — the user's
+ *     "a little above the breakout candle".
  *
- *     TARGET = a 1:2 reward-to-risk multiple of the ACTUAL risk:
- *              risk = |entry − stop|
- *              LONG  target = entry + risk × EARLYBIRD_TARGET_RR
- *              SHORT target = entry − risk × EARLYBIRD_TARGET_RR
- *     EARLYBIRD_TARGET_RR defaults to 2. The user said 1:1 is also acceptable
- *     in some cases, so this is a single number they can lower to 1 without a
- *     code change. It is deliberately NOT two separate partial-exit legs —
- *     they did not ask for partials, and inventing them would change the
- *     strategy's whole risk profile.
- *
- *  6. THE BIG-CANDLE STOP RULE (the user's NOTE). If the wick-to-wick risk
- *     exceeds EARLYBIRD_MAX_SL_PTS (default 60, expressed in RUPEES of stock
- *     price), the stop moves OFF the wick and onto the candle's BODY edge:
- *
- *       LONG   stop = min(open, close) − buffer     ← body bottom, not the low
- *       SHORT  stop = max(open, close) + buffer     ← body top, not the high
- *
- *     This can only ever TIGHTEN the stop, never widen it, because the body is
- *     always inside the wick. It is applied BEFORE the target is computed, so a
- *     body-edge stop produces a correspondingly nearer 1:2 target — the R
- *     multiple is honoured against the risk actually taken.
- *
- *     `bigCandle: true` is reported on the setup so the UI and the logs can say
- *     out loud which rule produced the stop.
+ *  6. EXIT — the global profit lock only (see the TRADE MODE notes above).
  *
  * ── ENTRY FILL, DECIDED ONCE FOR ALL FOUR MODES ─────────────────────────────
  * The signal is known at 09:30. The entry is a PENDING STOP ORDER at the level
@@ -146,25 +124,16 @@
  * These are the same event described in two data resolutions, which is what
  * keeps Paper ≡ Backtest ≡ Replay.
  *
- * ── ORDERING INSIDE ONE BAR (backtest realism) ──────────────────────────────
- * When a single bar could have hit both the stop and the target, the STOP is
- * taken. A 15-minute bar cannot tell us which came first, and assuming the good
- * one is how backtests flatter themselves. Same reason a bar that OPENS beyond
- * the stop fills at the open, never at the better stop level.
- *
  * ── TIME RULES ──────────────────────────────────────────────────────────────
  *   09:30  earliest possible entry (the signal candle has just closed)
  *   10:45  EARLYBIRD_ENTRY_END — no new entries after this (user's rule)
- *   13:00  EARLYBIRD_FORCED_EXIT — everything still open is squared off
- * A position that has not hit stop or target by 13:00 exits at the market.
  *
  * ── DELIBERATELY NOT IMPLEMENTED (the user did not ask; do not "add") ───────
  *   • No VIX gate, no OI gate, no ADX, no RSI, no moving average, no volume
  *     filter, no confirmation candle, no multi-timeframe check.
- *   • No trailing stop and no breakeven shift — the stop is frozen for the
- *     life of the trade.
- *   • No partial exits / scaling out.
- *   • No re-entry. One attempt per stock per day; if it stops out, that stock
+ *   • No stop, target, trail, breakeven, partials or time exit — the global
+ *     profit lock is the only automatic exit.
+ *   • No re-entry. One attempt per stock per day; once it exits, that stock
  *     is done for the day. The option leg likewise trades once per day.
  *   • No position sizing by risk — a flat EARLYBIRD_QTY (default 100) shares
  *     per stock, exactly as specified, and a flat EARLYBIRD_OPTION_LOTS
@@ -173,6 +142,8 @@
  */
 
 "use strict";
+
+const tradeGuards = require("../utils/tradeGuards");
 
 // ── small shared helpers (same semantics as every other engine here) ────────
 function _r2(x) { return Math.round(x * 100) / 100; }
@@ -242,7 +213,6 @@ function getConfig() {
     // Windows
     entryStartMin:    _parseHHMM(process.env.EARLYBIRD_ENTRY_START,   9 * 60 + 30),
     entryEndMin:      _parseHHMM(process.env.EARLYBIRD_ENTRY_END,    10 * 60 + 45),
-    forcedExitMin:    _parseHHMM(process.env.EARLYBIRD_FORCED_EXIT,  13 * 60),
 
     // Signal-candle shape (applies identically to NIFTY and to each stock)
     maxOpposingWickPct: _numEnv(process.env.EARLYBIRD_MAX_OPPOSING_WICK_PCT, 30, 0, 100),
@@ -255,10 +225,8 @@ function getConfig() {
     // The 2% gap rule
     maxGapPct:        _numEnv(process.env.EARLYBIRD_MAX_GAP_PCT, 2, 0, 100),
 
-    // Entry / stop / target
+    // Entry
     entryBufferPts:   _numEnv(process.env.EARLYBIRD_ENTRY_BUFFER_PTS, 5, 0),
-    targetRR:         _numEnv(process.env.EARLYBIRD_TARGET_RR, 2, 0.1, 20),
-    maxSlPts:         _numEnv(process.env.EARLYBIRD_MAX_SL_PTS, 60, 0),
 
     // Sizing + exposure
     qty:              _intEnv(process.env.EARLYBIRD_QTY, 100, 1, 100000),
@@ -465,8 +433,7 @@ function evaluateStock(input, opts) {
     ok: false, side: side || null, reason: "", skipReason: "",
     candle: null, detail: null,
     prevClose: null, gapPct: null,
-    entry: null, stop: null, target: null,
-    riskPts: null, rewardPts: null, bigCandle: false, slBasis: null,
+    entry: null, rangePts: null,
     qty: cfg.qty, signalBarTime: null,
   };
 
@@ -524,55 +491,17 @@ function evaluateStock(input, opts) {
     return out;
   }
 
-  // ── Rules 5 + 6 — levels. All frozen here, never recomputed later.
+  // ── Rule 5 — the entry level. Frozen here, never recomputed later.
   const buf = cfg.entryBufferPts;
-  const bodyTop    = Math.max(first.open, first.close);
-  const bodyBottom = Math.min(first.open, first.close);
+  const entry = side === "LONG" ? first.high + buf : first.low - buf;
 
-  let entry, stop;
-  if (side === "LONG") {
-    entry = first.high + buf;
-    stop  = first.low  - buf;
-  } else {
-    entry = first.low  - buf;
-    stop  = first.high + buf;
-  }
-
-  // Rule 6 — big candle: move the stop off the wick and onto the body edge.
-  // This only ever tightens, because the body is always inside the wick.
-  let riskPts = Math.abs(entry - stop);
-  out.slBasis = "wick";
-  if (cfg.maxSlPts > 0 && riskPts > cfg.maxSlPts) {
-    const bodyStop = side === "LONG" ? bodyBottom - buf : bodyTop + buf;
-    const bodyRisk = Math.abs(entry - bodyStop);
-    // Guard: a body edge that is not actually tighter (possible only on a
-    // degenerate candle) is ignored rather than used to widen the stop.
-    if (bodyRisk > 0 && bodyRisk < riskPts) {
-      stop = bodyStop;
-      riskPts = bodyRisk;
-      out.bigCandle = true;
-      out.slBasis = "body edge (big candle)";
-    }
-  }
-
-  if (!(riskPts > 0)) {
-    out.skipReason = out.reason = "computed risk is zero — refusing to build a setup";
-    return out;
-  }
-
-  const rewardPts = riskPts * cfg.targetRR;
-  const target = side === "LONG" ? entry + rewardPts : entry - rewardPts;
-
-  out.entry     = _r2(entry);
-  out.stop      = _r2(stop);
-  out.target    = _r2(target);
-  out.riskPts   = _r2(riskPts);
-  out.rewardPts = _r2(rewardPts);
-  out.ok        = true;
+  out.entry    = _r2(entry);
+  // The signal candle's range — only used to rank candidates (tightest first).
+  out.rangePts = _r2(first.high - first.low);
+  out.ok       = true;
   out.reason =
-    `${side} ${out.symbol} — ${cls.shape}, entry ${out.entry}, SL ${out.stop} ` +
-    `(${out.slBasis}), target ${out.target} @ 1:${cfg.targetRR} | risk ${out.riskPts} ` +
-    `reward ${out.rewardPts} | gap ${out.gapPct}%`;
+    `${side} ${out.symbol} — ${cls.shape}, entry ${out.entry} | candle range ${out.rangePts} ` +
+    `| gap ${out.gapPct}%`;
   return out;
 }
 
@@ -583,17 +512,15 @@ function evaluateStock(input, opts) {
 // Deliberately simpler than the stock side, because the user's rule for it is
 // simpler: NO STOCK CONFIRMATION AT ALL. If NIFTY's own opening candle is a
 // signal candle, that is the whole entry condition. A bullish candle buys a CE,
-// a bearish one buys a PE, and the breakout level, stop and target are read off
-// NIFTY's own candle exactly as a stock's are read off its own.
+// a bearish one buys a PE, and the breakout level is read off NIFTY's own
+// candle exactly as a stock's is read off its own.
 //
 // The 2% gap rule does NOT apply here either — it is a rule about a *stock*
 // opening away from its previous close, and we are not selecting a stock.
 //
-// EVERY LEVEL IS A SPOT LEVEL. The entry trigger, the stop and the 1:2 target
-// are all NIFTY index points, tested against spot — never against the option
-// premium. That is what makes the option leg comparable to the stock leg and
-// what keeps Paper ≡ Backtest ≡ Replay: an option's premium depends on IV and
-// theta, so a premium-based stop would not reproduce.
+// The entry trigger is a SPOT level, tested against spot — never against the
+// option premium. The exit (the global profit lock) is applied by the route to
+// the premium that is actually traded.
 // ─────────────────────────────────────────────────────────────────────────────
 function buildNiftyOptionSetup(niftyCandles, opts) {
   const o = opts || {};
@@ -602,8 +529,7 @@ function buildNiftyOptionSetup(niftyCandles, opts) {
   const out = {
     ok: false, side: null, optionSide: null, reason: "", skipReason: "",
     candle: null, detail: null,
-    entry: null, stop: null, target: null,
-    riskPts: null, rewardPts: null, bigCandle: false, slBasis: null,
+    entry: null, rangePts: null,
     lots: cfg.optionLots, signalBarTime: null,
   };
 
@@ -624,42 +550,16 @@ function buildNiftyOptionSetup(niftyCandles, opts) {
 
   const side = nifty.side;                       // LONG | SHORT
   const buf = cfg.entryBufferPts;
-  const bodyTop    = Math.max(first.open, first.close);
-  const bodyBottom = Math.min(first.open, first.close);
+  const entry = side === "LONG" ? first.high + buf : first.low - buf;
 
-  let entry, stop;
-  if (side === "LONG") { entry = first.high + buf; stop = first.low  - buf; }
-  else                 { entry = first.low  - buf; stop = first.high + buf; }
-
-  // Same big-candle rule as the stock side — it can only ever tighten.
-  let riskPts = Math.abs(entry - stop);
-  out.slBasis = "wick";
-  if (cfg.maxSlPts > 0 && riskPts > cfg.maxSlPts) {
-    const bodyStop = side === "LONG" ? bodyBottom - buf : bodyTop + buf;
-    const bodyRisk = Math.abs(entry - bodyStop);
-    if (bodyRisk > 0 && bodyRisk < riskPts) {
-      stop = bodyStop; riskPts = bodyRisk;
-      out.bigCandle = true; out.slBasis = "body edge (big candle)";
-    }
-  }
-  if (!(riskPts > 0)) {
-    out.skipReason = out.reason = "computed risk is zero — refusing to build a setup";
-    return out;
-  }
-
-  const rewardPts = riskPts * cfg.targetRR;
   out.side       = side;
   out.optionSide = side === "LONG" ? "CE" : "PE";
   out.entry      = _r2(entry);
-  out.stop       = _r2(stop);
-  out.target     = _r2(side === "LONG" ? entry + rewardPts : entry - rewardPts);
-  out.riskPts    = _r2(riskPts);
-  out.rewardPts  = _r2(rewardPts);
+  out.rangePts   = _r2(first.high - first.low);
   out.ok         = true;
   out.reason =
     `NIFTY ${out.optionSide} — ${nifty.detail ? nifty.detail.shape : "signal candle"}, ` +
-    `entry ${out.entry}, SL ${out.stop} (${out.slBasis}), target ${out.target} ` +
-    `@ 1:${cfg.targetRR} | risk ${out.riskPts}pt reward ${out.rewardPts}pt (spot levels)`;
+    `entry ${out.entry} (spot level) | candle range ${out.rangePts}pt`;
   return out;
 }
 
@@ -682,8 +582,8 @@ function buildDayPlan(niftyCandles, stocks, opts) {
     optionSetup: null, optionTradeable: false, tradeMode: cfg.tradeMode,
     scanned: Array.isArray(stocks) ? stocks.length : 0,
     cfg: {
-      qty: cfg.qty, targetRR: cfg.targetRR, maxConcurrent: cfg.maxConcurrent,
-      entryBufferPts: cfg.entryBufferPts, maxSlPts: cfg.maxSlPts,
+      qty: cfg.qty, maxConcurrent: cfg.maxConcurrent,
+      entryBufferPts: cfg.entryBufferPts,
       maxGapPct: cfg.maxGapPct, minConfirmingStocks: cfg.minConfirmingStocks,
     },
   };
@@ -732,111 +632,43 @@ function buildDayPlan(niftyCandles, stocks, opts) {
     return plan;
   }
 
-  // Rank by tightest risk first: with a fixed 100 qty, the smallest stop is the
-  // smallest rupee loss, and the cap has to choose somehow. This affects only
-  // WHICH names get taken when more than maxConcurrent confirm.
-  plan.candidates.sort((a, b) => a.riskPts - b.riskPts);
+  // Rank by the tightest signal candle first (its high-low range). The cap has
+  // to choose somehow; this affects only WHICH names get taken when more than
+  // maxConcurrent confirm.
+  plan.candidates.sort((a, b) => a.rangePts - b.rangePts);
 
   plan.tradeable = true;
   plan.reason =
     `${nifty.reason} | ${plan.confirmingCount} of ${plan.scanned} stocks confirmed` +
     (plan.confirmingCount > cfg.maxConcurrent
-      ? ` — taking the ${cfg.maxConcurrent} tightest-stop names`
+      ? ` — taking the ${cfg.maxConcurrent} tightest-candle names`
       : "");
   return plan;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Exit evaluation — one place, so Paper/Backtest/Live cannot drift.
+// Exit — the global profit lock is the ONLY automatic exit, in every mode.
 //
-// checkExitOnTick  — Paper + Live, per tick against a live price.
-// checkExitOnBar   — Backtest, per 15-minute bar, conservative ordering.
+// It is defined on a price that RISES when the trade is winning. That is true of
+// a stock bought LONG and of any bought option premium; a cash SHORT is fed its
+// price mirrored around the entry (a fall of x becomes a rise of x), the same
+// way gapRunawayStkPaper does it. `best` is the best price seen since entry in
+// the trade's own direction (the highest for LONG, the lowest for SHORT).
 // ─────────────────────────────────────────────────────────────────────────────
-function checkExitOnTick(position, price, opts) {
-  const o = opts || {};
-  const cfg = o.cfg || getConfig();
-  if (!position || !_num(price)) return null;
-
-  const side = position.side;
-  const stop = position.stop, target = position.target;
-
-  // Every level is checked for finiteness first. `price >= null` is
-  // `price >= 0`, which would exit on the very first tick.
-  if (_num(stop)) {
-    if (side === "LONG" && price <= stop) {
-      return { exit: true, reason: "Stop-loss hit", exitType: "SL", price: stop };
-    }
-    if (side === "SHORT" && price >= stop) {
-      return { exit: true, reason: "Stop-loss hit", exitType: "SL", price: stop };
-    }
-  }
-  if (_num(target)) {
-    if (side === "LONG" && price >= target) {
-      return { exit: true, reason: `Target hit (1:${cfg.targetRR})`, exitType: "TARGET", price: target };
-    }
-    if (side === "SHORT" && price <= target) {
-      return { exit: true, reason: `Target hit (1:${cfg.targetRR})`, exitType: "TARGET", price: target };
-    }
-  }
-
-  if (_num(o.nowMins) && o.nowMins >= cfg.forcedExitMin) {
-    return {
-      exit: true,
-      reason: `Forced exit at ${_fmtMins(cfg.forcedExitMin)}`,
-      exitType: "EOD", price,
-    };
-  }
-  return null;
+function mirrorPrice(side, entry, px) {
+  return side === "SHORT" ? 2 * entry - px : px;
 }
 
-function checkExitOnBar(position, bar, opts) {
-  const o = opts || {};
-  const cfg = o.cfg || getConfig();
-  if (!position || !_okBar(bar)) return null;
-
-  const side = position.side;
-  const stop = position.stop, target = position.target;
-
-  // A bar that OPENED beyond the stop fills at the open — the market gapped
-  // through the level and the better price was never available.
-  if (_num(stop)) {
-    if (side === "LONG" && bar.open <= stop) {
-      return { exit: true, reason: "Stop-loss — bar opened beyond the stop", exitType: "SL", price: bar.open };
-    }
-    if (side === "SHORT" && bar.open >= stop) {
-      return { exit: true, reason: "Stop-loss — bar opened beyond the stop", exitType: "SL", price: bar.open };
-    }
-  }
-
-  // The adverse level is tested BEFORE the favourable one. A 15-minute bar
-  // cannot say which came first, and assuming the target is how a backtest
-  // lies to itself.
-  if (_num(stop)) {
-    if (side === "LONG" && bar.low <= stop) {
-      return { exit: true, reason: "Stop-loss hit", exitType: "SL", price: stop };
-    }
-    if (side === "SHORT" && bar.high >= stop) {
-      return { exit: true, reason: "Stop-loss hit", exitType: "SL", price: stop };
-    }
-  }
-  if (_num(target)) {
-    if (side === "LONG" && bar.high >= target) {
-      return { exit: true, reason: `Target hit (1:${cfg.targetRR})`, exitType: "TARGET", price: target };
-    }
-    if (side === "SHORT" && bar.low <= target) {
-      return { exit: true, reason: `Target hit (1:${cfg.targetRR})`, exitType: "TARGET", price: target };
-    }
-  }
-
-  const closeMins = _utcSecToIstMins(bar.time) + cfg.resolutionMins;
-  if (closeMins >= cfg.forcedExitMin) {
-    return {
-      exit: true,
-      reason: `Forced exit at ${_fmtMins(cfg.forcedExitMin)}`,
-      exitType: "EOD", price: bar.close,
-    };
-  }
-  return null;
+function checkProfitLockExit(side, entry, price, best) {
+  if (!_num(entry) || !_num(price) || !_num(best)) return null;
+  const msg = tradeGuards.checkProfitLock(entry, mirrorPrice(side, entry, price), mirrorPrice(side, entry, best));
+  if (!msg) return null;
+  return {
+    exit: true,
+    exitType: "PROFIT_LOCK",
+    reason: side === "SHORT" ? `${msg} (short — price mirrored around entry ₹${_r2(entry)})` : msg,
+    price,
+  };
 }
 
 /** Has the pending stop-order level been touched? Same test in every mode. */
@@ -869,8 +701,8 @@ module.exports = {
   tradesStock,
   tradesOption,
   TRADE_MODES,
-  checkExitOnTick,
-  checkExitOnBar,
+  mirrorPrice,
+  checkProfitLockExit,
   isEntryTriggered,
   isEntryTriggeredOnBar,
   computePnl,

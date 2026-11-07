@@ -3,8 +3,8 @@
  * Zero-dependency; run with `node tests/gapRunaway.regression.js` (part of npm test).
  *
  * Engine: yesterday's daily RSI(10) on EMA21 < 10 + gap UP → CE, > 90 + gap DOWN
- * → PE; stop = yesterday's close (a LEVEL, per tick); trail = exit-TF close
- * through EMA21; square-off 15:15; entry window 09:15–09:30. No common rules.
+ * → PE; entry window 09:15–09:30. The only automatic exit is the common profit
+ * lock (2026-11-07) — no gap stop, no EMA trail, no early square-off.
  */
 const assert = require("assert");
 const fs     = require("fs");
@@ -45,12 +45,16 @@ const choppy  = series(160, (i) => 20000 + 60 * Math.sin(i * 0.7) + 25 * Math.co
 // ─────────────────────────────────────────────────────────────────────────────
 section("Config — defaults and live reads");
 
-check("defaults are the user's rules (RSI 10 on EMA21, 90/10, 5-min EMA21 trail, 09:15–09:30, 15:15)", () => {
+check("defaults are the user's rules (RSI 10 on EMA21, 90/10, 09:15–09:30)", () => {
   const c = cfg();
   assert.strictEqual(c.EMA_LENGTH, 21); assert.strictEqual(c.RSI_LENGTH, 10);
   assert.strictEqual(c.RSI_UPPER, 90); assert.strictEqual(c.RSI_LOWER, 10);
-  assert.strictEqual(c.MIN_GAP_PTS, 0); assert.strictEqual(c.TRAIL_EMA_LENGTH, 21); assert.strictEqual(c.EXIT_TF, 5);
-  assert.strictEqual(c.ENTRY_START, 555); assert.strictEqual(c.ENTRY_END, 570); assert.strictEqual(c.EOD_EXIT, 915);
+  assert.strictEqual(c.MIN_GAP_PTS, 0);
+  assert.strictEqual(c.ENTRY_START, 555); assert.strictEqual(c.ENTRY_END, 570);
+});
+check("the removed exit settings are not in the config", () => {
+  const c = cfg();
+  for (const k of ["TRAIL_EMA_LENGTH", "EXIT_TF", "EOD_EXIT"]) assert.ok(!(k in c), k);
 });
 check("settings are read live (never cached)", () => {
   process.env.GAP_RUNAWAY_RSI_UPPER = "85";
@@ -68,9 +72,9 @@ check("an unknown prefix falls back to GAP_RUNAWAY, never another strategy's key
   assert.strictEqual(eng.getConfig("PIVOT_EMA_ST").PREFIX, "GAP_RUNAWAY");
 });
 check("garbage values fall back to the defaults", () => {
-  process.env.GAP_RUNAWAY_EXIT_TF = "7"; process.env.GAP_RUNAWAY_RSI_LENGTH = "abc"; process.env.GAP_RUNAWAY_ENTRY_END = "25:99";
-  try { const c = cfg(); assert.strictEqual(c.EXIT_TF, 5); assert.strictEqual(c.RSI_LENGTH, 10); assert.strictEqual(c.ENTRY_END, 570); }
-  finally { delete process.env.GAP_RUNAWAY_EXIT_TF; delete process.env.GAP_RUNAWAY_RSI_LENGTH; delete process.env.GAP_RUNAWAY_ENTRY_END; }
+  process.env.GAP_RUNAWAY_RSI_LENGTH = "abc"; process.env.GAP_RUNAWAY_ENTRY_END = "25:99";
+  try { const c = cfg(); assert.strictEqual(c.RSI_LENGTH, 10); assert.strictEqual(c.ENTRY_END, 570); }
+  finally { delete process.env.GAP_RUNAWAY_RSI_LENGTH; delete process.env.GAP_RUNAWAY_ENTRY_END; }
 });
 check("an inverted band (upper ≤ lower) falls back to 90 / 10", () => {
   process.env.GAP_RUNAWAY_RSI_UPPER = "20"; process.env.GAP_RUNAWAY_RSI_LOWER = "30";
@@ -106,13 +110,6 @@ check("RSI on the EMA line is NOT RSI on the close (the source really is the EMA
   const onClose = RSI.calculate({ period: 10, values: choppy.map(c => c.close) });
   assert.notStrictEqual(s.rsi[choppy.length - 1], onClose[onClose.length - 1]);
 });
-check("trail EMA aligns out[i] ↔ candles[i+20]", () => {
-  const bars = Array.from({ length: 30 }, (_, i) => ({ time: i * 300, open: 100 + i, high: 101 + i, low: 99 + i, close: 100 + i }));
-  const t = eng.computeTrailEma(bars, cfg());
-  const e = EMA.calculate({ period: 21, values: bars.map(b => b.close) });
-  assert.strictEqual(t[19], null); assert.strictEqual(t[20], e[0]); assert.strictEqual(t[29], e[e.length - 1]);
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 section("Daily setup — yesterday's closed bar, refusals");
 
@@ -164,19 +161,19 @@ check("no session day / no candles → refused", () => {
 section("Entry — the four combinations, gap size, open price");
 
 const pc = osSetup.prevClose;
-check("OVERSOLD + gap UP → BUY_CE, SL = prev close, slPts = gap", () => {
+check("OVERSOLD + gap UP → BUY_CE, gap = open − prev close", () => {
   const s = eng.getSignal({ setup: osSetup, todayOpen: pc + 80, cfg: cfg() });
   assert.strictEqual(s.signal, "BUY_CE"); assert.strictEqual(s.side, "CE");
-  assert.strictEqual(s.slSpot, pc); assert.strictEqual(s.slPts, 80); assert.strictEqual(s.gapDir, "UP"); assert.strictEqual(s.entrySpot, pc + 80);
+  assert.strictEqual(s.prevClose, pc); assert.strictEqual(s.gapPts, 80); assert.strictEqual(s.gapDir, "UP"); assert.strictEqual(s.entrySpot, pc + 80);
 });
 check("OVERSOLD + gap DOWN → NONE (needs a gap UP)", () => {
   const s = eng.getSignal({ setup: osSetup, todayOpen: pc - 30, cfg: cfg() });
   assert.strictEqual(s.signal, "NONE"); assert.strictEqual(s.skipReason, "gap_wrong_way");
 });
 const pcB = obSetup.prevClose;
-check("OVERBOUGHT + gap DOWN → BUY_PE, SL = prev close", () => {
+check("OVERBOUGHT + gap DOWN → BUY_PE", () => {
   const s = eng.getSignal({ setup: obSetup, todayOpen: pcB - 50, cfg: cfg() });
-  assert.strictEqual(s.signal, "BUY_PE"); assert.strictEqual(s.side, "PE"); assert.strictEqual(s.slSpot, pcB); assert.strictEqual(s.slPts, 50);
+  assert.strictEqual(s.signal, "BUY_PE"); assert.strictEqual(s.side, "PE"); assert.strictEqual(s.prevClose, pcB); assert.strictEqual(s.gapPts, -50);
 });
 check("OVERBOUGHT + gap UP → NONE", () => {
   const s = eng.getSignal({ setup: obSetup, todayOpen: pcB + 50, cfg: cfg() });
@@ -220,72 +217,56 @@ check("gapPct is signed and relative to prev close", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-section("Stop — a LEVEL at yesterday's close, per tick");
+section("Entry filter — refused once the gap has filled");
 
-check("CE stops when price ≤ prev close, not above", () => {
-  assert.ok(eng.stopHit("CE", 24000, 24000)); assert.ok(eng.stopHit("CE", 23990, 24000)); assert.ok(!eng.stopHit("CE", 24000.05, 24000));
-});
-check("PE stops when price ≥ prev close, not below", () => {
-  assert.ok(eng.stopHit("PE", 24000, 24000)); assert.ok(eng.stopHit("PE", 24010, 24000)); assert.ok(!eng.stopHit("PE", 23999.95, 24000));
-});
-check("a null / NaN stop never fires (spot >= null would be spot >= 0)", () => {
-  for (const sl of [null, undefined, NaN, ""]) { assert.ok(!eng.stopHit("CE", 24000, sl)); assert.ok(!eng.stopHit("PE", 24000, sl)); }
-  assert.ok(!eng.stopHit("CE", null, 24000)); assert.ok(!eng.stopHit("PE", 0, 24000)); assert.ok(!eng.stopHit("XX", 1, 2));
-});
 check("entry is refused once the gap has filled", () => {
   assert.ok(eng.entryStillValid("CE", 24050, 24000)); assert.ok(!eng.entryStillValid("CE", 24000, 24000)); assert.ok(!eng.entryStillValid("CE", 23900, 24000));
   assert.ok(eng.entryStillValid("PE", 23950, 24000)); assert.ok(!eng.entryStillValid("PE", 24001, 24000));
   assert.ok(!eng.entryStillValid("CE", null, 24000)); assert.ok(!eng.entryStillValid("CE", 24050, null));
+  assert.ok(!eng.entryStillValid("PE", 0, 24000)); assert.ok(!eng.entryStillValid("XX", 1, 2));
+});
+check("the engine exports no exit rule (gap stop / EMA trail / EOD square-off removed)", () => {
+  for (const k of ["stopHit", "trailExit", "computeTrailEma", "trailWarmupBars", "isEodExit"]) assert.ok(!(k in eng), k);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-section("Trail — a candle CLOSE back through EMA21 (not a target, not a wick)");
-
-const bar = (o, h, l, c) => ({ time: 1, open: o, high: h, low: l, close: c });
-check("CE exits on a close below the EMA", () => { assert.ok(eng.trailExit("CE", bar(105, 106, 98, 99), 100, cfg()).exit); });
-check("CE holds on a close above the EMA even if the wick pierced it", () => { assert.ok(!eng.trailExit("CE", bar(105, 106, 95, 101), 100, cfg()).exit); });
-check("PE exits on a close above the EMA", () => { assert.ok(eng.trailExit("PE", bar(95, 102, 94, 101), 100, cfg()).exit); });
-check("PE holds on a close below the EMA even if the wick pierced it", () => { assert.ok(!eng.trailExit("PE", bar(95, 105, 94, 99), 100, cfg()).exit); });
-check("a close exactly on the EMA does not exit", () => { assert.ok(!eng.trailExit("CE", bar(1, 2, 0, 100), 100, cfg()).exit); assert.ok(!eng.trailExit("PE", bar(1, 2, 0, 100), 100, cfg()).exit); });
-check("no EMA yet (warm-up) never exits", () => { assert.ok(!eng.trailExit("CE", bar(1, 2, 0, 1), null, cfg()).exit); assert.ok(!eng.trailExit("CE", bar(1, 2, 0, 1), NaN, cfg()).exit); });
-check("a bad bar never exits", () => { assert.ok(!eng.trailExit("CE", { time: 1, open: 1, high: 1, low: 1, close: null }, 100, cfg()).exit); });
-check("the reason names the timeframe and the EMA", () => { assert.ok(/5-min close .* below EMA21/.test(eng.trailExit("CE", bar(105, 106, 98, 99), 100, cfg()).reason)); });
-
-// ─────────────────────────────────────────────────────────────────────────────
-section("Windows — entry 09:15–09:30, square-off 15:15");
+section("Windows — entry 09:15–09:30");
 
 const at = (h, m) => (TODAY * DAY - IST) + (h * 60 + m) * 60;
 check("09:15 and 09:30 are inside the entry window; 09:14 and 09:31 are not", () => {
   assert.ok(eng.isInEntryWindow(at(9, 15), cfg())); assert.ok(eng.isInEntryWindow(at(9, 30), cfg()));
   assert.ok(!eng.isInEntryWindow(at(9, 14), cfg())); assert.ok(!eng.isInEntryWindow(at(9, 31), cfg()));
 });
-check("square-off fires at 15:15, not 15:14", () => { assert.ok(eng.isEodExit(at(15, 15), cfg())); assert.ok(!eng.isEodExit(at(15, 14), cfg())); });
 
 // ─────────────────────────────────────────────────────────────────────────────
-section("Routes — rules live only in the engine; no common rules");
+section("Routes — rules live only in the engine; the profit lock is the only exit");
 
 const paper = decomment(read("routes/gapRunawayPaper.js"));
 const stk   = decomment(read("routes/gapRunawayStkPaper.js"));
-const harn  = decomment(read("routes/gapRunawayLiveHarness.js"));
 check("no route does indicator maths of its own", () => {
-  for (const [n, s] of [["paper", paper], ["stk", stk], ["harness", harn]]) {
+  for (const [n, s] of [["paper", paper], ["stk", stk]]) {
     assert.ok(!/technicalindicators|EMA\.calculate|RSI\.calculate/.test(s), `${n} computes an indicator`);
   }
 });
 check("no route compares RSI to a band itself", () => {
   for (const s of [paper, stk]) assert.ok(!/prevRsi\s*[<>]=?\s*\d|RSI_UPPER\s*[<>]|RSI_LOWER\s*[<>]/.test(s));
 });
-check("both routes decide through engine.getSignal / stopHit / trailExit", () => {
+check("both routes decide entries through engine.getSignal / entryStillValid", () => {
   for (const s of [paper, stk]) {
-    assert.ok(/engine\.getSignal\(/.test(s)); assert.ok(/engine\.stopHit\(/.test(s));
-    assert.ok(/engine\.trailExit\(/.test(s)); assert.ok(/engine\.entryStillValid\(/.test(s));
+    assert.ok(/engine\.getSignal\(/.test(s)); assert.ok(/engine\.entryStillValid\(/.test(s));
   }
 });
-check("NIFTY: no common rule: no profit lock, breakeven, cooldown, spread check, portfolio cap, LOT_MULTIPLIER", () => {
-  assert.ok(!/tradeGuards|checkProfitLock|checkBreakevenStop|reentryCooldown|checkSpread|portfolioRisk|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(paper));
+check("both routes exit on the common profit lock and nothing else automatic", () => {
+  for (const [n, s] of [["paper", paper], ["stk", stk]]) {
+    assert.ok(/tradeGuards\.checkProfitLock\(/.test(s), `${n} must call checkProfitLock`);
+    assert.ok(!/checkBreakevenStop|checkTimeStop|stopHit|trailExit|computeTrailEma|isEodExit|EOD_EXIT|EXIT_TF|TRAIL_EMA_LENGTH|MAX_DAILY_LOSS/.test(s), `${n} still has a removed exit / limit`);
+  }
 });
-check("scanner: common profit lock, breakeven, cooldown, spread, portfolio cap — but no trade window / lot multiplier", () => {
-  for (const re of [/tradeGuards\.checkProfitLock\(/, /tradeGuards\.checkBreakevenStop\(/, /tradeGuards\.reentryCooldownUntil\(/, /tradeGuards\.checkSpread\(/, /portfolioRisk\.checkPortfolioCap\(/]) assert.ok(re.test(stk), String(re));
+check("NIFTY: no other common rule: no breakeven, cooldown, spread check, LOT_MULTIPLIER", () => {
+  assert.ok(!/checkBreakevenStop|reentryCooldown|checkSpread|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(paper));
+});
+check("scanner: common profit lock, cooldown, spread — but no trade window / lot multiplier", () => {
+  for (const re of [/tradeGuards\.checkProfitLock\(/, /tradeGuards\.reentryCooldownUntil\(/, /tradeGuards\.checkSpread\(/]) assert.ok(re.test(stk), String(re));
   assert.ok(!/commonTradeWindow|getLotQty|LOT_MULTIPLIER/.test(stk));
   assert.ok(require("../src/utils/portfolioRisk").PAPER_MODES.includes("gap_runaway_stk"));
 });
@@ -324,10 +305,8 @@ check("the manual entry honours one trade per day", () => {
   const me = paper.slice(paper.indexOf('router.post("/manualEntry"'), paper.indexOf("function buildSessionTradeRows"));
   assert.ok(/One trade per day/.test(me) && /_priorTradesToday/.test(me));
 });
-check("the scanner holds a bigger gap's slot while its price is missing, and tests every unchecked trail candle", () => {
+check("the scanner holds a bigger gap's slot while its price is missing", () => {
   assert.ok(/_slotsLeft\(\) - held <= 0/.test(stk) && /held\+\+/.test(stk));
-  const ct = stk.slice(stk.indexOf("async function _checkTrail"), stk.indexOf("function _loop"));
-  assert.ok(/for \(let i = 0; i < closed\.length; i\+\+\)/.test(ct), "every closed candle since the last check must be tested");
 });
 check("the open's history call is bounded and the tick fallback only trusts the first seconds of 09:15", () => {
   assert.ok(/OPEN_FETCH_TIMEOUT_MS/.test(paper) && /Promise\.race/.test(paper) && /OPEN_TICK_MAX_DELAY_S/.test(paper));
@@ -344,29 +323,24 @@ check("both routes register the shared history endpoints (and not /delete-sessio
     assert.ok(!/delete-session/.test(s));
   }
 });
-check("the harness is triple-gated and Zerodha", () => {
-  assert.ok(/broker:\s*"zerodha"/.test(harn)); assert.ok(/GAP_RUNAWAY_LIVE_ENABLED/.test(harn));
-  assert.ok(/liveDryRun\.isDryRun\(DRY_KEY\)/.test(harn)); assert.ok(/router\.isLiveHarness\s*=\s*true/.test(harn));
-  assert.ok(/MODE_TAG\s*=\s*"GAP_RUNAWAY-PAPER"/.test(harn)); assert.ok(/mode:\s*'GAP_RUNAWAY-PAPER'/.test(paper));
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 section("Wiring — shared files");
 
 const tl = require("../src/utils/tradeLogger");
-check("tradeLogger knows gap_runaway, gap_runaway-live and gap_runaway_stk", () => {
-  for (const k of ["gap_runaway", "gap_runaway-live", "gap_runaway_stk"]) assert.ok(tl.filePathFor(k));
+check("tradeLogger knows gap_runaway and gap_runaway_stk", () => {
+  for (const k of ["gap_runaway", "gap_runaway_stk"]) assert.ok(tl.filePathFor(k));
 });
 check("skipLogger knows both modes", () => {
   const sl = require("../src/utils/skipLogger");
   for (const k of ["gap_runaway", "gap_runaway_stk"]) assert.ok(sl.filePathFor(k, "2026-10-26"));
 });
-check("sharedSocketState: own slots, paper ⊥ live, parallel with everything else", () => {
+check("sharedSocketState: own slots, parallel with everything else", () => {
   const sss = require("../src/utils/sharedSocketState");
   assert.ok(sss.canStart("GAP_RUNAWAY_PAPER", { reserve: false }).allowed);
   sss.setGapRunawayMode("GAP_RUNAWAY_PAPER");
   try {
-    assert.ok(!sss.canStart("GAP_RUNAWAY_LIVE", { reserve: false }).allowed);
+    assert.ok(!sss.canStart("GAP_RUNAWAY_PAPER", { reserve: false }).allowed);
     assert.ok(sss.canStart("GAP_RUNAWAY_STK_PAPER", { reserve: false }).allowed);
     assert.ok(sss.isAnyActive());
   } finally { sss.clearGapRunawayMode(); }
@@ -384,10 +358,10 @@ check("both strategies are in STRATEGY_MODES (Start All) and ship ON", () => {
     assert.ok(row, m); assert.strictEqual(row.envDefault, "true");
   }
 });
-check("app.js mounts the three routes and opens the read-only pages", () => {
+check("app.js mounts the two routes and opens the read-only pages", () => {
   const a = read("app.js");
-  for (const m of ['"/gap_runaway-paper"', '"/gap_runaway-live"', '"/gap_runaway_stk-paper"']) assert.ok(a.includes(`app.use(${m}`), m);
-  for (const p of ["/gap_runaway-paper/status/data", "/gap_runaway_stk-paper/status/data", "/gap_runaway-live/status/data", "/gap_runaway-paper/view/", "/gap_runaway_stk-paper/download/"]) assert.ok(a.includes(`"${p}"`), p);
+  for (const m of ['"/gap_runaway-paper"', '"/gap_runaway_stk-paper"']) assert.ok(a.includes(`app.use(${m}`), m);
+  for (const p of ["/gap_runaway-paper/status/data", "/gap_runaway_stk-paper/status/data", "/gap_runaway-paper/view/", "/gap_runaway_stk-paper/download/"]) assert.ok(a.includes(`"${p}"`), p);
 });
 check("Settings exposes every key the engine and routes read, with matching defaults", () => {
   // settings.js does not export its schema — read the literal field lines, the
@@ -398,14 +372,14 @@ check("Settings exposes every key the engine and routes read, with matching defa
     const d = /default:\s*"([^"]*)"/.exec(line);
     fields.set(k[1], { key: k[1], default: d ? d[1] : undefined });
   }
-  const want = { EMA_LENGTH: "21", RSI_LENGTH: "10", RSI_UPPER: "90", RSI_LOWER: "10", MIN_GAP_PTS: "0", TRAIL_EMA_LENGTH: "21",
-    EXIT_TF: "5", ENTRY_START: "09:15", ENTRY_END: "09:30", EOD_EXIT_TIME: "15:15", REFERENCE_URL: eng.REFERENCE_URL };
+  const want = { EMA_LENGTH: "21", RSI_LENGTH: "10", RSI_UPPER: "90", RSI_LOWER: "10", MIN_GAP_PTS: "0",
+    ENTRY_START: "09:15", ENTRY_END: "09:30", REFERENCE_URL: eng.REFERENCE_URL };
   for (const P of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) for (const [k, d] of Object.entries(want)) {
     const f = fields.get(`${P}_${k}`); assert.ok(f, `${P}_${k} missing`); assert.strictEqual(String(f.default), d, `${P}_${k}`);
   }
   for (const [k, d] of [["GAP_RUNAWAY_LOTS", "1"], ["GAP_RUNAWAY_STK_TRADE_AMOUNT", "100000"],
     ["GAP_RUNAWAY_STK_MAX_TRADES", "3"], ["GAP_RUNAWAY_STK_UNIVERSE", "FNO"],
-    ["GAP_RUNAWAY_MODE_ENABLED", "true"], ["GAP_RUNAWAY_STK_MODE_ENABLED", "true"], ["GAP_RUNAWAY_LIVE_ENABLED", "false"]]) {
+    ["GAP_RUNAWAY_MODE_ENABLED", "true"], ["GAP_RUNAWAY_STK_MODE_ENABLED", "true"]]) {
     const f = fields.get(k); assert.ok(f, `${k} missing`); assert.strictEqual(String(f.default), d, k);
   }
   for (const g of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) for (const e of ["STARTED", "ENTRY", "EXIT", "DAYREPORT"]) assert.ok(fields.has(`TG_${g}_${e}`), `TG_${g}_${e}`);

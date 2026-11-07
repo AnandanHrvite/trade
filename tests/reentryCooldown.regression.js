@@ -9,7 +9,7 @@
  * (23 Oct 2026: EMA_RSI_ST breakeven exit 10:48, same PE re-entered 10:50.)
  *
  * Defends the RULE (tradeGuards helper: default 2 candles, 0 = off) and the
- * REACH: every paper engine, native live engine and backtest reads it, so a new
+ * REACH: every paper engine and backtest reads it, so a new
  * strategy fails this suite until it is wired.
  */
 
@@ -119,12 +119,6 @@ check("GAP_RUNAWAY (NIFTY) never applies the wait-after-exit cooldown (no common
 
 check("the commodity paper engine", () => {
   assert.ok(uses("services/commodityPaper.js"), "services/commodityPaper.js does not apply the cooldown");
-});
-
-check("every native live engine (harness ones inherit it from paper)", () => {
-  const missing = ["emaRsiStLive.js", "bbRsiLive.js", "paLive.js", "orbLive.js"]
-    .filter(f => !uses(`routes/${f}`));
-  assert.deepStrictEqual(missing, [], `native live engines without the cooldown: ${missing.join(", ")}`);
 });
 
 check("every strategy backtest", () => {

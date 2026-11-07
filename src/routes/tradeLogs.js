@@ -20,7 +20,6 @@ const router  = express.Router();
 const fs      = require("fs");
 const fsp     = fs.promises;
 const path    = require("path");
-const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
 const tradeLogger   = require("../utils/tradeLogger");
 const skipLogger    = require("../utils/skipLogger");
@@ -765,7 +764,6 @@ function enabledModesFromEnv() {
 
 // ── GET /trade-logs — UI page ───────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const enabled = enabledModesFromEnv();
   // Server Logs + Cache Files tabs are gated by the same toggles that used to gate
   // their (now-removed) Settings top-bar buttons. Login Logs is always available.
@@ -1016,7 +1014,7 @@ router.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('tradeLogs', liveActive)}
+${buildSidebar('tradeLogs', false)}
 <div class="main-content">
 
 <div class="top-bar">

@@ -23,21 +23,20 @@
  *            Refused if spot has already filled the gap (engine.entryStillValid).
  *            A failed FILL (no symbol / premium) retries every 5s inside the window.
  *            ONE trade per day — no re-entry after any exit.
- *   EXIT   : per TICK — spot touches yesterday's close (CE ≤, PE ≥) = stop.
- *            per CLOSED GAP_RUNAWAY_EXIT_TF-min candle — close back through
- *            EMA(GAP_RUNAWAY_TRAIL_EMA_LENGTH) = trail exit (engine.trailExit).
- *            GAP_RUNAWAY_EOD_EXIT_TIME (15:15) — square-off. Nothing overnight.
+ *   EXIT   : the common profit lock (tradeGuards.checkProfitLock) on the option
+ *            premium, per tick — the ONLY automatic exit. Otherwise a manual
+ *            exit, or the session auto-stop at TRADE_STOP_TIME. Nothing overnight.
  *   SIZE   : GAP_RUNAWAY_LOTS × the NIFTY lot (default 1 lot). ATM strike exactly
  *            (strikeOverride — the global strike offsets do not apply).
  *
- * DELIBERATELY NOT HERE (the user's rule: "any common settings don't apply"):
- * no profit lock / breakeven, no wait-after-exit, no bid-ask spread check, no
- * common 10:00–14:00 window, no LOT_MULTIPLIER, no portfolio cap, no
+ * DELIBERATELY NOT HERE (the user's rule: "any common settings don't apply" —
+ * except the profit lock, which applies to every strategy since 2026-11-07):
+ * no wait-after-exit, no bid-ask spread check, no common 10:00–14:00 window, no LOT_MULTIPLIER, no portfolio cap, no
  * expiry-day-only toggle, no NIFTY futures mode, no VIX / OI / volume / trend
  * filter. No backtest page, no replay support. The only shared items used are
- * the common option expiry (to pick the contract), the brokerage/charges model
- * (real-world costs, not a rule) and the ZERODHA capital pool (the user's call:
- * one money pool for every strategy).
+ * the common profit lock, the common option expiry (to pick the contract), the
+ * brokerage/charges model (real-world costs, not a rule) and the ZERODHA capital
+ * pool (the user's call: one money pool for every strategy).
  *
  * Flow:
  *   /gap_runaway-paper/start   → connects to live socket, starts simulating trades
@@ -54,8 +53,9 @@ const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 // The engine is the SINGLE source of truth for the daily setup, the entry
-// decision, the gap stop, the trailing EMA and the windows.
+// decision and the entry window.
 const engine = require("../strategies/gap_runaway");
+const tradeGuards = require("../utils/tradeGuards");
 const ACTIVE = "GAP_RUNAWAY";
 const instrumentConfig = require("../config/instrument");
 const { validateAndGetOptionSymbol } = instrumentConfig;
@@ -80,33 +80,26 @@ const optionChart  = require("../utils/optionChart");
 // show the exact numbers the decision read.
 
 // ── Module-level config ─────────────────────────────────────────────────────
-// The exit candle resolution is fixed for a session at /start (the candle buffer
-// is built at it). Thresholds and windows are read LIVE through engine.getConfig()
-// at every decision — never cached.
+// Thresholds and windows are read LIVE through engine.getConfig() at every
+// decision — never cached.
 const PREFIX = "GAP_RUNAWAY";   // engine env prefix — selects the GAP_RUNAWAY_* keys
-let TRADE_RES;            // exit candle timeframe in minutes (GAP_RUNAWAY_EXIT_TF: 3 | 5 | 15)
+// Chart candle timeframe in minutes. Display only — no rule reads a candle.
+const TRADE_RES = 5;
 let _STOP_MINS;           // TRADE_STOP_TIME — session auto-stop (default 15:30)
 let _START_MINS;          // TRADE_START_TIME — pre-market banner only (default 09:15)
 // isMarketHours() memo — invalidated by _refreshConfig(), so declared before it.
 let _mktHoursCache    = null;
 let _mktHoursCacheMin = -1;   // IST minute the cached verdict was computed for
 function _refreshConfig() {
-  const c = engine.getConfig(PREFIX);
-  TRADE_RES         = c.EXIT_TF;
   _STOP_MINS        = parseMins("TRADE_STOP_TIME", "15:30");
   _START_MINS       = parseMins("TRADE_START_TIME", "09:15");
   _mktHoursCacheMin = -1;               // invalidate the cached market-hours verdict
 }
 _refreshConfig();
 
-/**
- * Live engine config for a decision. Read fresh every call (Settings saves
- * mutate process.env); EXIT_TF is pinned to the session's candle resolution so
- * the trail is always computed on the candles it is handed.
- */
+/** Live engine config for a decision. Read fresh every call (Settings saves mutate process.env). */
 function _cfg() {
-  const c = engine.getConfig(PREFIX);
-  return (typeof TRADE_RES === "number" && c.EXIT_TF !== TRADE_RES) ? Object.assign({}, c, { EXIT_TF: TRADE_RES }) : c;
+  return engine.getConfig(PREFIX);
 }
 
 /** Lots per trade — this strategy's own key, never the common LOT_MULTIPLIER. */
@@ -117,9 +110,8 @@ function _lots() {
 function _lotSize() { return instrumentConfig.underlyingOf("NIFTY").lotSize; }
 function _qty() { return _lots() * _lotSize(); }
 
-// Rolling candle buffer — the app runs on a t3.micro. 400 bars is > 5 sessions
-// of 5-min bars and far above the 21-bar trail warm-up; the trail EMA is
-// computed once per candle close, never per tick.
+// Rolling candle buffer (chart only) — the app runs on a t3.micro. 400 bars is
+// > 5 sessions of 5-min bars.
 const MAX_BARS = 400;
 const SETUP_RETRY_MS = 60 * 1000;   // daily setup missing → re-fetch at most once a minute
 const OPEN_RETRY_MS  = 5000;        // today's open not known → re-ask history every 5s
@@ -127,16 +119,7 @@ const OPEN_TICK_FALLBACK_MS = 20 * 1000; // history silent this long after 09:15
 const OPEN_TICK_MAX_DELAY_S = 5;          // …but only a tick from the first 5 s of 09:15 counts as the open
 const OPEN_FETCH_TIMEOUT_MS = 10 * 1000;  // the 1-min history call is abandoned after this
 const ENTRY_RETRY_MS = 5000;        // a failed FILL (symbol / option LTP) retries at most every 5s
-const WARMUP_DAYS    = 2;           // sessions of exit-TF candles preloaded so EMA21 is defined at 09:15
-
-/** Settings changed GAP_RUNAWAY_EXIT_TF since this session was built → describe it, else null. */
-function _tfNote() {
-  const c = engine.getConfig(PREFIX);
-  if (c.EXIT_TF === TRADE_RES) return null;
-  return ptState.running
-    ? `Settings changed GAP_RUNAWAY_EXIT_TF ${TRADE_RES} → ${c.EXIT_TF} mid-session. This session keeps its ${TRADE_RES}-min candles — Stop + Start to apply.`
-    : `Settings now say GAP_RUNAWAY_EXIT_TF ${c.EXIT_TF} — applies on the next Start (page shows the last session's ${TRADE_RES}-min view).`;
-}
+const WARMUP_DAYS    = 2;           // sessions of chart candles preloaded at /start
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 // Data stored at ~/trading-data/ — OUTSIDE the project directory.
@@ -190,7 +173,7 @@ function savePaperData(data) {
 let ptState = {
   running:       false,
   position:      null,
-  // The exit candle series (TRADE_RES = GAP_RUNAWAY_EXIT_TF): CLOSED candles + the forming bar.
+  // The chart candle series (TRADE_RES-min): CLOSED candles + the forming bar.
   candles:       [],
   currentBar:    null,
   barStartTime:  null,
@@ -355,7 +338,7 @@ function _todayStr() { return new Date().toLocaleDateString("en-CA", { timeZone:
 // TRADE_START_TIME : pre-market banner only (default "09:15")
 // TRADE_STOP_TIME  : session auto-stop (default "15:30")
 // Entries are governed by the ENGINE's own window (GAP_RUNAWAY_ENTRY_START /
-// _ENTRY_END) and the square-off by GAP_RUNAWAY_EOD_EXIT_TIME.
+// _ENTRY_END).
 function parseMins(envKey, defaultVal) {
   const raw = process.env[envKey] || defaultVal;
   const [h, m] = raw.split(":").map(Number);
@@ -405,25 +388,6 @@ function _lateStartStopMins() {
   const hhmm = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
   log(`⏰ [PAPER] Session started after its stop time — will stop at ${hhmm} IST`);
   return LATE_START_GRACE_MIN;
-}
-
-// ── Live-harness lifecycle safety ────────────────────────────────────────────
-// The GAP_RUNAWAY-LIVE harness fires REAL orders on this engine's notify tag.
-// Every session-ending path releases it AFTER the virtual square-off (so the
-// harness still sees the closing notifyExit), and /start drops a stale one
-// unless the harness itself is the caller (?_viaHarness=1).
-const LIVE_HARNESS_MODE = "GAP_RUNAWAY-LIVE";
-function _releaseLiveHarness(reason) {
-  try {
-    const lh = require("../services/liveHarness");
-    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
-    lh.uninstallHarness(LIVE_HARNESS_MODE);
-    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
-    return true;
-  } catch (err) {
-    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
-    return false;
-  }
 }
 
 // Schedule auto-stop at TRADE_STOP_TIME (default 15:30 IST).
@@ -526,7 +490,7 @@ function _publishOptionLtp(symbol, ltp, at) {
   if (!ptState.position.optionEntryLtp) {
     ptState.position.optionEntryLtp = ltp;
     ptState.position.optionEntryLtpTime = istNow();
-    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
+    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry})`);
   }
 }
 
@@ -748,19 +712,12 @@ function _ensureTodayOpen() {
 // ── Simulated order (NO real API call) ──────────────────────────────────────
 
 /**
- * Open a virtual position. `stopLoss` is the gap-fill LEVEL — yesterday's close
- * (engine.getSignal().slSpot). It never moves; the trail is the separate EMA exit.
- * `meta.entryLtp` — the option premium at the fill.
+ * Open a virtual position. `meta.entryLtp` — the option premium at the fill.
+ * The only automatic exit is the common profit lock on that premium.
  */
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, meta = {}) {
+function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, meta = {}) {
   if (ptState.position) {
     log(`⚠️ [PAPER] simulateBuy called while position already open — ignoring duplicate entry (${side} @ ₹${price})`);
-    return;
-  }
-  // Never open a position without a stop.
-  if (!engine._num(stopLoss)) {
-    log(`🚫 [PAPER] Entry aborted — no gap stop for ${side} (got ${stopLoss})`);
-    skipLogger.appendSkipLog("gap_runaway", { gate: "strategy", reason: "no gap stop available", spot: price, side, path: "stop" });
     return;
   }
   // Capital gate — HARD: the Zerodha pool must fund qty × premium or the entry
@@ -789,8 +746,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
     entryTime:         istNow(),
     entryUnixSec:      Math.floor(Date.now() / 1000),
     reason,
-    stopLoss:          stopLoss,       // the gap-fill level — fixed for the trade
-    initialStopLoss:   stopLoss,
     entryBarTime:      meta.entryBarTime != null ? meta.entryBarTime : (ptState.currentBar ? ptState.currentBar.time : null),
     signalBarTime:     null,
     bestPrice:         null,
@@ -835,16 +790,15 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
   log(`📊 [PAPER] Starting option LTP polling: ${symbol}`);
   startOptionPolling(symbol);
 
-  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price} | SL (gap fill = prev close, per tick): ₹${stopLoss} | Opt: ${_entryLtp != null ? "₹" + _entryLtp : "capturing…"} | Reason: ${reason}`);
+  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price} | exit: profit lock on premium | Opt: ${_entryLtp != null ? "₹" + _entryLtp : "capturing…"} | Reason: ${reason}`);
   notifyEntry({
-    mode:           'GAP_RUNAWAY-PAPER',   // unique — the live harness filters on this exact tag
+    mode:           'GAP_RUNAWAY-PAPER',
     side,
     symbol,
     strike:         ptState.position.optionStrike,
     expiry:         ptState.position.optionExpiry,
     spotAtEntry:    price,
     optionEntryLtp: _entryLtp,
-    stopLoss:       stopLoss,
     qty,
     reason,
   });
@@ -854,7 +808,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
  * Close the virtual position. `exitBarTime` — the bar the exit FILLED in (for the
  * chart marker); defaults to the forming bar.
  */
-function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {}) {
+function simulateSell(exitPrice, reason, spotAtExit, exitBarTime) {
   if (!ptState.position) return;
 
   const { side, symbol, qty, entryPrice, entryTime, spotAtEntry,
@@ -898,8 +852,6 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
     pnlMode,
     exitReason:       reason,
     entryReason:      pos.reason,
-    stopLoss:         pos.stopLoss,
-    initialStopLoss:  pos.initialStopLoss != null ? pos.initialStopLoss : null,
     optionExpiry:     pos.optionExpiry || null,
     optionStrike:     pos.optionStrike || null,
     optionType:       pos.optionType   || side,
@@ -918,7 +870,6 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
     todayOpenSrc:     pos.todayOpenSrc,
     gapPts:           pos.gapPts,
     gapPct:           pos.gapPct,
-    trailEmaAtExit:   exitMeta.trailEma != null ? exitMeta.trailEma : null,
     tradeRes:         pos.tradeRes,
     bestPrice:        pos.bestPrice     || null,
     bestOptionLtp:    pos.bestOptionLtp || null,
@@ -953,7 +904,7 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
   log(`💼 [PAPER] Session PnL so far: ₹${ptState.sessionPnl} — one trade per day, no re-entry today.`);
 
   notifyExit({
-    mode:           'GAP_RUNAWAY-PAPER',   // unique — the live harness filters on this exact tag
+    mode:           'GAP_RUNAWAY-PAPER',
     side,
     symbol,
     strike:         trade.optionStrike,
@@ -1024,7 +975,6 @@ function _recordSignal(sig) {
     gapPts:    sig.gapPts,
     gapPct:    sig.gapPct,
     gapDir:    sig.gapDir,
-    slSpot:    sig.slSpot,
   };
 }
 
@@ -1036,7 +986,6 @@ function _entryBlockReason(cfg, nowSec) {
   if (ptState._dayDone) return ptState._dayDoneReason || "today already decided";
   const _taken = ptState.sessionTrades.length + (ptState._priorTradesToday || 0);
   if (_taken >= 1) return "one trade per day — already traded today";
-  if (engine.isEodExit(nowSec, cfg)) return `past the ${_fmtMins(cfg.EOD_EXIT)} square-off`;
   return null;
 }
 
@@ -1082,13 +1031,13 @@ async function _fillEntry(sig, fillSpot, sid, tok) {
   }
   // The gap may have filled while the contract / premium were being fetched.
   const nowSpot = ptState.lastTickPrice || fillSpot;
-  if (!engine.entryStillValid(side, nowSpot, sig.slSpot)) {
-    log(`⏭️ [PAPER] ${side} not entered — spot ₹${nowSpot} filled the gap (prev close ₹${sig.slSpot}) while the fill was in flight.`);
+  if (!engine.entryStillValid(side, nowSpot, sig.prevClose)) {
+    log(`⏭️ [PAPER] ${side} not entered — spot ₹${nowSpot} filled the gap (prev close ₹${sig.prevClose}) while the fill was in flight.`);
     _markDayDone("gap filled before the fill");
-    skipLogger.appendSkipLog("gap_runaway", { gate: "strategy", reason: "gap filled before the fill", spot: nowSpot, side, signal: sig.signal, slSpot: sig.slSpot });
+    skipLogger.appendSkipLog("gap_runaway", { gate: "strategy", reason: "gap filled before the fill", spot: nowSpot, side, signal: sig.signal, prevClose: sig.prevClose });
     return { opened: false, retry: false };
   }
-  simulateBuy(symbol, side, _qty(), nowSpot, sig.reason, sig.slSpot, nowSpot, {
+  simulateBuy(symbol, side, _qty(), nowSpot, sig.reason, nowSpot, {
     entryLtp,
     signal:       sig,
     entryBarTime: ptState.currentBar ? ptState.currentBar.time : null,
@@ -1135,9 +1084,9 @@ function _tryDayEntry(ltp, nowMs) {
     _markDayDone(`no setup today — ${sig.reason}`);
     return;
   }
-  if (!engine.entryStillValid(sig.side, ltp, sig.slSpot)) {
-    log(`⏭️ [PAPER] ${sig.signal} but spot ₹${ltp} has already filled the gap (prev close ₹${sig.slSpot}) — no trade today.`);
-    skipLogger.appendSkipLog("gap_runaway", { gate: "strategy", reason: "gap already filled at the fill", spot: ltp, side: sig.side, signal: sig.signal, slSpot: sig.slSpot });
+  if (!engine.entryStillValid(sig.side, ltp, sig.prevClose)) {
+    log(`⏭️ [PAPER] ${sig.signal} but spot ₹${ltp} has already filled the gap (prev close ₹${sig.prevClose}) — no trade today.`);
+    skipLogger.appendSkipLog("gap_runaway", { gate: "strategy", reason: "gap already filled at the fill", spot: ltp, side: sig.side, signal: sig.signal, prevClose: sig.prevClose });
     _markDayDone("gap already filled before entry");
     return;
   }
@@ -1164,31 +1113,23 @@ function _tryDayEntry(ltp, nowMs) {
     .finally(() => { ptState._entryPending = false; clearTimeout(_safety); });
 }
 
-// ── On each completed exit-timeframe candle ──────────────────────────────────
-// Synchronous: the trailing-EMA exit runs on the tick that closed the candle.
-// `fillSpot` is that tick's price (the first tick after the close).
+// ── On each completed chart candle ───────────────────────────────────────────
+// No exit rule reads a candle — this only feeds the chart and the log.
+// `fillSpot` is the tick that closed the candle (the first tick after the close).
 function onCandleClose(candle, fillSpot) {
   _pushCapped(ptState.candles, candle);
   ptState.prevCandleHigh = candle.high;
   ptState.prevCandleLow  = candle.low;
 
-  const cfg     = _cfg();
   const fill    = Number.isFinite(fillSpot) && fillSpot > 0 ? fillSpot : candle.close;
   const closeAt = _hhmm(candle.time + TRADE_RES * 60);
-  const ema     = engine.computeTrailEma(ptState.candles, cfg);
-  const emaNow  = ema[ptState.candles.length - 1];
 
-  log(`📊 [PAPER] ──── ${TRADE_RES}m candle close ${closeAt} ── O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | EMA${cfg.TRAIL_EMA_LENGTH}=${engine._num(emaNow) ? emaNow.toFixed(2) : "?"}`);
+  log(`📊 [PAPER] ──── ${TRADE_RES}m candle close ${closeAt} ── O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close}`);
 
   if (ptState.position) {
     const pos = ptState.position;
     pos.candlesHeld = (pos.candlesHeld || 0) + 1;
-    const ex = engine.trailExit(pos.side, candle, emaNow, cfg);
-    log(`   Open ${pos.side} @ ₹${pos.spotAtEntry} | gap SL ₹${pos.stopLoss} | option entry=${pos.optionEntryLtp ? "₹" + pos.optionEntryLtp : "—"} now=${ptState.optionLtp ? "₹" + ptState.optionLtp : "—"}`);
-    if (ex.exit) {
-      log(`🛑 [PAPER] EXIT ${pos.side} on the ${closeAt} close — ${ex.reason} | fill spot ₹${fill}`);
-      simulateSell(fill, `EMA trail — ${ex.reason}`, fill, candle.time + TRADE_RES * 60, { trailEma: engine._num(emaNow) ? parseFloat(emaNow.toFixed(2)) : null });
-    }
+    log(`   Open ${pos.side} @ ₹${pos.spotAtEntry} | option entry=${pos.optionEntryLtp ? "₹" + pos.optionEntryLtp : "—"} now=${ptState.optionLtp ? "₹" + ptState.optionLtp : "—"} peak=${pos.bestOptionLtp ? "₹" + pos.bestOptionLtp : "—"}`);
   }
 
   // ── Session end at TRADE_STOP_TIME (the timer also does this) ──
@@ -1204,7 +1145,6 @@ function onCandleClose(candle, fillSpot) {
       log(`════════════════════════════════════════════════════════════════════\n`);
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
-      _releaseLiveHarness("EOD auto-stop");   // after the square-off above
       saveSession();
       socketManager.removeCallback(SOCKET_CALLBACK_ID);
       sharedSocketState.clearGapRunawayMode();
@@ -1219,7 +1159,7 @@ function onCandleClose(candle, fillSpot) {
 }
 
 // ── Tick handler (NIFTY SPOT ONLY) ───────────────────────────────────────────
-// Builds the exit candles, runs the per-tick gap stop and the EOD square-off,
+// Builds the chart candles, runs the per-tick profit lock on the option premium,
 // and — while flat inside the entry window — makes the day's one decision.
 function onTick(tick) {
   if (!tick || !tick.ltp) return;
@@ -1281,19 +1221,15 @@ function onTick(tick) {
     else                   { if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp; }
     if (ptState.optionLtp && ptState.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));
 
-    const cfg = _cfg();
-    // ── Gap stop — spot back at yesterday's close (per tick) ──
-    if (engine.stopHit(pos.side, ltp, pos.stopLoss)) {
-      log(`🛑 [PAPER] GAP STOP — spot ₹${ltp} touched prev close ₹${pos.stopLoss} (${pos.side})`);
-      simulateSell(ltp, `Gap stop — spot ${ltp} back at prev close ${pos.stopLoss}`, ltp);
-      return;
-    }
-    // ── Forced square-off at GAP_RUNAWAY_EOD_EXIT_TIME (tick-driven) ──
-    if (engine.isEodExit(Math.floor(now / 1000), cfg)) {
-      const _lbl = _fmtMins(cfg.EOD_EXIT);
-      log(`⏰ [PAPER] ${_lbl} square-off — closing open ${pos.side} @ spot ₹${ltp}`);
-      simulateSell(ltp, `EOD square-off ${_lbl}`, ltp);
-      return;
+    // ── Global profit lock (shared across every strategy — see tradeGuards) ──
+    // The ONLY automatic exit. Option premium only, never spot.
+    if (pos.optionEntryLtp && ptState.optionLtp) {
+      const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, ptState.optionLtp, pos.bestOptionLtp);
+      if (_plMsg) {
+        log(`🔒 [PAPER] ${_plMsg}`);
+        simulateSell(ltp, _plMsg, ltp);
+        return;
+      }
     }
     return;
   }
@@ -1344,9 +1280,7 @@ function saveSession() {
 /** Bucket an exit reason for the day report. Order matters: specific first. */
 function _exitGroup(reason) {
   const r = String(reason || "");
-  if (/Gap stop/i.test(r))                      return "Gap Stop";
-  if (/EMA trail/i.test(r))                     return "EMA Trail";
-  if (/EOD square-off/i.test(r))                return "EOD Square-off";
+  if (/Profit lock/i.test(r))                   return "Profit Lock";
   if (/Manual/i.test(r))                        return "Manual Exit";
   if (/Session end|Auto-stop|Shutdown|stop/i.test(r)) return "Session Stop";
   return "Other";
@@ -1431,14 +1365,6 @@ router.get("/start", async (req, res) => {
   if (ptState.running) {
     return res.status(400).json({ success: false, error: "Paper trading already running." });
   }
-  // Live-harness safety net — only the *LiveHarness twin (?_viaHarness=1) may
-  // start paper with it attached.
-  if (!req.query || req.query._viaHarness !== "1") {
-    if (_releaseLiveHarness("paper /start — harness was still installed")) {
-      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
-    }
-  }
-
   _refreshConfig();
 
   const auth = await verifyFyersToken();
@@ -1584,8 +1510,8 @@ router.get("/start", async (req, res) => {
   // never drift from the rules that actually run.
   log(`   Setup      : daily RSI(${cfg.RSI_LENGTH}) on EMA(${cfg.EMA_LENGTH}) of YESTERDAY's close — < ${cfg.RSI_LOWER} oversold, > ${cfg.RSI_UPPER} overbought`);
   log(`   Entry      : oversold + gap UP → CE · overbought + gap DOWN → PE · gap = today's open − yesterday's close (min ${cfg.MIN_GAP_PTS} pts) · ${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)} · 1 trade/day`);
-  log(`   Exit       : gap stop = yesterday's close (per tick) · ${TRADE_RES}-min close through EMA${cfg.TRAIL_EMA_LENGTH} · square-off ${_fmtMins(cfg.EOD_EXIT)} · session end ${_fmtMins(_STOP_MINS)}`);
-  log(`   Common     : Zerodha capital pool only — no profit lock / breakeven / cooldown / spread / lot multiplier / trade window`);
+  log(`   Exit       : common profit lock on the option premium (the only automatic exit) · session end ${_fmtMins(_STOP_MINS)}`);
+  log(`   Common     : profit lock + Zerodha capital pool only — no cooldown / spread / lot multiplier / trade window`);
   if (ptState._dayDone) log(`   Today      : ${ptState._dayDoneReason}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
@@ -1602,20 +1528,19 @@ router.get("/start", async (req, res) => {
       ``,
       `Instrument: NIFTY ATM options · ${_lots()} lot`,
       `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
-      `Window    : ${_fmtMins(cfg.ENTRY_START)} → ${_fmtMins(cfg.ENTRY_END)} IST · square-off ${_fmtMins(cfg.EOD_EXIT)}`,
+      `Window    : ${_fmtMins(cfg.ENTRY_START)} → ${_fmtMins(cfg.ENTRY_END)} IST · exit: profit lock only`,
       ``,
       `${ptState.setup ? "✅" : "❌"} Setup : ${ptState.setup ? `prev ${ptState.setup.prevDate} close ${ptState.setup.prevClose} · RSI ${ptState.setup.prevRsi} → ${ptState.setup.zone}` : (ptState._setupError || "daily candles unavailable")}`,
       ptState._dayDone ? `ℹ️ ${ptState._dayDoneReason}` : ``,
     ].join("\n"),
   });
 
-  // ── PRE-LOAD exit-TF history so EMA21 is defined on the first live close ──
-  const _needBars = engine.trailWarmupBars(cfg);
+  // ── PRE-LOAD chart history ──
   try {
-    log(`📥 Pre-loading ${WARMUP_DAYS} day(s) of ${TRADE_RES}-min history for the EMA${cfg.TRAIL_EMA_LENGTH} trail...`);
+    log(`📥 Pre-loading ${WARMUP_DAYS} day(s) of ${TRADE_RES}-min history for the chart...`);
     const main = await _preloadSeries(TRADE_RES, WARMUP_DAYS, todayStr);
     ptState.candles = main.closed;
-    log(`✅ Pre-loaded ${ptState.candles.length} × ${TRADE_RES}-min candles (from ${main.fromStr} to ${todayStr}; trail needs ${_needBars})`);
+    log(`✅ Pre-loaded ${ptState.candles.length} × ${TRADE_RES}-min candles (from ${main.fromStr} to ${todayStr})`);
     if (main.forming && _istMinOfMs(main.forming.time * 1000) >= _MKT_OPEN_MINS && !ptState.currentBar) {
       ptState.currentBar   = { time: main.forming.time, open: main.forming.open, high: main.forming.high, low: main.forming.low, close: main.forming.close, volume: main.forming.volume || 0 };
       ptState.barStartTime = main.forming.time * 1000;
@@ -1626,7 +1551,7 @@ router.get("/start", async (req, res) => {
       ptState.prevCandleLow  = lastCandle.low;
     }
   } catch (err) {
-    log(`⚠️  Could not pre-load candles: ${err.message} — will build from live ticks (the trail needs ${_needBars})`);
+    log(`⚠️  Could not pre-load candles: ${err.message} — will build from live ticks`);
   }
 
   // A mid-session start inside the window: today's open is already known.
@@ -1663,7 +1588,6 @@ router.get("/start", async (req, res) => {
       simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
     }
     ptState.running = false;
-    _releaseLiveHarness("scheduled auto-stop");   // after the square-off above
     stopOptionPolling();
     try {
       tickRecorder.recordSessionStop({ mode: "gap_runaway-paper", sessionId: ptState._sessionId || null, reason: "auto_stop_eod" });
@@ -1704,14 +1628,12 @@ router.get("/start", async (req, res) => {
  */
 router.get("/stop", async (req, res) => {
   if (!ptState.running) {
-    _releaseLiveHarness("paper /stop — engine not running");
     return res.status(400).json({ success: false, error: "Paper trading is not running." });
   }
   if (ptState.position && (ptState.lastTickPrice || ptState.currentBar)) {
     const _px = ptState.lastTickPrice || ptState.currentBar.close;
     simulateSell(_px, "Manual stop", _px);
   }
-  _releaseLiveHarness("paper /stop");
 
   stopOptionPolling();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -1760,9 +1682,8 @@ router.get("/exit", (req, res) => {
 
 /**
  * POST /gap_runaway-paper/manualEntry
- * Manually enter a CE or PE at the current spot. SL = yesterday's close (the
- * engine's daily setup) — refused when that level is on the wrong side of spot
- * (CE needs spot above it, PE below). Counts as the day's one trade.
+ * Manually enter a CE or PE at the current spot. Exits on the common profit lock
+ * like any other trade. Counts as the day's one trade.
  */
 router.post("/manualEntry", async (req, res) => {
   if (!ptState.running) {
@@ -1786,17 +1707,6 @@ router.post("/manualEntry", async (req, res) => {
     return res.status(409).json({ success: false, error: "One trade per day — today's trade has already been taken." });
   }
   const st = ptState.setup;
-  if (!st || !st.ready) {
-    return res.status(409).json({ success: false, error: `Daily setup not loaded — no prev-close stop yet (${ptState._setupError || "loading"}).` });
-  }
-  const stop = st.prevClose;
-  if (!engine.entryStillValid(side, spot, stop)) {
-    const why = side === "CE"
-      ? `Prev close ₹${stop} is not below spot ₹${spot} — no protective CE stop. Manual CE refused.`
-      : `Prev close ₹${stop} is not above spot ₹${spot} — no protective PE stop. Manual PE refused.`;
-    log(`❌ [PAPER] Manual entry refused — ${why}`);
-    return res.status(409).json({ success: false, error: why });
-  }
 
   const _sidManual = _entrySessionGen;
   ptState._entryPending = true;   // synchronous — an automatic entry cannot race this one
@@ -1818,22 +1728,22 @@ router.post("/manualEntry", async (req, res) => {
     if (ptState.position) {
       return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
     }
-    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL (prev close): ₹${stop} | Symbol: ${symbol}`);
-    simulateBuy(symbol, side, _qty(), spot, `Manual ${side} entry by user | SL = prev close ${stop}`, stop, spot, {
+    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | Symbol: ${symbol}`);
+    simulateBuy(symbol, side, _qty(), spot, `Manual ${side} entry by user`, spot, {
       entryLtp,
       manual:       true,
       entryBarTime: ptState.currentBar ? ptState.currentBar.time : null,
-      signal: {
+      signal: st && st.ready ? {
         prevDate: st.prevDate, prevClose: st.prevClose, prevRsi: st.prevRsi, prevEma: st.prevEma, zone: st.zone,
         todayOpen: ptState.todayOpen,
         gapPts: ptState.todayOpen != null ? parseFloat((ptState.todayOpen - st.prevClose).toFixed(2)) : null,
-      },
+      } : { todayOpen: ptState.todayOpen },
     });
     if (!ptState.position) {
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
     _markDayDone("manual entry taken — one trade per day");
-    return res.json({ success: true, spot: spot, side: side, sl: stop, symbol: symbol });
+    return res.json({ success: true, spot: spot, side: side, symbol: symbol });
   } catch (e) {
     log(`❌ [PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
@@ -1866,8 +1776,7 @@ function buildSessionTradeRows(trades, inr) {
       "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(entryNifty) + "</div>" +
       "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
-      "<div style=\"font-weight:700;color:#60a5fa;\">" + (entryOption ? inr(entryOption) : "—") + "</div>" +
-      (t.stopLoss ? "<div style=\"font-size:0.65rem;color:#f59e0b;margin-top:3px;\">SL " + inr(t.stopLoss) + "</div>" : "");
+      "<div style=\"font-weight:700;color:#60a5fa;\">" + (entryOption ? inr(entryOption) : "—") + "</div>";
     const exitNifty  = t.spotAtExit;
     const exitOption = t.optionExitLtp;
     const optPtsDiff = (entryOption && exitOption)
@@ -1908,7 +1817,7 @@ function _getCachedTradesForPoll() {
     side: t.side || "", strike: t.optionStrike || "", expiry: t.optionExpiry || "",
     entry: t.entryTime || "", exit: t.exitTime || "",
     eSpot: t.spotAtEntry || t.entryPrice || 0, eOpt: t.optionEntryLtp || null,
-    eSl: t.stopLoss || null, xSpot: t.spotAtExit || t.exitPrice || 0,
+    xSpot: t.spotAtExit || t.exitPrice || 0,
     xOpt: t.optionExitLtp || null, pnl: typeof t.pnl === "number" ? t.pnl : null,
     reason: t.exitReason || "",
     symbol: t.symbol || null,
@@ -1919,28 +1828,10 @@ function _getCachedTradesForPoll() {
   return _tradesMapCache;
 }
 
-// ── Chart indicator series — engine.computeTrailEma() over the CLOSED candles ──
-// Exactly the input the trail exit reads. Cached per closed candle.
-let _chartSeriesCache = { key: null, value: null };
-function _chartSeries(closed, cfg) {
-  const n = closed.length;
-  if (!n) return null;
-  const key = `${n}|${closed[0].time}|${closed[n - 1].time}|${closed[n - 1].close}|${cfg.TRAIL_EMA_LENGTH}`;
-  if (_chartSeriesCache.key === key) return _chartSeriesCache.value;
-  const e = engine.computeTrailEma(closed, cfg);
-  const trailEma = [];
-  for (let i = 0; i < n; i++) {
-    if (Number.isFinite(e[i])) trailEma.push({ time: closed[i].time, value: parseFloat(e[i].toFixed(2)) });
-  }
-  const value = { trailEma };
-  _chartSeriesCache = { key, value };
-  return value;
-}
-
 /**
  * GET /gap_runaway-paper/status/chart-data
- * Candle history + the EMA trail + the gap-stop level + trade markers for the
- * lightweight-charts widget. Called every 4 s by the chart polling loop.
+ * Candle history + yesterday's close + trade markers for the lightweight-charts
+ * widget. Called every 4 s by the chart polling loop.
  */
 router.get("/status/chart-data", async (req, res) => {
   try {
@@ -1948,10 +1839,7 @@ router.get("/status/chart-data", async (req, res) => {
     if (!ptState.running && srcCandles.length === 0 && (ptState.sessionTrades || []).length > 0) {
       srcCandles = await chartBackfill.candlesForRestoredTrades(NIFTY_INDEX_SYMBOL, TRADE_RES, ptState.sessionTrades);
     }
-    const closed = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
-    const cfg = _cfg();
-    const ind = _chartSeries(closed, cfg) || { trailEma: [] };
-    const candles = closed.slice();
+    const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (ptState.running && ptState.currentBar) {
       candles.push({
         time:  ptState.currentBar.time,
@@ -1974,11 +1862,8 @@ router.get("/status/chart-data", async (req, res) => {
     const st = ptState.setup;
     return res.json({
       candles, markers,
-      stopLoss:   ptState.position && Number.isFinite(ptState.position.stopLoss) ? ptState.position.stopLoss : null,
       entryPrice: ptState.position && ptState.position.entryPrice ? ptState.position.entryPrice : null,
       optionChart: optionChart.buildPayload({ store: ptState.optionChart, position: ptState.position, trades: ptState.sessionTrades }),
-      trailEma:   ind.trailEma,
-      trailEmaLen: cfg.TRAIL_EMA_LENGTH,
       prevClose:  st ? st.prevClose : null,
       todayOpen:  ptState.todayOpen,
       tradeRes:   TRADE_RES,
@@ -2000,7 +1885,6 @@ function _setupPayload() {
     rsiLower:   cfg.RSI_LOWER,
     minGap:     cfg.MIN_GAP_PTS,
     window:     `${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)}`,
-    eod:        _fmtMins(cfg.EOD_EXIT),
     setup:      st ? { prevDate: st.prevDate, prevClose: st.prevClose, prevRsi: st.prevRsi, prevEma: st.prevEma, zone: st.zone, reason: st.reason } : null,
     setupError: st ? null : (ptState._setupError || (ptState.running ? "Daily setup loading…" : null)),
     todayOpen:  ptState.todayOpen,
@@ -2008,7 +1892,6 @@ function _setupPayload() {
     gapPts:     (st && ptState.todayOpen != null) ? parseFloat((ptState.todayOpen - st.prevClose).toFixed(2)) : null,
     decision:   ls ? { signal: ls.signal, reason: ls.reason } : null,
     dayDone:    ptState._dayDone ? (ptState._dayDoneReason || "decided") : null,
-    tfNote:     _tfNote(),
     reference:  engine.referenceUrl(PREFIX),
   };
 }
@@ -2020,7 +1903,6 @@ function _setupPayload() {
 router.get("/status/data", (req, res) => {
   try {
     const data     = loadPaperData();
-    const cfg      = _cfg();
     let unrealisedPnl = 0;
     let pnlSource     = "spot proxy";
     if (ptState.position && ptState.currentBar) {
@@ -2057,7 +1939,6 @@ router.get("/status/data", (req, res) => {
       tickCount:         ptState.tickCount,
       lastTickPrice:     ptState.lastTickPrice,
       candleCount:       ptState.candles.length,
-      warmupNeed:        engine.trailWarmupBars(cfg),
       prevCandleHigh:    ptState.prevCandleHigh,
       prevCandleLow:     ptState.prevCandleLow,
       consecutiveLosses: ptState._consecutiveLosses || 0,   // display only — no breaker
@@ -2077,8 +1958,7 @@ router.get("/status/data", (req, res) => {
         qty:               pos.qty,
         entryPrice:        pos.entryPrice,
         entryTime:         pos.entryTime,
-        stopLoss:          pos.stopLoss,
-        initialStopLoss:   pos.initialStopLoss,
+        bestOptionLtp:     pos.bestOptionLtp || null,
         optionStrike:      pos.optionStrike,
         optionExpiry:      pos.optionExpiry,
         optionType:        pos.optionType,
@@ -2134,10 +2014,8 @@ router.get("/status", (req, res) => {
     }
   }
 
-  // Live config — the caps / warm-up the tiles show are the ones the engine applies.
+  // Live config — the window the tiles show is the one the engine applies.
   const _cfgPg     = _cfg();
-  const _warmNeed  = engine.trailWarmupBars(_cfgPg);
-  const _warmReady = ptState.candles.length >= _warmNeed;
 
   const inr = (n) => typeof n === "number"
     ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2149,14 +2027,6 @@ router.get("/status", (req, res) => {
   const pointsMoved = pos && liveClose
     ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2))
     : 0;
-  const trailActive = pos && pos.bestPrice !== undefined && pos.bestPrice !== null;
-  const trailProfit = pos && pos.bestPrice
-    ? parseFloat(((pos.side === "CE"
-        ? pos.bestPrice - pos.entryPrice
-        : pos.entryPrice - pos.bestPrice)).toFixed(2))
-    : 0;
-  // Trailing-stop label — the EMA trail, tested on the exit-TF candle close only.
-  const _trailLbl = `EMA${_cfgPg.TRAIL_EMA_LENGTH} · ${TRADE_RES}-min close`;
 
   // ATM/ITM badge
   const atmStrike = pos ? Math.round(pos.entryPrice / 50) * 50 : null;
@@ -2278,7 +2148,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
 
-      <!-- Secondary grid: NIFTY spot + gap SL + EMA trail -->
+      <!-- Secondary grid: NIFTY spot + profit lock -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
@@ -2290,16 +2160,10 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (gap fill = prev close)</div>
-          <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
-          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
-        </div>
-        <div id="ajax-trail-card" data-trail="${_trailLbl}" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
-          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#f59e0b"};">${_trailLbl}</div>
-          <div id="ajax-trail-best" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Trail source: ${_trailLbl}</div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Profit Lock (only exit)</div>
+          <div id="ajax-pl-peak" style="font-size:1.05rem;font-weight:700;color:#8b5cf6;">${pos.bestOptionLtp ? inr(pos.bestOptionLtp) : "—"}</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">peak option premium · common rule</div>
         </div>
       </div>
 
@@ -2398,7 +2262,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_RUNAWAY_LIVE', ptState.running, {
+${buildSidebar('gapRunawayPaper', false, ptState.running, {
   showExitBtn:  !!ptState.position,
   showStopBtn:  ptState.running,
   showStartBtn: !ptState.running,
@@ -2464,8 +2328,8 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
     </div>
     <div class="sc" style="border-top:1.5px solid #a07010;">
       <div class="sc-label">Candles Loaded (${TRADE_RES}m)</div>
-      <div class="sc-val" id="ajax-candle-count" style="color:${_warmReady ? '#10b981' : '#f59e0b'}">${ptState.candles.length}</div>
-      <div id="ajax-candle-status" style="font-size:0.7rem;color:${_warmReady ? '#10b981' : '#f59e0b'};margin-top:4px;">${_warmReady ? '✅ Strategy ready' : `⚠️ Warming up (need ${_warmNeed})`}</div>
+      <div class="sc-val" id="ajax-candle-count" style="color:#fff">${ptState.candles.length}</div>
+      <div id="ajax-candle-status" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">chart only</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #2a6080;">
       <div class="sc-label">WebSocket Ticks</div>
@@ -2508,7 +2372,7 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
       var z = ZONES[st.zone] || [st.zone || '\u2014', '#8ba1c2'];
       h += '<div class="chk-piv">'
         + '<span style="color:#c0d8b0;">Prev day ' + chkEsc(st.prevDate) + '</span>'
-        + '<span style="color:#a78bfa;">Close ' + chkEsc(st.prevClose) + ' (gap-fill SL)</span>'
+        + '<span style="color:#a78bfa;">Close ' + chkEsc(st.prevClose) + '</span>'
         + '<span style="color:#38bdf8;">EMA' + chkEsc(c.emaLen) + ' ' + chkEsc(st.prevEma) + '</span>'
         + '<span style="color:' + z[1] + ';font-weight:700;">RSI' + chkEsc(c.rsiLen) + '(EMA) ' + chkEsc(st.prevRsi) + ' \u2014 ' + chkEsc(z[0]) + '</span>'
         + '<span style="color:#7f9b5c;">bands ' + chkEsc(c.rsiLower) + ' / ' + chkEsc(c.rsiUpper) + '</span>'
@@ -2520,12 +2384,11 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
     h += '<div class="chk-piv">'
       + '<span style="color:#c0d8b0;">Today\u2019s open ' + (c.todayOpen != null ? chkEsc(c.todayOpen) : '\u2014 (known after 09:15)') + '</span>'
       + (g != null ? '<span style="color:' + (g > 0 ? '#10b981' : g < 0 ? '#ef4444' : '#8ba1c2') + ';font-weight:700;">Gap ' + (g > 0 ? 'UP +' : g < 0 ? 'DOWN ' : '') + chkEsc(g) + ' pts</span>' : '')
-      + '<span style="color:#7f9b5c;">window ' + chkEsc(c.window) + ' \u00b7 square-off ' + chkEsc(c.eod) + (c.minGap > 0 ? ' \u00b7 min gap ' + chkEsc(c.minGap) : '') + '</span>'
+      + '<span style="color:#7f9b5c;">window ' + chkEsc(c.window) + (c.minGap > 0 ? ' \u00b7 min gap ' + chkEsc(c.minGap) : '') + '</span>'
       + '</div>';
     if (c.todayOpenSrc) h += '<div class="chk-sub">Open source: ' + chkEsc(c.todayOpenSrc) + '</div>';
     if (c.decision && c.decision.reason) h += '<div class="chk-reason">' + chkEsc(c.decision.signal) + ' \u2014 ' + chkEsc(c.decision.reason) + '</div>';
     if (c.dayDone) h += '<div class="chk-note">Today: ' + chkEsc(c.dayDone) + '</div>';
-    if (c.tfNote) h += '<div class="chk-note">\u26a0\ufe0f ' + chkEsc(c.tfNote) + '</div>';
     if (c.reference) h += '<div class="chk-sub">Reference: <a href="' + chkEsc(c.reference) + '" target="_blank" rel="noopener" style="color:#60a5fa;pointer-events:auto;">' + chkEsc(c.reference) + '</a></div>';
     el.innerHTML = h;
   }
@@ -2564,9 +2427,7 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
-        <span style="color:#ef4444;">── EMA${_cfgPg.TRAIL_EMA_LENGTH} (exit)</span> &nbsp;
-        <span style="color:#a78bfa;">── Prev close (gap fill)</span> &nbsp;
-        <span style="color:#f59e0b;">── SL</span>
+        <span style="color:#a78bfa;">── Prev close</span>
       </div>
     </div>
     ${optionChart.optionChartHtml('gr-opt-chart')}
@@ -2598,7 +2459,6 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Time</th>
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit</th>
           <th onclick="ptSort('exit')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Exit Time ▲▼</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">SL</th>
           <th onclick="ptSort('pnl')"    style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">PnL ₹ ▲▼</th>
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Reason</th>
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit Reason</th>
@@ -2633,7 +2493,6 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
     exit:         t.exitTime       || "",
     eSpot:        t.spotAtEntry    || t.entryPrice || 0,
     eOpt:         t.optionEntryLtp || null,
-    eSl:          t.stopLoss       || null,
     xSpot:        t.spotAtExit     || t.exitPrice  || 0,
     xOpt:         t.optionExitLtp  || null,
     peakOpt:      t.bestOptionLtp  || null,
@@ -2679,7 +2538,7 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
     // Store slice globally for eye button access
     window._ptSlice = slice;
     document.getElementById('ptBody').innerHTML = slice.length === 0
-      ? '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>'
+      ? '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>'
       : slice.map((t, i) => {
           const sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
           const pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
@@ -2693,7 +2552,6 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
             <td style="padding:8px 12px;font-size:0.75rem;">\${ptFmtTime(t.entry)}</td>
             <td style="padding:8px 12px;font-weight:700;">\${ptFmt(t.xSpot)}</td>
             <td style="padding:8px 12px;font-size:0.75rem;">\${ptFmtTime(t.exit)}</td>
-            <td style="padding:8px 12px;color:#f59e0b;">\${t.eSl?ptFmt(t.eSl):'—'}</td>
             <td style="padding:8px 12px;">
               <div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ptFmt(t.pnl):'—'}</div>
             </td>
@@ -2761,8 +2619,6 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
       + cell('Entry Time', t.entry || '—', '#c8d8f0')
       + cell('NIFTY Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
       + cell('Option LTP @ Entry', fmt(t.eOpt), '#60a5fa', 'Option premium paid')
-      + cell('Initial Stop Loss', fmt(t.eSl), '#f59e0b', 'NIFTY spot SL level')
-      + cell('SL Distance', (t.eSl && t.eSpot) ? Math.abs(t.eSpot - t.eSl).toFixed(2) + ' pts' : '—', '#f59e0b', 'pts from entry to SL')
       + cell('Entry Signal', t.entryReason || '—', '#a0b8d0')
       + '</div></div>';
 
@@ -2800,9 +2656,9 @@ ${buildSidebar('gapRunawayPaper', sharedSocketState.getGapRunawayMode()==='GAP_R
 
   // ── Copy Trade Log ──────────────────────────────────────────────────
   function copyTradeLog(btn){
-    var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
+    var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tPnL\\tEntry Reason\\tExit Reason'];
     PT_ALL.forEach(function(t){
-      lines.push((t.side||'')+'\\t'+ptFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+ptFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+ptFmtTime(t.exit)+'\\t'+(t.eSl||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
+      lines.push((t.side||'')+'\\t'+ptFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+ptFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+ptFmtTime(t.exit)+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
     });
     doCopy(lines.join('\\n'),btn,'Trade Log');
   }
@@ -2931,16 +2787,9 @@ ${modalJS()}
     wickUpColor:   '#10b981', wickDownColor:   '#ef4444',
   });
 
-  // The EMA trail — every point from engine.computeTrailEma() on the CLOSED
-  // candles, i.e. exactly what the exit reads.
-  const trailEmaSeries = chart.addLineSeries({ color:'#ef4444', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'EMA' });
-  let _emaTitled = false;
-
-  // SL line
-  let slLine = null;
   // Entry price line
   let entryLine = null;
-  // Yesterday's close — the gap-fill level (the stop of any trade today)
+  // Yesterday's close — the gap-fill level
   let prevCloseLine = null;
 
   let _lastCandleCount = 0;
@@ -2969,7 +2818,7 @@ ${modalJS()}
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['trailEma','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })();
 
       _internalUpdate = true;
@@ -2985,13 +2834,6 @@ ${modalJS()}
       }
       _lastCandleCount = d.candles.length;
 
-      // Indicator overlays
-      if (!_emaTitled && d.trailEmaLen) {
-        _emaTitled = true;
-        trailEmaSeries.applyOptions({ title: 'EMA' + d.trailEmaLen });
-      }
-      if (d.trailEma && d.trailEma.length) trailEmaSeries.setData(d.trailEma); else trailEmaSeries.setData([]);
-
       // Markers (entries & exits)
       if (d.markers && d.markers.length > 0) {
         var sorted = d.markers.slice().sort(function(a, b) { return a.time - b.time; });
@@ -3000,16 +2842,6 @@ ${modalJS()}
         }));
       } else {
         candleSeries.setMarkers([]);
-      }
-
-      // SL line
-      if (slLine) { candleSeries.removePriceLine(slLine); slLine = null; }
-      if (d.stopLoss) {
-        slLine = candleSeries.createPriceLine({
-          price: d.stopLoss, color: '#f59e0b', lineWidth: 1,
-          lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: true, title: 'SL',
-        });
       }
 
       // Entry price line
@@ -3022,7 +2854,7 @@ ${modalJS()}
         });
       }
 
-      // Yesterday's close — the gap-fill level every trade today is stopped at.
+      // Yesterday's close — the gap-fill level.
       if (prevCloseLine) { try { candleSeries.removePriceLine(prevCloseLine); } catch(_) {} prevCloseLine = null; }
       if (d.prevClose != null) {
         prevCloseLine = candleSeries.createPriceLine({ price: d.prevClose, color: '#a78bfa', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: 'Prev close' });
@@ -3131,17 +2963,7 @@ ${optionChart.optionChartScript({ dataUrl: '/gap_runaway-paper/status/chart-data
       if (dlStatus) dlStatus.textContent = dDone ? String(dDone).slice(0, 60) : ('one trade per day \u00b7 ' + ((d.checklist && d.checklist.window) || ''));
 
       const candleEl = document.getElementById('ajax-candle-count');
-      if (candleEl) {
-        const need  = d.warmupNeed || 21;
-        const ready = d.candleCount >= need;
-        candleEl.textContent = String(d.candleCount);
-        candleEl.style.color = ready ? '#10b981' : '#f59e0b';
-        const sub = document.getElementById('ajax-candle-status');
-        if (sub) {
-          sub.textContent = ready ? '\u2705 Strategy ready' : '\u26a0\ufe0f Warming up (need ' + need + ')';
-          sub.style.color = ready ? '#10b981' : '#f59e0b';
-        }
-      }
+      if (candleEl) candleEl.textContent = String(d.candleCount);
 
       const tickEl = document.getElementById('ajax-tick-count');
       if (tickEl) tickEl.textContent = (d.tickCount || 0).toLocaleString();
@@ -3208,7 +3030,6 @@ ${optionChart.optionChartScript({ dataUrl: '/gap_runaway-paper/status/chart-data
             pctEl.textContent = '\u2014';
           }
         }
-        // No Option-SL card \u2014 the stop is the SPOT gap-fill level (per tick).
         const optPnlEl = document.getElementById('ajax-opt-pnl');
         if (optPnlEl && p.optPremiumPnl !== null) {
           optPnlEl.textContent = (p.optPremiumPnl >= 0 ? '+' : '') + INR(p.optPremiumPnl);
@@ -3230,27 +3051,9 @@ ${optionChart.optionChartScript({ dataUrl: '/gap_runaway-paper/status/chart-data
             sub.style.color = moved >= 0 ? '#10b981' : '#ef4444';
           }
         }
-        // SL
-        const slEl = document.getElementById('ajax-stop-loss');
-        if (slEl) slEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\u2014';
-        // Trail status card
-        const trailCard  = document.getElementById('ajax-trail-card');
-        const trailStat  = document.getElementById('ajax-trail-status');
-        const trailBest  = document.getElementById('ajax-trail-best');
-        const trailAct   = document.getElementById('ajax-trail-activate');
-        if (trailCard && trailStat && trailBest) {
-          const tActive     = p.bestPrice !== null && p.bestPrice !== undefined;
-          const tProfit     = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
-          const tProfDir    = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
-          const trailLbl    = trailCard.dataset.trail || 'EMA trail';
-          const inProfit    = tProfDir > 0;
-          trailCard.style.borderColor = inProfit ? '#8b5cf6' : '#134e35';
-          trailStat.textContent  = trailLbl;
-          trailStat.style.color  = inProfit ? '#8b5cf6' : '#f59e0b';
-          const pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
-          trailBest.textContent  = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
-          if (trailAct) trailAct.textContent = 'Trail source: ' + trailLbl;
-        }
+        // Profit lock card — the peak option premium the lock trails from
+        const plEl = document.getElementById('ajax-pl-peak');
+        if (plEl) plEl.textContent = p.bestOptionLtp ? INR(p.bestOptionLtp) : '\u2014';
       }
 
       // ── Current bar ───────────────────────────────────────────────────────
@@ -3325,7 +3128,6 @@ ${optionChart.optionChartScript({ dataUrl: '/gap_runaway-paper/status/chart-data
  */
 router.get("/history", (req, res) => {
   const data = loadPaperData();
-  const liveActive = sharedSocketState.getGapRunawayMode() === "GAP_RUNAWAY_LIVE";
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
     routePrefix: "/gap_runaway-paper",
@@ -3333,7 +3135,6 @@ router.get("/history", (req, res) => {
     pageTitle: "📉 GAP_runAway__Kirubakaran Paper Trade History",
     pageDocTitle: "GAP_runAway__Kirubakaran Paper — History",
     modalLabel: "GAP_runAway__Kirubakaran Paper",
-    liveActive,
     sessions: data.sessions || [],
     capital: data.capital,
     totalPnl: data.totalPnl,
@@ -3575,7 +3376,6 @@ router.get("/debug", (req, res) => {
     activeStrategy:       ACTIVE,
     tradeResolution:      TRADE_RES,
     candlesLoaded:        ptState.candles.length,
-    warmupNeed:           engine.trailWarmupBars(_cfg()),
     setup:                ptState.setup,
     setupError:           ptState._setupError,
     todayOpen:            ptState.todayOpen,
@@ -3583,8 +3383,7 @@ router.get("/debug", (req, res) => {
     dayDone:              ptState._dayDone ? ptState._dayDoneReason : null,
     lastSignal:           ls ? { signal: ls.signal, reason: ls.reason } : null,
     entryAttempts:        ptState._entryAttempts || 0,
-    tfNote:               _tfNote(),
-    position:             ptState.position ? { side: ptState.position.side, entryPrice: ptState.position.entryPrice, stopLoss: ptState.position.stopLoss } : null,
+    position:             ptState.position ? { side: ptState.position.side, entryPrice: ptState.position.entryPrice, optionEntryLtp: ptState.position.optionEntryLtp, bestOptionLtp: ptState.position.bestOptionLtp } : null,
     capital:              loadPaperData().capital,
     sessionPnl:           ptState.sessionPnl,
     isMarketHours:        isMarketHours(),
@@ -3738,19 +3537,17 @@ async function manualEntry(side) {
 
 /**
  * stopSession() — square off + stop the session, callable by app.js
- * gracefulShutdown on SIGTERM / auto-deploy, so a harness-live Zerodha position
+ * gracefulShutdown on SIGTERM / auto-deploy, so an open paper position
  * is squared off on a deploy/restart. Idempotent: no-op if not running.
  */
 function stopSession(reason = "Shutdown square-off") {
-  if (!ptState.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
+  if (!ptState.running) return;
   try {
     if (ptState.position && (ptState.lastTickPrice || ptState.currentBar)) {
       const _px = ptState.lastTickPrice || ptState.currentBar.close;
       simulateSell(_px, reason, _px);
     }
   } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
-  // Released AFTER the virtual square-off above (shutdown / SIGTERM path).
-  _releaseLiveHarness("stopSession/shutdown");
   try { stopOptionPolling(); } catch (_) {}
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   sharedSocketState.clearGapRunawayMode();

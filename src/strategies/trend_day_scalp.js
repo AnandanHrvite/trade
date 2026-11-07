@@ -11,20 +11,12 @@
  * momentum close, and each one is right-tail dependent — ORB's own header records
  * 9 trades where the single best is 211% of net (remove it and the strategy is
  * -3,786 INR); EMA9_VWAP's +16k was one trade. This engine deliberately inverts
- * that: a FIXED target (no "let it run"), a stop taken from structure rather
- * than from hope, and a day filter whose main job is to produce a ZERO rather
- * than a loss.
- *
- * NOTE: the first version of this file claimed "a stop that is always the same
- * size" and capped it at 18 points to enforce that. Measured against real
- * candles the claim was false and the cap was fatal — see TDS_MAX_SL_PTS in
- * getConfig(). Stops now run roughly 12-40 points.
+ * that with a day filter whose main job is to produce a ZERO rather than a loss.
  *
  * The binding constraint is friction, not signal. Measured with this repo's own
  * charges.js on 1 lot: ~90 INR of statutory charges plus ~1.5 premium points of
  * slippage per side (~225 INR) = ~315 INR gone before the trade is right about
- * anything. At delta ~0.6 that is ~17 spot points of edge needed just to break
- * even, which is why the target floor here is 2.5R and not a scalper's 10 points.
+ * anything.
  *
  * ── THE PIPELINE ────────────────────────────────────────────────────────────
  *  1. DAY GATE, evaluated ONCE on the 5-min bar that closes at TDS_GATE_TIME
@@ -50,18 +42,12 @@
  *                    zone (a multi-bar dip) or THIS bar's low dipped in (a pin
  *                    bar). Blocks firing on every bar of a rally already underway.
  *       • conviction — right colour, and body >= TDS_BODY_ATR_MULT x ATR(5m)
- *  4. STOP = the pullback extreme. Floor-clamped to TDS_MIN_SL_PTS; if the
- *     structure needs MORE than TDS_MAX_SL_PTS the trade is SKIPPED, never
- *     widened and never tightened inside the structure.
- *     The cap is 40, MEASURED (see getConfig). It was 18, which skipped 48 of
- *     53 real setups and left only the shallowest — that single number is why
- *     the first backtest produced 5 trades in a year. Losses are NOT all the
- *     same size any more: they range roughly 12-40pt, about 500-1,600 rupees
- *     of premium on 1 lot.
- *  5. TARGET = a FIXED entry ± TDS_TARGET_R x the stop distance. Taken when reached.
- *  6. Route-owned exits, in this priority: stop → target → breakeven jump at
- *     +TDS_BREAKEVEN_R (stop moves ONCE to entry ± TDS_BREAKEVEN_BUFFER_PTS and
- *     then never moves again) → time stop → premium stop → forced EOD.
+ *  4. DEPTH CAP: if the reclaim close sits MORE than TDS_MAX_SL_PTS from the
+ *     pullback extreme the setup is SKIPPED (a pullback that deep is not a
+ *     pullback). The cap is 40, MEASURED (see getConfig).
+ *  5. EXIT is owned by the route: the global profit lock
+ *     (tradeGuards.checkProfitLock) is the only automatic exit, plus the session
+ *     teardown at TRADE_STOP_TIME and the manual exit.
  *
  * ── WHY A WICK TOUCH COUNTS AS A PULLBACK (decided here, on purpose) ────────
  * Requiring a CLOSE beyond VWAP/EMA20 would mean waiting for the trend to
@@ -73,11 +59,8 @@
  *
  * ── DELIBERATELY NOT HERE (do not "helpfully" add these) ────────────────────
  * No VIX gate, no OI filter, no ADX, no volume, no RSI, no SuperTrend, no
- * multi-timeframe bias, no confirmation candle, no rolling/ATR trail, no partial
- * booking, no re-entry after target, no expiry-day rule. The stop moves exactly
- * ONCE (to breakeven) and never again — a rolling trail is what turns this
- * repo's other engines' winners into scratches. Position sizing is 1 lot; there
- * is no averaging and no pyramiding.
+ * multi-timeframe bias, no confirmation candle, no expiry-day rule. Position
+ * sizing is 1 lot; there is no averaging and no pyramiding.
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
  * Every value the decision reads comes from CLOSED 5-min candle OHLC — never the
@@ -107,8 +90,7 @@
  *   computeEmaSeries(candles, period)        -> time-aligned EMA
  *   computeAtrSeries(candles, period)        -> time-aligned ATR
  *   evaluateDayGate(candles, opts)           -> the once-a-day tradeable/side verdict
- *   getSignal(candles, opts)                 -> { signal, side, entrySpot, slSpot,
- *                                                 slPts, targetSpot, beArmSpot, ... }
+ *   getSignal(candles, opts)                 -> { signal, side, entrySpot, zone, ... }
  */
 
 const { EMA, ATR } = require("technicalindicators");
@@ -116,7 +98,7 @@ const { EMA, ATR } = require("technicalindicators");
 const NAME = "TREND_DAY_SCALP";
 const DESCRIPTION =
   "Trend Day Scalp — 10:15 day gate (range + VWAP streak + extension) locks the side, " +
-  "then a pullback-and-reclaim of the VWAP/EMA20 zone; structural stop floored at 12pt and capped at 40pt, fixed 2.5R target, one breakeven jump";
+  "then a pullback-and-reclaim of the VWAP/EMA20 zone (depth capped at 40pt); exit = the global profit lock";
 
 // ── primitives ───────────────────────────────────────────────────────────────
 function _r2(x) { return Math.round(x * 100) / 100; }
@@ -196,9 +178,7 @@ function getConfig() {
     bodyAtrMult:     _numEnv("TDS_BODY_ATR_MULT",    0.4, 0),
     pullbackWindow:  _intEnv("TDS_PULLBACK_WINDOW",    3, 1, 50),
     entryEndMin:     _parseHHMM(process.env.TDS_ENTRY_END, 14 * 60),
-    // Risk
-    minSlPts:        _numEnv("TDS_MIN_SL_PTS",        12, 0),
-    // 40, MEASURED — and this was the defect that made the strategy produce 5
+    // Pullback-depth cap (entry filter). 40, MEASURED — and this was the defect that made the strategy produce 5
     // trades in a year. With the cap removed, 39 sessions yield 53 valid
     // pullback-and-reclaim setups whose structural stop (reclaim close back to
     // the pullback extreme) is median 35pt, p25 26pt, p75 47pt. An 18pt cap
@@ -210,17 +190,7 @@ function getConfig() {
     // points, and no cap near 18 can pay for it. 40 covers ~p60 of the real
     // distribution while still refusing the 47pt+ tail.
     //
-    // The cost is honest and must not be glossed: ~35pt of index risk is roughly
-    // 1,400 rupees of premium on 1 lot at delta 0.6, NOT the small fixed risk
-    // this strategy was first pitched with. TDS_MAX_DAILY_LOSS moved 1500 -> 3000
-    // for the same reason — at 1500 a single stop-out ends the day, which makes
-    // the 2-trade budget and the stop-out breaker dead letters.
     maxSlPts:        _numEnv("TDS_MAX_SL_PTS",        40, 0),
-    targetR:         _numEnv("TDS_TARGET_R",         2.5, 0),
-    breakevenR:      _numEnv("TDS_BREAKEVEN_R",      1.0, 0),
-    breakevenBuffer: _numEnv("TDS_BREAKEVEN_BUFFER_PTS", 3, 0),
-    timeStopMins:    _intEnv("TDS_TIME_STOP_MINS",    25, 0, 400),
-    premiumStopPct:  _numEnv("TDS_PREMIUM_STOP_PCT",  25, 0, 100),
     resolutionMins:  _intEnv("TDS_RESOLUTION", 5, 1, 60),
   };
 }
@@ -479,11 +449,10 @@ function _fmtMins(mins) {
 function _baseSignal(cfg) {
   return {
     signal: "NONE", side: null, reason: "", skipReason: "", warmup: false,
-    entrySpot: null, slSpot: null, slPts: null, targetSpot: null,
-    beArmSpot: null, beStopSpot: null, signalStrength: null,
+    entrySpot: null, signalStrength: null,
     vwap: null, ema: null, zone: null, atr: null,
     bodyPts: null, bodyNeeded: null, pullbackLow: null, pullbackHigh: null,
-    slRaw: null, slClamped: false,
+    slRaw: null,
     cfg,
   };
 }
@@ -498,7 +467,7 @@ function _baseSignal(cfg) {
  *                     without it there is no side and no trade. Passing it in
  *                     (rather than recomputing) is what makes "decided once at
  *                     10:15" true on the live path.
- *          cfg, silent, alreadyTraded
+ *          cfg, silent
  *        }
  */
 function getSignal(candles, opts) {
@@ -547,10 +516,6 @@ function getSignal(candles, opts) {
   }
   if (closeMins > cfg.entryEndMin) {
     base.skipReason = base.reason = `Past ${_fmtMins(cfg.entryEndMin)} — no new entries`;
-    return base;
-  }
-  if (o.alreadyTraded) {
-    base.skipReason = base.reason = "Daily trade budget spent — no new entries";
     return base;
   }
 
@@ -653,47 +618,28 @@ function getSignal(candles, opts) {
     return base;
   }
 
-  // ── Risk: floor-clamp the stop, SKIP when the structure is too wide. ─────
+  // ── Depth cap: SKIP when the pullback is too deep to be a pullback. ──────
   const entry = _r2(last.close);
   const structPts = _r2(isCE ? entry - pullbackLow : pullbackHigh - entry);
   base.slRaw = structPts;
 
   if (structPts > cfg.maxSlPts) {
     base.skipReason = base.reason =
-      `${side} setup valid but the structural stop is ${structPts}pt > ${cfg.maxSlPts}pt cap — SKIPPED ` +
-      `(never widened, never tightened inside the structure)`;
+      `${side} setup valid but the pullback depth is ${structPts}pt > ${cfg.maxSlPts}pt cap — SKIPPED`;
     return base;
   }
-  const slPts = _r2(Math.max(structPts, cfg.minSlPts));
-  base.slClamped = slPts !== structPts;
-
-  if (!(slPts > 0)) {
-    base.skipReason = base.reason = `${side} stop distance resolved to ${slPts}pt — refusing a zero-risk trade`;
-    return base;
-  }
-
-  const slSpot     = _r2(isCE ? entry - slPts : entry + slPts);
-  const targetSpot = _r2(isCE ? entry + cfg.targetR * slPts : entry - cfg.targetR * slPts);
-  const beArmSpot  = _r2(isCE ? entry + cfg.breakevenR * slPts : entry - cfg.breakevenR * slPts);
-  const beStopSpot = _r2(isCE ? entry + cfg.breakevenBuffer : entry - cfg.breakevenBuffer);
 
   base.signal = isCE ? "BUY_CE" : "BUY_PE";
   base.signalStrength = "STRONG";
   base.entrySpot  = entry;
-  base.slSpot     = slSpot;
-  base.slPts      = slPts;
-  base.targetSpot = targetSpot;
-  base.beArmSpot  = beArmSpot;
-  base.beStopSpot = beStopSpot;
   base.reason =
     `TREND DAY SCALP ${side}: ${gate.side} day (range ${gate.rangePts}pt, ext ${gate.extensionPts}pt) → ` +
     `pullback to zone ${zone} (${_zoneLabel(cfg, vwapNow, emaNow, zone)}) → reclaim close ${entry}, ` +
-    `body ${body}pt >= ${bodyNeeded}pt | SL ${slSpot} (${slPts}pt${base.slClamped ? `, floored from ${structPts}pt` : ""}) ` +
-    `| target ${targetSpot} (${cfg.targetR}R) | breakeven arms at ${beArmSpot} → stop ${beStopSpot}`;
+    `body ${body}pt >= ${bodyNeeded}pt (depth ${structPts}pt)`;
 
   if (!o.silent) {
     const ist = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-    console.log(`[TREND_DAY_SCALP ${ist}] ENTER ${side} @ ${entry} | SL ${slSpot} (${slPts}pt) | TGT ${targetSpot} (${cfg.targetR}R) | BE arm ${beArmSpot}`);
+    console.log(`[TREND_DAY_SCALP ${ist}] ENTER ${side} @ ${entry} | depth ${structPts}pt`);
   }
   return base;
 }
@@ -702,59 +648,6 @@ function _zoneLabel(cfg, vwap, ema, zone) {
   if (_num(vwap) && zone === _r2(vwap)) return `VWAP ${vwap}`;
   if (_num(ema)  && zone === _r2(ema))  return `EMA${cfg.emaPeriod} ${ema}`;
   return `VWAP ${vwap} / EMA${cfg.emaPeriod} ${ema}`;
-}
-
-// ── Exit rules (ONE place, so paper / backtest / live / replay cannot drift) ──
-/**
- * The breakeven jump. The stop moves EXACTLY ONCE — when the favourable spot
- * move first reaches breakevenR x the original stop distance — to
- * entry ± breakevenBuffer, and then never moves again. Deliberately not a trail.
- *
- * @returns {{ armed: boolean, stop: number|null }}
- */
-function breakevenJump(side, entrySpot, spot, slPts, cfg) {
-  cfg = cfg || getConfig();
-  if (!_num(entrySpot) || !_num(spot) || !_num(slPts) || !(slPts > 0)) return { armed: false, stop: null };
-  const fav = side === "CE" ? spot - entrySpot : entrySpot - spot;
-  if (fav < cfg.breakevenR * slPts) return { armed: false, stop: null };
-  return {
-    armed: true,
-    stop: _r2(side === "CE" ? entrySpot + cfg.breakevenBuffer : entrySpot - cfg.breakevenBuffer),
-  };
-}
-
-/** Hard stop hit? `stop` must be a finite level — `spot <= null` is `spot <= 0`. */
-function stopHit(side, spot, stop) {
-  if (!_num(spot) || !_num(stop)) return false;
-  return side === "CE" ? spot <= stop : spot >= stop;
-}
-
-/** Fixed target reached? */
-function targetHit(side, spot, target) {
-  if (!_num(spot) || !_num(target)) return false;
-  return side === "CE" ? spot >= target : spot <= target;
-}
-
-/**
- * Time stop — flat if the trade has not reached +breakevenR within
- * timeStopMins of entry. A stalled option only loses to theta.
- */
-function timeStopHit(entryUnixSec, nowUnixSec, beArmed, cfg) {
-  cfg = cfg || getConfig();
-  if (cfg.timeStopMins <= 0 || beArmed) return false;
-  if (!_num(entryUnixSec) || !_num(nowUnixSec)) return false;
-  return (nowUnixSec - entryUnixSec) >= cfg.timeStopMins * 60;
-}
-
-/**
- * Premium stop — the option itself has lost premiumStopPct% of its entry price.
- * Catches an IV crush the spot stop cannot see (spot flat, premium bleeding).
- */
-function premiumStopHit(entryPremium, nowPremium, cfg) {
-  cfg = cfg || getConfig();
-  if (cfg.premiumStopPct <= 0) return false;
-  if (!_num(entryPremium) || !_num(nowPremium) || !(entryPremium > 0)) return false;
-  return nowPremium <= entryPremium * (1 - cfg.premiumStopPct / 100);
 }
 
 module.exports = {
@@ -768,11 +661,6 @@ module.exports = {
   pullbackZone,
   evaluateDayGate,
   getSignal,
-  breakevenJump,
-  stopHit,
-  targetHit,
-  timeStopHit,
-  premiumStopHit,
   // shared time helpers (routes must not re-derive IST arithmetic)
   _istDayOf,
   _istDateStr,
