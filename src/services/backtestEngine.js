@@ -33,7 +33,16 @@ async function fetchChunk(symbol, resolution, from, to) {
   console.log(`   📦 Fetching chunk: ${from} → ${to}`);
   let response;
   try {
-    response = await fyers.getHistory(params);
+    // The shared Fyers pacer (config/fyers.js) fails a request that cannot get a
+    // slot within ~15s — right for live quotes, wrong for a backtest, whose candles
+    // do not go stale. Wait outside the queue (so live calls still go first) and retry.
+    for (let attempt = 1; ; attempt++) {
+      try { response = await fyers.getHistory(params); break; } catch (e) {
+        if (attempt >= 8 || !/request limit reached, no free slot/.test((e && e.message) || "")) throw e;
+        console.warn(`   ⏳ Fyers request limit busy — retrying chunk ${from} → ${to} in 15s (${attempt}/7)`);
+        await sleep(15000);
+      }
+    }
   } catch (err) {
     // The SDK rejects with Fyers' raw body, a plain object whose `.message` is the
     // useless bare word "Invalid input" — the parameter it actually objected to is
