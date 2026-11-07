@@ -114,7 +114,6 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   };
   // checkProfitLock options — an undefined key falls back to the live default.
   const lockOpts = { enabled: !!lock.enabled, armPct: lock.armPct, floorPct: lock.floorPct, trailPct: lock.trailPct };
-  const lockTrailPct = Number.isFinite(lock.trailPct) ? lock.trailPct : tradeGuards.PROFIT_LOCK_TRAIL_PCT;
 
   const sorted = intraday.filter(c => c && typeof c.time === "number").sort((a, b) => a.time - b.time);
 
@@ -199,7 +198,7 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
       if (msg) { close(c.open, c.time, `${msg} (bar opened through it — filled at the open)`, "PROFIT_LOCK"); return; }
       msg = tradeGuards.checkProfitLock(entry, premAt(isCE ? c.low : c.high, c.time), pos.peakPrem, lockOpts);
       if (msg) {
-        const floor = tradeGuards.profitLockFloorLtp(entry, pos.peakPrem, lock.floorPct, lockTrailPct);
+        const floor = tradeGuards.exitLevelLtp(entry, pos.peakPrem, lockOpts);
         const raw = pos.entrySpot + (isCE ? 1 : -1) * (floor - entry) / DELTA;
         close(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), c.time, msg, "PROFIT_LOCK");
         return;

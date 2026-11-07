@@ -380,7 +380,7 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs) {
           const adverse = isCE ? c.low : c.high;
           lock = tradeGuards.checkProfitLock(entryPrem, prem(adverse), pos.peak, lockOpts);
           if (lock) {
-            const floor = tradeGuards.profitLockFloorLtp(entryPrem, pos.peak, lockOpts.floorPct, lockOpts.trailPct, lockOpts.tiers);
+            const floor = tradeGuards.exitLevelLtp(entryPrem, pos.peak, lockOpts);
             const raw = spotForPremium(floor, c.time);
             // Never better than the open — the open did not trigger, so the floor lies past it.
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);

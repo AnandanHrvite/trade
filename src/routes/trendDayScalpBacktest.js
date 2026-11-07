@@ -81,11 +81,6 @@ async function runTrendDayScalpBacktest(intraday) {
   // position), so each one is measured from the exit bar's open (≈ c.time here).
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
 
-  // Global per-trade profit lock — the same live settings paper reads.
-  const LOCK_FLOOR_PCT = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
-  const LOCK_TRAIL_PCT = tradeGuards.PROFIT_LOCK_TRAIL_PCT;
-  const LOCK_TIERS     = tradeGuards.PROFIT_LOCK_TRAIL_TIERS;
-
   const sorted = intraday.slice().sort((a, b) => a.time - b.time);
 
   // Group by IST day, but ALWAYS evaluate the engine against the full
@@ -211,7 +206,7 @@ async function runTrendDayScalpBacktest(intraday) {
           const adv = isCE ? c.low : c.high;
           hit = lockHit(premiumAt(adv, barEnd));
           if (hit) {
-            const lvl = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peak, LOCK_FLOOR_PCT, LOCK_TRAIL_PCT, LOCK_TIERS);
+            const lvl = tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak);
             const raw = spotForPrem(lvl, barEnd);
             // Never better than the open (the open did not trigger, so the level lies past it).
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);

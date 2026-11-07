@@ -175,7 +175,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
           const pAdv = premAt(pos, isCE ? c.low : c.high, barEnd);
           lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, pAdv, pos.peak);
           if (lock) {
-            const lvl = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peak, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT, tradeGuards.PROFIT_LOCK_TRAIL_TIERS);
+            const lvl = tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak);
             const raw = spotForPrem(pos, lvl, barEnd);
             // Never better than the open (the open did not trigger, so the level lies past it).
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);

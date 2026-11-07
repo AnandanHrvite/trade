@@ -160,33 +160,130 @@ function profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct, tiersSpec = l
   return parseFloat(floor.toFixed(2));
 }
 
-function checkProfitLock(entryLtp, currentLtp, bestLtp, {
-  armPct   = liveProfitLockArmPct(),
-  floorPct = liveProfitLockFloorPct(),
-  enabled  = liveProfitLockEnabled(),
-  trailPct = liveProfitLockTrailPct(),
-  tiers    = liveProfitLockTrailTiers(),
-} = {}) {
+// The armed profit-lock floor, or null when the lock is off, misconfigured or
+// not yet armed. Misconfiguration must never invert the ratchet into a wider stop.
+function _lockFloorLtp(entryLtp, bestLtp, { armPct, floorPct, enabled, trailPct, tiers }) {
   if (!enabled) return null;
-  if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
-  if (!Number.isFinite(currentLtp) || currentLtp <= 0) return null;
-  if (!Number.isFinite(bestLtp) || bestLtp <= 0)       return null;
-  // Misconfiguration must never invert the ratchet into a wider stop.
+  if (!Number.isFinite(bestLtp) || bestLtp <= 0) return null;
   if (!Number.isFinite(armPct) || !Number.isFinite(floorPct)) return null;
   if (armPct <= 0 || floorPct < 0 || floorPct >= armPct)      return null;
+  if (bestLtp < entryLtp * (1 + armPct / 100)) return null;   // never armed — no lock yet
+  return profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct, tiers);
+}
 
-  const armLtp = entryLtp * (1 + armPct / 100);
-  if (bestLtp < armLtp) return null;               // never armed — no lock yet
+// ── Premium stop-loss (all strategies) ──────────────────────────────────────
+// One stop for every strategy, on the option premium, checked in the same
+// per-tick call as the profit lock (checkProfitLock), so every engine that
+// runs the lock runs this too. Three steps:
+//   1. Start: sell if premium falls PREMIUM_SL_PCT % below entry.
+//   2. Once premium has touched +PREMIUM_SL_BE_PCT %, the stop moves up to entry.
+//   3. From then on it also trails PREMIUM_SL_TRAIL_PTS rupees below the peak
+//      (0 = stay at entry). It only ever moves up.
+// Example (20 / 20 / 15): buy 100 → stop 80. Peak 120 → stop 105. Peak 150 → stop 135.
+// Default OFF: unset = no strategy uses it. Turn it on from Settings → Common Rules.
+function livePremiumSlEnabled()  { return String(process.env.PREMIUM_SL_ENABLED ?? "false").toLowerCase() === "true"; }
+function livePremiumSlPct()      { return parseFloat(process.env.PREMIUM_SL_PCT ?? "20"); }
+function livePremiumSlBePct()    { return parseFloat(process.env.PREMIUM_SL_BE_PCT ?? "20"); }
+function livePremiumSlTrailPts() { return parseFloat(process.env.PREMIUM_SL_TRAIL_PTS ?? "15"); }
 
-  const floorLtp = profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct, tiers);
-  if (currentLtp > floorLtp) return null;          // still above the locked floor
-
-  const fixedFloor = parseFloat((entryLtp * (1 + floorPct / 100)).toFixed(2));
-  if (floorLtp > fixedFloor) {
-    const keptOfGain = Math.round((floorLtp - entryLtp) / (bestLtp - entryLtp) * 100);
-    return `Profit lock trail ${keptOfGain}% — premium Rs${currentLtp} fell to the trailed floor Rs${floorLtp} (keeps ${keptOfGain}% of the gain to peak Rs${parseFloat(bestLtp.toFixed(2))}, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
+// The stop premium for a position, or null when off or misconfigured.
+function premiumStopLtp(entryLtp, bestLtp, {
+  enabled  = livePremiumSlEnabled(),
+  slPct    = livePremiumSlPct(),
+  bePct    = livePremiumSlBePct(),
+  trailPts = livePremiumSlTrailPts(),
+} = {}) {
+  if (!enabled) return null;
+  if (!Number.isFinite(entryLtp) || entryLtp <= 0) return null;
+  if (!Number.isFinite(slPct) || slPct <= 0 || slPct >= 100) return null;
+  if (!Number.isFinite(bePct) || bePct <= 0) return null;
+  if (!Number.isFinite(trailPts) || trailPts < 0) return null;
+  let stop = entryLtp * (1 - slPct / 100);
+  if (Number.isFinite(bestLtp) && bestLtp >= entryLtp * (1 + bePct / 100)) {
+    stop = Math.max(entryLtp, trailPts > 0 ? bestLtp - trailPts : entryLtp);
   }
-  return `Profit lock +${floorPct}% — premium Rs${currentLtp} fell to the locked floor Rs${floorLtp} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
+  return parseFloat(stop.toFixed(2));
+}
+
+// The premium stop in SPOT points for the backtests that have no live premium
+// (they model premium as seed + spot × delta). bestFavPts = best favourable spot
+// move so far. Returns the stop's favourable distance from entry in spot points
+// (negative = below entry), or null when the stop is off.
+// Example: seed 200, delta 0.5, SL 20% → −80 pts until the peak reaches +80 pts.
+function premiumStopSpotPts(bestFavPts, delta, seed = 200) {
+  if (!Number.isFinite(delta) || delta <= 0) return null;
+  const fav = Number.isFinite(bestFavPts) && bestFavPts > 0 ? bestFavPts : 0;
+  const stop = premiumStopLtp(seed, seed + fav * delta);
+  return stop == null ? null : (stop - seed) / delta;
+}
+
+// Exit reason for a spot-point premium stop (see premiumStopSpotPts).
+function premiumStopSpotReason(stopPts, bestFavPts) {
+  if (stopPts < 0) return `Stop-loss -${livePremiumSlPct()}% (≈${(-stopPts).toFixed(0)}pt spot below entry)`;
+  if (stopPts === 0) return `Stop-loss breakeven (peak ≈${(bestFavPts || 0).toFixed(0)}pt spot)`;
+  return `Stop-loss trail (≈${stopPts.toFixed(0)}pt spot kept of ${(bestFavPts || 0).toFixed(0)}pt best)`;
+}
+
+function _premiumStopOpts(o) {
+  return { enabled: o.slEnabled, slPct: o.slPct, bePct: o.slBePct, trailPts: o.slTrailPts };
+}
+
+function _lockOpts(o) {
+  return {
+    armPct:   o.armPct   ?? liveProfitLockArmPct(),
+    floorPct: o.floorPct ?? liveProfitLockFloorPct(),
+    enabled:  o.enabled  ?? liveProfitLockEnabled(),
+    trailPct: o.trailPct ?? liveProfitLockTrailPct(),
+    tiers:    o.tiers    ?? liveProfitLockTrailTiers(),
+  };
+}
+
+// The premium an exit from checkProfitLock fills at when price crosses it: the
+// higher of the armed profit-lock floor and the premium stop, or null if neither
+// is active. Backtests use it to fill an adverse-leg exit at the level, not the extreme.
+// Takes the same options object as checkProfitLock.
+function exitLevelLtp(entryLtp, bestLtp, opts = {}) {
+  if (!Number.isFinite(entryLtp) || entryLtp <= 0) return null;
+  const lock = _lockFloorLtp(entryLtp, bestLtp, _lockOpts(opts));
+  const stop = premiumStopLtp(entryLtp, bestLtp, _premiumStopOpts(opts));
+  if (lock == null) return stop;
+  if (stop == null) return lock;
+  return Math.max(lock, stop);
+}
+
+// Options: armPct / floorPct / enabled / trailPct / tiers for the profit lock,
+// slEnabled / slPct / slBePct / slTrailPts for the premium stop. Any key left
+// out falls back to its live env value.
+function checkProfitLock(entryLtp, currentLtp, bestLtp, opts = {}) {
+  if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
+  if (!Number.isFinite(currentLtp) || currentLtp <= 0) return null;
+  const lo = _lockOpts(opts);
+  const floorLtp = _lockFloorLtp(entryLtp, bestLtp, lo);
+  const stopLtp  = premiumStopLtp(entryLtp, bestLtp, _premiumStopOpts(opts));
+  if (floorLtp == null && stopLtp == null) return null;
+
+  const entryR = parseFloat(entryLtp.toFixed(2));
+  const peakR  = Number.isFinite(bestLtp) ? parseFloat(bestLtp.toFixed(2)) : entryR;
+  // The higher level is the one price reaches first on the way down.
+  if (floorLtp != null && (stopLtp == null || floorLtp >= stopLtp)) {
+    if (currentLtp > floorLtp) return null;          // still above the locked floor
+    const fixedFloor = parseFloat((entryLtp * (1 + lo.floorPct / 100)).toFixed(2));
+    if (floorLtp > fixedFloor) {
+      const keptOfGain = Math.round((floorLtp - entryLtp) / (bestLtp - entryLtp) * 100);
+      return `Profit lock trail ${keptOfGain}% — premium Rs${currentLtp} fell to the trailed floor Rs${floorLtp} (keeps ${keptOfGain}% of the gain to peak Rs${peakR}, entry Rs${entryR})`;
+    }
+    return `Profit lock +${lo.floorPct}% — premium Rs${currentLtp} fell to the locked floor Rs${floorLtp} after peaking at Rs${peakR} (armed at +${lo.armPct}%, entry Rs${entryR})`;
+  }
+
+  if (currentLtp > stopLtp) return null;             // still above the stop
+  if (stopLtp < entryLtp) {
+    const pct = Math.round((1 - stopLtp / entryLtp) * 100);
+    return `Stop-loss -${pct}% — premium Rs${currentLtp} fell to the stop Rs${stopLtp} (entry Rs${entryR})`;
+  }
+  if (stopLtp > entryR) {
+    return `Stop-loss trail — premium Rs${currentLtp} fell to the trailed stop Rs${stopLtp} (peak Rs${peakR}, entry Rs${entryR})`;
+  }
+  return `Stop-loss breakeven — premium Rs${currentLtp} fell back to entry Rs${stopLtp} (peak Rs${peakR})`;
 }
 
 // ── Re-entry cooldown after ANY exit (all strategies) ───────────────────────
@@ -223,6 +320,10 @@ module.exports = {
   checkProfitLock,
   profitLockFloorLtp,
   profitLockTrailKeepPct,
+  premiumStopLtp,
+  premiumStopSpotPts,
+  premiumStopSpotReason,
+  exitLevelLtp,
   reentryCooldownMs,
   reentryCooldownUntil,
   INDICATOR_HISTORY_CANDLES,
@@ -233,5 +334,9 @@ module.exports = {
   get PROFIT_LOCK_FLOOR_PCT()      { return liveProfitLockFloorPct(); },
   get PROFIT_LOCK_TRAIL_PCT()      { return liveProfitLockTrailPct(); },
   get PROFIT_LOCK_TRAIL_TIERS()    { return liveProfitLockTrailTiers(); },
+  get PREMIUM_SL_ENABLED()         { return livePremiumSlEnabled(); },
+  get PREMIUM_SL_PCT()             { return livePremiumSlPct(); },
+  get PREMIUM_SL_BE_PCT()          { return livePremiumSlBePct(); },
+  get PREMIUM_SL_TRAIL_PTS()       { return livePremiumSlTrailPts(); },
   get EXIT_REENTRY_COOLDOWN_CANDLES() { return liveReentryCooldownCandles(); },
 };

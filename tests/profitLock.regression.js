@@ -47,7 +47,7 @@ const decomment = (s) => s.split("\n").filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)
 
 // Deterministic env, applied BEFORE the require. The developer's real .env must
 // not decide whether this suite passes.
-for (const k of Object.keys(process.env)) if (k.startsWith("PROFIT_LOCK_")) delete process.env[k];
+for (const k of Object.keys(process.env)) if (k.startsWith("PROFIT_LOCK_") || k.startsWith("PREMIUM_SL_")) delete process.env[k];
 
 const guards = require("../src/utils/tradeGuards");
 
@@ -59,7 +59,7 @@ function check(name, fn) {
 }
 /** Wipe every PROFIT_LOCK_ key so one case cannot leak into the next. */
 function wipeEnv() {
-  for (const k of Object.keys(process.env)) if (k.startsWith("PROFIT_LOCK_")) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (k.startsWith("PROFIT_LOCK_") || k.startsWith("PREMIUM_SL_")) delete process.env[k];
 }
 /** Wiped env with the lock switched ON (it ships OFF), so the lock math is tested. */
 function freshEnv(over) {
@@ -317,7 +317,7 @@ check("BACKTEST applies the lock, in spot-equivalent terms", () => {
   // EMA9+VWAP runs the real checkProfitLock on a δ-modelled premium.
   const ev = decomment(read("services/ema9vwapBacktestEngine.js"));
   assert.ok(/_tradeGuards\.checkProfitLock\(/.test(ev), "ema9vwapBacktestEngine.js does not call checkProfitLock");
-  assert.ok(/profitLockFloorLtp\(/.test(ev), "ema9vwapBacktestEngine.js does not price the fill at the lock floor");
+  assert.ok(/exitLevelLtp\(/.test(ev), "ema9vwapBacktestEngine.js does not price the fill at the lock floor / stop");
   assert.ok(/DELTA/.test(ev), "ema9vwapBacktestEngine.js must model the premium via DELTA");
 });
 
@@ -426,6 +426,83 @@ check("the lock is defined once, globally — no per-strategy copies", () => {
   }
   assert.deepStrictEqual(offenders, [],
     `the global profit lock must not be shadowed per strategy: ${offenders.join(" | ")}`);
+});
+
+section("PREMIUM STOP-LOSS & TRAIL (PREMIUM_SL_*) — same call as the lock");
+
+/** Run fn with the given PREMIUM_SL_ / PROFIT_LOCK_ env, then wipe both. */
+function withSl(env, fn) {
+  for (const k of Object.keys(process.env)) if (k.startsWith("PREMIUM_SL_") || k.startsWith("PROFIT_LOCK_")) delete process.env[k];
+  Object.assign(process.env, env);
+  try { fn(); } finally {
+    for (const k of Object.keys(process.env)) if (k.startsWith("PREMIUM_SL_") || k.startsWith("PROFIT_LOCK_")) delete process.env[k];
+  }
+}
+
+check("off by default — unset PREMIUM_SL_ENABLED never exits", () => withSl({}, () => {
+  assert.strictEqual(guards.checkProfitLock(100, 50, 100), null);
+  assert.strictEqual(guards.premiumStopLtp(100, 100), null);
+}));
+
+check("20 / 20 / 15: buy 100 → stop 80; peak 120 → 105; peak 150 → 135", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
+  assert.strictEqual(guards.premiumStopLtp(100, 100), 80);
+  assert.strictEqual(guards.premiumStopLtp(100, 119.9), 80);
+  assert.strictEqual(guards.premiumStopLtp(100, 120), 105);
+  assert.strictEqual(guards.premiumStopLtp(100, 150), 135);
+  assert.strictEqual(guards.checkProfitLock(100, 81, 100), null);
+  assert.ok(/^Stop-loss -20%/.test(guards.checkProfitLock(100, 80, 100)));
+  assert.ok(/^Stop-loss trail/.test(guards.checkProfitLock(100, 135, 150)));
+  assert.strictEqual(guards.checkProfitLock(100, 136, 150), null);
+}));
+
+check("trail 0 = breakeven only", () => withSl({ PREMIUM_SL_ENABLED: "true", PREMIUM_SL_TRAIL_PTS: "0" }, () => {
+  assert.strictEqual(guards.premiumStopLtp(100, 200), 100);
+  assert.ok(/^Stop-loss breakeven/.test(guards.checkProfitLock(100, 100, 200)));
+}));
+
+check("bad config never becomes a stop", () => {
+  for (const env of [{ PREMIUM_SL_PCT: "0" }, { PREMIUM_SL_PCT: "100" }, { PREMIUM_SL_PCT: "x" }, { PREMIUM_SL_BE_PCT: "0" }, { PREMIUM_SL_TRAIL_PTS: "-1" }]) {
+    withSl({ PREMIUM_SL_ENABLED: "true", ...env }, () => {
+      assert.strictEqual(guards.checkProfitLock(100, 1, 100), null, JSON.stringify(env));
+    });
+  }
+});
+
+check("next to the profit lock, the higher level wins (and is the fill level)", () => withSl({
+  PREMIUM_SL_ENABLED: "true", PROFIT_LOCK_ENABLED: "true",
+}, () => {
+  // peak 110: lock floor 108.5 (tier 85%), stop still 80 → the lock decides.
+  assert.strictEqual(guards.exitLevelLtp(100, 110), 108.5);
+  assert.ok(/^Profit lock/.test(guards.checkProfitLock(100, 108, 110)));
+  // peak 200: lock floor 170 (70% trail), stop 185 → the stop decides.
+  assert.strictEqual(guards.exitLevelLtp(100, 200), 185);
+  assert.ok(/^Stop-loss trail/.test(guards.checkProfitLock(100, 184, 200)));
+}));
+
+check("spot-point form matches the premium form (seed 200, delta 0.5)", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
+  assert.strictEqual(guards.premiumStopSpotPts(0, 0.5), -80);      // 40 premium / 0.5
+  assert.strictEqual(guards.premiumStopSpotPts(80, 0.5), (240 - 15 - 200) / 0.5);
+  assert.strictEqual(guards.premiumStopSpotPts(0, 0), null);
+}));
+
+check("Settings exposes every PREMIUM_SL_ key, and replay snapshots capture them", () => {
+  const settings = read("routes/settings.js");
+  const keys = new Set(read("utils/tradeGuards.js").match(/PREMIUM_SL_[A-Z0-9_]+/g) || []);
+  assert.ok(keys.size >= 4, `expected four PREMIUM_SL_ keys, found ${[...keys].join(", ")}`);
+  const missing = [...keys].filter(k => !settings.includes(`"${k}"`));
+  assert.deepStrictEqual(missing, [], `absent from Settings: ${missing.join(", ")}`);
+  assert.ok(/\^PREMIUM_SL_/.test(read("utils/tickRecorder.js")), "tickRecorder does not snapshot PREMIUM_SL_*");
+  assert.ok(/"PREMIUM_SL_ENABLED" in _snapSettings/.test(read("services/tickReplay.js")), "replay does not force the stop off for old recordings");
+});
+
+check("backtests fill at the shared level, not the lock-only floor", () => {
+  const dir = path.join(SRC, "routes");
+  const offenders = fs.readdirSync(dir).filter(f => /Backtest\.js$/.test(f))
+    .filter(f => /profitLockFloorLtp\(/.test(decomment(read(`routes/${f}`))));
+  assert.deepStrictEqual(offenders, [], `use tradeGuards.exitLevelLtp: ${offenders.join(", ")}`);
+  for (const f of ["services/backtestEngine.js", "routes/paBacktest.js"]) {
+    assert.ok(/premiumStopSpotPts\(/.test(decomment(read(f))), `${f} does not apply the premium stop`);
+  }
 });
 
 console.log(`\n${fail ? "FAILURES" : "ALL PASS"} — ${pass} passed, ${fail} failed`);

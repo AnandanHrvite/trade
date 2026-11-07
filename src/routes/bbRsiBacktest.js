@@ -277,7 +277,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           const lockAdv = tradeGuards.checkProfitLock(_priceBase(), pAdv, position.peak);
           if (lockAdv) {
             const g = tradeGuards;
-            const floor = g.profitLockFloorLtp(_priceBase(), position.peak, g.PROFIT_LOCK_FLOOR_PCT, g.PROFIT_LOCK_TRAIL_PCT, g.PROFIT_LOCK_TRAIL_TIERS);
+            const floor = g.exitLevelLtp(_priceBase(), position.peak);
             const raw = _spotFor(floor);
             // Never better than the open (the open did not trigger, so the level lies past it).
             exitPrice  = parseFloat((isCE ? Math.min(candle.open, raw) : Math.max(candle.open, raw)).toFixed(2));

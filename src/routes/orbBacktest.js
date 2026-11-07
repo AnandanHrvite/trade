@@ -210,8 +210,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
         // b) open → adverse extreme
         hit = _lock(_premAt(position, isCE ? c.low : c.high));
         if (hit) {
-          const floor = tradeGuards.profitLockFloorLtp(position.optionEntryLtp, position.peakPremium,
-            tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+          const floor = tradeGuards.exitLevelLtp(position.optionEntryLtp, position.peakPremium);
           const raw = _spotForPrem(position, floor);
           const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
           closePos(position, fill, c.time, hit);

@@ -442,6 +442,8 @@ const _SETTINGS_KEY_MATCHERS = [
   /^GAP_RUNAWAY_/,
   //   EXIT_REENTRY_* — the global wait-after-any-exit cooldown; it blocks entries.
   /^EXIT_REENTRY_/,
+  //   PREMIUM_SL_* — the global premium stop-loss & trail; it changes exits.
+  /^PREMIUM_SL_/,
 ];
 
 function snapshotSettings() {
@@ -456,6 +458,7 @@ function snapshotSettings() {
   if (out.PROFIT_LOCK_ENABLED === undefined) out.PROFIT_LOCK_ENABLED = "false";
   if (out.PROFIT_LOCK_TRAIL_PCT === undefined) out.PROFIT_LOCK_TRAIL_PCT = "70";
   if (out.PROFIT_LOCK_TRAIL_TIERS === undefined) out.PROFIT_LOCK_TRAIL_TIERS = "20:85,40:80";
+  if (out.PREMIUM_SL_ENABLED === undefined) out.PREMIUM_SL_ENABLED = "false";
   if (out.EXIT_REENTRY_COOLDOWN_CANDLES === undefined) out.EXIT_REENTRY_COOLDOWN_CANDLES = "2";
   if (out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED === undefined) out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED = "true";
   return out;

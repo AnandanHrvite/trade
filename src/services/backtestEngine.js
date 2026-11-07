@@ -257,7 +257,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BACKTEST — ${strategy.NAME}`);
   console.log(`   Entry : signal from strategy at candle close`);
-  console.log(`   Exit  : global profit lock only (${_PL_VALID ? `arm +${_PL_ARM_PCT}% / floor +${_PL_FLOOR_PCT}%` : "OFF"}) + session-end square-off each day`);
+  console.log(`   Exit  : global profit lock (${_PL_VALID ? `arm +${_PL_ARM_PCT}% / floor +${_PL_FLOOR_PCT}%` : "OFF"}) + stop-loss (${!isFutures && tradeGuards.PREMIUM_SL_ENABLED ? `-${tradeGuards.PREMIUM_SL_PCT}%` : "OFF"}) + session-end square-off each day`);
   console.log(`   Charges : dynamic (STT + exchange + GST + stamp + ₹40 brok) — see Settings`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
   console.log(`   VIX filter : ${vixFilter.VIX_ENABLED ? `ON (max=${vixFilter.VIX_MAX_ENTRY}, strong-only=${vixFilter.VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
@@ -457,31 +457,42 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       // this bar's own high and then exiting on this bar's low would assume the
       // sequence went up-then-down — a look-ahead that manufactures profitable
       // exits paper could not take. It is null on an entry bar.
+      const _dir = position.side === "CE" ? 1 : -1;
+      let _lvlPts = null, _lvlWhy = null;   // favourable spot pts of the exit level
       if (_PL_VALID && position.bestPricePrevBar != null) {
-        const bestFav = position.side === "CE"
-          ? (position.bestPricePrevBar - position.entryPrice)
-          : (position.entryPrice - position.bestPricePrevBar);
+        const bestFav = (position.bestPricePrevBar - position.entryPrice) * _dir;
         const armed = bestFav >= _PL_ARM_SPOT_PTS;
         if (armed) {
-          // Did this bar trade back down to the locked floor? The trail raises
-          // it to the tiered keep % of the best gain (premium gain ≈ delta × spot
-          // gain on the 200 seed, so the same share applies to spot points).
+          // The trail raises the floor to the tiered keep % of the best gain
+          // (premium gain ≈ delta × spot gain on the 200 seed, so the same share
+          // applies to spot points).
           const _bestPremPct = bestFav * DELTA / 200 * 100;
           const _trailPts = bestFav * tradeGuards.profitLockTrailKeepPct(_bestPremPct, _PL_TRAIL_PCT, _PL_TIERS) / 100;
-          const floorPts = Math.max(_PL_FLOOR_SPOT_PTS, _trailPts);
-          const floorLvl = position.side === "CE"
-            ? position.entryPrice + floorPts
-            : position.entryPrice - floorPts;
-          const touched = position.side === "CE" ? candle.low <= floorLvl : candle.high >= floorLvl;
-          if (touched) {
-            exitReason = floorPts > _PL_FLOOR_SPOT_PTS
-              ? `Profit lock trail ${Math.round(floorPts / bestFav * 100)}% (≈${floorPts.toFixed(0)}pt spot kept of ${bestFav.toFixed(0)}pt best)`
-              : `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
-            // A bar that OPENS past the floor fills at the open — the trailed
-            // floor sits close to price, so gaps are common. Not on the entry bar.
-            const gapped = !entryBar && (position.side === "CE" ? candle.open < floorLvl : candle.open > floorLvl);
-            exitPrice  = quantize(gapped ? candle.open : floorLvl, 2);
-          }
+          _lvlPts = Math.max(_PL_FLOOR_SPOT_PTS, _trailPts);
+          _lvlWhy = _lvlPts > _PL_FLOOR_SPOT_PTS
+            ? `Profit lock trail ${Math.round(_lvlPts / bestFav * 100)}% (≈${_lvlPts.toFixed(0)}pt spot kept of ${bestFav.toFixed(0)}pt best)`
+            : `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
+        }
+      }
+      // Common premium stop-loss (tradeGuards.premiumStopLtp) in spot points.
+      // Not on an entry bar: its low/high may have printed before the fill.
+      if (!isFutures && !entryBar) {
+        const _bestFavPrev = position.bestPricePrevBar != null ? (position.bestPricePrevBar - position.entryPrice) * _dir : 0;
+        const _stopPts = tradeGuards.premiumStopSpotPts(_bestFavPrev, DELTA);
+        if (_stopPts != null && (_lvlPts == null || _stopPts > _lvlPts)) {
+          _lvlPts = _stopPts;
+          _lvlWhy = tradeGuards.premiumStopSpotReason(_stopPts, _bestFavPrev);
+        }
+      }
+      if (_lvlPts != null) {
+        const floorLvl = position.entryPrice + _lvlPts * _dir;
+        const touched = position.side === "CE" ? candle.low <= floorLvl : candle.high >= floorLvl;
+        if (touched) {
+          exitReason = _lvlWhy;
+          // A bar that OPENS past the level fills at the open — the trailed
+          // floor sits close to price, so gaps are common. Not on the entry bar.
+          const gapped = !entryBar && (position.side === "CE" ? candle.open < floorLvl : candle.open > floorLvl);
+          exitPrice  = quantize(gapped ? candle.open : floorLvl, 2);
         }
       }
 

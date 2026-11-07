@@ -276,7 +276,7 @@ function simulateDay(day, cfg, qty) {
     tiers:    tradeGuards.PROFIT_LOCK_TRAIL_TIERS,
   };
   const lockAt = (px) => (strategy._px(px) ? tradeGuards.checkProfitLock(entryPx, px, peak, lockOpts) : null);
-  const lockFloor = () => tradeGuards.profitLockFloorLtp(entryPx, peak, lockOpts.floorPct, lockOpts.trailPct, lockOpts.tiers);
+  const lockFloor = () => tradeGuards.exitLevelLtp(entryPx, peak, lockOpts);
   const sessionEndMin = _sessionEndMin();
 
   const bars = leg.bars.filter(b => b.time >= entryBar.time).sort((a, b) => a.time - b.time);

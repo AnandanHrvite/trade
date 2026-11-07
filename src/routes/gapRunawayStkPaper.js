@@ -498,7 +498,10 @@ function _onPrice(stock, price, at) {
     log(`🔒 [STK] ${stock} profit lock ARMED — best ₹${pos.best} (+${_r2(gainPct)}%, ₹${pos.peakPnl}) · floor now ₹${floorPx()}, rises with the best price`);
   }
   const pl = tradeGuards.checkProfitLock(E, cur, best);
-  if (pl) {
+  if (pl && pl.startsWith("Stop-loss")) {
+    // The common premium stop-loss (same call), on the mirrored share price.
+    _closePosition(stock, price, `Stop-loss — price ${price} hit the stop ${_r2(mir(tradeGuards.exitLevelLtp(E, best)))} (best ${pos.best}, entry ${E})`);
+  } else if (pl) {
     _closePosition(stock, price, `Profit lock — price ${price} hit the floor ${floorPx()} (best ${pos.best}, entry ${E}, armed at +${_plArmPct()}%)`);
   }
 }

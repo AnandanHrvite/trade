@@ -106,7 +106,7 @@ function simulate(candles) {
         if (pOpen > pos.peakPremium) pos.peakPremium = pOpen;
         if (lock(pOpen)) { exit = c.open; why = "lock"; exitClock = c.time; break; }
         if (lock(premAt(side, entry, side === "CE" ? c.low : c.high))) {
-          const floor = tradeGuards.profitLockFloorLtp(SEED, pos.peakPremium, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+          const floor = tradeGuards.exitLevelLtp(SEED, pos.peakPremium);
           const raw = spotForPrem(side, entry, floor);
           exit = side === "CE" ? Math.min(c.open, raw) : Math.max(c.open, raw);
           why = "lock"; exitClock = c.time; break;

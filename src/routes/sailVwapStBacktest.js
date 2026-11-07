@@ -40,7 +40,7 @@
  *   • open: the premium at the open is tested first — a bar that OPENS beyond
  *     the floor fills at the open, never at the better level;
  *   • open → adverse: the premium falls; an armed floor is crossed and fills AT
- *     that level (tradeGuards.profitLockFloorLtp gives the floor, the same helper
+ *     that level (tradeGuards.exitLevelLtp gives the level, the same helper
  *     paper's checkProfitLock uses);
  *   • adverse → favourable: the peak premium rises; nothing exits on a rise;
  *   • favourable → close: a lock armed by THIS bar's peak and given back by the
@@ -258,7 +258,7 @@ function simulate(candles, opts) {
   }
   /** The premium level the lock fills at when crossed on the way down (open → adverse leg). */
   function levelFor() {
-    return tradeGuards.profitLockFloorLtp(SEED, pos.peak, g.lockFloorPct, g.lockTrailPct, g.lockTiers);
+    return tradeGuards.exitLevelLtp(SEED, pos.peak, lockOpts);
   }
 
   for (let i = 0; i < n; i++) {

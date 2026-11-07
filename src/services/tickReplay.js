@@ -211,7 +211,8 @@ function requestCancel() {
 // v21: the profit lock is the only automatic exit — every stop, trail, target,
 //      breakeven, time stop, signal exit, per-strategy EOD and daily-loss limit
 //      was removed from the engines, so results cached under the old exits are stale.
-const REPLAY_CACHE_VERSION = 21;
+// v22: common premium stop-loss & trail (PREMIUM_SL_*) — forced off for recordings that lack it.
+const REPLAY_CACHE_VERSION = 22;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -2342,6 +2343,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // recording made before tiers shipped, which ran the flat trail.
       if (!("PROFIT_LOCK_TRAIL_TIERS" in _snapSettings)) {
         _snapSettings.PROFIT_LOCK_TRAIL_TIERS = "";
+      }
+      // Premium stop-loss (default off): an absent key is a recording made
+      // before it shipped, which ran without it — keep it off in snapshot mode.
+      if (!("PREMIUM_SL_ENABLED" in _snapSettings)) {
+        _snapSettings.PREMIUM_SL_ENABLED = "false";
       }
       // Wait-after-any-exit cooldown (default 2): same rule — an absent key is a
       // recording made before it shipped, which re-entered with no wait.

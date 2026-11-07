@@ -236,7 +236,7 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
       msg = tradeGuards.checkProfitLock(entry, premiumAt(isCE ? c.low : c.high, c.time), pos.peakPremium);
       if (msg) {
         // Fill at the spot that produces the locked floor, never better than the open.
-        const floor = tradeGuards.profitLockFloorLtp(entry, pos.peakPremium, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+        const floor = tradeGuards.exitLevelLtp(entry, pos.peakPremium);
         const raw = pos.entrySpot + (isCE ? 1 : -1) * ((floor - entry) / DELTA);
         close(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), c.time, msg);
         return;

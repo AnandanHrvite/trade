@@ -712,7 +712,7 @@ function _lockExitOnBar(ls, pos, bar, held, isEntryBar, lock) {
     if (msg) return { price: bar.open, reason: `${msg} — bar opened through the floor`, atClose: false };
     msg = tradeGuards.checkProfitLock(ls.E, L(adv), pos.best, lock);
     if (msg) {
-      const floor = tradeGuards.profitLockFloorLtp(ls.E, pos.best, lock.floorPct, lock.trailPct, lock.tiers);
+      const floor = tradeGuards.exitLevelLtp(ls.E, pos.best, lock);
       return { price: _r2(ls.toPx(floor, held)), reason: msg, atClose: false };
     }
   }

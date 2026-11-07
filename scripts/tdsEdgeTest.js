@@ -85,7 +85,7 @@ function simulate(bars, startIdx, side, entrySpot, cfg, cost, premAt, spotForPre
     if (pOpen > peak) peak = pOpen;
     if (lock(pOpen)) return finish(c.open, c.time, "Profit lock");
     if (lock(premAt(side, entrySpot, isCE ? c.low : c.high, held(barEnd)))) {
-      const lvl = tradeGuards.profitLockFloorLtp(entryPrem, peak, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+      const lvl = tradeGuards.exitLevelLtp(entryPrem, peak);
       const raw = spotForPrem(side, entrySpot, lvl, held(barEnd));
       return finish(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), barEnd, "Profit lock");
     }

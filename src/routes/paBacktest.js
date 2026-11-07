@@ -227,14 +227,26 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       const _dirMul = position.side === "CE" ? 1 : -1;
       const _bestFav = _bestPrevBar != null ? (_bestPrevBar - position.entryPrice) * _dirMul : 0;
 
+      let _lvlPts = null, _lvlWhy = null;   // favourable spot pts of the exit level
       if (_PL_VALID && _bestPrevBar != null && _bestFav >= _PL_ARM_PTS) {
         const _bestPremPct = _bestFav * DELTA / 200 * 100;
         const _trailPts = _bestFav * tradeGuards.profitLockTrailKeepPct(_bestPremPct, _PL_TRAIL_PCT, _PL_TIERS) / 100;
-        const _floorPts = Math.max(_PL_FLOOR_PTS, _trailPts);
-        const _floorLvl = position.entryPrice + _floorPts * _dirMul;
+        _lvlPts = Math.max(_PL_FLOOR_PTS, _trailPts);
+        _lvlWhy = `Profit lock (≈${_lvlPts.toFixed(0)}pt spot kept of ${_bestFav.toFixed(0)}pt)`;
+      }
+      // Common premium stop-loss (tradeGuards.premiumStopLtp) in spot points.
+      if (!isFutures) {
+        const _stopPts = tradeGuards.premiumStopSpotPts(_bestFav, DELTA);
+        if (_stopPts != null && (_lvlPts == null || _stopPts > _lvlPts)) {
+          _lvlPts = _stopPts;
+          _lvlWhy = tradeGuards.premiumStopSpotReason(_stopPts, _bestFav);
+        }
+      }
+      if (_lvlPts != null) {
+        const _floorLvl = position.entryPrice + _lvlPts * _dirMul;
         if (position.side === "CE" ? candle.low <= _floorLvl : candle.high >= _floorLvl) {
           const _gapped = position.side === "CE" ? candle.open < _floorLvl : candle.open > _floorLvl;
-          exitReason = `Profit lock (≈${_floorPts.toFixed(0)}pt spot kept of ${_bestFav.toFixed(0)}pt)`;
+          exitReason = _lvlWhy;
           exitPrice  = parseFloat(((_gapped ? candle.open : _floorLvl) - SLIPPAGE_PTS * _dirMul).toFixed(2));
         }
       }
