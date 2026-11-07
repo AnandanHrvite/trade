@@ -438,7 +438,7 @@ async function runJob(id, from, to) {
   backtestJobs.updateProgress(id, { phase: `Fetching NIFTY index ${RES}-min candles (${days.length} session(s))…`, pct: 5 });
   let spotAll = [];
   try {
-    spotAll = await fetchCandles(SPOT_SYMBOL, RES, days[0], days[days.length - 1]);
+    spotAll = await fetchCandles(SPOT_SYMBOL, RES, days[0], days[days.length - 1], { waitForSlot: true });
   } catch (err) {
     backtestJobs.failJob(id, `NIFTY index history failed: ${fyersErrText(err)}`);
     return;
@@ -484,7 +484,7 @@ async function runJob(id, from, to) {
       pct: 10 + Math.round((i / symbols.length) * 75),
     });
     try {
-      const rows = await fetchCandles(sym, RES, days[0], days[days.length - 1]);
+      const rows = await fetchCandles(sym, RES, days[0], days[days.length - 1], { waitForSlot: true });
       if (Array.isArray(rows) && rows.length) seriesBySymbol.set(sym, byDay(rows));
       else refused.push({ symbol: sym, error: "no candles returned (contract not listed for this range, or an expired token)" });
     } catch (err) {

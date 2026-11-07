@@ -28,17 +28,18 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 /** Round to N decimals without string allocation (avoids parseFloat(x.toFixed(2))) */
 function quantize(val, decimals) { const f = 10 ** decimals; return Math.round(val * f) / f; }
 
-async function fetchChunk(symbol, resolution, from, to) {
+async function fetchChunk(symbol, resolution, from, to, opts = {}) {
   const params = { symbol, resolution: String(resolution), date_format: "1", range_from: from, range_to: to, cont_flag: "1" };
   console.log(`   📦 Fetching chunk: ${from} → ${to}`);
   let response;
   try {
     // The shared Fyers pacer (config/fyers.js) fails a request that cannot get a
     // slot within ~15s — right for live quotes, wrong for a backtest, whose candles
-    // do not go stale. Wait outside the queue (so live calls still go first) and retry.
+    // do not go stale. A backtest opts in (opts.waitForSlot) to wait outside the
+    // queue (so live calls still go first) and retry. Paper warm-up does not opt in.
     for (let attempt = 1; ; attempt++) {
       try { response = await fyers.getHistory(params); break; } catch (e) {
-        if (attempt >= 8 || !/request limit reached, no free slot/.test((e && e.message) || "")) throw e;
+        if (!opts.waitForSlot || attempt >= 8 || !/request limit reached, no free slot/.test((e && e.message) || "")) throw e;
         console.warn(`   ⏳ Fyers request limit busy — retrying chunk ${from} → ${to} in 15s (${attempt}/7)`);
         await sleep(15000);
       }
@@ -65,7 +66,7 @@ async function fetchChunk(symbol, resolution, from, to) {
   return response.candles.map(([time, open, high, low, close, volume]) => ({ time, open, high, low, close, volume }));
 }
 
-async function fetchCandles(symbol, resolution, from, to) {
+async function fetchCandles(symbol, resolution, from, to, opts = {}) {
   const maxDays = maxDaysForResolution(resolution);
   // Stream dedupe as we fetch — avoids a second O(n) pass + a duplicate array copy
   const seen = new Set();
@@ -87,7 +88,7 @@ async function fetchCandles(symbol, resolution, from, to) {
     const chunkEnd = new Date(cursor);
     chunkEnd.setDate(chunkEnd.getDate() + maxDays - 1);
     if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
-    const candles = await fetchChunk(symbol, resolution, cursor.toISOString().split("T")[0], chunkEnd.toISOString().split("T")[0]);
+    const candles = await fetchChunk(symbol, resolution, cursor.toISOString().split("T")[0], chunkEnd.toISOString().split("T")[0], opts);
     for (const c of candles) {
       if (!seen.has(c.time)) { seen.add(c.time); unique.push(c); }
     }
