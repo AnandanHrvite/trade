@@ -4,6 +4,8 @@ Engine: `src/strategies/bb_rsi.js` · Routes: `bbRsi*.js` · Env prefix: `BB_RSI
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-08 — Engine prefix support for the NIFTY FUTURES twin: `bb_rsi.forPrefix("FUT_BB_RSI")` returns the same API reading `FUT_BB_RSI_*` keys (own indicator cache per prefix); the default exports still read `BB_RSI_*` and are output-identical (verified on 7.6k synthetic calls). New routes `futBbRsiPaper.js` / `futBbRsiBacktest.js` use it; the options strategy is unchanged.
+
 - 2026-11-08 — Futures stop in bbRsiPaper: a NIFTY_FUTURES position has no premium, so the profit lock never fired; the per-tick exit now also calls `tradeGuards.checkFuturesStop` (premium stop mapped to index points) and exits through `simulateSell`. Options unchanged.
 
 - 2026-09-19 — Global breakeven stop wired into bbRsiPaper + bbRsiLive, after the middle-band target and alongside the profit lock.

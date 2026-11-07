@@ -56,6 +56,11 @@ const MODE_KEYS = {
   ORB:        {                                     entryEnd: "ORB_ENTRY_END" },
   EMA9VWAP:   { entryStart: "EMA9VWAP_ENTRY_START", entryEnd: "EMA9VWAP_ENTRY_END" },
   TREND_PB:   { entryStart: "TREND_PB_ENTRY_START", entryEnd: "TREND_PB_ENTRY_END" },
+  // NIFTY FUTURES twins. FUT_EMA_RSI_ST has no window of its own — it reads the
+  // same TRADE_ENTRY_* keys as EMA_RSI_ST, so a finding names those.
+  FUT_EMA_RSI_ST: { entryStart: "TRADE_ENTRY_START",        entryEnd: "TRADE_ENTRY_END" },
+  FUT_BB_RSI:     { entryStart: "FUT_BB_RSI_ENTRY_START",   entryEnd: "FUT_BB_RSI_ENTRY_END" },
+  FUT_EMA9VWAP:   { entryStart: "FUT_EMA9VWAP_ENTRY_START", entryEnd: "FUT_EMA9VWAP_ENTRY_END" },
 };
 
 const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

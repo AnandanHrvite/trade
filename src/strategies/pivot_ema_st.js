@@ -7,6 +7,8 @@
  *   PIVOT_EMA_ST       NIFTY 50          (NSE:NIFTY50-INDEX)
  *   BN_PIVOT_EMA_ST    NIFTY BANK        (NSE:NIFTYBANK-INDEX)
  *   SAIL_PIVOT_EMA_ST  SAIL stock options (NSE:SAIL-EQ)
+ *   FUT_PIVOT_EMA_ST   NIFTY 50 FUTURES  (signals on NSE:NIFTY50-INDEX; the route
+ *                      trades the month future — CE = LONG, PE = SHORT)
  *   Commodity (MCX crude / gold / silver) reads the PIVOT_EMA_ST rule keys
  *   through src/services/commodityPaper.js, the way V1/V2 read EMA_RSI_ST.
  *
@@ -72,7 +74,7 @@ const { computeSuperTrend } = require("../utils/supertrend");
 
 const NAME   = "PIVOT_EMA_ST";
 const DEFAULT_PREFIX = "PIVOT_EMA_ST";
-const PREFIXES = ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST"];
+const PREFIXES = ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST", "FUT_PIVOT_EMA_ST"];
 const DESCRIPTION =
   "PIVOT_EMA_ST — EMA 20/50 crossover inside the Pivot→R1 (CE) or Pivot→S1 (PE) zone with SuperTrend(10,3) " +
   "agreeing, on one closed candle · profit-lock exit · Zerodha";
@@ -316,7 +318,8 @@ const _NO = { entrySpot: null, prevCandleHigh: null, prevCandleLow: null };
  * getSignal(candles, opts)
  *   candles — ascending CLOSED bars on the strategy timeframe; the LAST one is
  *             the signal candle.
- *   opts.prefix        — env prefix (PIVOT_EMA_ST / BN_PIVOT_EMA_ST / SAIL_PIVOT_EMA_ST).
+ *   opts.prefix        — env prefix (PIVOT_EMA_ST / BN_PIVOT_EMA_ST / SAIL_PIVOT_EMA_ST /
+ *                        FUT_PIVOT_EMA_ST).
  *   opts.cfg           — an already-read getConfig() (callers that need one
  *                        consistent read across a decision).
  *   opts.pivots        — computePivots(daily, { forDayKey: signal day }). REQUIRED.

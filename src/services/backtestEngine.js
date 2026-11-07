@@ -170,10 +170,19 @@ function getISTHHMM(unixSec) {
  *   GUARDS : VIX gate, entry window, one-trade-per-move,
  *            wait-after-exit cooldown (entry filters only — no loss-based day limits).
  */
-async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress, activeFromTs = 0) {
+// btOpts (optional, trailing) — for the NIFTY FUTURES twin (FUT_EMA_RSI_ST):
+//   isFutures: true  → force the futures branch (DELTA 1, no theta, futures
+//                      charges, futures lot) without reading the global INSTRUMENT
+//   prefix:   "FUT_EMA_RSI_ST" → read the strategy-own engine keys
+//                      (ONE_TRADE_PER_MOVE_ENABLED, CONFIRM_CANDLE_ENABLED) under it
+// Omitted → exactly the original behaviour (EMA_RSI_ST_* keys, global instrument).
+async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress, activeFromTs = 0, btOpts) {
+  const _btForceFut = !!(btOpts && btOpts.isFutures === true);
+  const _btPrefix   = (btOpts && btOpts.prefix) || "EMA_RSI_ST";
+  const _btDefPfx   = _btPrefix === "EMA_RSI_ST";
   const trades    = [];
   let position    = null;
-  const LOT_SIZE  = getLotQty();
+  const LOT_SIZE  = _btForceFut ? getLotQty(undefined, "NIFTY_FUTURES") : getLotQty();
 
   // ── VIX filter for backtest ─────────────────────────────────────────────────
   const lookupVix = buildVixLookup(vixCandles || []);
@@ -208,7 +217,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   //
   // To disable simulation and revert to raw index points (old behaviour):
   //   set BACKTEST_OPTION_SIM=false in .env
-  const isFutures    = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const isFutures    = _btForceFut || instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   // Futures: no delta/theta — 1:1 point-to-rupee. Force OPTION_SIM off for futures.
   const OPTION_SIM   = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false"); // true by default for options
   const DELTA        = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA        || "0.55");
@@ -229,7 +238,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const SLIPPAGE_PTS = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "1.5");
 
   // One trade per move — after an exit, that side waits for a SuperTrend flip (mirrors paper).
-  const MOVE_LOCK_ENABLED      = (process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED || "true").toLowerCase() === "true";
+  const MOVE_LOCK_ENABLED      = _btDefPfx
+    ? (process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED || "true").toLowerCase() === "true"
+    : (process.env[_btPrefix + "_ONE_TRADE_PER_MOVE_ENABLED"] || "true").toLowerCase() === "true";
 
   // ── Global profit lock, in spot-point terms — the ONLY automatic exit ─────
   // The lock is defined on option premium, and this engine has no live LTP — it
@@ -644,7 +655,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // trade exiting AT this close means no arm — see _openAtCandleClose), warm-up
     // (paper has no candle-close handler for pre-loaded history), and the
     // backtest-only expiry-day filter, which is retained exactly where it was.
-    if (confirmCandle.enabled("EMA_RSI_ST") && !position && !_openAtCandleClose
+    if (confirmCandle.enabled(_btPrefix) && !position && !_openAtCandleClose
         && !_isWarmupOnly && _sigSide
         && !(expiryDates && !expiryDates.has(candleDate))) {
       _pendingArm = {
@@ -655,7 +666,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     }
 
     if (!position && !_isWarmupOnly && !isEntryBlocked) {
-      const _confirmSwing = confirmCandle.enabled("EMA_RSI_ST");
+      const _confirmSwing = confirmCandle.enabled(_btPrefix);
 
       // ── Confirmation candle (cross & close): fill an armed signal when THIS
       //    (immediately-next) candle crosses the signal candle's close. Candle-

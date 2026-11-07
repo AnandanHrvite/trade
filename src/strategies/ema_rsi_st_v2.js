@@ -62,11 +62,13 @@ const { computeSuperTrend } = require("../utils/supertrend");
 // of the rules and can still be tuned independently:
 //   EMA_RSI_ST_V2_*     → NIFTY 50        (routes /ema_rsi_st_v2-*)
 //   BN_EMA_RSI_ST_V2_*  → NIFTY BANK      (routes /bn_ema_rsi_st_v2-*)
+//   FUT_EMA_RSI_ST_V2_* → NIFTY 50 FUTURES (routes /fut_ema_rsi_st_v2-*) — the
+//                         futures-only twin; same rules, its own keys
 // Sharing the engine is deliberate: BN_PIVOT_RSI_ST duplicated its engine file to
 // clone a strategy onto NIFTY BANK, and its own regression test exists purely to
 // catch the two copies drifting apart. A shared engine cannot drift.
 const DEFAULT_PREFIX = "EMA_RSI_ST_V2";
-const PREFIXES = { EMA_RSI_ST_V2: "NIFTY", BN_EMA_RSI_ST_V2: "BANKNIFTY" };
+const PREFIXES = { EMA_RSI_ST_V2: "NIFTY", BN_EMA_RSI_ST_V2: "BANKNIFTY", FUT_EMA_RSI_ST_V2: "NIFTY" };
 /** The underlying an env prefix trades. Unknown prefixes fall back to NIFTY. */
 function underlyingFor(prefix) { return PREFIXES[prefix || DEFAULT_PREFIX] || "NIFTY"; }
 
@@ -302,7 +304,7 @@ function getSignal(candles, opts) {
 
   var _istTime = new Date(signalCandle.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   if (!silent) console.log(
-    "[" + (prefix === DEFAULT_PREFIX ? "V2" : "BN-V2") + " " + _istTime + "] EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) +
+    "[" + (prefix === DEFAULT_PREFIX ? "V2" : prefix === "FUT_EMA_RSI_ST_V2" ? "FUT-V2" : "BN-V2") + " " + _istTime + "] EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) +
     "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")" +
     " | RSI=" + rsi.toFixed(1) +
     " | ST=" + stVal + "(" + (currST.trend === 1 ? "BULL" : "BEAR") + ", stop only)" +

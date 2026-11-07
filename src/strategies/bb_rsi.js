@@ -63,6 +63,17 @@ const { BollingerBands, RSI, ADX } = require("technicalindicators");
 const NAME        = "BB_RSI_MEAN_REVERSION_V8";
 const DESCRIPTION = "BB fade + RSI extreme";
 
+// ── Env-prefix parameterisation ──────────────────────────────────────────────
+// This ONE engine serves the BB_RSI options strategy and its NIFTY FUTURES twin
+// (FUT_BB_RSI). Every strategy-own key is read as `<prefix>_<NAME>`, so the twin
+// tunes independently on FUT_BB_RSI_* while the rules stay one implementation.
+// The module's own exports are bound to the default prefix and read exactly the
+// BB_RSI_* keys they always did; forPrefix("FUT_BB_RSI") returns the same API
+// bound to the twin. Common keys (TRADE_RESOLUTION) are not prefixed.
+const DEFAULT_PREFIX = "BB_RSI";
+const PREFIXES = { BB_RSI: "NIFTY", FUT_BB_RSI: "NIFTY" };
+function _P(prefix) { return prefix || DEFAULT_PREFIX; }
+
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
 function cfgOn(key, fb) { return String(cfg(key, fb)).toLowerCase() === "true"; }
 
@@ -102,11 +113,11 @@ function int(key, fb, min) {
 // Read live from process.env (never cached) so a Settings save reaches Paper and
 // Backtest without a restart, exactly like every other key in this engine.
 const DIRECTION_CHOICES = ["fade", "breakout"];
-function direction() {
-  const raw = String(cfg("BB_RSI_DIRECTION", "fade")).trim().toLowerCase();
+function direction(prefix) {
+  const raw = String(cfg(_P(prefix) + "_DIRECTION", "fade")).trim().toLowerCase();
   return DIRECTION_CHOICES.indexOf(raw) !== -1 ? raw : "fade";
 }
-function isBreakout() { return direction() === "breakout"; }
+function isBreakout(prefix) { return direction(prefix) === "breakout"; }
 
 // ── Candle timeframe ─────────────────────────────────────────────────────────
 // BB_RSI may run on its own candle size instead of the global TRADE_RESOLUTION.
@@ -124,8 +135,8 @@ function isBreakout() { return direction() === "breakout"; }
 // It lives in the engine, not in the three routes, so Paper / Live / Backtest
 // cannot drift onto different candle sizes.
 const RESOLUTION_CHOICES = [3, 5];
-function resolutionMin() {
-  var raw = String(cfg("BB_RSI_RESOLUTION", "global")).trim();
+function resolutionMin(prefix) {
+  var raw = String(cfg(_P(prefix) + "_RESOLUTION", "global")).trim();
   var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
   if (RESOLUTION_CHOICES.indexOf(v) !== -1) return v;
   return int("TRADE_RESOLUTION", "5", 1);
@@ -154,11 +165,12 @@ function _fmtTime(mins) {
   return h12 + ":" + (m < 10 ? "0" : "") + m + " " + suffix;
 }
 
-function isInTradingWindow(unixSec) {
+function isInTradingWindow(unixSec, prefix) {
+  var P = _P(prefix);
   var d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  var startMin = _parseMins("BB_RSI_ENTRY_START", "09:21");
-  var endMin   = _parseMins("BB_RSI_ENTRY_END",   "14:30");
+  var startMin = _parseMins(P + "_ENTRY_START", "09:21");
+  var endMin   = _parseMins(P + "_ENTRY_END",   "14:30");
   if (totalMin < startMin) return { ok: false, reason: "Before " + _fmtTime(startMin) };
   if (totalMin >= endMin)  return { ok: false, reason: "After " + _fmtTime(endMin) };
   return { ok: true, reason: null };
@@ -167,7 +179,11 @@ function isInTradingWindow(unixSec) {
 // ── Indicator cache — avoid redundant recalculation on every tick ────────────
 // Cache key = last closed candle time + current candle OHLC (changes on each tick)
 // If the closed candles haven't changed AND current bar is same, reuse cached indicators.
-let _indicatorCache = { key: null, bb: null, rsiArr: null, adx: null };
+// One cache PER PREFIX: the key does not include the BB/RSI periods, so a twin tuned to
+// different periods must never be handed the other prefix's indicators for the same bars.
+const _indicatorCaches = {};
+function _emptyCache() { return { key: null, bb: null, rsiArr: null, adx: null }; }
+function _cacheFor(P) { return _indicatorCaches[P] || (_indicatorCaches[P] = _emptyCache()); }
 
 function _makeIndicatorKey(candles) {
   if (candles.length < 2) return null;
@@ -233,25 +249,27 @@ function _findDivergence(candles, rsiArr, rsiOffset, side, lookback, pivotBars) 
 function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
+  var P = _P(opts.prefix);
+  var _cache = _cacheFor(P);
 
-  var BB_PERIOD   = int("BB_RSI_BB_PERIOD", "30", 2);
-  var BB_STDDEV   = num("BB_RSI_BB_STDDEV", "2", 0.1);
-  var RSI_PERIOD  = int("BB_RSI_RSI_PERIOD", "14", 2);
-  var RSI_CE      = num("BB_RSI_RSI_CE_THRESHOLD", "25"); // CE needs RSI AT OR BELOW this
-  var RSI_PE      = num("BB_RSI_RSI_PE_THRESHOLD", "75"); // PE needs RSI AT OR ABOVE this
-  var RSI_TURNING = cfgOn("BB_RSI_RSI_TURNING", "false");             // require RSI to have already turned back
-  var MAX_ENTRY_SL_PTS = num("BB_RSI_MAX_ENTRY_SL_PTS", "50"); // signal-candle extreme distance cap (0 = off)
-  var ADX_ENABLED = cfgOn("BB_RSI_ADX_ENABLED", "false");
-  var ADX_MAX     = num("BB_RSI_ADX_MAX", "30");          // block when the trend is too strong to fade
+  var BB_PERIOD   = int(P + "_BB_PERIOD", "30", 2);
+  var BB_STDDEV   = num(P + "_BB_STDDEV", "2", 0.1);
+  var RSI_PERIOD  = int(P + "_RSI_PERIOD", "14", 2);
+  var RSI_CE      = num(P + "_RSI_CE_THRESHOLD", "25"); // CE needs RSI AT OR BELOW this
+  var RSI_PE      = num(P + "_RSI_PE_THRESHOLD", "75"); // PE needs RSI AT OR ABOVE this
+  var RSI_TURNING = cfgOn(P + "_RSI_TURNING", "false");             // require RSI to have already turned back
+  var MAX_ENTRY_SL_PTS = num(P + "_MAX_ENTRY_SL_PTS", "50"); // signal-candle extreme distance cap (0 = off)
+  var ADX_ENABLED = cfgOn(P + "_ADX_ENABLED", "false");
+  var ADX_MAX     = num(P + "_ADX_MAX", "30");          // block when the trend is too strong to fade
 
-  var BW_ENABLED  = cfgOn("BB_RSI_BAND_WIDTH_ENABLED", "true");
-  var BW_MIN      = num("BB_RSI_MIN_BAND_WIDTH_PTS", "50");
-  var RR_ENABLED  = cfgOn("BB_RSI_RSI_RANGE_ENABLED", "true");
-  var RR_LOOKBACK = int("BB_RSI_RSI_RANGE_LOOKBACK", "20");
-  var RR_MIN      = num("BB_RSI_RSI_RANGE_MIN", "30");
-  var DIV_ENABLED = cfgOn("BB_RSI_DIVERGENCE_ENABLED", "false");
-  var DIV_LOOKBACK  = int("BB_RSI_DIV_LOOKBACK", "20", 1);
-  var DIV_PIVOT_BARS = int("BB_RSI_DIV_PIVOT_BARS", "2", 1);
+  var BW_ENABLED  = cfgOn(P + "_BAND_WIDTH_ENABLED", "true");
+  var BW_MIN      = num(P + "_MIN_BAND_WIDTH_PTS", "50");
+  var RR_ENABLED  = cfgOn(P + "_RSI_RANGE_ENABLED", "true");
+  var RR_LOOKBACK = int(P + "_RSI_RANGE_LOOKBACK", "20");
+  var RR_MIN      = num(P + "_RSI_RANGE_MIN", "30");
+  var DIV_ENABLED = cfgOn(P + "_DIVERGENCE_ENABLED", "false");
+  var DIV_LOOKBACK  = int(P + "_DIV_LOOKBACK", "20", 1);
+  var DIV_PIVOT_BARS = int(P + "_DIV_PIVOT_BARS", "2", 1);
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -268,7 +286,7 @@ function getSignal(candles, opts) {
 
   var sc = candles[candles.length - 1];
   if (!opts.skipTimeCheck) {
-    var windowCheck = isInTradingWindow(sc.time);
+    var windowCheck = isInTradingWindow(sc.time, P);
     if (!windowCheck.ok) {
       base.reason = windowCheck.reason;
       return base;
@@ -279,10 +297,10 @@ function getSignal(candles, opts) {
   var cacheKey = _makeIndicatorKey(candles);
   var bb, rsiArr, adx;
 
-  if (cacheKey && _indicatorCache.key === cacheKey && _indicatorCache.bb) {
-    bb     = _indicatorCache.bb;
-    rsiArr = _indicatorCache.rsiArr;
-    adx    = _indicatorCache.adx;
+  if (cacheKey && _cache.key === cacheKey && _cache.bb) {
+    bb     = _cache.bb;
+    rsiArr = _cache.rsiArr;
+    adx    = _cache.adx;
   } else {
     var closes = candles.map(function(c) { return c.close; });
     var highs  = candles.map(function(c) { return c.high; });
@@ -304,7 +322,7 @@ function getSignal(candles, opts) {
     adx = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
 
     // Cache for next tick with same window
-    _indicatorCache = { key: cacheKey, bb: bb, rsiArr: rsiArr, adx: adx };
+    _cache = _indicatorCaches[P] = { key: cacheKey, bb: bb, rsiArr: rsiArr, adx: adx };
   }
 
   // RSI index for candles[i] is rsiArr[i - rsiOffset].
@@ -360,7 +378,7 @@ function getSignal(candles, opts) {
   // The two triggers are the same in both directions; only the side they buy differs.
   //   stretched DOWN: close BELOW the lower band with RSI oversold   → fade CE / break PE
   //   stretched UP:   close ABOVE the upper band with RSI overbought → fade PE / break CE
-  var BREAKOUT  = isBreakout();
+  var BREAKOUT  = isBreakout(P);
   var ceStretch = sc.close <= bb.lower;   // stretched down
   var peStretch = sc.close >= bb.upper;   // stretched up
   var _dnSide   = BREAKOUT ? "PE" : "CE"; // side taken on a downward stretch
@@ -438,7 +456,7 @@ function getSignal(candles, opts) {
     var _target = BREAKOUT ? null : parseFloat(bb.middle.toFixed(2));
     var _tgtTag = BREAKOUT ? "" : " | BB mid(" + bb.middle.toFixed(0) + ")";
     if (!silent) {
-      console.log("[BB_RSI " + _ist + "] " + side + (BREAKOUT ? " BREAK" : " FADE") + ": close(" + sc.close + ") " + _tag
+      console.log("[" + P + " " + _ist + "] " + side + (BREAKOUT ? " BREAK" : " FADE") + ": close(" + sc.close + ") " + _tag
         + " + RSI=" + rsi.toFixed(1) + _divTag + _tgtTag + " SL line=" + slLine.toFixed(2) + " [" + slPts.toFixed(1) + "pts]");
     }
     return Object.assign({}, base, {
@@ -470,20 +488,44 @@ function getSignal(candles, opts) {
 // threshold that is depends on the direction: a fade CE comes off an OVERSOLD stretch,
 // a breakout CE off an OVERBOUGHT one, so the two modes read opposite ends of the scale
 // for the same side. Shared by paper/live/backtest so the three cannot drift apart.
-function signalStrength(result) {
+function signalStrength(result, prefix) {
+  var P = _P(prefix);
   var rsi = result && typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
-  var oversold   = rsi <= num("BB_RSI_RSI_CE_THRESHOLD", "25") - 5;
-  var overbought = rsi >= num("BB_RSI_RSI_PE_THRESHOLD", "75") + 5;
-  var brk = isBreakout();
+  var oversold   = rsi <= num(P + "_RSI_CE_THRESHOLD", "25") - 5;
+  var overbought = rsi >= num(P + "_RSI_PE_THRESHOLD", "75") + 5;
+  var brk = isBreakout(P);
   if (result.signal === "BUY_CE") return (brk ? overbought : oversold)   ? "STRONG" : "MARGINAL";
   if (result.signal === "BUY_PE") return (brk ? oversold   : overbought) ? "STRONG" : "MARGINAL";
   return "MARGINAL";
 }
 
-function reset() { _indicatorCache = { key: null, bb: null, rsiArr: null, adx: null }; }
+function reset(prefix) { _indicatorCaches[_P(prefix)] = _emptyCache(); }
+
+/**
+ * The same engine API bound to another env prefix — every strategy-own key is read
+ * as `<prefix>_<NAME>`. forPrefix("FUT_BB_RSI") is the NIFTY FUTURES twin's engine.
+ * Only registered prefixes are accepted: a typo must fail loudly at require time,
+ * not silently trade on defaults because no `<typo>_*` key exists.
+ */
+function forPrefix(prefix) {
+  if (!Object.prototype.hasOwnProperty.call(PREFIXES, prefix)) {
+    throw new Error(`bb_rsi.forPrefix: unknown prefix "${prefix}" (known: ${Object.keys(PREFIXES).join(", ")})`);
+  }
+  return {
+    NAME, DESCRIPTION,
+    PREFIX:         prefix,
+    UNDERLYING:     PREFIXES[prefix],
+    getSignal:      function (candles, opts) { return getSignal(candles, Object.assign({}, opts, { prefix: prefix })); },
+    signalStrength: function (result) { return signalStrength(result, prefix); },
+    resolutionMin:  function () { return resolutionMin(prefix); },
+    direction:      function () { return direction(prefix); },
+    reset:          function () { reset(prefix); },
+  };
+}
 
 module.exports = {
   NAME, DESCRIPTION, getSignal, signalStrength, resolutionMin, direction,
   reset,
+  DEFAULT_PREFIX, PREFIXES, forPrefix,
 };

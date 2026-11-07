@@ -71,27 +71,36 @@ const DATA_DIR = path.join(require("os").homedir(), "trading-data");
 // keys used by tradeLogger / skipLogger / portfolioRisk.
 const STRATEGIES = {
   ema_rsi_st: { broker: "zerodha", label: "EMA_RSI_ST", file: "ema_rsi_st_paper_trades.json" },
+  // FUT twins — NIFTY FUTURES copies (CE = LONG, PE = SHORT) on their own book,
+  // drawing from the SAME broker pool as their options original.
+  fut_ema_rsi_st: { broker: "zerodha", label: "FUT EMA_RSI_ST", file: "fut_ema_rsi_st_paper_trades.json" },
   ema9vwap:   { broker: "zerodha", label: "EMA9+VWAP",  file: "ema9vwap_paper_trades.json"   },
+  fut_ema9vwap: { broker: "zerodha", label: "FUT EMA9+VWAP", file: "fut_ema9vwap_paper_trades.json" },
   bb_rsi:     { broker: "fyers",   label: "BB_RSI",     file: "bb_rsi_paper_trades.json"     },
+  fut_bb_rsi: { broker: "fyers",   label: "FUT BB_RSI", file: "fut_bb_rsi_paper_trades.json" },
   pa:         { broker: "fyers",   label: "PA",         file: "pa_paper_trades.json"         },
   orb:        { broker: "fyers",   label: "ORB",        file: "orb_paper_trades.json"        },
   trend_pb:   { broker: "fyers",   label: "TREND_PB",   file: "trend_pb_paper_trades.json"   },
   trend_day_scalp: { broker: "fyers", label: "TREND_DAY_SCALP", file: "trend_day_scalp_paper_trades.json" },
   rsi_pivot_st: { broker: "zerodha", label: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
+  fut_rsi_pivot_st: { broker: "zerodha", label: "FUT RSI_PIVOT_ST", file: "fut_rsi_pivot_st_paper_trades.json" },
   // Same engine as rsi_pivot_st, NIFTY BANK underlying — Zerodha orders, so it
   // draws from the same ZERODHA_INV_AMOUNT pool as the NIFTY sibling.
   bn_pivot_rsi_st: { broker: "zerodha", label: "BN_PIVOT_RSI_ST (NIFTY BANK)", file: "bn_pivot_rsi_st_paper_trades.json" },
   // EMA_RSI_ST_V2 — the EMA_RSI_ST clone. Zerodha orders like its V1 sibling, so
   // it draws from the same ZERODHA_INV_AMOUNT pool.
   ema_rsi_st_v2: { broker: "zerodha", label: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_paper_trades.json" },
+  fut_ema_rsi_st_v2: { broker: "zerodha", label: "FUT EMA_RSI_ST_V2", file: "fut_ema_rsi_st_v2_paper_trades.json" },
   // Same engine on NIFTY BANK — Zerodha orders, so it draws from the same
   // ZERODHA_INV_AMOUNT pool as its NIFTY sibling.
   bn_ema_rsi_st_v2: { broker: "zerodha", label: "BN_EMA_RSI_ST_V2 (NIFTY BANK)", file: "bn_ema_rsi_st_v2_paper_trades.json" },
   // ST_RSI_PIV_BB — NIFTY, Zerodha orders, so it draws from ZERODHA_INV_AMOUNT.
   st_rsi_piv_bb: { broker: "zerodha", label: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
+  fut_st_rsi_piv_bb: { broker: "zerodha", label: "FUT ST_RSI_PIV_BB", file: "fut_st_rsi_piv_bb_paper_trades.json" },
   // SAIL_VWAP_ST — SAIL stock options, Zerodha orders, so it draws from ZERODHA_INV_AMOUNT.
   sail_vwap_st: { broker: "zerodha", label: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
   pivot_ema_st: { broker: "zerodha", label: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
+  fut_pivot_ema_st: { broker: "zerodha", label: "FUT PIVOT_EMA_ST", file: "fut_pivot_ema_st_paper_trades.json" },
   bn_pivot_ema_st: { broker: "zerodha", label: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_paper_trades.json" },
   sail_pivot_ema_st: { broker: "zerodha", label: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   simple930: { broker: "zerodha", label: "SIMPLE_9:30", file: "simple930_paper_trades.json" },

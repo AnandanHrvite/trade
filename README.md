@@ -45,6 +45,13 @@ All strategies run **in parallel** on the same WebSocket — different candle re
 | **ITM20 Scalp Backtest** | Same engine over a date range (stop before target inside a bar, next-bar-open fills, CSV export) | 5-min historical | Historical | `/itm20-scalp-backtest` |
 | **EarlyBird Paper** | The day's **first 15-min candle** on NIFTY sets the side. `stock` mode buys/shorts the **cash equity** of any F&O stock printing the same shape (up to 5 at once); `option` mode buys ONE **NIFTY CE/PE** off NIFTY's own candle with **no stock check**; `both` runs the two independently | 15-min (first bar) | Simulated | `/early-bird-paper` |
 | **EarlyBird Backtest** | Same engine over a date range (conservative intra-bar ordering, equity-intraday charges) | 15-min historical | Historical | `/early-bird-backtest` |
+| **FUT EMA_RSI_ST Paper / Backtest** | EMA_RSI_ST's rules on **NIFTY futures** (CE signal = long, PE = short) | as EMA_RSI_ST | Simulated / Historical | `/fut_ema_rsi_st-paper`, `/fut_ema_rsi_st-backtest` |
+| **FUT BB_RSI Paper / Backtest** | BB_RSI's rules on NIFTY futures | as BB_RSI | Simulated / Historical | `/fut_bb_rsi-paper`, `/fut_bb_rsi-backtest` |
+| **FUT EMA9+VWAP Paper / Backtest** | EMA9+VWAP's rules on NIFTY futures | 5-min | Simulated / Historical | `/fut_ema9vwap-paper`, `/fut_ema9vwap-backtest` |
+| **FUT RSI Pivot ST Paper / Backtest** | RSI Pivot ST's rules on NIFTY futures | as RSI Pivot ST | Simulated / Historical | `/fut-rsi-pivot-st-paper`, `/fut-rsi-pivot-st-backtest` |
+| **FUT EMA_RSI_ST_V2 Paper / Backtest** | EMA_RSI_ST_V2's rules on NIFTY futures | as V2 | Simulated / Historical | `/fut_ema_rsi_st_v2-paper`, `/fut_ema_rsi_st_v2-backtest` |
+| **FUT ST_RSI_PIV_BB Paper** | ST_RSI_PIV_BB's rules on NIFTY futures (paper only) | as ST_RSI_PIV_BB | Simulated | `/fut_st_rsi_piv_bb-paper` |
+| **FUT PIVOT_EMA_ST Paper** | PIVOT_EMA_ST's rules on NIFTY futures (paper only) | as PIVOT_EMA_ST | Simulated | `/fut_pivot_ema_st-paper` |
 | **OI Monitor** | Read-only per-strike OI ladder, walls, band PCR — no position, no order | live OI ladder | — | `/oi-monitor` |
 | **Swing Scanner** | Screens a stock universe with one active strategy on a page-local timeframe; manual **CNC/AMO** entry per row | 5m / 15m / 30m / 1h / 4h / 1w (stocks) | Zerodha (manual, real) | `/swing-scanner` |
 | **RSI Pivot ST Paper** | RSI(14) extreme + a candle crossing and closing beyond yesterday's Standard Pivot R1/S1 (single-leg OTM CE/PE) | 5-min | Simulated | `/rsi-pivot-st-paper` |
@@ -437,6 +444,14 @@ Both legs share the same level maths (buffer, big-candle body-edge stop, 1:2 tar
 - **Guide**: [documents/EarlyBird_Strategy_Guide.html](documents/EarlyBird_Strategy_Guide.html).
 
 
+### NIFTY FUTURES twins — FUT_* (futures are their own strategies, not a toggle)
+
+There is **no global options/futures switch** any more (the old `INSTRUMENT` setting is removed and ignored): every strategy above trades **options**. Futures trade only through seven separate **FUT_*** strategies — FUT_EMA_RSI_ST, FUT_BB_RSI, FUT_EMA9_VWAP, FUT_RSI_PIVOT_ST, FUT_EMA_RSI_ST_V2, FUT_ST_RSI_PIV_BB, FUT_PIVOT_EMA_ST — each listed under the **NIFTY FUTURES** sidebar group.
+
+- **Same rules, same engine.** Each twin calls its options strategy's engine with the env prefix `FUT_<STRATEGY>`, so entries and exits can never drift apart, while the twin's own settings (`FUT_<STRATEGY>_*`, same defaults) tune independently in their own Settings sections. Common (unprefixed) settings — session times, profit lock / premium-stop keys, lot multiplier, VIX/OI globals, backtest costs — are shared.
+- **Futures, always.** The month contract `NSE:NIFTY{YY}{MMM}FUT`; a CE signal is a LONG, a PE signal a SHORT; price and P&L are index points × qty with futures charges. Option-only gates (premium band, option LTP polling, option bid-ask) do not apply. The profit lock is defined on option premium, so on a future the working automatic exit is the common premium stop in index points (`PREMIUM_SL_*`, see "Futures mode" above) plus the session-end square-off.
+- **Paper + backtest only** — no live order path. Each twin is gated by `FUT_<STRATEGY>_MODE_ENABLED`.
+
 ## Quick Start (EC2)
 
 ```bash
@@ -672,6 +687,17 @@ log, so each session's trades carry the exact config that produced them.
 | `/simple930-backtest` | SIMPLE_9:30 date-range backtest on **real** 1-min option premium candles. Only reaches back as far as the currently listed weekly contracts — a delisted weekly cannot be fetched at all, and those sessions are reported as "no option data" rather than counted as flat. `/simple930-backtest/day-log?jobId=…` returns the full per-session audit. |
 | `/simple930-paper/status` | Paper trade — the 09:25 ladder table, both watchlist legs, a premium chart per leg with the ₹180 trigger / ₹160–₹220 box / stop drawn on it, and a structured decision trail |
 | `/simple930-paper/history` | Sessions (per-session delete + view modal) |
+
+### NIFTY FUTURES twins (FUT_*)
+| URL | Description |
+|-----|-------------|
+| `/fut_ema_rsi_st-paper/status`, `/fut_ema_rsi_st-backtest` | FUT EMA_RSI_ST — paper / backtest on NIFTY futures |
+| `/fut_bb_rsi-paper/status`, `/fut_bb_rsi-backtest` | FUT BB_RSI |
+| `/fut_ema9vwap-paper/status`, `/fut_ema9vwap-backtest` | FUT EMA9+VWAP |
+| `/fut-rsi-pivot-st-paper/status`, `/fut-rsi-pivot-st-backtest` | FUT RSI Pivot ST |
+| `/fut_ema_rsi_st_v2-paper/status`, `/fut_ema_rsi_st_v2-backtest` | FUT EMA_RSI_ST_V2 |
+| `/fut_st_rsi_piv_bb-paper/status` | FUT ST_RSI_PIV_BB (paper only) |
+| `/fut_pivot_ema_st-paper/status` | FUT PIVOT_EMA_ST (paper only) |
 
 ### Analytics & Tools
 | URL | Description |

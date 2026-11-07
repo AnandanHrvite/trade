@@ -51,6 +51,8 @@ MODES.push("sail_vwap_st"); // SAIL_VWAP_ST
 MODES.push("pivot_ema_st", "bn_pivot_ema_st", "sail_pivot_ema_st"); // PIVOT_EMA_ST family
 MODES.push("gap_runaway", "gap_runaway_stk"); // GAP_RUNAWAY (NIFTY) + its stock scanner
 MODES.push("itm20_scalp"); // ITM20_SCALP
+// NIFTY FUTURES twins (CE = LONG future, PE = SHORT) — each its own log, never the options one.
+MODES.push("fut_ema_rsi_st", "fut_ema_rsi_st_v2", "fut_bb_rsi", "fut_ema9vwap", "fut_rsi_pivot_st", "fut_st_rsi_piv_bb", "fut_pivot_ema_st");
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -732,17 +734,22 @@ function enabledModesFromEnv() {
   const on = (v) => String(v == null ? "true" : v).toLowerCase() === "true";
   return {
     ema_rsi_st:    on(process.env.EMA_RSI_ST_MODE_ENABLED),
+    fut_ema_rsi_st: on(process.env.FUT_EMA_RSI_ST_MODE_ENABLED),
     // EMA_RSI_ST_V2 defaults OFF (every other mode defaults ON), so it is
     // compared explicitly rather than through the default-true on().
     ema_rsi_st_v2: String(process.env.EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
+    // Its NIFTY FUTURES twin defaults OFF like the original.
+    fut_ema_rsi_st_v2: String(process.env.FUT_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
     // Its NIFTY BANK sibling defaults OFF for the same reason.
     bn_ema_rsi_st_v2: String(process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
     // ST_RSI_PIV_BB defaults OFF like V2.
     st_rsi_piv_bb: String(process.env.ST_RSI_PIV_BB_MODE_ENABLED || "false").toLowerCase() === "true",
+    fut_st_rsi_piv_bb: String(process.env.FUT_ST_RSI_PIV_BB_MODE_ENABLED || "false").toLowerCase() === "true",
     // SAIL_VWAP_ST defaults OFF.
     sail_vwap_st: String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() === "true",
     // PIVOT_EMA_ST family defaults ON.
     pivot_ema_st: on(process.env.PIVOT_EMA_ST_MODE_ENABLED),
+    fut_pivot_ema_st: on(process.env.FUT_PIVOT_EMA_ST_MODE_ENABLED),
     bn_pivot_ema_st: on(process.env.BN_PIVOT_EMA_ST_MODE_ENABLED),
     sail_pivot_ema_st: on(process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED),
     // GAP_RUNAWAY + its stock scanner default ON.
@@ -750,14 +757,17 @@ function enabledModesFromEnv() {
     gap_runaway_stk: on(process.env.GAP_RUNAWAY_STK_MODE_ENABLED),
     itm20_scalp: on(process.env.ITM20_SCALP_MODE_ENABLED),
     bb_rsi:    on(process.env.BB_RSI_MODE_ENABLED),
+    fut_bb_rsi: on(process.env.FUT_BB_RSI_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
     ema9vwap: on(process.env.EMA9VWAP_MODE_ENABLED),
+    fut_ema9vwap: on(process.env.FUT_EMA9VWAP_MODE_ENABLED),
     trend_pb: on(process.env.TREND_PB_MODE_ENABLED),
     trend_day_scalp: on(process.env.TDS_MODE_ENABLED),
   ha_scalp: on(process.env.HA_SCALP_MODE_ENABLED),
     prev_orb_scalp: on(process.env.PREV_ORB_SCALP_MODE_ENABLED),
     rsi_pivot_st: on(process.env.RSI_PIVOT_ST_MODE_ENABLED),
+    fut_rsi_pivot_st: on(process.env.FUT_RSI_PIVOT_ST_MODE_ENABLED),
     bn_pivot_rsi_st: on(process.env.BN_PIVOT_RSI_ST_MODE_ENABLED),
     simple930: on(process.env.SIMPLE930_MODE_ENABLED),
     early_bird: on(process.env.EARLYBIRD_MODE_ENABLED),
@@ -816,25 +826,32 @@ router.get("/", (req, res) => {
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
     .mode-ema_rsi_st    { color:#60a5fa; }
+    .mode-fut_ema_rsi_st { color:#f59e0b; }
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
+    .mode-fut_ema_rsi_st_v2 { color:#f59e0b; }
     .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
     .mode-st_rsi_piv_bb { color:#bef264; }
+    .mode-fut_st_rsi_piv_bb { color:#f59e0b; }
     .mode-sail_vwap_st { color:#fecdd3; }
     .mode-pivot_ema_st { color:#7dd3fc; }
+    .mode-fut_pivot_ema_st { color:#f59e0b; }
     .mode-bn_pivot_ema_st { color:#f9a8d4; }
     .mode-sail_pivot_ema_st { color:#fde68a; }
     .mode-gap_runaway { color:#c4b5fd; }
     .mode-gap_runaway_stk { color:#d8b4fe; }
     .mode-itm20_scalp { color:#67e8f9; }
     .mode-bb_rsi    { color:#fbbf24; }
+    .mode-fut_bb_rsi { color:#f59e0b; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
     .mode-ema9vwap { color:#06b6d4; }
+    .mode-fut_ema9vwap { color:#f59e0b; }
     .mode-trend_pb { color:#ec4899; }
     .mode-trend_day_scalp { color:#a855f7; }
 .mode-ha_scalp { color:#f97316; }
 .mode-prev_orb_scalp { color:#e879f9; }
     .mode-rsi_pivot_st { color:#facc15; }
+    .mode-fut_rsi_pivot_st { color:#f59e0b; }
     .mode-bn_pivot_rsi_st { color:#818cf8; }
     .mode-simple930 { color:#fb923c; }
     .mode-early_bird { color:#14b8a6; }
@@ -1270,25 +1287,32 @@ ${buildSidebar('tradeLogs', false)}
 
   var MODE_LIST = [
     { key: 'ema_rsi_st',    label: 'EMA_RSI_ST',        cls: 'mode-ema_rsi_st' },
+    { key: 'fut_ema_rsi_st', label: 'FUT EMA_RSI_ST', cls: 'mode-fut_ema_rsi_st' },
     { key: 'ema_rsi_st_v2', label: 'EMA_RSI_ST_V2',     cls: 'mode-ema_rsi_st_v2' },
+    { key: 'fut_ema_rsi_st_v2', label: 'FUT EMA_RSI_ST_V2', cls: 'mode-fut_ema_rsi_st_v2' },
     { key: 'bn_ema_rsi_st_v2', label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
     { key: 'st_rsi_piv_bb', label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
+    { key: 'fut_st_rsi_piv_bb', label: 'FUT ST_RSI_PIV_BB', cls: 'mode-fut_st_rsi_piv_bb' },
     { key: 'sail_vwap_st', label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
     { key: 'pivot_ema_st', label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
+    { key: 'fut_pivot_ema_st', label: 'FUT PIVOT_EMA_ST', cls: 'mode-fut_pivot_ema_st' },
     { key: 'bn_pivot_ema_st', label: 'BN PIVOT_EMA_ST', cls: 'mode-bn_pivot_ema_st' },
     { key: 'sail_pivot_ema_st', label: 'SAIL PIVOT_EMA_ST', cls: 'mode-sail_pivot_ema_st' },
     { key: 'gap_runaway', label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
     { key: 'gap_runaway_stk', label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
     { key: 'itm20_scalp', label: 'ITM20 SCALP', cls: 'mode-itm20_scalp' },
     { key: 'bb_rsi',    label: 'BB_RSI',        cls: 'mode-bb_rsi' },
+    { key: 'fut_bb_rsi', label: 'FUT BB_RSI', cls: 'mode-fut_bb_rsi' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
     { key: 'ema9vwap', label: 'EMA9+VWAP',    cls: 'mode-ema9vwap' },
+    { key: 'fut_ema9vwap', label: 'FUT EMA9+VWAP', cls: 'mode-fut_ema9vwap' },
     { key: 'trend_pb', label: 'TREND PB',     cls: 'mode-trend_pb' },
     { key: 'trend_day_scalp', label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
       { key: 'ha_scalp', label: 'HA SCALP', cls: 'mode-ha_scalp' },
     { key: 'prev_orb_scalp', label: 'PREV ORB SCALP', cls: 'mode-prev_orb_scalp' },
     { key: 'rsi_pivot_st', label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
+    { key: 'fut_rsi_pivot_st', label: 'FUT RSI PIVOT ST', cls: 'mode-fut_rsi_pivot_st' },
     { key: 'bn_pivot_rsi_st', label: 'BN PIVOT RSI ST', cls: 'mode-bn_pivot_rsi_st' },
     { key: 'simple930', label: 'SIMPLE_9:30', cls: 'mode-simple930' },
     { key: 'early_bird', label: 'EARLYBIRD', cls: 'mode-early_bird' },
@@ -1315,6 +1339,8 @@ ${buildSidebar('tradeLogs', false)}
   _filesPage.gap_runaway = 1; _skipsPage.gap_runaway = 1;
   _filesPage.gap_runaway_stk = 1; _skipsPage.gap_runaway_stk = 1;
   _filesPage.itm20_scalp = 1; _skipsPage.itm20_scalp = 1;
+  ['fut_ema_rsi_st', 'fut_ema_rsi_st_v2', 'fut_bb_rsi', 'fut_ema9vwap', 'fut_rsi_pivot_st', 'fut_st_rsi_piv_bb', 'fut_pivot_ema_st']
+    .forEach(function(k){ _filesPage[k] = 1; _skipsPage[k] = 1; }); // NIFTY FUTURES twins
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

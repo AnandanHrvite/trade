@@ -51,12 +51,19 @@
  *   a course slide), not a fitted value.
  *
  * Contract:
- *   getConfig()                          -> live env read (never cached)
+ *   getConfig(prefix?)                   -> live env read (never cached)
  *   warmupBars(cfg)                      -> bars refused below, per timeframe
  *   computePivots(daily, { forDayKey })  -> { pp, r1, s1, r2, s2, forDayKey, ... }
  *   computeSeries(candles, cfg)          -> { rsi, bbUpper, bbMiddle, bbLower, supertrend } 1:1
  *   checkBar(bar, idx, series, pivots, cfg) -> the 4-box checklist for CE and PE
- *   getSignal(candles, opts)             -> { signal, reason, checks, ... }
+ *   getSignal(candles, opts)             -> { signal, reason, checks, ... }  (opts.prefix?)
+ *   forPrefix(prefix)                    -> this same API reading `${prefix}_*` keys
+ *
+ * ── ENV PREFIX ──────────────────────────────────────────────────────────────
+ *   The strategy's own keys are read under ST_RSI_PIV_BB_ by default. The NIFTY
+ *   FUTURES twin (FUT_ST_RSI_PIV_BB, /fut_st_rsi_piv_bb-paper) runs these exact
+ *   rules under its own FUT_ST_RSI_PIV_BB_ keys via forPrefix("FUT_ST_RSI_PIV_BB").
+ *   Omitting the prefix keeps every existing caller on ST_RSI_PIV_BB_.
  */
 
 const { RSI, BollingerBands } = require("technicalindicators");
@@ -112,31 +119,39 @@ function _intEnv(key, def, min, max) {
   return v;
 }
 
+/** The env prefix a call reads: the given one (trailing "_" dropped), else ST_RSI_PIV_BB. */
+function _prefixOf(prefix) {
+  const p = String(prefix == null ? "" : prefix).trim().replace(/_+$/, "");
+  return p || PREFIX;
+}
+
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ * `prefix` (optional) — read `${prefix}_*` instead of ST_RSI_PIV_BB_*.
  */
-function getConfig() {
-  const rawTf = String(process.env[PREFIX + "_ENTRY_TF"] || "BOTH").trim().toUpperCase();
+function getConfig(prefix) {
+  const P = _prefixOf(prefix);
+  const rawTf = String(process.env[P + "_ENTRY_TF"] || "BOTH").trim().toUpperCase();
   const entryTf = ENTRY_TFS.includes(rawTf) ? rawTf : "BOTH";
   return {
-    PREFIX,
+    PREFIX:       P,
     ENTRY_TF:     entryTf,
     // The trade timeframe: entries are evaluated here.
     TRADE_RES:    entryTf === "5" ? 5 : 3,
     // BOTH only: the second chart that must agree. null = no second chart.
     CONFIRM_RES:  entryTf === "BOTH" ? 5 : null,
 
-    RSI_PERIOD:   _intEnv(PREFIX + "_RSI_PERIOD", 14, 2, 100),
-    RSI_CE_MIN:   _numEnv(PREFIX + "_RSI_CE_MIN", 70, 0, 100),
-    RSI_PE_MAX:   _numEnv(PREFIX + "_RSI_PE_MAX", 30, 0, 100),
-    ST_PERIOD:    _intEnv(PREFIX + "_ST_PERIOD", 10, 2, 100),
-    ST_MULT:      _numEnv(PREFIX + "_ST_MULT", 2, 0.1, 10),
-    BB_PERIOD:    _intEnv(PREFIX + "_BB_PERIOD", 20, 2, 200),
-    BB_STDDEV:    _numEnv(PREFIX + "_BB_STDDEV", 2, 0.1, 10),
+    RSI_PERIOD:   _intEnv(P + "_RSI_PERIOD", 14, 2, 100),
+    RSI_CE_MIN:   _numEnv(P + "_RSI_CE_MIN", 70, 0, 100),
+    RSI_PE_MAX:   _numEnv(P + "_RSI_PE_MAX", 30, 0, 100),
+    ST_PERIOD:    _intEnv(P + "_ST_PERIOD", 10, 2, 100),
+    ST_MULT:      _numEnv(P + "_ST_MULT", 2, 0.1, 10),
+    BB_PERIOD:    _intEnv(P + "_BB_PERIOD", 20, 2, 200),
+    BB_STDDEV:    _numEnv(P + "_BB_STDDEV", 2, 0.1, 10),
 
-    ENTRY_START:  _parseHHMM(process.env[PREFIX + "_ENTRY_START"], 9 * 60 + 30),
-    ENTRY_END:    _parseHHMM(process.env[PREFIX + "_ENTRY_END"], 15 * 60),
+    ENTRY_START:  _parseHHMM(process.env[P + "_ENTRY_START"], 9 * 60 + 30),
+    ENTRY_END:    _parseHHMM(process.env[P + "_ENTRY_END"], 15 * 60),
   };
 }
 
@@ -150,7 +165,7 @@ function warmupBars(cfg) {
   cfg = cfg || getConfig();
   return Math.max(cfg.BB_PERIOD, cfg.ST_PERIOD + 1, cfg.RSI_PERIOD + 1) + 5;
 }
-function warmupDays() { return _intEnv(PREFIX + "_WARMUP_DAYS", 3, 1, 15); }
+function warmupDays(prefix) { return _intEnv(_prefixOf(prefix) + "_WARMUP_DAYS", 3, 1, 15); }
 
 /** Entry window on the signal candle's CLOSE time (= the moment the entry fills). */
 function isInTradingWindow(barTimeSec, cfg) {
@@ -314,6 +329,7 @@ const _NO = { entrySpot: null, prevCandleHigh: null, prevCandleLow: null };
  *                          recomputing on candles.slice(0, endIdx+1).
  *   opts.confirmSeries   — OFFLINE ANALYSIS / TESTS ONLY: computeSeries(confirmCandles) over the whole array.
  *   opts.skipTimeCheck   — exit-time indicator snapshots only, never the entry path.
+ *   opts.prefix          — env prefix to read (default ST_RSI_PIV_BB); forPrefix() sets it.
  * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup,
  *           entrySpot, checks, confirmChecks, rsi, bbUpper, bbMiddle, bbLower,
  *           supertrend, stTrend, r1, s1, pp, ... }.
@@ -321,7 +337,7 @@ const _NO = { entrySpot: null, prevCandleHigh: null, prevCandleLow: null };
 function getSignal(candles, opts) {
   const o = opts || {};
   const pre = o.precomputed || null;
-  const cfg = (pre && pre.cfg) || getConfig();
+  const cfg = (pre && pre.cfg) || getConfig(o.prefix);
   const WARMUP = warmupBars(cfg);
   const nBars = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
   if (nBars < WARMUP) {
@@ -415,8 +431,42 @@ function getSignal(candles, opts) {
   const reason = side === "CE"
     ? `CE ${tag} 4/4${conf}: ST green ${_r2(stv)} | RSI ${chk.rsi}>${cfg.RSI_CE_MIN} | C ${bar.close}>R1 ${pivots.r1} | C>BB up ${chk.bbUpper}`
     : `PE ${tag} 4/4${conf}: ST red ${_r2(stv)} | RSI ${chk.rsi}<${cfg.RSI_PE_MAX} | C ${bar.close}<S1 ${pivots.s1} | C<BB low ${chk.bbLower}`;
-  if (!o.silent) console.log(`[${NAME}] 🟢 ${side === "CE" ? "BUY_CE" : "BUY_PE"} — ${reason}`);
+  if (!o.silent) console.log(`[${cfg.PREFIX || NAME}] 🟢 ${side === "CE" ? "BUY_CE" : "BUY_PE"} — ${reason}`);
   return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", reason });
+}
+
+/**
+ * The same engine bound to another env prefix — every call reads `${prefix}_*`
+ * keys, so a route that holds this object cannot read ST_RSI_PIV_BB_* by
+ * accident. An explicit cfg passed in still wins (it was read for this prefix).
+ * forPrefix("ST_RSI_PIV_BB") behaves exactly like the module itself.
+ */
+const _bound = new Map();
+function forPrefix(prefix) {
+  const P = _prefixOf(prefix);
+  if (_bound.has(P)) return _bound.get(P);
+  const cfgOf = (cfg) => cfg || getConfig(P);
+  const api = {
+    NAME: P,
+    PREFIX: P,
+    DEFAULT_PREFIX: PREFIX,
+    DESCRIPTION,
+    ENTRY_TFS,
+    getConfig:         () => getConfig(P),
+    warmupBars:        (cfg) => warmupBars(cfgOf(cfg)),
+    warmupDays:        () => warmupDays(P),
+    isInTradingWindow: (barTimeSec, cfg) => isInTradingWindow(barTimeSec, cfgOf(cfg)),
+    computePivots,
+    computeSeries:     (candles, cfg) => computeSeries(candles, cfgOf(cfg)),
+    checkBar:          (bar, idx, series, pivots, cfg) => checkBar(bar, idx, series, pivots, cfgOf(cfg)),
+    getSignal:         (candles, opts) => getSignal(candles, Object.assign({}, opts, { prefix: P })),
+    forPrefix,
+    _istDayOf,
+    _istMins,
+    _confirmIndex,
+  };
+  _bound.set(P, api);
+  return api;
 }
 
 module.exports = {
@@ -433,6 +483,7 @@ module.exports = {
   computeSeries,
   checkBar,
   getSignal,
+  forPrefix,
   _istDayOf,
   _istMins,
   _confirmIndex,

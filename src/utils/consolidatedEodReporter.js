@@ -84,6 +84,14 @@ function collectTodayStats(istDate) {
     GAP_RUNAWAY:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
     GAP_RUNAWAY_STK:   { trades: 0, wins: 0, losses: 0, pnl: 0 },
     SIMPLE930:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    // Futures twins — bucket keys = their consolidation mode / notify group.
+    FUT_EMA_RSI_ST:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    FUT_BB_RSI:        { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    FUT_EMA9VWAP:      { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    FUT_RSI_PIVOT_ST:  { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    FUT_EMA_RSI_ST_V2: { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    FUT_ST_RSI_PIV_BB: { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    FUT_PIVOT_EMA_ST:  { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };
 
   // loadAllTrades() returns flattened paper trades with `date` = session date

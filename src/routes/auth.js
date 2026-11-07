@@ -46,8 +46,9 @@ function _reauthFyersSocket() {
   }
 }
 
-// Strategies that use the ZERODHA session.
-const _ZERODHA_STRATEGY_RE = /^(EMA_RSI_ST|EMA9VWAP|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930|HA_SCALP|PREV_ORB_SCALP)_PAPER$/;
+// Strategies that use the ZERODHA session. The FUT_ (NIFTY FUTURES) twins share
+// their original's broker; anchored, so a FUT_ mode is never read as its original.
+const _ZERODHA_STRATEGY_RE = /^(EMA_RSI_ST|EMA9VWAP|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930|HA_SCALP|PREV_ORB_SCALP|FUT_EMA_RSI_ST|FUT_EMA9VWAP|FUT_RSI_PIVOT_ST|FUT_EMA_RSI_ST_V2)_PAPER$/;
 function _activeZerodhaModes() {
   const out = [];
   for (const [name, fn] of Object.entries(sharedSocketState)) {
@@ -59,16 +60,21 @@ function _activeZerodhaModes() {
     const m = sharedSocketState.getStRsiPivBbMode && sharedSocketState.getStRsiPivBbMode();
     if (m && /^ST_RSI_PIV_BB_PAPER$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
+  // FUT_ST_RSI_PIV_BB — the NIFTY FUTURES twin, same brokers as its original.
+  try {
+    const m = sharedSocketState.getFutStRsiPivBbMode && sharedSocketState.getFutStRsiPivBbMode();
+    if (m && /^FUT_ST_RSI_PIV_BB_PAPER$/.test(m) && !out.includes(m)) out.push(m);
+  } catch (_) {}
   // SAIL_VWAP_ST — Fyers candles, Zerodha orders (SAIL stock options).
   try {
     const m = sharedSocketState.getSailVwapStMode && sharedSocketState.getSailVwapStMode();
     if (m && /^SAIL_VWAP_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
-  // PIVOT_EMA_ST family (NIFTY / BANK NIFTY / SAIL) — Fyers candles, Zerodha orders.
-  for (const g of ["getPivotEmaStMode", "getBnPivotEmaStMode", "getSailPivotEmaStMode"]) {
+  // PIVOT_EMA_ST family (NIFTY / BANK NIFTY / SAIL / NIFTY FUTURES) — Fyers candles, Zerodha orders.
+  for (const g of ["getPivotEmaStMode", "getBnPivotEmaStMode", "getSailPivotEmaStMode", "getFutPivotEmaStMode"]) {
     try {
       const m = sharedSocketState[g] && sharedSocketState[g]();
-      if (m && /^(SAIL_|BN_)?PIVOT_EMA_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
+      if (m && /^(SAIL_|BN_|FUT_)?PIVOT_EMA_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
     } catch (_) {}
   }
   // GAP_RUNAWAY — Fyers data, Zerodha orders (the stock scanner places none).

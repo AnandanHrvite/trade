@@ -113,25 +113,32 @@ async function loadVixByDate(fromDate, toDate) {
 // Mirror the source map used by consolidation.js (paper).
 const PAPER_SOURCES = [
   { mode: "EMA_RSI_ST", file: "ema_rsi_st_paper_trades.json" },
+  { mode: "FUT_EMA_RSI_ST", file: "fut_ema_rsi_st_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_paper_trades.json" },
+  { mode: "FUT_EMA_RSI_ST_V2", file: "fut_ema_rsi_st_v2_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_paper_trades.json" },
   { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
+  { mode: "FUT_ST_RSI_PIV_BB", file: "fut_st_rsi_piv_bb_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
   { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
+  { mode: "FUT_PIVOT_EMA_ST", file: "fut_pivot_ema_st_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_paper_trades.json" },
   { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   { mode: "GAP_RUNAWAY", file: "gap_runaway_paper_trades.json" },
   { mode: "GAP_RUNAWAY_STK", file: "gap_runaway_stk_paper_trades.json" },
   { mode: "BB_RSI",     file: "bb_rsi_paper_trades.json" },
+  { mode: "FUT_BB_RSI", file: "fut_bb_rsi_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "PA",         file: "pa_paper_trades.json" },
   { mode: "ORB",        file: "orb_paper_trades.json" },
   { mode: "EMA9VWAP",   file: "ema9vwap_paper_trades.json" },
+  { mode: "FUT_EMA9VWAP", file: "fut_ema9vwap_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "TREND_PB",   file: "trend_pb_paper_trades.json" },
   { mode: "TDS",        file: "trend_day_scalp_paper_trades.json" },
   { mode: "HA_SCALP",   file: "ha_scalp_paper_trades.json" },
   { mode: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
   { mode: "ITM20_SCALP", file: "itm20_scalp_paper_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
+  { mode: "FUT_RSI_PIVOT_ST", file: "fut_rsi_pivot_st_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "BN_PIVOT_RSI_ST", file: "bn_pivot_rsi_st_paper_trades.json" },
   { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
   { mode: "EARLYBIRD",  file: "early_bird_paper_trades.json" },
@@ -142,25 +149,32 @@ const PAPER_SOURCES = [
 // (?date=YYYY-MM-DD) so the matching session card is expanded on arrival.
 const PAPER_HISTORY_PATH = {
   EMA_RSI_ST:        "/ema_rsi_st-paper/history",
+  FUT_EMA_RSI_ST:    "/fut_ema_rsi_st-paper/history",
   EMA_RSI_ST_V2:     "/ema_rsi_st_v2-paper/history",
+  FUT_EMA_RSI_ST_V2: "/fut_ema_rsi_st_v2-paper/history",
   BN_EMA_RSI_ST_V2:  "/bn_ema_rsi_st_v2-paper/history",
   ST_RSI_PIV_BB:     "/st_rsi_piv_bb-paper/history",
+  FUT_ST_RSI_PIV_BB: "/fut_st_rsi_piv_bb-paper/history",
   SAIL_VWAP_ST:      "/sail_vwap_st-paper/history",
   PIVOT_EMA_ST:      "/pivot_ema_st-paper/history",
+  FUT_PIVOT_EMA_ST:  "/fut_pivot_ema_st-paper/history",
   BN_PIVOT_EMA_ST:   "/bn_pivot_ema_st-paper/history",
   SAIL_PIVOT_EMA_ST: "/sail_pivot_ema_st-paper/history",
   GAP_RUNAWAY:       "/gap_runaway-paper/history",
   GAP_RUNAWAY_STK:   "/gap_runaway_stk-paper/history",
   BB_RSI:            "/bb_rsi-paper/history",
+  FUT_BB_RSI:        "/fut_bb_rsi-paper/history",
   PA:                "/pa-paper/history",
   ORB:               "/orb-paper/history",
   EMA9VWAP:          "/ema9vwap-paper/history",
+  FUT_EMA9VWAP:      "/fut_ema9vwap-paper/history",
   TREND_PB:          "/trend-pb-paper/history",
   TDS:               "/trend-day-scalp-paper/history",
   HA_SCALP:          "/ha-scalp-paper/history",
   PREV_ORB_SCALP:    "/prev-orb-scalp-paper/history",
   ITM20_SCALP:       "/itm20-scalp-paper/history",
   RSI_PIVOT_ST:      "/rsi-pivot-st-paper/history",
+  FUT_RSI_PIVOT_ST:  "/fut-rsi-pivot-st-paper/history",
   BN_PIVOT_RSI_ST:   "/bn-pivot-rsi-st-paper/history",
   SIMPLE930:         "/simple930-paper/history",
   EARLYBIRD:         "/early-bird-paper/history",
@@ -380,25 +394,32 @@ ${multiSelectCSS()}
     @media print{.trtip{display:none!important;}}
     .badge-mode{padding:2px 6px;border-radius:4px;font-size:0.52rem;font-weight:700;letter-spacing:0.5px;}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;}
+    .badge-FUT_EMA_RSI_ST{background:rgba(245,158,11,0.12);color:#3b82f6;border:0.5px solid #f59e0b;}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;}
+    .badge-FUT_EMA_RSI_ST_V2{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
     .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;}
+    .badge-FUT_ST_RSI_PIV_BB{background:rgba(245,158,11,0.12);color:#a3e635;border:0.5px solid #f59e0b;}
     .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;}
+    .badge-FUT_PIVOT_EMA_ST{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
     .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;}
     .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;}
     .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;}
+    .badge-FUT_BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid #f59e0b;}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;}
     .badge-EMA9VWAP{background:rgba(6,182,212,0.12);color:#06b6d4;}
+    .badge-FUT_EMA9VWAP{background:rgba(245,158,11,0.12);color:#06b6d4;border:0.5px solid #f59e0b;}
     .badge-TREND_PB{background:rgba(236,72,153,0.12);color:#ec4899;}
     .badge-TDS{background:rgba(168,85,247,0.12);color:#a855f7;}
 .badge-HA_SCALP{background:rgba(249,115,22,0.12);color:#f97316;}
     .badge-PREV_ORB_SCALP{background:rgba(232,121,249,0.12);color:#e879f9;}
     .badge-ITM20_SCALP{background:rgba(34,211,238,0.12);color:#22d3ee;}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
+    .badge-FUT_RSI_PIVOT_ST{background:rgba(245,158,11,0.12);color:#facc15;border:0.5px solid #f59e0b;}
     .badge-BN_PIVOT_RSI_ST{background:rgba(129,140,248,0.12);color:#818cf8;}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;}
     .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;}

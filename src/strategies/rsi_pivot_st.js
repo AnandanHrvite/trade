@@ -66,7 +66,8 @@
  * live gate.
  *
  * Contract:
- *   getConfig()                        -> live env read (never cached)
+ *   getConfig([prefix])                -> live env read (never cached), RSI_PIVOT_ST_* by default
+ *   forPrefix(prefix)                  -> this API bound to PREFIX_* keys (FUT_RSI_PIVOT_ST twin)
  *   computePivots(dailyCandles, opts)  -> { pp, r1, s1, r2, s2, from } for TODAY
  *   computeRsi(candles, period)        -> { values, offset } time-aligned
  *   computeSuperTrendSeries(candles,c) -> per-candle { value, trend }
@@ -148,44 +149,60 @@ const ST_SIDES = ["BOTH", "CE", "PE", "NONE"];
 /** NIFTY strikes are struck every 50 points. Not configurable anywhere in this repo. */
 const STRIKE_STEP = 50;
 
+// ── Env prefix — one engine, two strategies ─────────────────────────────────
+// The same rules serve two strategies that are tuned independently:
+//   RSI_PIVOT_ST_*      → NIFTY OPTIONS (routes /rsi-pivot-st-*)
+//   FUT_RSI_PIVOT_ST_*  → its NIFTY FUTURES twin (routes /fut-rsi-pivot-st-*)
+// Every existing export reads the default prefix exactly as before. A twin
+// takes forPrefix(prefix), the identical API bound to its own keys. Only the
+// strategy-own keys are prefixed — this engine reads no common key.
+const DEFAULT_PREFIX = "RSI_PIVOT_ST";
+const PREFIXES = { RSI_PIVOT_ST: "NIFTY", FUT_RSI_PIVOT_ST: "NIFTY" };
+/** The underlying an env prefix trades. Unknown prefixes fall back to NIFTY. */
+function underlyingFor(prefix) { return PREFIXES[prefix || DEFAULT_PREFIX] || "NIFTY"; }
+
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ *
+ * @param {string} [prefix] env prefix, default RSI_PIVOT_ST (see PREFIXES).
  */
-function getConfig() {
-  const rawStrike = String(process.env.RSI_PIVOT_ST_STRIKE_MODE || "OTM").trim().toUpperCase();
+function getConfig(prefix) {
+  const P = prefix || DEFAULT_PREFIX;
+  const e = process.env;
+  const rawStrike = String(e[P + "_STRIKE_MODE"] || "OTM").trim().toUpperCase();
   // SuperTrend sides. The new selector wins; when it is absent we fall back to
   // the legacy CE on/off flag so an old .env is not silently re-enabled.
-  const rawStSides = String(process.env.RSI_PIVOT_ST_ST_SIDES || "").trim().toUpperCase();
-  const legacyCeOff = String(process.env.RSI_PIVOT_ST_ST_CE_ENABLED || "true").toLowerCase() !== "true";
+  const rawStSides = String(e[P + "_ST_SIDES"] || "").trim().toUpperCase();
+  const legacyCeOff = String(e[P + "_ST_CE_ENABLED"] || "true").toLowerCase() !== "true";
   const stSides = ST_SIDES.includes(rawStSides) ? rawStSides : (legacyCeOff ? "NONE" : "CE");
   return {
-    resolutionMins:  _intEnv("RSI_PIVOT_ST_RESOLUTION", 5, 1, 60),
-    sessionStartMin: _parseHHMM(process.env.RSI_PIVOT_ST_SESSION_START, 9 * 60 + 15),
-    entryStartMin:   _parseHHMM(process.env.RSI_PIVOT_ST_ENTRY_START,   9 * 60 + 30),
-    entryEndMin:     _parseHHMM(process.env.RSI_PIVOT_ST_ENTRY_END,    15 * 60),
+    resolutionMins:  _intEnv(P + "_RESOLUTION", 5, 1, 60),
+    sessionStartMin: _parseHHMM(e[P + "_SESSION_START"], 9 * 60 + 15),
+    entryStartMin:   _parseHHMM(e[P + "_ENTRY_START"],   9 * 60 + 30),
+    entryEndMin:     _parseHHMM(e[P + "_ENTRY_END"],    15 * 60),
 
     // The RSI half of the entry rule.
-    rsiPeriod:       _intEnv("RSI_PIVOT_ST_RSI_PERIOD", 14, 2, 100),
-    rsiCeMin:        _numEnv("RSI_PIVOT_ST_RSI_CE_MIN", 70, 0, 100),
-    rsiPeMax:        _numEnv("RSI_PIVOT_ST_RSI_PE_MAX", 40, 0, 100),
+    rsiPeriod:       _intEnv(P + "_RSI_PERIOD", 14, 2, 100),
+    rsiCeMin:        _numEnv(P + "_RSI_CE_MIN", 70, 0, 100),
+    rsiPeMax:        _numEnv(P + "_RSI_PE_MAX", 40, 0, 100),
 
     // The pivot half. Buffer defaults to 0 = the close must simply be beyond R1/S1.
-    pivotBufferPts:  _numEnv("RSI_PIVOT_ST_PIVOT_BUFFER_PTS", 0, 0),
+    pivotBufferPts:  _numEnv(P + "_PIVOT_BUFFER_PTS", 0, 0),
 
     // Confirmation candle. ON (default) = the breakout candle only ARMS the
     // setup; entry waits for the NEXT candle to close beyond that breakout
     // candle's high (CE) or low (PE). OFF restores the old behaviour, where
     // the candle that crosses the pivot is itself the entry.
-    confirmEnabled:  String(process.env.RSI_PIVOT_ST_CONFIRM_ENABLED || "true").toLowerCase() === "true",
+    confirmEnabled:  String(e[P + "_CONFIRM_ENABLED"] || "true").toLowerCase() === "true",
 
     // Strike selection — 1% of spot, direction from STRIKE_MODE.
     strikeMode:      STRIKE_MODES.includes(rawStrike) ? rawStrike : "OTM",
-    strikePct:       _numEnv("RSI_PIVOT_ST_STRIKE_PCT", 1, 0, 20),
+    strikePct:       _numEnv(P + "_STRIKE_PCT", 1, 0, 20),
 
     // SuperTrend — entry filter. 10/2 is the user's stated setting.
-    stPeriod:        _intEnv("RSI_PIVOT_ST_ST_PERIOD", 10, 2, 100),
-    stMultiplier:    _numEnv("RSI_PIVOT_ST_ST_MULT", 2, 0.1, 10),
+    stPeriod:        _intEnv(P + "_ST_PERIOD", 10, 2, 100),
+    stMultiplier:    _numEnv(P + "_ST_MULT", 2, 0.1, 10),
     // Which sides the SuperTrend filter covers: BOTH / CE (default, the original
     // rule) / PE / NONE. Legacy RSI_PIVOT_ST_ST_CE_ENABLED=false still means
     // "no SuperTrend on CE" when the newer key is not set, so an existing .env
@@ -366,14 +383,17 @@ function minBarsFor(cfg) {
  * @param {Array} candles ascending 5-min IST NIFTY SPOT bars. The LAST element
  *        is the just-CLOSED signal candle — never a forming bar (the caller
  *        decides that).
- * @param {object} opts { cfg, dailyCandles, pivots, silent }
+ * @param {object} opts { cfg, dailyCandles, pivots, silent, tag }
  *        Either `pivots` (pre-computed, preferred — the route freezes them at
  *        session start) or `dailyCandles` must be supplied. Without one of the
  *        two there are no levels and the engine refuses to decide.
+ *        `tag` names the strategy in the reason/log line (default NAME);
+ *        forPrefix() passes its own prefix so a twin's records say which it is.
  */
 function getSignal(candles, opts) {
   const o = opts || {};
   const cfg = o.cfg || getConfig();
+  const tag = (typeof o.tag === "string" && o.tag) ? o.tag : NAME;
   const base = _baseSignal(cfg);
 
   const minBars = minBarsFor(cfg);
@@ -576,15 +596,49 @@ function getSignal(candles, opts) {
     : `the candle crossed and closed ${side === "CE" ? "above R1" : "below S1"} ${base.crossedLevel} ` +
       `(${_r2(prevBar.close)} → ${entry}, pivots from ${pivots.from})`;
   base.reason =
-    `RSI_PIVOT_ST ${side}: RSI ${base.rsi} ${side === "CE" ? `> ${cfg.rsiCeMin}` : `< ${cfg.rsiPeMax}`} and ${crossText} | ` +
+    `${tag} ${side}: RSI ${base.rsi} ${side === "CE" ? `> ${cfg.rsiCeMin}` : `< ${cfg.rsiPeMax}`} and ${crossText} | ` +
     `strike ${base.strike} (${strikeInfo.mode}${strikeInfo.steps ? `, ${strikeInfo.steps} step${strikeInfo.steps > 1 ? "s" : ""} = ${strikeInfo.distancePts}pt`: ""})` +
     (_num(base.superTrend) ? ` | SuperTrend ${base.superTrend}` : "");
 
   if (!o.silent) {
     const ist = new Date(bar.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-    console.log(`[RSI_PIVOT_ST ${ist}] ENTER ${side} @ ${entry} | strike ${base.strike} | RSI ${base.rsi}`);
+    console.log(`[${tag} ${ist}] ENTER ${side} @ ${entry} | strike ${base.strike} | RSI ${base.rsi}`);
   }
   return base;
+}
+
+// ── forPrefix — the same API bound to another env prefix ─────────────────────
+/**
+ * forPrefix(prefix) → this module's API with every config default bound to
+ * `prefix` (a key of PREFIXES). A call that omits `cfg` reads PREFIX_* keys,
+ * never RSI_PIVOT_ST_* — so a twin route cannot silently fall back to the
+ * options strategy's settings. Functions that take no config (pivots, RSI, the
+ * IST helpers) are shared unchanged. An unregistered prefix throws: a typo must
+ * fail at require time, not run the twin on coded defaults.
+ */
+const _boundApis = new Map();
+function forPrefix(prefix) {
+  const P = prefix || DEFAULT_PREFIX;
+  if (!Object.prototype.hasOwnProperty.call(PREFIXES, P)) {
+    throw new Error(`rsi_pivot_st.forPrefix: unknown env prefix "${P}" — register it in PREFIXES`);
+  }
+  if (_boundApis.has(P)) return _boundApis.get(P);
+  const cfgOf = (cfg) => cfg || getConfig(P);
+  const api = Object.assign({}, module.exports, _PREFIX_API, {
+    NAME:        P === DEFAULT_PREFIX ? NAME : P,
+    DESCRIPTION: P === DEFAULT_PREFIX ? DESCRIPTION : DESCRIPTION.replace(/^RSI_PIVOT_ST\b/, P),
+    PREFIX:      P,
+    UNDERLYING:  underlyingFor(P),
+    getConfig:               ()                 => getConfig(P),
+    computeSuperTrendSeries: (candles, cfg)     => computeSuperTrendSeries(candles, cfgOf(cfg)),
+    strikeForSide:           (spot, side, cfg)  => strikeForSide(spot, side, cfgOf(cfg)),
+    stApplies:               (side, cfg)        => stApplies(side, cfgOf(cfg)),
+    minBarsFor:              (cfg)              => minBarsFor(cfgOf(cfg)),
+    getSignal:               (candles, opts)    =>
+      getSignal(candles, Object.assign({ tag: P }, opts, { cfg: cfgOf(opts && opts.cfg) })),
+  });
+  _boundApis.set(P, api);
+  return api;
 }
 
 module.exports = {
@@ -608,3 +662,12 @@ module.exports = {
   _parseHHMM,
   _fmtMins,
 };
+
+// The prefix plumbing is attached NON-enumerable on purpose:
+// tests/bnPivotRsiSt.regression.js pins this module's enumerable export surface
+// key-for-key to BN_PIVOT_RSI_ST's (the two must expose the same RULES), and an
+// env-prefix binding is not a rule. `require(...).forPrefix` works as usual.
+const _PREFIX_API = { forPrefix, PREFIXES, DEFAULT_PREFIX, underlyingFor };
+for (const k of Object.keys(_PREFIX_API)) {
+  Object.defineProperty(module.exports, k, { value: _PREFIX_API[k], enumerable: false });
+}

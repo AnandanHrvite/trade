@@ -44,6 +44,18 @@ const GUIDE_MODE_BY_FILE = {
   "gap_runaway_strategy_guide.html":  "GAP_RUNAWAY",
 };
 
+// NIFTY FUTURES twins have no guide of their own — the same rules on the future
+// (CE = LONG, PE = SHORT) — so each shares its original's guide, which is listed
+// while the original OR its twin is on.
+const FUT_TWIN_OF_MODE = {
+  EMA_RSI_ST: "FUT_EMA_RSI_ST",
+  EMA_RSI_ST_V2: "FUT_EMA_RSI_ST_V2",
+  ST_RSI_PIV_BB: "FUT_ST_RSI_PIV_BB",
+  BB_RSI: "FUT_BB_RSI",
+  EMA9VWAP: "FUT_EMA9VWAP",
+  RSI_PIVOT_ST: "FUT_RSI_PIVOT_ST",
+};
+
 /**
  * @param {string} filename
  * @param {Set<string>} enabledModes
@@ -58,7 +70,7 @@ const CMX_MODE_KEYS = ["CRUDE", "GOLD", "SILVER"].flatMap(c =>
 // The PIVOT_EMA_ST guide covers NIFTY, BANK NIFTY, SAIL and the three commodity
 // pages, so it is shown when ANY of them is on. The commodity toggles default TRUE.
 const PIVOT_GUIDE_FILE = "pivot_ema_st_strategy_guide.html";
-const PIVOT_NSE_MODES = ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST"];
+const PIVOT_NSE_MODES = ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST", "FUT_PIVOT_EMA_ST"];
 const PIVOT_CMX_KEYS = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_ST_MODE_ENABLED`);
 
 function isDocVisible(filename, enabledModes) {
@@ -75,7 +87,7 @@ function isDocVisible(filename, enabledModes) {
     return CMX_MODE_KEYS.some(k => (process.env[k] || "false").toLowerCase() === "true");
   }
   const mode = GUIDE_MODE_BY_FILE[lower];
-  return !mode || enabledModes.has(mode);
+  return !mode || enabledModes.has(mode) || (!!FUT_TWIN_OF_MODE[mode] && enabledModes.has(FUT_TWIN_OF_MODE[mode]));
 }
 
 // ── Documents list presentation ─────────────────────────────────────────
@@ -826,6 +838,10 @@ const GUIDE_STATUS = {
     { type: "bool", label: "EMA_RSI_ST Mode (sidebar + Settings section)", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "VIX Filter", key: "VIX_FILTER_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "TRADE_EXPIRY_DAY_ONLY", def: "false" },
+  ] },
+  // Its NIFTY FUTURES twin reads the VIX / expiry keys above (shared); only its mode is its own.
+  { heading: "NIFTY FUTURES twin (FUT_EMA_RSI_ST)", rows: [
+    { type: "bool", label: "FUT EMA_RSI_ST Mode (sidebar + Settings section)", key: "FUT_EMA_RSI_ST_MODE_ENABLED", def: "true" },
   ] }] },
   // EMA_RSI_ST_V2 — a separate strategy from V1: every key below is V2's own.
   // The mode toggle defaults FALSE (V1 defaults true), so the guide stays hidden
@@ -835,6 +851,12 @@ const GUIDE_STATUS = {
     { type: "bool", label: "Confirmation Candle", key: "EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
     { type: "value", label: "SuperTrend Period", key: "EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
+  ] },
+  { heading: "NIFTY FUTURES twin (FUT_EMA_RSI_ST_V2)", rows: [
+    { type: "bool", label: "FUT EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "FUT_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+    { type: "bool", label: "Confirmation Candle", key: "FUT_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
+    { type: "value", label: "SuperTrend Period", key: "FUT_EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
+    { type: "value", label: "SuperTrend Multiplier", key: "FUT_EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
   ] }] },
   // The same engine on NIFTY BANK — every key below is its own BN_ one, so the
   // guide reads the NIFTY BANK settings, not the NIFTY ones.
@@ -851,6 +873,12 @@ const GUIDE_STATUS = {
     { type: "value", label: "Entry Timeframe (3 / 5 / BOTH)", key: "ST_RSI_PIV_BB_ENTRY_TF", def: "BOTH" },
     { type: "value", label: "SuperTrend Period", key: "ST_RSI_PIV_BB_ST_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "ST_RSI_PIV_BB_ST_MULT", def: "2" },
+  ] },
+  { heading: "NIFTY FUTURES twin (FUT_ST_RSI_PIV_BB)", rows: [
+    { type: "bool", label: "FUT ST_RSI_PIV_BB Mode (sidebar + Settings section)", key: "FUT_ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
+    { type: "value", label: "Entry Timeframe (3 / 5 / BOTH)", key: "FUT_ST_RSI_PIV_BB_ENTRY_TF", def: "BOTH" },
+    { type: "value", label: "SuperTrend Period", key: "FUT_ST_RSI_PIV_BB_ST_PERIOD", def: "10" },
+    { type: "value", label: "SuperTrend Multiplier", key: "FUT_ST_RSI_PIV_BB_ST_MULT", def: "2" },
   ] }] },
   // SAIL_VWAP_ST — SAIL stock options; every key is its own and the mode toggle
   // defaults FALSE, so the guide stays hidden until it is switched on in Settings.
@@ -871,6 +899,12 @@ const GUIDE_STATUS = {
       { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "PIVOT_EMA_ST_TF", def: "3" },
       { type: "value", label: "SuperTrend Period", key: "PIVOT_EMA_ST_ST_PERIOD", def: "10" },
       { type: "value", label: "SuperTrend Multiplier", key: "PIVOT_EMA_ST_ST_MULT", def: "3" },
+    ] },
+    { heading: "NIFTY FUTURES", rows: [
+      { type: "bool", label: "FUT PIVOT_EMA_ST Mode (NIFTY futures)", key: "FUT_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "FUT_PIVOT_EMA_ST_TF", def: "3" },
+      { type: "value", label: "SuperTrend Period", key: "FUT_PIVOT_EMA_ST_ST_PERIOD", def: "10" },
+      { type: "value", label: "SuperTrend Multiplier", key: "FUT_PIVOT_EMA_ST_ST_MULT", def: "3" },
     ] },
     { heading: "BANK NIFTY", rows: [
       { type: "bool", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
@@ -911,6 +945,12 @@ const GUIDE_STATUS = {
     { type: "bool", label: "VIX Filter", key: "BB_RSI_VIX_ENABLED", def: "false" },
     { type: "bool", label: "ADX Trend Filter", key: "BB_RSI_ADX_ENABLED", def: "false" },
     { type: "bool", label: "Expiry-Day-Only", key: "BB_RSI_EXPIRY_DAY_ONLY", def: "false" },
+  ] },
+  { heading: "NIFTY FUTURES twin (FUT_BB_RSI)", rows: [
+    { type: "bool", label: "FUT BB_RSI Mode (sidebar + Settings section)", key: "FUT_BB_RSI_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "VIX Filter", key: "FUT_BB_RSI_VIX_ENABLED", def: "false" },
+    { type: "bool", label: "ADX Trend Filter", key: "FUT_BB_RSI_ADX_ENABLED", def: "false" },
+    { type: "bool", label: "Expiry-Day-Only", key: "FUT_BB_RSI_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
   "Price_Action_Strategy_Guide.html": { title: "Price Action — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "PA Mode (sidebar + Settings section)", key: "PA_MODE_ENABLED", def: "true" },
@@ -920,6 +960,9 @@ const GUIDE_STATUS = {
   "EMA9_VWAP_Strategy_Guide.html": { title: "EMA9 + VWAP — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EMA9+VWAP Mode (sidebar + Settings section)", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
     { type: "bool", label: "VIX Filter (global keys)", key: "VIX_FILTER_ENABLED", def: "true" },
+  ] },
+  { heading: "NIFTY FUTURES twin (FUT_EMA9_VWAP)", rows: [
+    { type: "bool", label: "FUT EMA9+VWAP Mode (sidebar + Settings section)", key: "FUT_EMA9VWAP_MODE_ENABLED", def: "true" },
   ] }] },
   "Trend_Pullback_Strategy_Guide.html": { title: "Trend Pullback — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "Trend Pullback Mode (sidebar + Settings section)", key: "TREND_PB_MODE_ENABLED", def: "true" },
@@ -950,6 +993,11 @@ const GUIDE_STATUS = {
     { type: "bool", label: "RSI Pivot ST Mode (sidebar + Settings section)", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "RSI Pivot ST Paper Trading", key: "RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
     { type: "value", label: "SuperTrend entry filter applies to", key: "RSI_PIVOT_ST_ST_SIDES", def: "CE" },
+  ] },
+  { heading: "NIFTY FUTURES twin (FUT_RSI_PIVOT_ST)", rows: [
+    { type: "bool", label: "FUT RSI Pivot ST Mode (sidebar + Settings section)", key: "FUT_RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "FUT RSI Pivot ST Paper Trading", key: "FUT_RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
+    { type: "value", label: "SuperTrend entry filter applies to", key: "FUT_RSI_PIVOT_ST_ST_SIDES", def: "CE" },
   ] }] },
   // The NIFTY BANK replica of the row above. The extra group carries the
   // INDEX-level keys, because on this strategy they are not incidental: the
@@ -1011,25 +1059,32 @@ const GUIDE_STATUS = {
     ] },
     { heading: "Strategy master toggles", rows: [
       { type: "bool", label: "EMA_RSI_ST Mode", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "FUT EMA_RSI_ST Mode (NIFTY futures)", key: "FUT_EMA_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA_RSI_ST_V2 Mode", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "FUT EMA_RSI_ST_V2 Mode (NIFTY futures)", key: "FUT_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK, monthly options)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "ST_RSI_PIV_BB Mode", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "FUT ST_RSI_PIV_BB Mode (NIFTY futures)", key: "FUT_ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
       { type: "bool", label: "SAIL_VWAP_ST Mode (SAIL stock options)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
       { type: "bool", label: "PIVOT_EMA_ST Mode", key: "PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "FUT PIVOT_EMA_ST Mode (NIFTY futures)", key: "FUT_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BN PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SAIL PIVOT_EMA_ST Mode (SAIL stock options)", key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "GAP_runAway__Kirubakaran Mode (NIFTY)", key: "GAP_RUNAWAY_MODE_ENABLED", def: "true" },
       { type: "bool", label: "GAP_runAway Stock Scanner Mode", key: "GAP_RUNAWAY_STK_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "FUT BB_RSI Mode (NIFTY futures)", key: "FUT_BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA9+VWAP Mode", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "FUT EMA9+VWAP Mode (NIFTY futures)", key: "FUT_EMA9VWAP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Trend Pullback Mode", key: "TREND_PB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "HA Scalp Mode", key: "HA_SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Prev ORB Scalp Mode", key: "PREV_ORB_SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ITM20 Scalp Mode", key: "ITM20_SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "FUT RSI Pivot ST Mode (NIFTY futures)", key: "FUT_RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BN Pivot RSI ST Mode (NIFTY BANK, monthly options)", key: "BN_PIVOT_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SIMPLE_9:30 Mode", key: "SIMPLE930_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EarlyBird Mode", key: "EARLYBIRD_MODE_ENABLED", def: "true" },

@@ -28,20 +28,29 @@ const { resolveTheme } = require("../utils/theme");
 // the Copy Day Log button. TREND_PB still exposes cumulative JSONL only.
 const STRATEGY_DEFS = [
   { key:'EMA_RSI_ST',    label:'EMA_RSI_ST',        accentClass:'ema_rsi_st',    accent:'#3b82f6', paperPrefix:'/ema_rsi_st-paper',    hasDayLog:true,  modeFlag:'EMA_RSI_ST_MODE_ENABLED'    },
+  // FUT_* twins: the original's rules forced to NIFTY FUTURES (CE = LONG, PE = SHORT),
+  // each with its own FUT_*-prefixed settings and _MODE_ENABLED toggle (same default as
+  // the original). futures:true makes the card read LONG/SHORT and index levels: most
+  // twins' /status/data position carries no isFutures flag, and a future has no premium.
+  { key:'FUT_EMA_RSI_ST', label:'FUT EMA_RSI_ST', accentClass:'futema_rsi_st', accent:'#f59e0b', paperPrefix:'/fut_ema_rsi_st-paper', hasDayLog:true, modeFlag:'FUT_EMA_RSI_ST_MODE_ENABLED', futures:true },
   // EMA_RSI_ST_V2: a clone of EMA_RSI_ST with its own rules and its own
   // EMA_RSI_ST_V2_* settings.
   // defaultOff: unlike every other row it stays hidden until explicitly enabled.
   { key:'EMA_RSI_ST_V2', label:'EMA_RSI_ST_V2', accentClass:'emarsistv2', accent:'#38bdf8', paperPrefix:'/ema_rsi_st_v2-paper', hasDayLog:true, modeFlag:'EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
+  { key:'FUT_EMA_RSI_ST_V2', label:'FUT EMA_RSI_ST_V2', accentClass:'futemarsistv2', accent:'#f59e0b', paperPrefix:'/fut_ema_rsi_st_v2-paper', hasDayLog:true, modeFlag:'FUT_EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true, futures:true },
   { key:'BB_RSI',    label:'BB_RSI',        accentClass:'bb_rsi',    accent:'#f59e0b', paperPrefix:'/bb_rsi-paper',    hasDayLog:true,  modeFlag:'BB_RSI_MODE_ENABLED'    },
+  { key:'FUT_BB_RSI', label:'FUT BB_RSI', accentClass:'futbb_rsi', accent:'#f59e0b', paperPrefix:'/fut_bb_rsi-paper', hasDayLog:true, modeFlag:'FUT_BB_RSI_MODE_ENABLED', futures:true },
   { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
   { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      hasDayLog:true,  modeFlag:'ORB_MODE_ENABLED'      },
   { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
+  { key:'FUT_EMA9VWAP', label:'FUT EMA9+VWAP', accentClass:'futema9vwap', accent:'#f59e0b', paperPrefix:'/fut_ema9vwap-paper', hasDayLog:true, modeFlag:'FUT_EMA9VWAP_MODE_ENABLED', futures:true },
   { key:'TREND_PB', label:'TREND PB',     accentClass:'trendpb',  accent:'#ec4899', paperPrefix:'/trend-pb-paper', hasDayLog:false, modeFlag:'TREND_PB_MODE_ENABLED' },
   { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
   { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
   { key:'PREV_ORB_SCALP', label:'PREV ORB SCALP', accentClass:'prevorb', accent:'#e879f9', paperPrefix:'/prev-orb-scalp-paper', hasDayLog:true, modeFlag:'PREV_ORB_SCALP_MODE_ENABLED' },
   { key:'ITM20_SCALP', label:'ITM20 SCALP', accentClass:'itm20scalp', accent:'#22d3ee', paperPrefix:'/itm20-scalp-paper', hasDayLog:true, modeFlag:'ITM20_SCALP_MODE_ENABLED' },
   { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
+  { key:'FUT_RSI_PIVOT_ST', label:'FUT RSI PIVOT ST', accentClass:'futrsipivotst', accent:'#f59e0b', paperPrefix:'/fut-rsi-pivot-st-paper', hasDayLog:true, modeFlag:'FUT_RSI_PIVOT_ST_MODE_ENABLED', futures:true },
   // Same rules as RSI_PIVOT_ST, different underlying: BN_PIVOT_RSI_ST (NIFTY BANK,
   // monthly options). Its Entry/Live Spot come from its OWN /status/data — this page
   // never sources a spot price of its own, so the NIFTY BANK level it shows is the one
@@ -51,12 +60,14 @@ const STRATEGY_DEFS = [
   { key:'BN_EMA_RSI_ST_V2', label:'BN EMA_RSI_ST_V2', accentClass:'bnemarsistv2', accent:'#2dd4bf', paperPrefix:'/bn_ema_rsi_st_v2-paper', hasDayLog:true, modeFlag:'BN_EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
   // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. defaultOff like V2.
   { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
+  { key:'FUT_ST_RSI_PIV_BB', label:'FUT ST_RSI_PIV_BB', accentClass:'futstrsipivbb', accent:'#f59e0b', paperPrefix:'/fut_st_rsi_piv_bb-paper', hasDayLog:true, modeFlag:'FUT_ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true, futures:true },
   // SAIL_VWAP_ST: SAIL stock options (VWAP cross + breakout, SuperTrend stop).
   // Its Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
   // defaultOff like V2.
   { key:'SAIL_VWAP_ST', label:'SAIL VWAP+ST', accentClass:'sailvwapst', accent:'#fda4af', paperPrefix:'/sail_vwap_st-paper', hasDayLog:true, modeFlag:'SAIL_VWAP_ST_MODE_ENABLED', defaultOff:true },
   // PIVOT_EMA_ST family: pivot zone + EMA20/50 cross + SuperTrend. Default ON (no defaultOff).
   { key:'PIVOT_EMA_ST', label:'PIVOT_EMA_ST', accentClass:'pivotemast', accent:'#38bdf8', paperPrefix:'/pivot_ema_st-paper', hasDayLog:true, modeFlag:'PIVOT_EMA_ST_MODE_ENABLED' },
+  { key:'FUT_PIVOT_EMA_ST', label:'FUT PIVOT_EMA_ST', accentClass:'futpivotemast', accent:'#f59e0b', paperPrefix:'/fut_pivot_ema_st-paper', hasDayLog:true, modeFlag:'FUT_PIVOT_EMA_ST_MODE_ENABLED', futures:true },
   { key:'BN_PIVOT_EMA_ST', label:'BN PIVOT_EMA_ST', accentClass:'bnpivotemast', accent:'#f472b6', paperPrefix:'/bn_pivot_ema_st-paper', hasDayLog:true, modeFlag:'BN_PIVOT_EMA_ST_MODE_ENABLED' },
   // SAIL: Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
   { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
@@ -95,9 +106,11 @@ function enabledStrategies() {
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
 const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
-BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
+// NIFTY FUTURES twins draw from the same pool as their original (FUT_BB_RSI: Fyers, like BB_RSI).
+BROKER_OF.FUT_EMA_RSI_ST = 'ZERODHA'; BROKER_OF.FUT_EMA_RSI_ST_V2 = 'ZERODHA'; BROKER_OF.FUT_BB_RSI = 'FYERS'; BROKER_OF.FUT_EMA9VWAP = 'ZERODHA'; BROKER_OF.FUT_RSI_PIVOT_ST = 'ZERODHA';
+BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; BROKER_OF.FUT_ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.BN_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
+BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.FUT_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.BN_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.GAP_RUNAWAY = 'ZERODHA'; BROKER_OF.GAP_RUNAWAY_STK = 'ZERODHA';
 BROKER_OF.ITM20_SCALP = 'ZERODHA'; // paper only — charges modelled on Zerodha, like PREV_ORB_SCALP
 // COMMODITY pages (CMX_* keys) draw from the Fyers pool — their prices come from Fyers.
@@ -169,6 +182,8 @@ function renderPage({ sidebarKey = "realtime", autoFlipBack = false } = {}) {
     { key: s.key, mode: 'PAPER', url: s.paperPrefix + '/stop', statusUrl: s.paperPrefix + '/status/data' },
   ])).flat());
   const paperOnlyJson   = JSON.stringify(strategies.filter(s => s.paperOnly).map(s => s.key));
+  // FUT_* twins hold NIFTY futures — their cards read LONG/SHORT, never premium.
+  const futuresJson     = JSON.stringify(strategies.filter(s => s.futures).map(s => s.key));
 
   const pools           = brokerPools(strategies);
   const poolsJson       = JSON.stringify(pools);
@@ -291,22 +306,29 @@ ${faviconLink()}
   .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; min-width:0; }
   .card[hidden] { display:none; }   /* display:flex above would beat the UA [hidden] rule */
   .card.ema_rsi_st    { border-top-color:#3b82f6; }
+  .card.futema_rsi_st { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.bb_rsi    { border-top-color:#f59e0b; }
+  .card.futbb_rsi { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.pa       { border-top-color:#a855f7; }
   .card.orb      { border-top-color:#10b981; }
   .card.ema9vwap { border-top-color:#06b6d4; }
+  .card.futema9vwap { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.trendpb  { border-top-color:#ec4899; }
   .card.tds      { border-top-color:#a855f7; }
 .card.hascalp  { border-top-color:#f97316; }
 .card.prevorb  { border-top-color:#e879f9; }
 .card.itm20scalp { border-top-color:#22d3ee; }
   .card.rsipivotst { border-top-color:#facc15; }
+  .card.futrsipivotst { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.emarsistv2 { border-top-color:#38bdf8; }
+  .card.futemarsistv2 { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.bnpivotrsist { border-top-color:#818cf8; }
   .card.bnemarsistv2 { border-top-color:#2dd4bf; }
   .card.strsipivbb { border-top-color:#a3e635; }
+  .card.futstrsipivbb { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.sailvwapst { border-top-color:#fda4af; }
   .card.pivotemast { border-top-color:#38bdf8; }
+  .card.futpivotemast { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.bnpivotemast { border-top-color:#f472b6; }
   .card.sailpivotemast { border-top-color:#fcd34d; }
   .card.gaprunaway { border-top-color:#a78bfa; }
@@ -318,17 +340,22 @@ ${faviconLink()}
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
   .card.ema_rsi_st    .card-title { color:#60a5fa; }
+  .card.futema_rsi_st .card-title { color:#60a5fa; }
   .card.bb_rsi    .card-title { color:#fbbf24; }
+  .card.futbb_rsi .card-title { color:#fbbf24; }
   .card.pa       .card-title { color:#c084fc; }
   .card.orb      .card-title { color:#34d399; }
   .card.ema9vwap .card-title { color:#22d3ee; }
+  .card.futema9vwap .card-title { color:#22d3ee; }
   .card.trendpb  .card-title { color:#f472b6; }
   .card.tds      .card-title { color:#c084fc; }
 .card.hascalp  .card-title { color:#fdba74; }
 .card.prevorb  .card-title { color:#f0abfc; }
 .card.itm20scalp .card-title { color:#67e8f9; }
   .card.rsipivotst .card-title { color:#fde047; }
+  .card.futrsipivotst .card-title { color:#fde047; }
   .card.emarsistv2 .card-title { color:#7dd3fc; }
+  .card.futemarsistv2 .card-title { color:#7dd3fc; }
   .card.bnpivotrsist .card-title { color:#a5b4fc; }
   .card.bnemarsistv2 .card-title { color:#5eead4; }
   .card.simple930 .card-title { color:#fdba74; }
@@ -407,17 +434,22 @@ ${faviconLink()}
   .card .act-btn.exit-btn:not(.act-btn-disabled):hover { background:rgba(239,68,68,0.20); border-color:#ef4444; color:#fca5a5; }
   .exit-btn:disabled { opacity:0.55; cursor:default; }
   .card.ema_rsi_st    .act-btn:not(.act-btn-disabled):hover { border-color:#3b82f6; }
+  .card.futema_rsi_st .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.bb_rsi    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
+  .card.futbb_rsi .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
   .card.orb      .act-btn:not(.act-btn-disabled):hover { border-color:#10b981; }
   .card.ema9vwap .act-btn:not(.act-btn-disabled):hover { border-color:#06b6d4; }
+  .card.futema9vwap .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.trendpb  .act-btn:not(.act-btn-disabled):hover { border-color:#ec4899; }
   .card.tds      .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
 .card.hascalp  .act-btn:not(.act-btn-disabled):hover { border-color:#f97316; }
 .card.prevorb  .act-btn:not(.act-btn-disabled):hover { border-color:#e879f9; }
 .card.itm20scalp .act-btn:not(.act-btn-disabled):hover { border-color:#22d3ee; }
   .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
+  .card.futrsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.emarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
+  .card.futemarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.bnpivotrsist .act-btn:not(.act-btn-disabled):hover { border-color:#818cf8; }
   .card.bnemarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#2dd4bf; }
   .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
@@ -432,17 +464,22 @@ ${faviconLink()}
   .rollup td:first-child { text-align:left; font-weight:600; }
   .rollup tr:last-child td { border-bottom:none; background:#0e1c33; font-weight:700; }
   .rollup tr.ema_rsi_st    td:first-child { color:#60a5fa; }
+  .rollup tr.futema_rsi_st td:first-child { color:#60a5fa; box-shadow:inset 3px 0 0 #f59e0b; }
   .rollup tr.bb_rsi    td:first-child { color:#fbbf24; }
+  .rollup tr.futbb_rsi td:first-child { color:#fbbf24; box-shadow:inset 3px 0 0 #f59e0b; }
   .rollup tr.pa       td:first-child { color:#c084fc; }
   .rollup tr.orb      td:first-child { color:#34d399; }
   .rollup tr.ema9vwap td:first-child { color:#22d3ee; }
+  .rollup tr.futema9vwap td:first-child { color:#22d3ee; box-shadow:inset 3px 0 0 #f59e0b; }
   .rollup tr.trendpb  td:first-child { color:#f472b6; }
   .rollup tr.tds      td:first-child { color:#c084fc; }
 .rollup tr.hascalp  td:first-child { color:#fdba74; }
 .rollup tr.prevorb  td:first-child { color:#f0abfc; }
 .rollup tr.itm20scalp td:first-child { color:#67e8f9; }
   .rollup tr.rsipivotst td:first-child { color:#fde047; }
+  .rollup tr.futrsipivotst td:first-child { color:#fde047; box-shadow:inset 3px 0 0 #f59e0b; }
   .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
+  .rollup tr.futemarsistv2 td:first-child { color:#7dd3fc; box-shadow:inset 3px 0 0 #f59e0b; }
   .rollup tr.bnpivotrsist td:first-child { color:#a5b4fc; }
   .rollup tr.bnemarsistv2 td:first-child { color:#5eead4; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
@@ -467,17 +504,22 @@ ${faviconLink()}
   :root[data-theme="light"] .card { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   :root[data-theme="light"] .cards-empty { background:#fff; border-color:#d7dce4; color:#4b5769; }
   :root[data-theme="light"] .card.ema_rsi_st    .card-title { color:#1d4ed8; }
+  :root[data-theme="light"] .card.futema_rsi_st .card-title { color:#1d4ed8; }
   :root[data-theme="light"] .card.bb_rsi    .card-title { color:#b45309; }
+  :root[data-theme="light"] .card.futbb_rsi .card-title { color:#b45309; }
   :root[data-theme="light"] .card.pa       .card-title { color:#7e22ce; }
   :root[data-theme="light"] .card.orb      .card-title { color:#047857; }
   :root[data-theme="light"] .card.ema9vwap .card-title { color:#0e7490; }
+  :root[data-theme="light"] .card.futema9vwap .card-title { color:#0e7490; }
   :root[data-theme="light"] .card.trendpb  .card-title { color:#be185d; }
   :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
 :root[data-theme="light"] .card.hascalp  .card-title { color:#c2410c; }
 :root[data-theme="light"] .card.prevorb  .card-title { color:#a21caf; }
 :root[data-theme="light"] .card.itm20scalp .card-title { color:#0e7490; }
   :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
+  :root[data-theme="light"] .card.futrsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
+  :root[data-theme="light"] .card.futemarsistv2 .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.bnpivotrsist .card-title { color:#4338ca; }
   :root[data-theme="light"] .card.bnemarsistv2 .card-title { color:#0f766e; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
@@ -511,17 +553,22 @@ ${faviconLink()}
   /* Needs the theme prefix: the plain .rollup td rule above outranks tr.quiet. */
   :root[data-theme="light"] .rollup tr.quiet td { color:#64748b; }
   :root[data-theme="light"] .rollup tr.ema_rsi_st    td:first-child { color:#1d4ed8; }
+  :root[data-theme="light"] .rollup tr.futema_rsi_st td:first-child { color:#1d4ed8; }
   :root[data-theme="light"] .rollup tr.bb_rsi    td:first-child { color:#b45309; }
+  :root[data-theme="light"] .rollup tr.futbb_rsi td:first-child { color:#b45309; }
   :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#7e22ce; }
   :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#047857; }
   :root[data-theme="light"] .rollup tr.ema9vwap td:first-child { color:#0e7490; }
+  :root[data-theme="light"] .rollup tr.futema9vwap td:first-child { color:#0e7490; }
   :root[data-theme="light"] .rollup tr.trendpb  td:first-child { color:#be185d; }
   :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
 :root[data-theme="light"] .rollup tr.hascalp  td:first-child { color:#c2410c; }
 :root[data-theme="light"] .rollup tr.prevorb  td:first-child { color:#a21caf; }
 :root[data-theme="light"] .rollup tr.itm20scalp td:first-child { color:#0e7490; }
   :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
+  :root[data-theme="light"] .rollup tr.futrsipivotst td:first-child { color:#a16207; }
   :root[data-theme="light"] .rollup tr.emarsistv2 td:first-child { color:#0369a1; }
+  :root[data-theme="light"] .rollup tr.futemarsistv2 td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.bnpivotrsist td:first-child { color:#4338ca; }
   :root[data-theme="light"] .rollup tr.bnemarsistv2 td:first-child { color:#0f766e; }
   :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }
@@ -611,6 +658,7 @@ const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
 const STOP_URLS        = ${stopUrlsJson};
 const PAPER_ONLY       = ${paperOnlyJson};   // COMMODITY — own MCX start/stop
+const FUTURES_KEYS     = ${futuresJson};     // FUT_* twins — futures legs, no premium
 const mode = 'PAPER';
 let timer = null;
 
@@ -684,7 +732,9 @@ function renderActivity(strategy, d) {
   el.innerHTML = html;
 }
 
-function renderPositionStandard(d, pos) {
+// futuresStrategy: the card belongs to a FUT_* twin, whose position is always a
+// future even though most of their /status/data payloads omit pos.isFutures.
+function renderPositionStandard(d, pos, futuresStrategy) {
   const upnl = openPnl(d);
   const entryPrice = pos.entryPrice ?? pos.entrySpot ?? null;
   const optionEntry = pos.optionEntryLtp ?? null;
@@ -694,16 +744,17 @@ function renderPositionStandard(d, pos) {
   const pointsMoved = pos.pointsMoved != null
     ? pos.pointsMoved
     : (liveClose != null && entryPrice != null && sideMult ? (liveClose - entryPrice) * sideMult : null);
-  const pct = pos.optPremiumPct != null
-    ? pos.optPremiumPct
-    : (optionEntry && optionCurrent ? ((optionCurrent - optionEntry) / optionEntry) * 100 : null);
-  const sideClass = pos.side === 'CE' || pos.side === 'PE' ? pos.side : '';
   // A futures leg has no premium: CE reads LONG, PE reads SHORT, and the two
-  // option-premium rows are dropped rather than shown as a permanent em-dash.
+  // option-premium rows (and the premium %) are dropped rather than shown as a
+  // permanent em-dash.
   // Truthy, not strict ===: every producer sends a real boolean today, but a
   // string "true" arriving from JSON would silently render a future as an
   // option — degrade toward the loud case, not the wrong one.
-  const isFut = !!pos.isFutures;
+  const isFut = !!pos.isFutures || !!futuresStrategy;
+  const pct = isFut ? null : pos.optPremiumPct != null
+    ? pos.optPremiumPct
+    : (optionEntry && optionCurrent ? ((optionCurrent - optionEntry) / optionEntry) * 100 : null);
+  const sideClass = pos.side === 'CE' || pos.side === 'PE' ? pos.side : '';
   const sideTxt = isFut ? (pos.side === 'CE' ? 'LONG' : pos.side === 'PE' ? 'SHORT' : (pos.side || '')) : (pos.side || '');
   return \`
     <div class="pos-block">
@@ -836,7 +887,7 @@ function renderColumn(strategy, d) {
       ? renderPositionsEarlyBird(d, openList, strategy)
       : \`<div class="flat-block">FLAT — no open positions</div>\`;
   } else if (openList.length) {
-    bodyEl.innerHTML = renderPositionStandard(d, openList[0]);
+    bodyEl.innerHTML = renderPositionStandard(d, openList[0], FUTURES_KEYS.indexOf(strategy) !== -1);
   } else {
     bodyEl.innerHTML = \`<div class="flat-block">FLAT — no open position</div>\`;
   }

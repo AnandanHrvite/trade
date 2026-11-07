@@ -18,16 +18,25 @@ const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD, preponedEx
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-// Read dynamically so settings toggle takes effect immediately (no restart).
-// NORMALISED (trim + uppercase) because a dozen call sites compare this with a
-// strict `=== "NIFTY_FUTURES"`: a stray space or a lowercase value in .env would
-// otherwise make some of them say options and others say futures — the engine
-// would buy an OPTION while pricing the trade as a future. Anything that is not
-// a recognised instrument falls back to options, the safe default.
+// THE GLOBAL TOGGLE IS GONE. `INSTRUMENT` used to be one Settings switch that
+// flipped EVERY strategy between options and futures. Futures now trade only
+// through their OWN strategies (the FUT_* twins — FUT_EMA_RSI_ST, FUT_BB_RSI,
+// …), so every other strategy is options, always: getInstrument() no longer
+// reads process.env. A stale `INSTRUMENT=NIFTY_FUTURES` left in an .env is
+// ignored, by design — it must never turn an options strategy into a futures one.
+//
+// A FUT_* twin asks for futures EXPLICITLY, per call, through the optional
+// `instrument` argument of getSymbol / getSymbolSync / getLotQty (or through
+// instrumentMode.futures). Anything that is not a recognised instrument falls
+// back to options, the safe default.
 const _INSTRUMENTS = new Set(["NIFTY_OPTIONS", "NIFTY_FUTURES"]);
 function getInstrument() {
-  const raw = String(process.env.INSTRUMENT || "").trim().toUpperCase();
-  return _INSTRUMENTS.has(raw) ? raw : "NIFTY_OPTIONS";
+  return "NIFTY_OPTIONS";
+}
+/** An explicit per-call instrument, normalised; anything unrecognised → the global (options). */
+function resolveInstrument(instrument) {
+  const raw = String(instrument || "").trim().toUpperCase();
+  return _INSTRUMENTS.has(raw) ? raw : getInstrument();
 }
 function getStrikeOffsetCE(underlying) { return underlyingOf(underlying).offsetCE; }
 function getStrikeOffsetPE(underlying) { return underlyingOf(underlying).offsetPE; }
@@ -517,11 +526,14 @@ function calcATMStrike(spot, side, underlying) {
  * Fetches live spot for options, uses auto expiry for both
  *
  * @param {"CE"|"PE"} side
+ * @param {string} [underlying]  "NIFTY" (default) | "BANKNIFTY" | …
+ * @param {string} [instrument]  "NIFTY_FUTURES" → the month futures contract.
+ *                               Omitted → options (the only global mode).
  * @returns {Promise<string>}  e.g. "NSE:NIFTY25JUN1924600CE"
  */
-async function getSymbol(side = "CE", underlying) {
+async function getSymbol(side = "CE", underlying, instrument) {
   const u = underlyingOf(underlying);
-  if (getInstrument() === "NIFTY_FUTURES") {
+  if (resolveInstrument(instrument) === "NIFTY_FUTURES") {
     const expiry = getFuturesExpiry();
     const symbol = `NSE:${u.futPrefix}${expiry}FUT`;
     console.log(`📌 Futures symbol: ${symbol}`);
@@ -542,9 +554,9 @@ async function getSymbol(side = "CE", underlying) {
  * Synchronous symbol getter — uses cached spot if available
  * Used only for display purposes (dashboard, status). Always use async getSymbol() for actual orders.
  */
-function getSymbolSync(side = "CE", underlying) {
+function getSymbolSync(side = "CE", underlying, instrument) {
   const u = underlyingOf(underlying);
-  if (getInstrument() === "NIFTY_FUTURES") {
+  if (resolveInstrument(instrument) === "NIFTY_FUTURES") {
     return `NSE:${u.futPrefix}${getFuturesExpiry()}FUT`;
   }
   const cached = _spotCache[u.key] && _spotCache[u.key].spot;
@@ -554,7 +566,7 @@ function getSymbolSync(side = "CE", underlying) {
   return `NSE:${u.optPrefix}${expiry}${strike}${side}`;
 }
 
-function getLotQty(underlying) {
+function getLotQty(underlying, instrument) {
   // Clamp the lot multiplier to a sane ceiling so a fat-finger LOT_MULTIPLIER
   // (e.g. 50) can't silently size every order 50× on the live path. Ceiling is
   // configurable via MAX_LOT_MULTIPLIER (default 10); invalid/≤0 falls back to 1.
@@ -566,7 +578,7 @@ function getLotQty(underlying) {
     console.warn(`[instrument] LOT_MULTIPLIER=${multiplier} exceeds MAX_LOT_MULTIPLIER=${maxMult} — clamping to ${maxMult}`);
     multiplier = maxMult;
   }
-  return getLotSize(underlying)[getInstrument()] * multiplier;
+  return getLotSize(underlying)[resolveInstrument(instrument)] * multiplier;
 }
 
 function getProductType() {
@@ -1084,7 +1096,8 @@ async function getMarketContext(underlying) {
 }
 
 module.exports = {
-  get INSTRUMENT()    { return getInstrument(); },
+  get INSTRUMENT()    { return getInstrument(); },   // always "NIFTY_OPTIONS" — see getInstrument()
+  resolveInstrument,           // explicit per-call instrument → normalised (FUT_* twins pass "NIFTY_FUTURES")
   get STRIKE_OFFSET_CE() { return getStrikeOffsetCE(); },
   get STRIKE_OFFSET_PE() { return getStrikeOffsetPE(); },
   get LOT_SIZE() { return getLotSize(); },

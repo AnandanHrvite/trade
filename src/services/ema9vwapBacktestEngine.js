@@ -64,14 +64,23 @@ function _toIST(s) {
  * @param {number} capital starting capital (for finalCapital display)
  * @param {Function} onProgress  (p)=>void progress callback
  * @param {number} activeFromTs  only record trades whose entry candle.time >= this (warmup gate)
+ * @param {Array}  vixCandles    historical VIX candles for the VIX gate
+ * @param {object} [opts]        { isFutures, prefix } — the FUT_EMA9_VWAP twin passes
+ *                               { isFutures: true, prefix: "FUT_EMA9VWAP" } to force the
+ *                               futures arm and read its own FUT_EMA9VWAP_* keys (VIX mode =
+ *                               the prefix lower-cased). Omitted → the original behaviour.
  * @returns {{summary:Object, trades:Array}}
  */
-async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 0, vixCandles = []) {
+async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 0, vixCandles = [], opts = {}) {
+  opts = opts || {};
   const trades   = [];
   let position   = null;
-  const LOT_SIZE = getLotQty();
+  // Strategy rules + VIX mode for the env prefix (default: EMA9VWAP_ keys, mode "ema9vwap").
+  const _strat   = opts.prefix ? strategy.forPrefix(opts.prefix) : strategy;
+  const _vixMode = opts.prefix ? String(opts.prefix).toLowerCase() : "ema9vwap";
+  const LOT_SIZE = opts.isFutures === true ? getLotQty("NIFTY", "NIFTY_FUTURES") : getLotQty();
 
-  const isFutures      = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const isFutures      = typeof opts.isFutures === "boolean" ? opts.isFutures : instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const OPTION_SIM     = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA          = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA      || "0.55");
   const THETA_PER_DAY  = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY  || "10");
@@ -244,7 +253,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     // from the old per-iteration slice, without the per-step allocation.
     window.push(candle);
     if (window.length > 200) window.shift();
-    const sig = strategy.getSignal(window, { silent: true });
+    const sig = _strat.getSignal(window, { silent: true });
 
     // ── EXIT: global profit lock (intrabar) ──
     // Path model inside one bar: open → adverse extreme → favourable extreme. The
@@ -311,14 +320,14 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     // ── ENTRY (candle close, inside the entry window, entry guards) ──
     if (!position && !blockEntryThisCandle && !isSessionEnd && candle.time >= activeFromTs
         && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
-        && strategy.isEntryWindowOpen(candle.time, resMins)
+        && _strat.isEntryWindowOpen(candle.time, resMins)
         && (!expiryOnly || expiryDates.has(_istDateStr(candle.time)))) {
       const side = sig.signal === "BUY_CE" ? "CE" : "PE";
       // Wait-after-any-exit cooldown (mirrored from paper).
       const _reentryBlocked = candle.time < reentryBlockUntilTs;
       if (!_reentryBlocked) {
         // VIX gate — evaluated only when we would otherwise enter, like paper.
-        const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: "ema9vwap" });
+        const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: _vixMode });
         if (_vc.allowed) {
           let entryPrice = candle.close;
           if (SLIPPAGE_PTS > 0) entryPrice = side === "CE" ? entryPrice + SLIPPAGE_PTS : entryPrice - SLIPPAGE_PTS;
@@ -359,8 +368,8 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
 
   return {
     summary: {
-      strategy:        strategy.NAME,
-      description:     strategy.DESCRIPTION,
+      strategy:        _strat.NAME,
+      description:     _strat.DESCRIPTION,
       optionSim:       OPTION_SIM,
       pnlUnit:         OPTION_SIM ? "₹" : "pts",
       delta:           OPTION_SIM ? DELTA : null,

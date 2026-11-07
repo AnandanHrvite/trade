@@ -61,17 +61,22 @@ const IGNORE_NAMES = new Set([".DS_Store", ".gitkeep"]);
 // replay-cache file can still be told apart by which engine produced it.
 const STRATEGY_BADGE = {
   ema_rsi_st:    { label: "EMA_RSI_ST",    cls: "mode-ema_rsi_st" },
+  // NIFTY FUTURES twins — each its own key, so a futures output is never badged as the options one.
+  fut_ema_rsi_st: { label: "FUT EMA_RSI_ST", cls: "mode-fut_ema_rsi_st" },
   // EMA_RSI_ST_V2 — its own key, so a V2 replay output is never badged as V1's.
   ema_rsi_st_v2: { label: "EMA_RSI_ST_V2", cls: "mode-ema_rsi_st_v2" },
+  fut_ema_rsi_st_v2: { label: "FUT EMA_RSI_ST_V2", cls: "mode-fut_ema_rsi_st_v2" },
   // Same engine on NIFTY BANK — its own key, so a BN replay output is never
   // badged as the NIFTY one.
   bn_ema_rsi_st_v2: { label: "BN EMA_RSI_ST_V2", cls: "mode-bn_ema_rsi_st_v2" },
   // ST_RSI_PIV_BB — its own key.
   st_rsi_piv_bb: { label: "ST_RSI_PIV_BB", cls: "mode-st_rsi_piv_bb" },
+  fut_st_rsi_piv_bb: { label: "FUT ST_RSI_PIV_BB", cls: "mode-fut_st_rsi_piv_bb" },
   // SAIL_VWAP_ST (SAIL stock options) — its own key.
   sail_vwap_st: { label: "SAIL_VWAP_ST", cls: "mode-sail_vwap_st" },
   // PIVOT_EMA_ST family — each its own key.
   pivot_ema_st: { label: "PIVOT_EMA_ST", cls: "mode-pivot_ema_st" },
+  fut_pivot_ema_st: { label: "FUT PIVOT_EMA_ST", cls: "mode-fut_pivot_ema_st" },
   bn_pivot_ema_st: { label: "BN PIVOT_EMA_ST", cls: "mode-bn_pivot_ema_st" },
   sail_pivot_ema_st: { label: "SAIL PIVOT_EMA_ST", cls: "mode-sail_pivot_ema_st" },
   // GAP_RUNAWAY + its stock scanner — each its own key.
@@ -79,6 +84,7 @@ const STRATEGY_BADGE = {
   gap_runaway_stk: { label: "GAP_runAway Stocks", cls: "mode-gap_runaway_stk" },
   itm20_scalp: { label: "ITM20 SCALP", cls: "mode-itm20_scalp" },
   bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
+  fut_bb_rsi: { label: "FUT BB_RSI", cls: "mode-fut_bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
   trend_pb: { label: "TREND PB", cls: "mode-trend_pb" },
@@ -86,6 +92,7 @@ const STRATEGY_BADGE = {
   ha_scalp: { label: "HA SCALP", cls: "mode-ha_scalp" },
   prev_orb_scalp: { label: "PREV ORB SCALP", cls: "mode-prev_orb_scalp" },
   rsi_pivot_st: { label: "RSI PIVOT ST", cls: "mode-rsi_pivot_st" },
+  fut_rsi_pivot_st: { label: "FUT RSI PIVOT ST", cls: "mode-fut_rsi_pivot_st" },
   // BN_PIVOT_RSI_ST (NIFTY BANK, monthly options) — its own key, so a NIFTY BANK
   // replay output is never badged as the NIFTY one.
   bn_pivot_rsi_st: { label: "BN PIVOT RSI ST", cls: "mode-bn_pivot_rsi_st" },
@@ -212,6 +219,9 @@ async function detectMeta(group, rel, abs, mtimeMs) {
   if (_grName) return { strat: _grName[1].toLowerCase(), date: null };
   // ITM20_SCALP — not in the generic list below.
   if (/^itm20_scalp\b/i.test(path.basename(rel))) return { strat: "itm20_scalp", date: null };
+  // NIFTY FUTURES twins — their own key; V2 listed before V1 (ema_rsi_st is a prefix of ema_rsi_st_v2).
+  const _futName = path.basename(rel).match(/^(fut_(?:ema_rsi_st_v2|ema_rsi_st|bb_rsi|rsi_pivot_st|st_rsi_piv_bb|pivot_ema_st))(?![a-z0-9])/i);
+  if (_futName) return { strat: _futName[1].toLowerCase(), date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
   const nameMatch = path.basename(rel).match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|prev_orb_scalp|bn_pivot_rsi_st|rsi_pivot_st|simple930|early_bird)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
@@ -230,6 +240,8 @@ async function detectMeta(group, rel, abs, mtimeMs) {
     const _grMode = !meta.strat && String(obj && obj.mode || "").match(/^(gap_runaway(?:_stk)?)(?![a-z0-9])/i);
     if (_grMode) meta.strat = _grMode[1].toLowerCase();
     if (!meta.strat && /^itm20[-_]scalp/i.test(String(obj && obj.mode || ""))) meta.strat = "itm20_scalp";
+    const _futMode = !meta.strat && String(obj && obj.mode || "").match(/^(fut[-_](?:ema[-_]rsi[-_]st[-_]v2|ema[-_]rsi[-_]st|bb[-_]rsi|rsi[-_]pivot[-_]st|st[-_]rsi[-_]piv[-_]bb|pivot[-_]ema[-_]st))(?![a-z0-9])/i);
+    if (_futMode) meta.strat = _futMode[1].toLowerCase().replace(/-/g, "_");
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
     else if (typeof obj.sessionId === "number") meta.date = _istDateFromMs(obj.sessionId);
@@ -549,17 +561,22 @@ router.get("/", (req, res) => {
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; gap:10px; flex-wrap:wrap; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
     .mode-ema_rsi_st    { color:#60a5fa; }
+    .mode-fut_ema_rsi_st { color:#f59e0b; }
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
+    .mode-fut_ema_rsi_st_v2 { color:#f59e0b; }
     .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
     .mode-st_rsi_piv_bb { color:#bef264; }
+    .mode-fut_st_rsi_piv_bb { color:#f59e0b; }
     .mode-sail_vwap_st { color:#fecdd3; }
     .mode-pivot_ema_st { color:#7dd3fc; }
+    .mode-fut_pivot_ema_st { color:#f59e0b; }
     .mode-bn_pivot_ema_st { color:#f9a8d4; }
     .mode-sail_pivot_ema_st { color:#fde68a; }
     .mode-gap_runaway { color:#c4b5fd; }
     .mode-gap_runaway_stk { color:#d8b4fe; }
     .mode-itm20_scalp { color:#67e8f9; }
     .mode-bb_rsi    { color:#fbbf24; }
+    .mode-fut_bb_rsi { color:#f59e0b; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
     .mode-trend_pb { color:#f472b6; }
@@ -567,6 +584,7 @@ router.get("/", (req, res) => {
 .mode-ha_scalp { color:#f97316; }
 .mode-prev_orb_scalp { color:#e879f9; }
     .mode-rsi_pivot_st { color:#facc15; }
+    .mode-fut_rsi_pivot_st { color:#f59e0b; }
     .mode-bn_pivot_rsi_st { color:#818cf8; }
     .mode-simple930 { color:#fb923c; }
     .mode-early_bird { color:#14b8a6; }
@@ -699,17 +717,22 @@ ${embed ? '' : buildSidebar('tradeLogs', false)}
   var _tagFilter = {}; // group key -> active strategy filter ('' = all)
   var STRAT_BADGE = {
     ema_rsi_st:    { label: 'EMA_RSI_ST',    cls: 'mode-ema_rsi_st' },
+    fut_ema_rsi_st: { label: 'FUT EMA_RSI_ST', cls: 'mode-fut_ema_rsi_st' },
     ema_rsi_st_v2: { label: 'EMA_RSI_ST_V2', cls: 'mode-ema_rsi_st_v2' },
+    fut_ema_rsi_st_v2: { label: 'FUT EMA_RSI_ST_V2', cls: 'mode-fut_ema_rsi_st_v2' },
     bn_ema_rsi_st_v2: { label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
     st_rsi_piv_bb: { label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
+    fut_st_rsi_piv_bb: { label: 'FUT ST_RSI_PIV_BB', cls: 'mode-fut_st_rsi_piv_bb' },
     sail_vwap_st: { label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
     pivot_ema_st: { label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
+    fut_pivot_ema_st: { label: 'FUT PIVOT_EMA_ST', cls: 'mode-fut_pivot_ema_st' },
     bn_pivot_ema_st: { label: 'BN PIVOT_EMA_ST', cls: 'mode-bn_pivot_ema_st' },
     sail_pivot_ema_st: { label: 'SAIL PIVOT_EMA_ST', cls: 'mode-sail_pivot_ema_st' },
     gap_runaway: { label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
     gap_runaway_stk: { label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
     itm20_scalp: { label: 'ITM20 SCALP', cls: 'mode-itm20_scalp' },
     bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
+    fut_bb_rsi: { label: 'FUT BB_RSI', cls: 'mode-fut_bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },
     trend_pb: { label: 'TREND PB', cls: 'mode-trend_pb' },
@@ -717,6 +740,7 @@ ${embed ? '' : buildSidebar('tradeLogs', false)}
     ha_scalp: { label: 'HA SCALP', cls: 'mode-ha_scalp' },
     prev_orb_scalp: { label: 'PREV ORB SCALP', cls: 'mode-prev_orb_scalp' },
     rsi_pivot_st: { label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
+    fut_rsi_pivot_st: { label: 'FUT RSI PIVOT ST', cls: 'mode-fut_rsi_pivot_st' },
     bn_pivot_rsi_st: { label: 'BN PIVOT RSI ST', cls: 'mode-bn_pivot_rsi_st' },
     simple930: { label: 'SIMPLE_9:30', cls: 'mode-simple930' },
     early_bird: { label: 'EARLYBIRD', cls: 'mode-early_bird' },

@@ -51,6 +51,20 @@ const { computeSuperTrend } = require("../utils/supertrend");
 const NAME        = "SAR_EMA_RSI";
 const DESCRIPTION = "EMA_RSI_ST | EMA20/EMA50(close) + RSI + SuperTrend(10,3) | EMA alignment (2-EMA or 9>20>50 stack) + RSI gate + SuperTrend side | exit = global profit lock | thresholds via Settings";
 
+// ── Env prefix ────────────────────────────────────────────────────────────
+// Every strategy-own key (EMA_RSI_ST_*) is read under an env prefix. The default
+// exports keep the ORIGINAL literal EMA_RSI_ST_* reads, so that path is exactly
+// what it was (and docs/ENV.md, generated from those literal reads, is unchanged).
+// forPrefix("FUT_EMA_RSI_ST") returns the identical API reading FUT_EMA_RSI_ST_*
+// instead — the NIFTY FUTURES twin shares this one implementation with its own
+// settings. Common keys (TRADE_ENTRY_START/END, RSI_CE_MIN/MAX, RSI_PE_MIN/MAX)
+// are not prefixed: every prefix shares them.
+const DEFAULT_PREFIX = "EMA_RSI_ST";
+const PREFIXES = { EMA_RSI_ST: "NIFTY", FUT_EMA_RSI_ST: "NIFTY" };   // prefix → underlying
+const NAMES    = { EMA_RSI_ST: NAME,    FUT_EMA_RSI_ST: "FUT_SAR_EMA_RSI" };
+function _isDefault(P) { return !P || P === DEFAULT_PREFIX; }
+function _env(P, key) { return process.env[P + "_" + key]; }
+
 // ── Trading window ────────────────────────────────────────────────────────
 function _parseMins(envKey, fallback) {
   var v = process.env[envKey] || fallback;
@@ -88,15 +102,26 @@ function isInTradingWindow(unixSec) {
  * kept so the VIX gate's call shape (which only hard-blocks > VIX_MAX_ENTRY) is unchanged.
  */
 function getSignal(candles, opts) {
+  return _getSignal(candles, opts, DEFAULT_PREFIX);
+}
+
+// The engine body. P = env prefix of the strategy-own keys; the default prefix
+// (_D) reads the original literal EMA_RSI_ST_* keys, any other reads P_*.
+function _getSignal(candles, opts, P) {
+  var _D = _isDefault(P);
   var silent = (opts && opts.silent === true);
 
   // EMA periods (close-based) — the fast/slow pair that gates direction.
-  var EMA_FAST = parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20;
-  var EMA_SLOW = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
+  var EMA_FAST = _D ? (parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20)
+                    : (parseInt(_env(P, "EMA_FAST") || "20", 10) || 20);
+  var EMA_SLOW = _D ? (parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50)
+                    : (parseInt(_env(P, "EMA_SLOW") || "50", 10) || 50);
   // Triple-stack (opt-in): require EMA(fastest) > EMA_FAST > EMA_SLOW (CE) / reverse (PE).
   // When OFF (default) the gate is the classic EMA_FAST-vs-EMA_SLOW cross.
-  var TRIPLE_STACK  = (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true";
-  var EMA_FASTEST   = parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9;
+  var TRIPLE_STACK  = _D ? ((process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true")
+                         : ((_env(P, "EMA_TRIPLE_STACK_ENABLED") || "false").toLowerCase() === "true");
+  var EMA_FASTEST   = _D ? (parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9)
+                         : (parseInt(_env(P, "EMA_FASTEST") || "9", 10) || 9);
   // Close-beyond-EMA gate (opt-in, default ON): the signal candle must CLOSE on the
   // trade side of a BASE EMA — EMA(fastest) when the triple stack is ON, else EMA(fast).
   // The stack/2-EMA gate only checks EMA *ordering*; without this, the strategy buys CE
@@ -104,7 +129,8 @@ function getSignal(candles, opts) {
   // move (the 23-Jun midday-chop false breakouts: entered ~3–9pt below EMA9). The base
   // EMA's PERIOD is whatever its Settings value is (EMA_RSI_ST_EMA_FASTEST / EMA_RSI_ST_EMA_FAST) —
   // nothing hardcoded.
-  var CLOSE_BEYOND_EMA = (process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED || "true").toLowerCase() === "true";
+  var CLOSE_BEYOND_EMA = _D ? ((process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED || "true").toLowerCase() === "true")
+                            : ((_env(P, "CLOSE_BEYOND_EMA_ENABLED") || "true").toLowerCase() === "true");
   // Stretch gate: skip when the close is already far past the base EMA — the move is
   // tired and the next candles usually snap back. Added 2026-10-28 after three PEs
   // were bought 79–102pt under EMA20 at the day's low; the third rode a 68pt bounce
@@ -112,7 +138,8 @@ function getSignal(candles, opts) {
   // (commodity) pass its own value; the swing scanner rescales the env key instead.
   var MAX_EMA_DIST = (opts && opts.maxEmaDistPts != null)
     ? opts.maxEmaDistPts
-    : (parseFloat(process.env.EMA_RSI_ST_MAX_EMA_DIST_PTS || "0") || 0);
+    : _D ? (parseFloat(process.env.EMA_RSI_ST_MAX_EMA_DIST_PTS || "0") || 0)
+         : (parseFloat(_env(P, "MAX_EMA_DIST_PTS") || "0") || 0);
   // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SuperTrend to settle.
   var WARMUP = Math.max(EMA_SLOW, 30) + 5;
 
@@ -174,8 +201,10 @@ function getSignal(candles, opts) {
   var rsi    = rsiArr[rsiArr.length - 1];
 
   // ── Trend-confirmation source: SuperTrend(10,3) — the only directional gate. ──
-  var ST_PERIOD = parseInt(process.env.EMA_RSI_ST_SUPERTREND_PERIOD || "10", 10) || 10;
-  var ST_MULT   = parseFloat(process.env.EMA_RSI_ST_SUPERTREND_MULT || "3") || 3;
+  var ST_PERIOD = _D ? (parseInt(process.env.EMA_RSI_ST_SUPERTREND_PERIOD || "10", 10) || 10)
+                     : (parseInt(_env(P, "SUPERTREND_PERIOD") || "10", 10) || 10);
+  var ST_MULT   = _D ? (parseFloat(process.env.EMA_RSI_ST_SUPERTREND_MULT || "3") || 3)
+                     : (parseFloat(_env(P, "SUPERTREND_MULT") || "3") || 3);
   var stArr  = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
   var currST = stArr[stArr.length - 1];
 
@@ -231,8 +260,9 @@ function getSignal(candles, opts) {
 
   // 6. Fresh-signal gate — see the header. Only on the entry path (skipTimeCheck
   //    callers: commodity, swing scanner, exit snapshots, run their own hours).
-  var FRESH_ONLY = !skipTimeCheck &&
-    (process.env.EMA_RSI_ST_FRESH_SIGNAL_ENABLED || "true").toLowerCase() === "true";
+  var FRESH_ONLY = !skipTimeCheck && (_D
+    ? (process.env.EMA_RSI_ST_FRESH_SIGNAL_ENABLED || "true").toLowerCase() === "true"
+    : (_env(P, "FRESH_SIGNAL_ENABLED") || "true").toLowerCase() === "true");
   // The same side's full entry setup on candle j (all the conditions above).
   function _setupAt(j, side) {
     var f  = emaFastArr[j - (EMA_FAST - 1)];
@@ -291,7 +321,7 @@ function getSignal(candles, opts) {
     ? "EMA9=" + emaFastest.toFixed(1) + " EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) + "(" + (emaUp ? "9>20>50" : emaDown ? "9<20<50" : "mixed") + ")"
     : "EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) + "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")";
   if (!silent) console.log(
-    "[STRAT " + _istTime + "] " + _emaStr +
+    (_D ? "[STRAT " : "[" + P + " ") + _istTime + "] " + _emaStr +
     " | RSI=" + rsi.toFixed(1) +
     " | ST=" + currST.value + "(" + (currST.trend === 1 ? "BULL" : "BEAR") + ")" +
     " | C=" + signalCandle.close
@@ -363,9 +393,33 @@ function getSignal(candles, opts) {
 // TRADE_ENTRY_START/END window on the confirmation candle's bar. Without it the
 // engines would have to re-parse the window themselves and could drift from the
 // signal path. The function itself is unchanged.
+// forPrefix(prefix) — the same API reading `${prefix}_*` strategy-own keys.
+// The default prefix gets these very exports back; any other prefix a cached
+// object of the same shape. isInTradingWindow reads only common keys, so it is
+// shared as is.
+var _byPrefix = {};
+function forPrefix(prefix) {
+  var P = prefix || DEFAULT_PREFIX;
+  if (_isDefault(P)) return module.exports;
+  if (!_byPrefix[P]) {
+    _byPrefix[P] = {
+      NAME:        NAMES[P] || (P + "_" + NAME),
+      DESCRIPTION: P + " (own " + P + "_* settings, same rules) | " + DESCRIPTION,
+      PREFIX:      P,
+      UNDERLYING:  PREFIXES[P] || "NIFTY",
+      getSignal:   function (candles, opts) { return _getSignal(candles, opts, P); },
+      isInTradingWindow: isInTradingWindow,
+    };
+  }
+  return _byPrefix[P];
+}
+
 module.exports = {
   NAME: NAME,
   DESCRIPTION: DESCRIPTION,
   getSignal: getSignal,
   isInTradingWindow: isInTradingWindow,
+  DEFAULT_PREFIX: DEFAULT_PREFIX,
+  PREFIXES: PREFIXES,
+  forPrefix: forPrefix,
 };

@@ -43,6 +43,12 @@
  *
  * Band multiplier + EMA period are env-tunable.
  *
+ * ── Env prefix ───────────────────────────────────────────────────────────────
+ * Every strategy-own key is read as `${PREFIX}_*`. The default exports read the
+ * original EMA9VWAP_* keys exactly as before. `forPrefix("FUT_EMA9VWAP")` returns
+ * the identical API reading FUT_EMA9VWAP_* instead — the NIFTY FUTURES twin
+ * (FUT_EMA9_VWAP) shares this one implementation with its own settings.
+ *
  * Contract: getSignal(candles, opts) → {
  *   signal: "BUY_CE" | "BUY_PE" | "NONE", side, reason, stopLoss(=null),
  *   signalStrength, ema9, vwap, vwapUpper, vwapLower, stdev
@@ -68,24 +74,49 @@ function _istDay(unixSec) {
   return Math.floor((unixSec + 19800) / 86400);
 }
 
-function _emaPeriod() { return Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD || "9", 10) || 9); }
-function _bandMult()  { const m = parseFloat(process.env.EMA9VWAP_BAND_MULT); return isNaN(m) ? 1.0 : m; }
+// Env prefix → underlying. The default prefix is the original strategy; the
+// FUT_ twin trades NIFTY futures on the same rules with its own FUT_EMA9VWAP_* keys.
+const DEFAULT_PREFIX = "EMA9VWAP";
+const PREFIXES = { EMA9VWAP: "NIFTY", FUT_EMA9VWAP: "NIFTY" };
+const NAMES    = { EMA9VWAP: NAME,    FUT_EMA9VWAP: "FUT_EMA9_VWAP" };
+/** The underlying an env prefix trades. Unknown prefixes fall back to NIFTY. */
+function underlyingFor(prefix) { return PREFIXES[prefix || DEFAULT_PREFIX] || "NIFTY"; }
+// The default prefix keeps the ORIGINAL literal EMA9VWAP_* env reads, unchanged:
+// that path must stay byte-for-byte what it was, and docs/ENV.md is generated
+// from those literal reads. Any other prefix reads `${prefix}_${key}`.
+function _isDefault(P) { return !P || P === DEFAULT_PREFIX; }
+function _env(P, key) { return process.env[P + "_" + key]; }
+
+function _emaPeriod(P) {
+  if (_isDefault(P)) return Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD || "9", 10) || 9);
+  return Math.max(2, parseInt(_env(P, "EMA_PERIOD") || "9", 10) || 9);
+}
+function _bandMult(P) {
+  const m = parseFloat(_isDefault(P) ? process.env.EMA9VWAP_BAND_MULT : _env(P, "BAND_MULT"));
+  return isNaN(m) ? 1.0 : m;
+}
 // Strength grading: how far EMA9 broke PAST the band edge, measured in σ units
 // (scale-free, so it adapts to the day's volatility). A break of >= this many σ
 // is "STRONG", anything smaller is "WEAK" (likely noise). Default 0.25σ.
-function _strongMinSigma() { const s = parseFloat(process.env.EMA9VWAP_STRONG_MIN_SIGMA); return isNaN(s) ? 0.25 : Math.max(0, s); }
+function _strongMinSigma(P) {
+  const s = parseFloat(_isDefault(P) ? process.env.EMA9VWAP_STRONG_MIN_SIGMA : _env(P, "STRONG_MIN_SIGMA"));
+  return isNaN(s) ? 0.25 : Math.max(0, s);
+}
 // When ON, WEAK crosses are suppressed (fewer, higher-quality entries). Default
 // OFF so behaviour is unchanged until you validate it on backtest/replay.
-function _strengthFilterOn() { return String(process.env.EMA9VWAP_STRENGTH_FILTER || "false").toLowerCase() === "true"; }
+function _strengthFilterOn(P) {
+  if (_isDefault(P)) return String(process.env.EMA9VWAP_STRENGTH_FILTER || "false").toLowerCase() === "true";
+  return String(_env(P, "STRENGTH_FILTER") || "false").toLowerCase() === "true";
+}
 // Classify a break distance (EMA9 beyond the band edge, in points) vs σ.
-function _gradeStrength(distPts, stdev) {
+function _gradeStrength(distPts, stdev, P) {
   // σ == 0 happens on the FIRST in-session candle (one sample, zero variance).
   // Grading that "STRONG" would make the noisiest bar of the day rate best, so
   // an unmeasurable break is graded WEAK — conservative, and it only matters
   // when EMA9VWAP_STRENGTH_FILTER is on (the filter drops WEAK). With the
   // filter off (the default) this label is metadata only and changes no trade.
   if (!(stdev > 0)) return "WEAK";
-  return distPts >= _strongMinSigma() * stdev ? "STRONG" : "WEAK";
+  return distPts >= _strongMinSigma(P) * stdev ? "STRONG" : "WEAK";
 }
 // Parse "HH:MM" → minutes-of-day. Falls back to `def` on anything malformed
 // rather than silently collapsing to midnight (a bad value used to widen the
@@ -98,8 +129,8 @@ function _parseHHMM(raw, def) {
   return h * 60 + mm;
 }
 
-function _anchorMins() {
-  return _parseHHMM(process.env.EMA9VWAP_VWAP_SESSION_START, 9 * 60 + 15);
+function _anchorMins(P) {
+  return _parseHHMM(_isDefault(P) ? process.env.EMA9VWAP_VWAP_SESSION_START : _env(P, "VWAP_SESSION_START"), 9 * 60 + 15);
 }
 
 /**
@@ -115,10 +146,12 @@ function _anchorMins() {
  *
  * @param {number} candleTimeSec  bar START time, unix seconds
  * @param {number} resolutionMins bar length in minutes
+ * @param {string} [prefix]       env prefix (default EMA9VWAP)
  */
-function isEntryWindowOpen(candleTimeSec, resolutionMins) {
-  const start = _parseHHMM(process.env.EMA9VWAP_ENTRY_START, 10 * 60 + 30);
-  const end   = _parseHHMM(process.env.EMA9VWAP_ENTRY_END,   14 * 60 + 30);
+function isEntryWindowOpen(candleTimeSec, resolutionMins, prefix) {
+  const _d    = _isDefault(prefix);
+  const start = _parseHHMM(_d ? process.env.EMA9VWAP_ENTRY_START : _env(prefix, "ENTRY_START"), 10 * 60 + 30);
+  const end   = _parseHHMM(_d ? process.env.EMA9VWAP_ENTRY_END   : _env(prefix, "ENTRY_END"),   14 * 60 + 30);
   const res   = Number.isFinite(resolutionMins) && resolutionMins > 0 ? resolutionMins : 5;
   const closeMins = _utcSecToIstMins(candleTimeSec) + res;   // when the bar closes
   return closeMins >= start && closeMins < end;
@@ -132,10 +165,10 @@ function isEntryWindowOpen(candleTimeSec, resolutionMins) {
  * what made Paper and Backtest compute different bands for the same session.
  * Returns { vwap, upper, lower, stdev } or null if no in-session candles.
  */
-function computeVwapBands(candles, anchorMins, mult) {
+function computeVwapBands(candles, anchorMins, mult, prefix) {
   if (!candles || candles.length === 0) return null;
-  if (anchorMins == null) anchorMins = _anchorMins();
-  if (mult == null) mult = _bandMult();
+  if (anchorMins == null) anchorMins = _anchorMins(prefix);
+  if (mult == null) mult = _bandMult(prefix);
   // ── ONE authoritative weighting: EQUAL-WEIGHT (TWAP) of HLC3. See the
   //    "Why equal-weight" note in the file header. `candle.volume` is
   //    deliberately NOT read here — it is the only field whose provenance
@@ -167,12 +200,12 @@ function computeVwapBands(candles, anchorMins, mult) {
  * Per-candle VWAP/band series for charting. Returns an array aligned to `candles`
  * (entries before the session anchor are null). Each entry: {time, vwap, upper, lower}.
  */
-function vwapSeries(candles, anchorMins, mult) {
-  if (anchorMins == null) anchorMins = _anchorMins();
-  if (mult == null) mult = _bandMult();
+function vwapSeries(candles, anchorMins, mult, prefix) {
+  if (anchorMins == null) anchorMins = _anchorMins(prefix);
+  if (mult == null) mult = _bandMult(prefix);
   const out = [];
   for (let i = 0; i < candles.length; i++) {
-    const b = computeVwapBands(candles.slice(0, i + 1), anchorMins, mult);
+    const b = computeVwapBands(candles.slice(0, i + 1), anchorMins, mult, prefix);
     out.push(b ? { time: candles[i].time, vwap: b.vwap, upper: b.upper, lower: b.lower } : null);
   }
   return out;
@@ -181,12 +214,14 @@ function vwapSeries(candles, anchorMins, mult) {
 /**
  * getSignal — evaluate the EMA9-vs-VWAP-band cross on the latest CLOSED candle.
  * `candles` is ascending OHLC(+volume); the last element is the signal candle.
+ * `opts.prefix` selects the env prefix (default EMA9VWAP — see forPrefix()).
  */
 function getSignal(candles, opts) {
   opts = opts || {};
-  const period = _emaPeriod();
-  const mult   = _bandMult();
-  const anchor = _anchorMins();
+  const P      = opts.prefix || DEFAULT_PREFIX;
+  const period = _emaPeriod(P);
+  const mult   = _bandMult(P);
+  const anchor = _anchorMins(P);
   const base = {
     signal: "NONE", side: null, reason: "warming up", stopLoss: null,
     signalStrength: "STRONG",
@@ -201,7 +236,7 @@ function getSignal(candles, opts) {
   const ema9Now  = emaArr[emaArr.length - 1];   // aligns with last candle
   const ema9Prev = emaArr[emaArr.length - 2];   // aligns with previous candle
 
-  const bandsNow  = computeVwapBands(candles, anchor, mult);                 // band at last candle
+  const bandsNow  = computeVwapBands(candles, anchor, mult, P);              // band at last candle
 
   // Session-boundary guard. computeVwapBands anchors on the IST day of the LAST
   // candle it is given, so on the first candle of a new day `candles.slice(0,-1)`
@@ -211,7 +246,7 @@ function getSignal(candles, opts) {
   const _lastC = candles[candles.length - 1];
   const _prevC = candles[candles.length - 2];
   const _sameSession = !!_prevC && _istDay(_prevC.time) === _istDay(_lastC.time);
-  const bandsPrev = _sameSession ? computeVwapBands(candles.slice(0, -1), anchor, mult) : null;
+  const bandsPrev = _sameSession ? computeVwapBands(candles.slice(0, -1), anchor, mult, P) : null;
   if (!bandsNow || !bandsPrev || ema9Now == null || ema9Prev == null) {
     return {
       ...base,
@@ -237,12 +272,12 @@ function getSignal(candles, opts) {
   if (crossAboveTop) {
     result.signal = "BUY_CE"; result.side = "CE";
     const dist = _round2(ema9Now - upNow);                       // pts EMA9 broke above the top band
-    result.signalStrength = _gradeStrength(dist, bandsNow.stdev);
+    result.signalStrength = _gradeStrength(dist, bandsNow.stdev, P);
     result.reason = `EMA9 ${result.ema9} crossed ABOVE VWAP top ${upNow} (VWAP ${bandsNow.vwap} +${mult}σ) | break ${dist}pt = ${result.signalStrength}`;
   } else if (crossBelowBottom) {
     result.signal = "BUY_PE"; result.side = "PE";
     const dist = _round2(loNow - ema9Now);                       // pts EMA9 broke below the bottom band
-    result.signalStrength = _gradeStrength(dist, bandsNow.stdev);
+    result.signalStrength = _gradeStrength(dist, bandsNow.stdev, P);
     result.reason = `EMA9 ${result.ema9} crossed BELOW VWAP bottom ${loNow} (VWAP ${bandsNow.vwap} -${mult}σ) | break ${dist}pt = ${result.signalStrength}`;
   } else {
     result.reason = `no cross — EMA9 ${result.ema9} vs band [${loNow}, ${upNow}]`;
@@ -251,7 +286,7 @@ function getSignal(candles, opts) {
   // Strength filter (default OFF): drop WEAK crosses so only meaningful breaks
   // trade. Applied here in the shared strategy so paper / backtest
   // all behave identically.
-  if (result.signal !== "NONE" && result.signalStrength === "WEAK" && _strengthFilterOn()) {
+  if (result.signal !== "NONE" && result.signalStrength === "WEAK" && _strengthFilterOn(P)) {
     result.reason = `filtered WEAK ${result.side} break — ${result.reason}`;
     result.signal = "NONE"; result.side = null;
   }
@@ -262,8 +297,33 @@ function getSignal(candles, opts) {
   return result;
 }
 
+/**
+ * forPrefix(prefix) — the same API bound to `${prefix}_*` env keys.
+ * forPrefix("EMA9VWAP") behaves exactly like the default exports;
+ * forPrefix("FUT_EMA9VWAP") is the NIFTY FUTURES twin's engine. Cached per prefix.
+ */
+const _byPrefix = {};
+function forPrefix(prefix) {
+  const P = prefix || DEFAULT_PREFIX;
+  if (_byPrefix[P]) return _byPrefix[P];
+  _byPrefix[P] = {
+    NAME:        NAMES[P] || NAME,
+    DESCRIPTION: P === DEFAULT_PREFIX ? DESCRIPTION : `${DESCRIPTION} — ${P}_* settings`,
+    PREFIX:      P,
+    UNDERLYING:  underlyingFor(P),
+    getSignal:         (candles, opts) => getSignal(candles, Object.assign({}, opts, { prefix: P })),
+    computeVwapBands:  (candles, anchorMins, mult) => computeVwapBands(candles, anchorMins, mult, P),
+    vwapSeries:        (candles, anchorMins, mult) => vwapSeries(candles, anchorMins, mult, P),
+    isEntryWindowOpen: (candleTimeSec, resolutionMins) => isEntryWindowOpen(candleTimeSec, resolutionMins, P),
+    forPrefix,
+  };
+  return _byPrefix[P];
+}
+
 module.exports = {
   NAME, DESCRIPTION, getSignal, computeVwapBands, vwapSeries,
   // Shared so Paper / Live / Backtest cannot drift on the window rule.
   isEntryWindowOpen,
+  // Env-prefix support (FUT_EMA9VWAP = the NIFTY FUTURES twin).
+  DEFAULT_PREFIX, PREFIXES, underlyingFor, forPrefix,
 };
