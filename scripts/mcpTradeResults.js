@@ -111,7 +111,10 @@ function getJson(pathAndQuery) {
           ));
         }
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`${u.pathname} returned HTTP ${res.statusCode}`));
+          // Pass the route's own reason through (e.g. which modes are valid).
+          let why = "";
+          try { const e = JSON.parse(body).error; if (e) why = ` — ${e}`; } catch (_) {}
+          return reject(new Error(`${u.pathname} returned HTTP ${res.statusCode}${why}`));
         }
         try { resolve(JSON.parse(body)); }
         catch (_) { reject(new Error(`${u.pathname} did not return JSON (got ${body.slice(0, 80)}…)`)); }
@@ -180,9 +183,31 @@ async function sourceSettings(mode) {
   return j.settings;
 }
 
+/**
+ * The rest of the Logs page (skip logs, settings changes, login logs, server
+ * logs, post-exit tracking). These live only on the running app, so there is
+ * no local fallback — reading the laptop's copies would answer about the wrong
+ * machine. Undefined params are left out of the query string.
+ */
+async function sourceRemote(endpoint, params, key) {
+  if (!REMOTE) {
+    throw new Error(`this data comes from the running app — set TRADE_MCP_URL.`);
+  }
+  const qs = Object.entries(params || {})
+    .filter(([, v]) => v != null && v !== "")
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .join("&");
+  const j = await getJson(`/mcp-data/${endpoint}${qs ? "?" + qs : ""}`);
+  if (!j || !Array.isArray(j[key])) {
+    throw new Error(`/mcp-data/${endpoint} returned no "${key}" array — is ${REMOTE_URL} deployed with the newer /mcp-data?`);
+  }
+  const { success, ...rest } = j;
+  return rest;
+}
+
 // ---------------------------------------------------------------- helpers
 
-const num = (v) => (typeof v === "number" && isFinite(v) ? v : Number(v) || 0);
+const num =(v) => (typeof v === "number" && isFinite(v) ? v : Number(v) || 0);
 const r2 = (v) => Math.round(num(v) * 100) / 100;
 
 /** Validate a mode name up front so every tool reports the same clear error. */
@@ -475,6 +500,111 @@ const TOOLS = [
       return { markdown: aiExport.buildMarkdown(recs, { title }) };
     },
   },
+
+  {
+    name: "get_skips",
+    description:
+      "Skip Logs: every signal a strategy did NOT take and which gate stopped it (vix, spread, oi, entry_window, daily_loss, cooldowns…). Returns per-mode, per-gate counts for the whole range plus the rows (newest day first). A 'strategy' gate row means no signal formed on that candle — pass gate to see only real signals a guard blocked. Omit mode for all strategies. Needs TRADE_MCP_URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mode: { type: "string", description: "Strategy key. Omit for all." },
+        from: { type: "string", description: "Start date YYYY-MM-DD." },
+        to: { type: "string", description: "End date YYYY-MM-DD." },
+        gate: { type: "string", description: "Only rows from this gate, e.g. vix." },
+        limit: { type: "number", description: "Max rows (default 200, max 2000). Counts always cover the full range." },
+      },
+      additionalProperties: false,
+    },
+    async handler({ mode, from, to, gate, limit }) {
+      if (from != null) assertDate(from);
+      if (to != null) assertDate(to);
+      return sourceRemote("skips", { mode, from, to, gate, limit }, "skips");
+    },
+  },
+
+  {
+    name: "get_settings_changes",
+    description:
+      "Checkpoints & Settings Changes: every settings value change (key, from → to, add/update/delete, when, checkpoint note), newest first. Use to line up a config change with a change in results. Needs TRADE_MCP_URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Start date YYYY-MM-DD (IST)." },
+        to: { type: "string", description: "End date YYYY-MM-DD (IST)." },
+        key: { type: "string", description: "Only keys containing this text, e.g. PROFIT_LOCK." },
+        action: { type: "string", enum: ["add", "update", "delete"], description: "Only this kind of change." },
+        notedOnly: { type: "boolean", description: "Only changes saved with a checkpoint note." },
+        limit: { type: "number", description: "Max entries (default 500, max 5000)." },
+      },
+      additionalProperties: false,
+    },
+    async handler({ from, to, key, action, notedOnly, limit }) {
+      if (from != null) assertDate(from);
+      if (to != null) assertDate(to);
+      return sourceRemote("audit", { from, to, key, action, noted: notedOnly ? "1" : null, limit }, "entries");
+    },
+  },
+
+  {
+    name: "get_login_logs",
+    description:
+      "Login Logs: failed login tries and demo sign-ins (time, IP, location, user agent), newest first. Typed passwords are never returned. Needs TRADE_MCP_URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["all", "failed", "demo"], description: "Which entries (default all)." },
+        limit: { type: "number", description: "Max entries (default 200, max 2000)." },
+      },
+      additionalProperties: false,
+    },
+    async handler({ type, limit }) {
+      return sourceRemote("login-logs", { type, limit }, "logs");
+    },
+  },
+
+  {
+    name: "get_server_logs",
+    description:
+      "Server Logs: the app's console log for one IST day (default today; past days kept for the retention window). Filter by src (strategy/file tag, e.g. ema_rsi_st or fyersBroker), level (log/warn/error) or text q. Returns the last `limit` matches unless `from` is given, plus the per-source counts and the list of days on disk. Needs TRADE_MCP_URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Day YYYY-MM-DD. Omit for today." },
+        src: { type: "string", description: "Only this source/strategy tag." },
+        level: { type: "string", description: "Only this level, e.g. error or warn." },
+        q: { type: "string", description: "Only lines containing this text (case-insensitive)." },
+        from: { type: "number", description: "Index into the matches to start at. Omit for the newest." },
+        limit: { type: "number", description: "Max lines (default 200, max 2000)." },
+      },
+      additionalProperties: false,
+    },
+    async handler({ date, src, level, q, from, limit }) {
+      if (date != null) assertDate(date);
+      return sourceRemote("server-logs", { date, src, level, q, from, limit }, "logs");
+    },
+  },
+
+  {
+    name: "get_post_exit",
+    description:
+      "Post-exit tracking: for each closed trade, how far spot moved for and against it after the exit (best/worst + time) and spot at +5/+15/+30/+60 min and at the close. Use to judge whether exits are too early or saved a loss. Needs TRADE_MCP_URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mode: { type: "string", description: "Strategy key. Omit for all." },
+        from: { type: "string", description: "Start date YYYY-MM-DD." },
+        to: { type: "string", description: "End date YYYY-MM-DD." },
+        limit: { type: "number", description: "Max records (default 200, max 2000)." },
+      },
+      additionalProperties: false,
+    },
+    async handler({ mode, from, to, limit }) {
+      if (from != null) assertDate(from);
+      if (to != null) assertDate(to);
+      return sourceRemote("post-exit", { mode, from, to, limit }, "records");
+    },
+  },
 ];
 
 const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
@@ -504,7 +634,7 @@ function handle(msg) {
       return reply(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: "trade-results", version: "1.1.0" },
+        serverInfo: { name: "trade-results", version: "1.2.0" },
       });
 
     case "notifications/initialized":
