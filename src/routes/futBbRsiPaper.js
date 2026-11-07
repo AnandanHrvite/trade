@@ -532,7 +532,10 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     pnlMode = "spot proxy";
   }
 
-  const charges = getCharges({ broker: "fyers", isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  // A future is billed on the INDEX turnover it actually traded (entry/exit
+  // price), as the backtest and the live unrealised figure do — the option
+  // premiums are always null here and would fall back to a flat ₹60 estimate.
+  const charges = getCharges({ broker: "fyers", isFutures, exitPremium: isFutures ? exitPrice : exitOptionLtp, entryPremium: isFutures ? entryPrice : optionEntryLtp, qty });
   const netPnl    = parseFloat((rawPnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
 

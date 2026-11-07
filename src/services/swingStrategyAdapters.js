@@ -274,6 +274,7 @@ const ADAPTERS = [
     key:        "FUT_EMA_RSI_ST_V2",
     label:      "FUT EMA_RSI_ST_V2",
     envKey:     "FUT_EMA_RSI_ST_V2_MODE_ENABLED",
+    envDefault: "false",                        // ships OFF, like EMA_RSI_ST_V2
     // The SAME engine as EMA_RSI_ST_V2, read through the FUT_EMA_RSI_ST_V2_* env
     // prefix (NIFTY FUTURES twin), so the options and futures versions tune
     // independently.

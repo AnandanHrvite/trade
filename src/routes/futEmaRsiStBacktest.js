@@ -141,6 +141,7 @@ router.get("/", async (req, res) => {
         const _result = await runBacktest(_candles, strategy, capital, _vixCandles, _expiryDates,
           (p) => backtestJobs.updateProgress(id, p), activeFromTs, { isFutures: true, prefix: STRATEGY_PREFIX });
         _result.candleCount = _candles.length;
+        _result.summary.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
         saveResult(RESULT_KEY, { ..._result, params: { from, to, resolution, symbol, capital } });
         backtestJobs.completeJob(id, _result);
         console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);

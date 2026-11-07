@@ -658,6 +658,7 @@ router.get("/", async (req, res) => {
         stats.optionSim   = INSTRUMENT !== "NIFTY_FUTURES";
         stats.delta       = _num("BACKTEST_DELTA", "0.55");
         stats.thetaPerDay = _num("BACKTEST_THETA_DAY", "8");
+        stats.isFutures   = true;   // ₹ (index pts × lot − charges), not raw pts
 
         if (result.warmupViolations > 0) {
           console.warn(`⚠ ${LABEL} Backtest job ${id}: ${result.warmupViolations} warm-up bar(s) attempted a trade — runway is leaking into results.`);

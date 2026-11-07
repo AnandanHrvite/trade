@@ -31,7 +31,7 @@ const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444
 // Smart formatter: shows ₹ when option sim is on, pts when off
 const fmtPnl   = (n, s) => {
   if (typeof n !== "number") return "\u2014";
-  if (s && s.optionSim) return (n >= 0 ? "+" : "-") + "\u20b9" + Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  if (s && (s.optionSim || s.isFutures)) return (n >= 0 ? "+" : "-") + "\u20b9" + Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
   return pts(n);
 };
 
@@ -135,6 +135,7 @@ router.get("/", async (req, res) => {
         const _result = await runEma9VwapBacktest(_candles, capital,
           (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles, ENGINE_OPTS);
         _result.candleCount = _candles.length;
+        _result.summary.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
         saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
         backtestJobs.completeJob(id, _result);
         console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);
@@ -160,7 +161,7 @@ router.get("/", async (req, res) => {
   try {
     const result = job.result;
     const candles = { length: result.candleCount || 0 };
-    const s = result.summary;
+    const s = { ...result.summary, isFutures: true };
     // Newest first by default (reverse chronological)
     const trades = [...(result.trades || [])].reverse();
 
@@ -390,7 +391,7 @@ ${buildSidebar('futEma9vwapBacktest', false)}
   <div class="stat-grid">
     <div class="sc blue"><div class="sc-label">Total Trades</div><div class="sc-val">${s.totalTrades}</div><div class="sc-sub">${s.wins}W \u00b7 ${s.losses}L</div></div>
     <div class="sc green"><div class="sc-label">Max Profit</div><div class="sc-val" style="color:#10b981;">${fmtPnl(s.maxProfit, s)}</div><div class="sc-sub">Best single trade</div></div>
-    <div class="sc ${(s.totalPnl||0)>=0?"green":"red"}"><div class="sc-label">Total PnL</div><div class="sc-val" style="color:${pnlColor(s.totalPnl)};">${fmtPnl(s.totalPnl, s)}</div><div class="sc-sub">${s.optionSim ? `Option sim: δ=${s.delta} θ=₹${s.thetaPerDay}/day` : "Raw NIFTY index pts — enable BACKTEST_OPTION_SIM=true"}</div></div>
+    <div class="sc ${(s.totalPnl||0)>=0?"green":"red"}"><div class="sc-label">Total PnL</div><div class="sc-val" style="color:${pnlColor(s.totalPnl)};">${fmtPnl(s.totalPnl, s)}</div><div class="sc-sub">${s.optionSim ? `Option sim: δ=${s.delta} θ=₹${s.thetaPerDay}/day` : "NIFTY futures: index pts × lot − futures charges"}</div></div>
     <div class="sc red"><div class="sc-label">Max Drawdown</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.maxDrawdown, s)}</div><div class="sc-sub">Worst single trade</div></div>
     <div class="sc red"><div class="sc-label">Total Drawdown</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.totalDrawdown, s)}</div><div class="sc-sub">Sum of all losses</div></div>
     <div class="sc purple"><div class="sc-label">Risk/Reward</div><div class="sc-val">${s.riskReward||"\u2014"}</div><div class="sc-sub">1 : avg win \u00f7 avg loss</div></div>
@@ -568,7 +569,7 @@ ${buildSidebar('futEma9vwapBacktest', false)}
         <th onclick="doSort('xPrice')" id="h-xPrice">Exit (pts)</th>
         <th onclick="doSort('exit')"   id="h-exit">Exit Time</th>
         <th onclick="doSort('sl')"     id="h-sl">SL</th>
-        <th onclick="doSort('pnl')"    id="h-pnl">PnL ${s.optionSim ? "(₹ sim)" : "(pts)"}</th>
+        <th onclick="doSort('pnl')"    id="h-pnl">PnL ${s.optionSim ? "(₹ sim)" : "(₹)"}</th>
         <th>Entry Reason</th>
         <th>Exit Reason</th>
         <th style="text-align:center;">Action</th>
@@ -595,7 +596,7 @@ ${buildSidebar('futEma9vwapBacktest', false)}
   </div>
 
 <script id="trades-data" type="application/json">${tradesJSON}</script>
-${aiExportScriptTag({ mode: "FUT EMA9+VWAP", strategyName: ACTIVE, from, to, optionSim: !!(s && s.optionSim), fullCount: tradesData.length })}
+${aiExportScriptTag({ mode: "FUT EMA9+VWAP", strategyName: ACTIVE, from, to, optionSim: !!(s && s.optionSim), unit: "₹", fullCount: tradesData.length })}
 ${tradesTruncated ? `<div style="background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:0.72rem;color:#b8a040;text-align:center;">Showing latest ${MAX_EMBEDDED_TRADES.toLocaleString()} of ${tradesData.length.toLocaleString()} trades for browser performance. Summary stats reflect ALL trades.</div>` : ''}
 <script>
 ${modalJS()}
@@ -605,7 +606,7 @@ var filtered = TRADES.slice();
 var sortCol = 'entry', sortDir = -1, pg = 1, pp = 10;
 
 function fmt(n){ return n!=null ? Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\u2014'; }
-var OPT_SIM = ${s.optionSim ? "true" : "false"};
+var OPT_SIM = true; // futures twin: P&L is ₹ (index pts × lot − charges) — format as rupees
 function fpts(n, spotPts){
   if(n==null) return '\u2014';
   if(OPT_SIM){

@@ -216,7 +216,7 @@ function requestCancel() {
 //      Trend_PB VWAP is equal-weighted, ORB hunts a fresh breakout after an RSI/ST
 //      block, PREV_ORB_SCALP spends a setup broken before the entry start.
 // v24: EMA_RSI_ST fresh-signal gate; ORB entry cut-off no longer forced to 14:00.
-const REPLAY_CACHE_VERSION = 24;
+const REPLAY_CACHE_VERSION = 25;   // 25: INSTRUMENT no longer pinned/keyed (global toggle removed)
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -355,7 +355,9 @@ const _MODE_TO_ENV_PREFIX = {
 // When no market.jsonl exists (recordings made before this feature), falls back
 // to the legacy snapshot pin so old days still replay without crashing.
 /**
- * The INSTRUMENT the recorded session actually traded.
+ * The INSTRUMENT the recorded session actually traded. Since the global toggle
+ * was removed this is INFORMATIONAL only (used to warn when an options route's
+ * recording was made under the old futures toggle) — it is never applied.
  *
  * Pinned historically for BOTH replay toggles, for exactly the reason expiry is:
  * a recording made in NIFTY_FUTURES holds no option ticks, and replaying it
@@ -2308,10 +2310,12 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       date,
       tradedExpiry: _tradedExpiry,
     });
-    // The traded INSTRUMENT is as historical as the expiry — pin it the same way
-    // and through the same object, so the cache key and the applied env agree.
+    // The recorded INSTRUMENT is NOT pinned any more: the global toggle is gone
+    // (getInstrument() ignores process.env), so a pin would be a silent no-op
+    // and would only split the cache key. A FUT_* route is futures by itself; an
+    // options route is options. A session recorded under the OLD global futures
+    // toggle therefore replays as options — say so instead of pretending.
     const _instrumentEnv = _resolveReplayInstrumentEnv(data.sessionStart.settings);
-    Object.assign(expiryResolution.env, _instrumentEnv);
     // Lot override from the Replay page's "Lots" box. Piggybacks on the same
     // object as the pinned expiry/instrument so it lands in the cache key (built
     // below) AND in the applied env for both settings sources — a run at 2 lots
@@ -2321,8 +2325,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     if (_lotEnv.LOT_MULTIPLIER) {
       console.log(`📼 [replay] lots pinned from the Replay page: ${_lotEnv.LOT_MULTIPLIER}`);
     }
-    if (_instrumentEnv.INSTRUMENT === "NIFTY_FUTURES") {
-      console.log(`📼 [replay] instrument pinned from the recording: NIFTY_FUTURES`);
+    if (_instrumentEnv.INSTRUMENT === "NIFTY_FUTURES" && !/^fut[_-]/i.test(String(mode))) {
+      console.warn(`⚠️ [replay] ${mode} ${date}: recorded under the removed global INSTRUMENT=NIFTY_FUTURES toggle — it replays as OPTIONS now (this route is options-only), so option prices may be missing. Not a strategy result.`);
     }
     const _underlying = _underlyingLabelOf(mode);
     if (!data.marketContext) {

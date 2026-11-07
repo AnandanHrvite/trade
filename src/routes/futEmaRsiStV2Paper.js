@@ -981,7 +981,10 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   // Charges: STT + exchange + GST + stamp duty + brokerage (configurable via Settings)
-  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  // A future is billed on the INDEX turnover it actually traded (entry/exit
+  // price), as the backtest and the live unrealised figure do — the option
+  // premiums are always null here and would fall back to a flat ₹60 estimate.
+  const charges = getCharges({ isFutures, exitPremium: isFutures ? exitPrice : exitOptionLtp, entryPremium: isFutures ? entryPrice : optionEntryLtp, qty });
   const netPnl  = parseFloat((rawPnl - charges).toFixed(2));
 
   // Derived metadata for the trade record — computed here so the JSONL log captures the full picture.

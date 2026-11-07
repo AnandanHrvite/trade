@@ -2915,7 +2915,9 @@ router.get("/", (req, res) => {
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
-    "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     emaRsiStModeOn,
+    // FUT_EMA_RSI_ST also reads this section's shared rows (entry window, VIX,
+    // RSI band, expiry-day), so keep it reachable while the futures twin is on.
+    "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     emaRsiStModeOn || futEmaRsiStModeOn,
     "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers":                   bbRsiModeOn,
     "PRICE ACTION STRATEGY (Smart Money order block) — Fyers":      paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
