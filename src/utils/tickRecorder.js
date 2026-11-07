@@ -465,6 +465,7 @@ function snapshotSettings() {
   if (out.PREMIUM_SL_ENABLED === undefined) out.PREMIUM_SL_ENABLED = "false";
   if (out.EXIT_REENTRY_COOLDOWN_CANDLES === undefined) out.EXIT_REENTRY_COOLDOWN_CANDLES = "2";
   if (out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED === undefined) out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED = "true";
+  if (out.EMA_RSI_ST_FRESH_SIGNAL_ENABLED === undefined) out.EMA_RSI_ST_FRESH_SIGNAL_ENABLED = "true";
   return out;
 }
 

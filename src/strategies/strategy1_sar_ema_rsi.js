@@ -28,6 +28,14 @@
  *   5. Not stretched (EMA_RSI_ST_MAX_EMA_DIST_PTS, default 0 = off): the signal
  *      candle close may sit at most this many points beyond the base EMA. Both sides.
  *
+ * FRESH SIGNAL ONLY (EMA_RSI_ST_FRESH_SIGNAL_ENABLED, default ON, both sides): a setup
+ *   that was already showing before today's entry window opened is stale — it is not
+ *   taken until it switches off and a new one appears. Example: the CE setup is true
+ *   from 09:45; the window opens at 10:00 → no CE at 10:00. RSI dips under 52 at 10:40
+ *   and comes back at 10:55 → that 10:55 CE is fresh and can be taken. Added
+ *   2026-11-08: Jan–Nov 2026 backtest, 122 of 283 trades fired 10:00–10:14 on setups
+ *   already true before the window, net −₹66k; the rest of the day was +₹17k.
+ *
  * EXITS live in the execution layer, not here. The EMA_RSI_ST paper / live /
  * backtest engines exit ONLY on the global profit lock (tradeGuards.checkProfitLock)
  * plus the session teardown — they ignore `stopLoss`. getSignal() still returns the
@@ -221,6 +229,42 @@ function getSignal(candles, opts) {
   var notFarCE    = MAX_EMA_DIST <= 0 || distCE <= MAX_EMA_DIST;
   var notFarPE    = MAX_EMA_DIST <= 0 || distPE <= MAX_EMA_DIST;
 
+  // 6. Fresh-signal gate — see the header. Only on the entry path (skipTimeCheck
+  //    callers: commodity, swing scanner, exit snapshots, run their own hours).
+  var FRESH_ONLY = !skipTimeCheck &&
+    (process.env.EMA_RSI_ST_FRESH_SIGNAL_ENABLED || "true").toLowerCase() === "true";
+  // The same side's full entry setup on candle j (all the conditions above).
+  function _setupAt(j, side) {
+    var f  = emaFastArr[j - (EMA_FAST - 1)];
+    var sl = emaSlowArr[j - (EMA_SLOW - 1)];
+    var r  = rsiArr[j - 14];
+    var st = stArr[j];
+    if (f == null || sl == null || r == null || !st || st.trend == null) return false;
+    var fs = null;
+    if (TRIPLE_STACK) { fs = emaFastestArr[j - (EMA_FASTEST - 1)]; if (fs == null) return false; }
+    var b = TRIPLE_STACK ? fs : f;
+    var c = candles[j].close;
+    if (side === "CE") {
+      return (TRIPLE_STACK ? (fs > f && f > sl) : f > sl) && r > RSI_CE_MIN && r < RSI_CE_MAX && st.trend === 1 &&
+        (!CLOSE_BEYOND_EMA || c > b) && (MAX_EMA_DIST <= 0 || c - b <= MAX_EMA_DIST);
+    }
+    return (TRIPLE_STACK ? (fs < f && f < sl) : f < sl) && r < RSI_PE_MAX && r > RSI_PE_MIN && st.trend === -1 &&
+      (!CLOSE_BEYOND_EMA || c < b) && (MAX_EMA_DIST <= 0 || b - c <= MAX_EMA_DIST);
+  }
+  // Was this side's setup unbroken since before today's window opened? Walks back
+  // over the run of candles where it held; a candle before the window start (or on
+  // an earlier day) inside that run makes it stale.
+  function _staleSince(side) {
+    var startMin = _parseMins("TRADE_ENTRY_START", "09:30");
+    var today = Math.floor((signalCandle.time + 19800) / 86400);
+    for (var j = candles.length - 2; j >= 0; j--) {
+      if (!_setupAt(j, side)) return null;
+      var ist = candles[j].time + 19800;
+      if (Math.floor(ist / 86400) !== today || Math.floor(ist / 60) % 1440 < startMin) return candles[j].time;
+    }
+    return null;
+  }
+
   var base = {
     ema20:          Math.round(emaFast * 100) / 100,
     ema50:          Math.round(emaSlow * 100) / 100,
@@ -252,6 +296,20 @@ function getSignal(candles, opts) {
     " | ST=" + currST.value + "(" + (currST.trend === 1 ? "BULL" : "BEAR") + ")" +
     " | C=" + signalCandle.close
   );
+
+  // ── Stale setup (fresh-signal gate) ───────────────────────────────────────
+  var _staleSide = (emaUp && rsiCE && trendUp && closeOkCE && notFarCE) ? "CE"
+    : (emaDown && rsiPE && trendDown && closeOkPE && notFarPE) ? "PE" : null;
+  if (FRESH_ONLY && _staleSide) {
+    var _since = _staleSince(_staleSide);
+    if (_since != null) {
+      var _sinceIst = new Date(_since * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
+      var _staleWhy = _staleSide + " setup already showing at " + _sinceIst +
+        ", before the entry window — stale, waiting for it to switch off and come back";
+      if (!silent) console.log("  ⏸️ " + _staleWhy);
+      return Object.assign({}, base, { signal: "NONE", reason: _staleWhy, staleSetup: true });
+    }
+  }
 
   // ── BUY CE ────────────────────────────────────────────────────────────────
   if (emaUp && rsiCE && trendUp && closeOkCE && notFarCE) {

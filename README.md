@@ -100,11 +100,11 @@ This list is the current truth. Where an older strategy section below talks abou
 - After any exit, no new entry for `EXIT_REENTRY_COOLDOWN_CANDLES` candles (default 2).
 
 **Entry** (CE = buy a call, PE = buy a put; PE is always the mirror). With the common trade window on, NIFTY / BANK NIFTY entries are only taken 10:00–14:00.
-- **EMA_RSI_ST** — EMA20 above EMA50, RSI between 52 and 70, SuperTrend green, candle closes above EMA20; the next candle must then break that close.
+- **EMA_RSI_ST** — EMA20 above EMA50, RSI between 52 and 70, SuperTrend green, candle closes above EMA20; the next candle must then break that close. A signal already showing before the window opens is skipped until it goes away and comes back (`EMA_RSI_ST_FRESH_SIGNAL_ENABLED`).
 - **EMA_RSI_ST_V2** — EMA20 above EMA50, close above EMA20, RSI above 52; no SuperTrend gate, no RSI cap.
 - **BB_RSI** — `BB_RSI_DIRECTION=breakout`: close above the upper band with RSI ≥ 75 → CE. `fade`: close below the lower band with RSI ≤ 25 → CE. Skinny bands and a flat RSI are skipped.
 - **Price Action** — break of the last swing high, a dip that takes out the pullback low, then the first up-close back at an untouched order block.
-- **ORB** — 09:15–09:30 range. A candle closes beyond it, the next candle closes beyond that one, and RSI + SuperTrend agree. If RSI or SuperTrend blocks it, it waits for a fresh breakout.
+- **ORB** — 09:15–09:30 range. A candle closes beyond it, the next candle closes beyond that one, and RSI + SuperTrend agree. If RSI or SuperTrend blocks it, it waits for a fresh breakout. No new ORB entries after `ORB_ENTRY_END` (default 10:15 — ORB keeps its own cut-off even with the common window on).
 - **EMA9_VWAP** — EMA9 crosses above VWAP + 1σ (CE) or below VWAP − 1σ (PE).
 - **Trend Pullback** — 15-min trend up (higher highs/lows, EMA20 > EMA50, above VWAP), a small 5-min dip to EMA20, then a strong candle closing back above it. VWAP is a plain average (no volume).
 - **Trend Day Scalp** — by 10:15 the day must have moved a lot on one side of VWAP; then one dip to VWAP/EMA20 that is bought back.

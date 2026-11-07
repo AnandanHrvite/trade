@@ -645,6 +645,36 @@ check("BANKNIFTY option symbols are parsed as BANKNIFTY, not NIFTY", () => {
     "strike/expiry parsing must derive from the underlying, not a NIFTY literal");
 });
 
+check("V1 fresh-signal gate: a setup already true before the window is not bought at the open", () => {
+  const keep = { s: process.env.TRADE_ENTRY_START, e: process.env.TRADE_ENTRY_END, f: process.env.EMA_RSI_ST_FRESH_SIGNAL_ENABLED, r: process.env.RSI_CE_MAX };
+  process.env.TRADE_ENTRY_START = "10:00"; process.env.TRADE_ENTRY_END = "14:00"; process.env.RSI_CE_MAX = "90";
+  try {
+    const base = Math.floor(Date.UTC(2026, 2, 2, 3, 45) / 1000);   // 09:15 IST
+    const c = []; let px = 24000;
+    for (let d = 0; d < 2; d++) for (let i = 0; i < 75; i++) {
+      const o = px, cl = px + (i % 2 ? 4 : -4);
+      c.push({ time: base + d * 86400 + i * 300, open: o, high: Math.max(o, cl) + 3, low: Math.min(o, cl) - 3, close: cl }); px = cl;
+    }
+    for (let i = 0; i < 10; i++) {                                   // today 09:15 → 10:00, steady climb
+      const o = px, cl = px + (i % 3 === 2 ? -2 : 6);
+      c.push({ time: base + 2 * 86400 + i * 300, open: o, high: Math.max(o, cl) + 2, low: Math.min(o, cl) - 2, close: cl }); px = cl;
+    }
+    delete process.env.EMA_RSI_ST_FRESH_SIGNAL_ENABLED;              // default ON
+    const on = v1.getSignal(c, { silent: true });
+    assert.strictEqual(on.signal, "NONE", on.reason);
+    assert.ok(on.staleSetup && /before the entry window/.test(on.reason), on.reason);
+    process.env.EMA_RSI_ST_FRESH_SIGNAL_ENABLED = "false";
+    assert.strictEqual(v1.getSignal(c, { silent: true }).signal, "BUY_CE", "toggle off = the old rule");
+    // Exit snapshots / commodity / scanner pass skipTimeCheck and never see the gate.
+    process.env.EMA_RSI_ST_FRESH_SIGNAL_ENABLED = "true";
+    assert.strictEqual(v1.getSignal(c, { silent: true, skipTimeCheck: true }).signal, "BUY_CE");
+  } finally {
+    for (const [k, v] of [["TRADE_ENTRY_START", keep.s], ["TRADE_ENTRY_END", keep.e], ["EMA_RSI_ST_FRESH_SIGNAL_ENABLED", keep.f], ["RSI_CE_MAX", keep.r]]) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 console.log(`\n${fail ? "FAILURES" : "ALL PASS"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

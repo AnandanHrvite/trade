@@ -583,7 +583,7 @@ function getSignal(candles, opts) {
   }
 
   const cfg = {
-    entryEnd:     _parseMins("ORB_ENTRY_END", "11:30"),
+    entryEnd:     _parseMins("ORB_ENTRY_END", "10:15"),
     orStart:      _parseMins("ORB_RANGE_START", "09:15"),
     orEnd:        _parseMins("ORB_RANGE_END", "09:30"),
     // The mirror of ORB_ENTRY_END: no breakout candle is even LOOKED AT before this.
@@ -626,13 +626,13 @@ function getSignal(candles, opts) {
 
   // ── 1. Session window ─────────────────────────────────────────────────────
   if (!tr.check("time window", lastIst >= cfg.entryStart && lastIst < cfg.entryEnd,
-                `${_startLabel}–${process.env.ORB_ENTRY_END || "11:30"} IST`)) {
+                `${_startLabel}–${process.env.ORB_ENTRY_END || "10:15"} IST`)) {
     return done(Object.assign(sig, {
       reason: lastIst < cfg.entryStart
         ? (lastIst < cfg.orEnd
             ? `Building opening range (waiting for ${process.env.ORB_RANGE_END || "09:30"} IST)`
             : `Before ${_startLabel} IST — ORB is not hunting breakouts yet`)
-        : `Past ${process.env.ORB_ENTRY_END || "11:30"} IST — no new ORB entries (breakout is stale)`,
+        : `Past ${process.env.ORB_ENTRY_END || "10:15"} IST — no new ORB entries (breakout is stale)`,
     }));
   }
 
