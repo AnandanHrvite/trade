@@ -50,7 +50,43 @@ function _fastIST(nowMs) {
   };
 }
 
-function capture(level, args) {
+// ── Source tag ───────────────────────────────────────────────────────────────
+// Which file wrote the line, so the Server Logs page can filter one strategy.
+// Many strategies log a bare "[PAPER] ENTRY …", so the text alone can't say
+// whose line it is — the call stack can. The first src/routes/ frame wins
+// (a guard in utils/ logging on behalf of orbPaper.js is ORB's line); else the
+// first src/ frame. "orbPaper" / "orbLive" / "orbLiveHarness" all become "orb".
+// Structured callsites (no stack-string formatting) keep this cheap.
+const SRC_RE    = /[\\/]src[\\/](routes|services|strategies|utils)[\\/]([^\\/]+)\.js$/;
+const SUFFIX_RE = /(LiveHarness|PatternBacktest|Backtest|Paper|Live)$/;
+const _asCallsites = (_, cs) => cs;
+function callerSrc() {
+  const prevLimit = Error.stackTraceLimit;
+  const prevPrep  = Error.prepareStackTrace;
+  try {
+    Error.stackTraceLimit   = 12;
+    Error.prepareStackTrace = _asCallsites;
+    const holder = {};
+    Error.captureStackTrace(holder, callerSrc);
+    const cs = holder.stack;
+    if (!Array.isArray(cs)) return null;
+    let first = null;
+    for (const c of cs) {
+      const m = SRC_RE.exec((c && c.getFileName && c.getFileName()) || "");
+      if (!m || m[2] === "logger") continue;
+      if (m[1] === "routes") return m[2].replace(SUFFIX_RE, "") || m[2];
+      if (!first) first = m[2];
+    }
+    return first;
+  } catch (_) {
+    return null;
+  } finally {
+    Error.stackTraceLimit   = prevLimit;
+    Error.prepareStackTrace = prevPrep;
+  }
+}
+
+function capture(level, args, src) {
   const nowMs = Date.now();
   const ist   = _fastIST(nowMs);
 
@@ -59,6 +95,7 @@ function capture(level, args) {
     time:  ist.time,
     date:  ist.date,
     level,
+    src:   src !== undefined ? src : callerSrc(),
     msg: args
       .map(a => {
         if (a === null)            return "null";
@@ -92,4 +129,15 @@ function capture(level, args) {
   };
 });
 
-module.exports = { logStore, logEvents, logArchive };
+/**
+ * Log a line under an explicit source tag (e.g. a tradeLogger mode key like
+ * "ema_rsi_st_v2"), for shared code that logs on a strategy's behalf from a
+ * timer where the stack can't tell whose line it is.
+ */
+function logAs(src, msg, level) {
+  const method = level === "warn" ? "warn" : "log";
+  _orig[method](msg);
+  capture(LEVEL_MAP[method], [msg], src || null);
+}
+
+module.exports = { logStore, logEvents, logArchive, logAs };

@@ -251,6 +251,8 @@ function appendTradeLog(mode, trade) {
     fsp.appendFile(dailyFilePathFor(mode, istDateString(ts)), line).catch(err => {
       console.warn(`[tradeLogger] daily append failed (mode=${mode}): ${err.message}`);
     });
+    // Watch the market after this exit until 15:30 (observer only).
+    try { require("./postExitTracker").track(mode, trade); } catch (_) {}
   } catch (err) {
     // Logging must never break the trade flow.
     console.warn(`[tradeLogger] append failed (mode=${mode}): ${err.message}`);

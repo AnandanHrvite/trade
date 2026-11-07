@@ -5,6 +5,8 @@
  * GET  /logs/stream    → SSE endpoint (live log feed)
  * GET  /logs/dates     → Archived days available on disk (7-day retention)
  * GET  /logs/day       → Paginated read of one archived day
+ * GET  /logs/sources   → Strategies/sources that logged on a day (+ counts)
+ * GET  /logs/day-src   → One day's lines from one strategy/source
  * GET  /logs/export    → Download logs as .txt   (?date= for an archived day)
  * GET  /logs/export-json → Download logs as .json (?date= for an archived day)
  * POST /logs/clear     → Clear in-memory log store
@@ -142,8 +144,88 @@ router.get("/day", async (req, res) => {
   res.json({ date, total, from, limit, logs, hasMore: (from + limit) < total });
 });
 
+// ── Per-strategy view ─────────────────────────────────────────────────────────
+// logger.js tags each entry with `src` (the calling file, e.g. "orbPaper.js" →
+// "orb") or a tradeLogger mode key ("ema_rsi_st_v2"). Both normalise to the
+// same key, so one strategy's Paper/Live/Harness lines group together.
+const tradeLogger = require("../utils/tradeLogger");
+const normSrc = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const STRATEGY_LABELS = new Map();
+for (const mode of Object.keys(tradeLogger.FILE_BY_MODE)) {
+  const m = mode.replace(/-live$/, "");
+  STRATEGY_LABELS.set(normSrc(m), m.toUpperCase());
+}
+STRATEGY_LABELS.set("commodity", "COMMODITY (MCX)");
+
+const SCAN_CHUNK  = 5000;
+const SRC_MAX_OUT = 5000;   // newest lines returned for one source
+
+// Walk a whole day in chunks (today = file when archived, else memory).
+async function forEachEntry(date, fn) {
+  if (!logArchive.ENABLED) {
+    if (date === logArchive.istDateString()) for (const e of logStore) fn(e);
+    return;
+  }
+  if (date === logArchive.istDateString()) logArchive.flush(true);
+  for (let from = 0; ; from += SCAN_CHUNK) {
+    const { total, logs } = await logArchive.readDayPage(date, from, SCAN_CHUNK);
+    for (const e of logs) fn(e);
+    if (!logs.length || from + SCAN_CHUNK >= total) break;
+  }
+}
+
+function dateParam(raw) {
+  const d = String(raw || "");
+  return DATE_RE.test(d) ? d : logArchive.istDateString();
+}
+
+router.get("/sources", async (req, res) => {
+  const date = dateParam(req.query.date);
+  const counts = new Map();   // key → { label, count }
+  try {
+    await forEachEntry(date, (e) => {
+      const key = normSrc(e && e.src) || "untagged";
+      let c = counts.get(key);
+      if (!c) { c = { key, label: (e && e.src) || "untagged", count: 0 }; counts.set(key, c); }
+      c.count++;
+    });
+  } catch (err) { return res.status(500).json({ error: err.message }); }
+  const out = Array.from(counts.values()).map(c => ({
+    ...c,
+    strategy: STRATEGY_LABELS.has(c.key),
+    label: STRATEGY_LABELS.get(c.key) || c.label,
+  }));
+  out.sort((a, b) => (b.strategy - a.strategy) || a.label.localeCompare(b.label));
+  res.json({ date, sources: out });
+});
+
+router.get("/day-src", async (req, res) => {
+  const date = dateParam(req.query.date);
+  const key  = normSrc(req.query.src);
+  if (!key) return res.status(400).json({ error: "src required" });
+  const want = key === "untagged" ? "" : key;
+  const out = [];
+  let matched = 0;
+  try {
+    await forEachEntry(date, (e) => {
+      if (normSrc(e && e.src) !== want) return;
+      matched++;
+      out.push(e);
+      if (out.length > SRC_MAX_OUT + 1000) out.splice(0, out.length - SRC_MAX_OUT);
+    });
+  } catch (err) { return res.status(500).json({ error: err.message }); }
+  const logs = out.length > SRC_MAX_OUT ? out.slice(-SRC_MAX_OUT) : out;
+  res.json({ date, src: key, matched, logs, truncated: matched > logs.length });
+});
+
 // Resolve the entry set an export should serve: an archived day, or memory.
-async function exportEntries(dateRaw) {
+async function exportEntries(dateRaw, srcRaw) {
+  const key = normSrc(srcRaw);
+  if (key) {                                   // one strategy, whole day
+    const day = dateParam(dateRaw), want = key === "untagged" ? "" : key, entries = [];
+    await forEachEntry(day, (e) => { if (normSrc(e && e.src) === want) entries.push(e); });
+    return { entries, label: `${day}-${key}` };
+  }
   const date = String(dateRaw || "");
   if (!DATE_RE.test(date)) return { entries: logStore, label: new Date().toISOString().slice(0, 10) };
   if (date === logArchive.istDateString()) logArchive.flush(true);
@@ -152,7 +234,7 @@ async function exportEntries(dateRaw) {
 
 // ── Export as plain text ──────────────────────────────────────────────────────
 router.get("/export", async (req, res) => {
-  const { entries, label } = await exportEntries(req.query.date);
+  const { entries, label } = await exportEntries(req.query.date, req.query.src);
   const lines = entries
     .map(e => `[${e.date} ${e.time}] [${String(e.level).padEnd(5)}] ${e.msg}`)
     .join("\n");
@@ -163,7 +245,7 @@ router.get("/export", async (req, res) => {
 
 // ── Export as JSON ────────────────────────────────────────────────────────────
 router.get("/export-json", async (req, res) => {
-  const { entries, label } = await exportEntries(req.query.date);
+  const { entries, label } = await exportEntries(req.query.date, req.query.src);
   res.setHeader("Content-Disposition", `attachment; filename="trading-bot-logs-${label}.json"`);
   res.setHeader("Content-Type", "application/json");
   res.json(entries);
@@ -221,9 +303,9 @@ router.get("/", (req, res) => {
     .fp.off { opacity:0.28; }
 
     /* Day picker — today (live) + the retained past days */
-    #daySel { background:#0d1320; border:1px solid #1a2236; color:#c8d8f0; padding:3px 8px; border-radius:5px;
+    #daySel, #srcSel { background:#0d1320; border:1px solid #1a2236; color:#c8d8f0; padding:3px 8px; border-radius:5px;
               font-size:0.68rem; font-family:inherit; outline:none; cursor:pointer; max-width:190px; }
-    #daySel:focus { border-color:#3b82f6; }
+    #daySel:focus, #srcSel:focus { border-color:#3b82f6; }
     .badge-live.archived { color:#fbbf24; background:#1a1200; border-color:#403000; }
     .badge-live.archived .dot { background:#fbbf24; animation:none; }
 
@@ -273,7 +355,7 @@ router.get("/", (req, res) => {
       .nav-links a { font-size:0.7rem; padding:5px 8px; }
       .toolbar { padding:6px 10px; }
       #search { width:100%; }
-      #daySel { flex:1; min-width:150px; max-width:none; }
+      #daySel, #srcSel { flex:1; min-width:150px; max-width:none; }
       .tb-right { width:100%; justify-content:flex-start; }
       .log-wrap { overflow-y:auto; height:70vh; min-height:400px; }
       .log-row { padding:2px 8px; }
@@ -305,6 +387,9 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     <span class="badge-live" id="liveBadge"><span class="dot"></span>LIVE</span>
     <select id="daySel" onchange="switchDay(this.value)" title="Pick a day (last 7 days kept on disk)">
       <option value="">📅 Today (live)</option>
+    </select>
+    <select id="srcSel" onchange="switchSrc(this.value)" title="Show one strategy's lines for the picked day">
+      <option value="">🧩 All strategies</option>
     </select>
     <span class="counter" id="count">0 entries</span>
     <div class="filters">
@@ -358,6 +443,10 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
 
   // Day view: "" = today (in-memory live tail), "YYYY-MM-DD" = archived file
   var viewDate    = "";
+  // Strategy view: "" = everything, else a normalised source key ("orb").
+  var viewSrc     = "";
+  var srcSeen     = {};    // entry ids already shown in a strategy view (dedupe live tail)
+  function normSrc(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
   var pollStarted = false;
   // Restart-gap tracking: today's on-disk entry count vs what this process holds.
   var todayArchiveCount = 0;
@@ -403,12 +492,100 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     var badge = document.getElementById("liveBadge");
     badge.classList.toggle("archived", !!viewDate);
     badge.lastChild.textContent = viewDate ? "ARCHIVE" : "LIVE";
-    var q = viewDate ? "?date=" + encodeURIComponent(viewDate) : "";
-    document.getElementById("expTxt").href  = "/logs/export" + q;
-    document.getElementById("expJson").href = "/logs/export-json" + q;
+    setExportLinks();
     document.getElementById("clearBtn").style.display = viewDate ? "none" : "";
     maybeShowRestartGap();
-    if (viewDate) loadArchive(); else init();
+    loadSources();
+    if (viewSrc) loadSrc();
+    else if (viewDate) loadArchive(); else init();
+  }
+
+  // ── Strategy filter ─────────────────────────────────────────────────────────
+  function loadSources() {
+    var pinned = viewDate;
+    var q = viewDate ? "?date=" + encodeURIComponent(viewDate) : "";
+    fetch("/logs/sources" + q, { cache: "no-store" })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || pinned !== viewDate) return;
+        var sel = document.getElementById("srcSel");
+        sel.innerHTML = '<option value="">🧩 All strategies</option>';
+        var groups = { true: null, false: null };
+        d.sources.forEach(function(x) {
+          var g = groups[x.strategy];
+          if (!g) {
+            g = document.createElement("optgroup");
+            g.label = x.strategy ? "Strategies" : "System / other";
+            sel.appendChild(g); groups[x.strategy] = g;
+          }
+          var o = document.createElement("option");
+          o.value = x.key;
+          o.textContent = x.label + " · " + x.count;
+          g.appendChild(o);
+        });
+        // Keep the pick when the new day has it; otherwise it still filters (0 rows).
+        if (viewSrc && !sel.querySelector('option[value="' + viewSrc + '"]')) {
+          var o2 = document.createElement("option");
+          o2.value = viewSrc; o2.textContent = viewSrc + " · 0";
+          sel.appendChild(o2);
+        }
+        sel.value = viewSrc;
+      })
+      .catch(function() {});
+  }
+
+  // Downloads follow the picked day and strategy.
+  function setExportLinks() {
+    var p = [];
+    if (viewDate) p.push("date=" + encodeURIComponent(viewDate));
+    if (viewSrc)  p.push("src=" + encodeURIComponent(viewSrc));
+    var q = p.length ? "?" + p.join("&") : "";
+    document.getElementById("expTxt").href  = "/logs/export" + q;
+    document.getElementById("expJson").href = "/logs/export-json" + q;
+  }
+
+  function switchSrc(key) {
+    viewSrc = key || "";
+    setExportLinks();
+    resetView();
+    document.getElementById("restartBanner").style.display = "none";
+    if (viewSrc) loadSrc();
+    else { maybeShowRestartGap(); if (viewDate) loadArchive(); else init(); }
+  }
+
+  // Whole day for one strategy (server-filtered). On today the live poll keeps
+  // adding that strategy's new lines.
+  function loadSrc() {
+    var pinnedDate = viewDate, pinnedSrc = viewSrc;
+    srcSeen = {};
+    var q = "?src=" + encodeURIComponent(viewSrc) + (viewDate ? "&date=" + encodeURIComponent(viewDate) : "");
+    // Today: note where the live tail is BEFORE reading the file, so nothing
+    // logged in between is missed (overlap is removed by id).
+    var pre = viewDate ? Promise.resolve(null)
+      : fetch("/logs/data?from=0&limit=1", { cache: "no-store" }).then(function(r) { return r.ok ? r.json() : null; });
+    pre.then(function(live) {
+      return fetch("/logs/day-src" + q, { cache: "no-store" })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(d) {
+          if (pinnedDate !== viewDate || pinnedSrc !== viewSrc) return;
+          if (!d || !d.logs.length) {
+            if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No lines from this strategy on ' + (viewDate || "today") + ' yet.';
+          } else {
+            if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+            d.logs.forEach(function(e) { addRow(e, false); });
+            wrap.scrollTop = wrap.scrollHeight;
+          }
+          var hint = document.getElementById("olderHint"), banner = document.getElementById("olderBanner");
+          if (d && d.truncated) {
+            banner.style.display = "block";
+            document.getElementById("olderBtn").style.display = "none";
+            hint.textContent = "Showing the newest " + d.logs.length + " of " + d.matched + " lines — ⬇ TXT downloads all of them.";
+          }
+          if (!viewDate && live) startPoll(live.total || 0);
+        });
+    }).catch(function() {
+      if (emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Could not load logs for this strategy.';
+    });
   }
 
   function resetView() {
@@ -417,6 +594,8 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     totalAll         = 0;
     totalVisible     = 0;
     oldestFrom       = 0;
+    srcSeen          = {};
+    document.getElementById("olderBtn").style.display = "";
     updateCount();
     updateOlderBanner(0);
   }
@@ -454,7 +633,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
   // Server sends only 100 rows at a time. Older rows loaded on demand via
   // "Load older logs" button. This keeps initial DOM render near-instant.
   function init() {
-    if (viewDate) return;                 // an archived day is on screen
+    if (viewDate || viewSrc) return;      // an archived day / strategy view is on screen
     var total = 0;
     // Step 1: find total count first
     fetch("/logs/data?from=0&limit=1", { cache: "no-store" })
@@ -523,7 +702,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
 
   // ── Load older: prepend previous PAGE rows above current view ───────────────
   function loadOlder() {
-    if (loadingOlder || oldestFrom === 0) return;
+    if (loadingOlder || oldestFrom === 0 || viewSrc) return;
     loadingOlder = true;
     var btn = document.getElementById("olderBtn");
     if (btn) { btn.textContent = "⏳ Loading..."; btn.disabled = true; }
@@ -561,7 +740,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     var banner = document.getElementById("restartBanner");
     if (!banner) return;
     var gap = todayArchiveCount - liveTotal;
-    if (!viewDate && todayDate && gap > 0) {
+    if (!viewDate && !viewSrc && todayDate && gap > 0) {
       document.getElementById("restartGapCount").textContent = gap.toLocaleString("en-IN");
       banner.style.display = "block";
     } else {
@@ -591,6 +770,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
   }
 
   loadDays();
+  loadSources();
   init();
 
   // ── Build a row DOM element (shared by addRow and loadOlder prepend) ─────────
@@ -611,6 +791,11 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
 
   // ── Append a single row (used by live poll) ───────────────────────────────
   function addRow(entry, isLive) {
+    if (viewSrc) {
+      if (normSrc(entry.src) !== (viewSrc === "untagged" ? "" : viewSrc)) return;
+      if (entry.id && srcSeen[entry.id]) return;
+      if (entry.id) srcSeen[entry.id] = 1;
+    }
     totalAll++;
     var row = makeRow(entry);
     wrap.appendChild(row);
