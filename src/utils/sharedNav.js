@@ -901,10 +901,10 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
 </button>
 <div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
 <nav class="sidebar" id="main-sidebar">
-  <div class="sb-brand">
+  <a class="sb-brand" href="/" title="Go to Dashboard">
     <div class="sb-brand-name">${isDemoSession ? 'Trading Bot' : 'ௐ Palani Andawar Thunai ॐ'}</div>
     <div class="sb-brand-sub">${isDemoSession ? 'DEMO' : 'TRADING BOT'}</div>
-  </div>
+  </a>
   <div class="sb-nav">
     ${navItems}
   </div>
@@ -1561,7 +1561,7 @@ function sidebarCSS() {
     /* Both ends are fixed chrome around the scrolling nav — without flex-shrink:0
        they compress once the item list overflows, and the bottom block is where
        Settings' neighbours (status + action buttons) live. */
-    .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;flex-shrink:0;}
+    .sb-brand{display:block;text-decoration:none;cursor:pointer;padding:20px 16px 16px;border-bottom:1px solid #0e1e36;flex-shrink:0;}
     .sb-brand-name{font-size:0.72rem;font-weight:700;color:#60a5fa;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
     .sb-brand-sub{font-size:0.6rem;color:var(--muted-2,#6d85a8);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
     .sb-nav{padding:6px 0;flex:1;}
