@@ -207,7 +207,7 @@ async function sourceRemote(endpoint, params, key) {
 
 // ---------------------------------------------------------------- helpers
 
-const num =(v) => (typeof v === "number" && isFinite(v) ? v : Number(v) || 0);
+const num = (v) => (typeof v === "number" && isFinite(v) ? v : Number(v) || 0);
 const r2 = (v) => Math.round(num(v) * 100) / 100;
 
 /** Validate a mode name up front so every tool reports the same clear error. */

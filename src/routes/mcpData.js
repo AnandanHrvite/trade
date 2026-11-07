@@ -243,6 +243,10 @@ router.get("/server-logs", async (req, res) => {
 // at +5/+15/+30/+60 min, written at 15:30 IST by utils/postExitTracker.
 router.get("/post-exit", (req, res) => {
   const want = req.query.mode ? String(req.query.mode).toLowerCase() : null;
+  // A typo'd mode must be an error, not an empty answer that reads as "no data".
+  if (want && !tradeSources.isKnownMode(want)) {
+    return res.status(400).json({ success: false, error: `unknown mode "${want}"` });
+  }
   const from = optDate(req, res, "from"); if (from === false) return;
   const to = optDate(req, res, "to"); if (to === false) return;
   const cap = limitOf(req, 200, 2000);
