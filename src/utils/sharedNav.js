@@ -313,6 +313,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
   const showTokenSync  = (process.env.UI_SHOW_TOKEN_SYNC  || 'true').toLowerCase() === 'true';
+  const showBrokers    = (process.env.UI_SHOW_BROKERS     || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['emaRsiStBacktest', 'emaRsiStPaper', 'emaRsiStSim', 'emaRsiStHistory', 'emaRsiStCompare', 'emaRsiStTracker', 'emaRsiStLive', 'emaRsiStLiveHarness'];
@@ -340,7 +341,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // Dashboard (top-level) and System are collapsible groups too, so the whole
   // sidebar behaves the same way — one accordion, no ungrouped stragglers.
   const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'liveConsolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
-  const systemKeys    = ['tradeLogs', 'tokenSync', 'settings'];
+  const systemKeys    = ['tradeLogs', 'tokenSync', 'brokers', 'settings'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -799,6 +800,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
         ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '📄', label: 'Logs' }] : []),
         // Login Logs, Server Logs (📜 LOGS) and Cache Files now live as tabs inside the Logs (/trade-logs) page.
         ...(showTokenSync  ? [{ key: 'tokenSync',  href: '/token-sync',  icon: '🔑', label: 'Token Sync' }] : []),
+        ...(showBrokers    ? [{ key: 'brokers',    href: '/brokers',     icon: '🏦', label: 'Brokers'    }] : []),
         { key: 'settings',   href: '/settings',    icon: '⚙️',  label: 'Settings'   },
       ]
     },

@@ -1003,6 +1003,8 @@ const OPEN_PATHS = [
   // The page fetches all five through secretFetch.
   "/token-sync",            // token pull/copy/paste page shell (renders no token)
   "/token-sync/status",     // "is each broker logged in" booleans only — no token (Settings hides logged-out brokers' Logout buttons)
+  "/brokers",               // broker maintenance page shell (secrets never rendered)
+  "/brokers/list",          // added brokers — API secret reduced to a hasSecret boolean
   "/cache-files",           // cache / generated-file browser (read-only)
   "/cache-files/groups",    // JSON: per-group file count + size
   "/cache-files/list",      // JSON: paged files for one group
@@ -1364,6 +1366,7 @@ app.use("/mcp-data",   require("./routes/mcpData"));    // ← read-only JSON fo
 app.use("/cache-files", require("./routes/cacheFiles")); // ← cache / generated-file browser (caches, ticks, replay outputs)
 app.use("/sync",        require("./routes/sync"));       // ← EC2→local data sync (download tar.gz)
 app.use("/token-sync",  require("./routes/tokenSync"));  // ← copy broker token from LIVE → paste on a laptop
+app.use("/brokers",     require("./routes/brokers"));    // ← broker maintenance: built-in keys + added broker entries
 app.use("/backup",      require("./routes/backup"));     // ← daily downloadable data snapshots (Settings card + nag banner)
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer
