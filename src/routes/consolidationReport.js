@@ -1,7 +1,7 @@
 /**
  * Consolidation Report — a printable, DAILY consolidated report of every recorded
- * paper trade, rendered as one table per market (NIFTY, BANK NIFTY,
- * COMMODITY) with a row per trading day.
+ * paper trade, rendered as one table per market (NIFTY, NIFTY FUTURES,
+ * BANK NIFTY, COMMODITY) with a row per trading day.
  *
  * Mirrors the Telegram "CONSOLIDATED DAY REPORT" layout (per-strategy trades + P&L,
  * then Total / Wins / Losses / Win rate / Net P&L) but for every day at once, in a
@@ -204,6 +204,7 @@ for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Sil
 function groupOf(mode) {
   if (mode.startsWith("CMX_")) return "COMMODITY";
   if (mode.startsWith("BN_"))  return "BANK NIFTY";
+  if (mode.startsWith("FUT_")) return "NIFTY FUTURES";   // the FUT_* futures twins — own market, like the sidebar
   return "NIFTY";
 }
 
@@ -506,7 +507,7 @@ ${multiSelectCSS()}
       <label>Market</label>
       <div class="seg" id="segMkt">
         <button data-mkt="all" class="on">All</button>
-        ${["NIFTY", "BANK NIFTY", "COMMODITY"].filter(g => enabled.some(s => groupOf(s.mode) === g)).map(g => `<button data-mkt="${g}">${g}</button>`).join("")}
+        ${["NIFTY", "NIFTY FUTURES", "BANK NIFTY", "COMMODITY"].filter(g => enabled.some(s => groupOf(s.mode) === g)).map(g => `<button data-mkt="${g}">${g}</button>`).join("")}
       </div>
       <label>Strategy</label>
       ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All strategies')}
@@ -538,7 +539,7 @@ const HIST_PATH  = ${JSON.stringify({ ...PAPER_HISTORY_PATH, ...Object.fromEntri
 const COL_GROUP  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.group])))};
 const COL_LABEL  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.col])))};
 const GROUP_OF   = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, groupOf(s.mode)])))};
-const GROUPS     = ['NIFTY', 'BANK NIFTY', 'COMMODITY'];
+const GROUPS     = ['NIFTY', 'NIFTY FUTURES', 'BANK NIFTY', 'COMMODITY'];
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
