@@ -65,7 +65,6 @@ function _mins(raw, def) {
 }
 function _num(v, def) { const n = parseFloat(v); return Number.isFinite(n) ? n : def; }
 function _int(v, def) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : def; }
-function _bool(v, def) { return String(v == null || v === "" ? def : v).toLowerCase() === "true"; }
 function istMinutesOf(sec) { return Math.floor((sec + 19800) / 60) % 1440; }
 function istNowMinutes() { return istMinutesOf(Math.floor(Date.now() / 1000)); }
 function istDay(ms = Date.now()) { return new Date(ms + 19800000).toISOString().slice(0, 10); }

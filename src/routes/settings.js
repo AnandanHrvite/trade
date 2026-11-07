@@ -928,7 +928,7 @@ const SETTINGS_SCHEMA = [
   {
     // Everything every strategy shares: one on/off box per rule (turning a box
     // off switches that rule off for ALL strategies), then the rules' numbers,
-    // the one lot count and the paper capital. Unset toggles count as ON.
+    // the one lot count and the paper capital. Unset toggles count as ON, except the profit lock (OFF).
     section: "COMMON TRADE RULES — apply to every strategy",
     icon: "✅",
     nav: "Common Rules",
