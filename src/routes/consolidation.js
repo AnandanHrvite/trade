@@ -48,6 +48,7 @@ const SOURCES = [
   { mode: "TDS",      file: path.join(DATA_DIR, "trend_day_scalp_paper_trades.json"), label: "TREND DAY SCALP", color: "#a855f7" },
   { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_paper_trades.json"), label: "HA SCALP", color: "#f97316" },
   { mode: "PREV_ORB_SCALP", file: path.join(DATA_DIR, "prev_orb_scalp_paper_trades.json"), label: "PREV ORB SCALP", color: "#e879f9" },
+  { mode: "ITM20_SCALP", file: path.join(DATA_DIR, "itm20_scalp_paper_trades.json"), label: "ITM20 SCALP", color: "#22d3ee" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
   // Same rules on NIFTY BANK (monthly options) — its own trades file, never folded into RSI PIVOT ST's.
   { mode: "BN_PIVOT_RSI_ST", file: path.join(DATA_DIR, "bn_pivot_rsi_st_paper_trades.json"), label: "BN PIVOT RSI ST", color: "#818cf8" },
@@ -1249,6 +1250,7 @@ _MODE_COLOR.ST_RSI_PIV_BB = '#a3e635';
 _MODE_COLOR.SAIL_VWAP_ST = '#fda4af';
 _MODE_COLOR.PIVOT_EMA_ST = '#38bdf8'; _MODE_COLOR.BN_PIVOT_EMA_ST = '#f472b6'; _MODE_COLOR.SAIL_PIVOT_EMA_ST = '#fcd34d';
 _MODE_COLOR.GAP_RUNAWAY = '#a78bfa'; _MODE_COLOR.GAP_RUNAWAY_STK = '#c084fc';
+_MODE_COLOR.ITM20_SCALP = '#22d3ee';
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }

@@ -785,6 +785,74 @@ function clearPrevOrbScalpPosition() {
   console.log("[PERSIST] PREV_ORB_SCALP position file cleared.");
 }
 
+// ── ITM20_SCALP (15m opening-range breakout + retest, +20/−10 premium) ──────
+// The target and stop are PREMIUM levels frozen at entry (the stop may sit
+// above entry − 10 when the daily-loss cap tightened it), so both are stored.
+
+const ITM20_SCALP_POS_FILE = path.join(DATA_DIR, ".active_itm20_scalp_position.json");
+
+function saveItm20ScalpPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(ITM20_SCALP_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        optionEntryLtp:  position.optionEntryLtp,
+        targetPrem:      position.targetPrem,
+        stopPrem:        position.stopPrem,
+        stopKind:        position.stopKind,
+        orHigh:          position.orHigh,
+        orLow:           position.orLow,
+        breakoutTime:    position.breakoutTime,
+        retestTime:      position.retestTime,
+        signalBarTime:   position.signalBarTime,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        vixAtEntry:      position.vixAtEntry ?? null,
+        isFutures:       false,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(ITM20_SCALP_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] ITM20_SCALP position saved: ${position.side} ${position.symbol} @ ₹${position.optionEntryLtp}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save ITM20_SCALP position: ${err.message}`);
+  }
+}
+
+function loadItm20ScalpPosition() {
+  try {
+    if (!fs.existsSync(ITM20_SCALP_POS_FILE)) return null;
+    const data = _readSnapshot(ITM20_SCALP_POS_FILE);
+    if (!data) return null;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale ITM20_SCALP position from ${data.savedDate} — ignoring.`);
+      _markStale(ITM20_SCALP_POS_FILE, data);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] ITM20_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.optionEntryLtp}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load ITM20_SCALP position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearItm20ScalpPosition() {
+  _persistAtomic(ITM20_SCALP_POS_FILE, null);
+  console.log("[PERSIST] ITM20_SCALP position file cleared.");
+}
+
 
 // ── RSI_PIVOT_ST (RSI + pivot breakout + SuperTrend stop, Zerodha) ──────────
 // The stop is a FROZEN price at entry (SuperTrend level + premium floor), so a
@@ -1580,6 +1648,7 @@ module.exports = {
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
   saveHaScalpPosition, loadHaScalpPosition, clearHaScalpPosition,
   savePrevOrbScalpPosition, loadPrevOrbScalpPosition, clearPrevOrbScalpPosition,
+  saveItm20ScalpPosition, loadItm20ScalpPosition, clearItm20ScalpPosition,
   saveEarlyBirdPositions, loadEarlyBirdPositions, clearEarlyBirdPositions,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveBnPivotRsiStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition,

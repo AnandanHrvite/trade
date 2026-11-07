@@ -907,6 +907,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "ha-scalp-paper":        "ha_scalp_paper_trades.json",
   "prev-orb-scalp-paper":  "prev_orb_scalp_paper_trades.json",
   "early-bird-paper":      "early_bird_paper_trades.json",
+  "itm20-scalp-paper":     "itm20_scalp_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
   "bn-pivot-rsi-st-paper": "bn_pivot_rsi_st_paper_trades.json",
   "sail_vwap_st-paper":    "sail_vwap_st_paper_trades.json",
@@ -1094,6 +1095,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_setPrevOrbScalpActive:  sharedSocketState.setPrevOrbScalpActive,
     ss_clearPrevOrbScalp:      sharedSocketState.clearPrevOrbScalp,
     ss_setEarlyBirdActive:     sharedSocketState.setEarlyBirdActive,
+    ss_setItm20ScalpActive:    sharedSocketState.setItm20ScalpActive,
+    ss_clearItm20Scalp:        sharedSocketState.clearItm20Scalp,
     ss_clearEarlyBird:         sharedSocketState.clearEarlyBird,
     ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
     ss_clearRsiPivotSt:        sharedSocketState.clearRsiPivotSt,
@@ -1674,6 +1677,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.setPrevOrbScalpActive  = () => {};
     sharedSocketState.clearPrevOrbScalp      = () => {};
     sharedSocketState.setEarlyBirdActive     = () => {};
+    sharedSocketState.setItm20ScalpActive    = () => {};
+    sharedSocketState.clearItm20Scalp        = () => {};
     sharedSocketState.clearEarlyBird         = () => {};
     sharedSocketState.setRsiPivotStActive    = () => {};
     sharedSocketState.clearRsiPivotSt        = () => {};
@@ -1965,6 +1970,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.setPrevOrbScalpActive  = orig.ss_setPrevOrbScalpActive;
     sharedSocketState.clearPrevOrbScalp      = orig.ss_clearPrevOrbScalp;
     sharedSocketState.setEarlyBirdActive     = orig.ss_setEarlyBirdActive;
+    sharedSocketState.setItm20ScalpActive    = orig.ss_setItm20ScalpActive;
+    sharedSocketState.clearItm20Scalp        = orig.ss_clearItm20Scalp;
     sharedSocketState.clearEarlyBird         = orig.ss_clearEarlyBird;
     sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
     sharedSocketState.clearRsiPivotSt        = orig.ss_clearRsiPivotSt;
@@ -2070,6 +2077,7 @@ const MODE_TO_MODULE = {
   "ha-scalp-paper":        "../routes/haScalpPaper",
   "prev-orb-scalp-paper":  "../routes/prevOrbScalpPaper",
   "early-bird-paper":      "../routes/earlyBirdPaper",
+  "itm20-scalp-paper":     "../routes/itm20ScalpPaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
   "bn-pivot-rsi-st-paper": "../routes/bnPivotRsiStPaper",
   // SAIL stock options — fed ONLY NSE:SAIL-EQ ticks (_MODE_TO_SPOT_INDEX).
@@ -2845,6 +2853,7 @@ function replayPreflight() {
   if (sharedSocketState.isBnPivotRsiStActive && sharedSocketState.isBnPivotRsiStActive()) activeModes.push(sharedSocketState.getBnPivotRsiStMode() || "bn_pivot_rsi_st");
   if (sharedSocketState.isEmaRsiStV2Active && sharedSocketState.isEmaRsiStV2Active()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode() || "ema_rsi_st_v2");
   if (sharedSocketState.isStRsiPivBbActive && sharedSocketState.isStRsiPivBbActive()) activeModes.push(sharedSocketState.getStRsiPivBbMode() || "st_rsi_piv_bb");
+  if (sharedSocketState.isItm20ScalpActive && sharedSocketState.isItm20ScalpActive()) activeModes.push(sharedSocketState.getItm20ScalpMode() || "itm20_scalp");
   if (sharedSocketState.isSailVwapStActive && sharedSocketState.isSailVwapStActive()) activeModes.push(sharedSocketState.getSailVwapStMode() || "sail_vwap_st");
   if (sharedSocketState.isPivotEmaStActive && sharedSocketState.isPivotEmaStActive()) activeModes.push(sharedSocketState.getPivotEmaStMode() || "pivot_ema_st");
   if (sharedSocketState.isBnPivotEmaStActive && sharedSocketState.isBnPivotEmaStActive()) activeModes.push(sharedSocketState.getBnPivotEmaStMode() || "bn_pivot_ema_st");
@@ -2918,6 +2927,7 @@ function forceClearSharedState() {
     bn_pivot_rsi_st: sharedSocketState.getBnPivotRsiStMode ? sharedSocketState.getBnPivotRsiStMode() : null,
     ema_rsi_st_v2: sharedSocketState.getEmaRsiStV2Mode ? sharedSocketState.getEmaRsiStV2Mode() : null,
     st_rsi_piv_bb: sharedSocketState.getStRsiPivBbMode ? sharedSocketState.getStRsiPivBbMode() : null,
+    itm20_scalp: sharedSocketState.getItm20ScalpMode ? sharedSocketState.getItm20ScalpMode() : null,
     sail_vwap_st: sharedSocketState.getSailVwapStMode ? sharedSocketState.getSailVwapStMode() : null,
     pivot_ema_st: sharedSocketState.getPivotEmaStMode ? sharedSocketState.getPivotEmaStMode() : null,
     bn_pivot_ema_st: sharedSocketState.getBnPivotEmaStMode ? sharedSocketState.getBnPivotEmaStMode() : null,
@@ -2945,6 +2955,7 @@ function forceClearSharedState() {
   if (sharedSocketState.clearBnPivotRsiStMode) sharedSocketState.clearBnPivotRsiStMode();
   if (sharedSocketState.clearEmaRsiStV2Mode) sharedSocketState.clearEmaRsiStV2Mode();
   if (sharedSocketState.clearStRsiPivBbMode) sharedSocketState.clearStRsiPivBbMode();
+  if (sharedSocketState.clearItm20Scalp) sharedSocketState.clearItm20Scalp();
   if (sharedSocketState.clearSailVwapStMode) sharedSocketState.clearSailVwapStMode();
   if (sharedSocketState.clearPivotEmaStMode) sharedSocketState.clearPivotEmaStMode();
   if (sharedSocketState.clearBnPivotEmaStMode) sharedSocketState.clearBnPivotEmaStMode();

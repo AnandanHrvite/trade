@@ -29,6 +29,7 @@ const STRATEGY_MODES = [
   { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED', slug: 'trend-day-scalp' },
   { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
   { mode: 'PREV_ORB_SCALP', label: 'Prev ORB Scalp', envKey: 'PREV_ORB_SCALP_MODE_ENABLED' },
+  { mode: 'ITM20_SCALP', label: 'ITM20 Scalp', envKey: 'ITM20_SCALP_MODE_ENABLED' },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
   { mode: 'BN_PIVOT_RSI_ST', label: 'BN Pivot RSI ST', envKey: 'BN_PIVOT_RSI_ST_MODE_ENABLED' },
   // envDefault 'false': V2 ships dark. Without it enabledStrategies() below would
@@ -79,6 +80,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   let _trendDayScalpMode = null;
   let _haScalpMode = null;
   let _prevOrbScalpMode = null;
+  let _itm20ScalpMode = null;
   let _earlyBirdMode = null;
   let _rsiPivotStMode = null;
   let _bnPivotRsiStMode = null;
@@ -100,6 +102,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
     _haScalpMode = sss.getHaScalpMode ? sss.getHaScalpMode() : null;
     _prevOrbScalpMode = sss.getPrevOrbScalpMode ? sss.getPrevOrbScalpMode() : null;
+    _itm20ScalpMode = sss.getItm20ScalpMode ? sss.getItm20ScalpMode() : null;
     _earlyBirdMode = sss.getEarlyBirdMode ? sss.getEarlyBirdMode() : null;
     _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
     _bnPivotRsiStMode = sss.getBnPivotRsiStMode ? sss.getBnPivotRsiStMode() : null;
@@ -152,6 +155,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const prevOrbScalpModeOn = (process.env.PREV_ORB_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const itm20ScalpModeOn = (process.env.ITM20_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const earlyBirdModeOn = (process.env.EARLYBIRD_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const bnPivotRsiStModeOn = (process.env.BN_PIVOT_RSI_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
@@ -224,6 +228,10 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const showPrevOrbScalpBacktest = (process.env.UI_SHOW_PREV_ORB_SCALP_BACKTEST || 'false').toLowerCase() === 'true';
   const showPrevOrbScalpPaper    = (process.env.UI_SHOW_PREV_ORB_SCALP_PAPER    || 'true').toLowerCase() === 'true';
   const showPrevOrbScalpHistory  = (process.env.UI_SHOW_PREV_ORB_SCALP_HISTORY  || 'true').toLowerCase() === 'true';
+  // ITM20 Scalp.
+  const showItm20ScalpBacktest = (process.env.UI_SHOW_ITM20_SCALP_BACKTEST || 'true').toLowerCase() === 'true';
+  const showItm20ScalpPaper    = (process.env.UI_SHOW_ITM20_SCALP_PAPER    || 'true').toLowerCase() === 'true';
+  const showItm20ScalpHistory  = (process.env.UI_SHOW_ITM20_SCALP_HISTORY  || 'true').toLowerCase() === 'true';
   const showEarlyBirdBacktest = (process.env.UI_SHOW_EARLYBIRD_BACKTEST      || 'false').toLowerCase()  === 'true';
   const showEarlyBirdPaper    = (process.env.UI_SHOW_EARLYBIRD_PAPER         || 'true').toLowerCase()  === 'true';
   const showEarlyBirdHistory  = (process.env.UI_SHOW_EARLYBIRD_HISTORY       || 'true').toLowerCase()  === 'true';
@@ -299,6 +307,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpHistory'];
   const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpHistory'];
   const prevOrbScalpKeys = ['prevOrbScalpBacktest', 'prevOrbScalpPaper', 'prevOrbScalpHistory'];
+  const itm20ScalpKeys = ['itm20ScalpBacktest', 'itm20ScalpPaper', 'itm20ScalpHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStHistory'];
   const bnPivotRsiStKeys = ['bnPivotRsiStBacktest', 'bnPivotRsiStPaper', 'bnPivotRsiStHistory'];
   const emaRsiStV2Keys = ['emaRsiStV2Backtest', 'emaRsiStV2Paper', 'emaRsiStV2History'];
@@ -326,6 +335,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const isTdsOpen      = tdsKeys.includes(activePage);
   const isHaScalpOpen  = haScalpKeys.includes(activePage);
   const isPrevOrbScalpOpen = prevOrbScalpKeys.includes(activePage);
+  const isItm20ScalpOpen = itm20ScalpKeys.includes(activePage);
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
   const isBnPivotRsiStOpen = bnPivotRsiStKeys.includes(activePage);
   const isEmaRsiStV2Open = emaRsiStV2Keys.includes(activePage);
@@ -358,6 +368,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     || isSailVwapStOpen
     || isPivotEmaStOpen || isBnPivotEmaStOpen || isSailPivotEmaStOpen
     || isGapRunawayOpen || isGapRunawayStkOpen
+    || isItm20ScalpOpen
     || isEarlyBirdOpen || isSystemOpen
     || commodityKeys.includes(activePage);
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
@@ -423,6 +434,12 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     ...(showPrevOrbScalpBacktest ? [{ key: 'prevOrbScalpBacktest', href: '/prev-orb-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showPrevOrbScalpPaper    ? [{ key: 'prevOrbScalpPaper',    href: '/prev-orb-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showPrevOrbScalpHistory  ? [{ key: 'prevOrbScalpHistory',  href: '/prev-orb-scalp-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
+  const itm20ScalpItems = [
+    ...(showItm20ScalpBacktest ? [{ key: 'itm20ScalpBacktest', href: '/itm20-scalp-backtest',       icon: '🔍', label: 'Backtest' }] : []),
+    ...(showItm20ScalpPaper    ? [{ key: 'itm20ScalpPaper',    href: '/itm20-scalp-paper/status',   icon: '📋', label: 'Paper'    }] : []),
+    ...(showItm20ScalpHistory  ? [{ key: 'itm20ScalpHistory',  href: '/itm20-scalp-paper/history',  icon: '📜', label: 'History' }] : []),
   ];
 
   const earlyBirdItems = [
@@ -571,6 +588,12 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       groupId: 'nav-prev-orb-scalp',
       parent: 'nifty',
       items: prevOrbScalpItems,
+    }] : []),
+    ...(itm20ScalpModeOn ? [{
+      header: 'ITM20 SCALP', collapsible: true, collapsed: !isItm20ScalpOpen,
+      groupId: 'nav-itm20-scalp',
+      parent: 'nifty',
+      items: itm20ScalpItems,
     }] : []),
     ...(rsiPivotStModeOn ? [{
       header: 'RSI PIVOT ST', collapsible: true, collapsed: !isRsiPivotStOpen,
@@ -747,6 +770,10 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const itm20ScalpPaperBadge = p.key === 'itm20ScalpPaper' && _itm20ScalpMode === 'ITM20_SCALP_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
 
     const rsiPivotStPaperBadge = p.key === 'rsiPivotStPaper' && _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
@@ -794,6 +821,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       ${sailVwapStPaperBadge}
       ${pivotEmaStBadges}
       ${gapRunawayBadges}
+      ${itm20ScalpPaperBadge}
     </a>`;
   }
 
@@ -2458,6 +2486,7 @@ window.__ltInit = true;
     '.mode-trend_day_scalp{color:#6d28d9!important;}',
     '.mode-ha_scalp{color:#c2410c!important;}',
     '.mode-prev_orb_scalp{color:#a21caf!important;}',
+    '.mode-itm20_scalp{color:#0e7490!important;}',
     '.mode-rsi_pivot_st{color:#c2410c!important;}',
     '.mode-bn_pivot_rsi_st{color:#4d7c0f!important;}',
     '.mode-ema_rsi_st_v2{color:#0369a1!important;}',

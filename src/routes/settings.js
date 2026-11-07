@@ -377,6 +377,39 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+  {
+    section: "ITM20 SCALP STRATEGY (15m range break + retest, 1 ITM, +20/−10 premium) — Zerodha",
+    icon: "\u{1F3AF}",
+    nav: "ITM20 SCALP",
+    group: "NIFTY",
+    fields: [
+      // ── Enable ──
+      { key: "ITM20_SCALP_PAPER_ENABLED", label: "ITM20 Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new ITM20 Scalp paper sessions.", default: "true", subheader: "Mode" },
+
+      // ── Window ──
+      { key: "ITM20_SCALP_SESSION_START", label: "Opening Range Start", type: "time", effect: EFFECT.SESSION, desc: "Where the 15-minute opening range starts (IST). The range is the high and low of the three 5-min candles from here. Example 09:15 → range = 09:15–09:30.", default: "09:15", subheader: "Session window" },
+      { key: "ITM20_SCALP_ENTRY_START", label: "Earliest Breakout Candle", type: "time", effect: EFFECT.SESSION, desc: "No breakout candle may start before this (IST). Never earlier than the end of the opening range.", default: "09:30" },
+      { key: "ITM20_SCALP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "The confirmation candle must CLOSE by this time (IST), or there is no trade. Example 11:30: a confirmation closing 11:35 is ignored.", default: "11:30" },
+      { key: "ITM20_SCALP_SQUARE_OFF", label: "Square-off Time", type: "time", effect: EFFECT.INSTANT, desc: "Any open trade is closed at this time (IST).", default: "15:15" },
+      { key: "ITM20_SCALP_TRADE_EXPIRY_DAY", label: "Trade On Expiry Day", type: "toggle", effect: EFFECT.SESSION, desc: "Off = no entries on the weekly expiry day (monitor only). Turn on only after testing expiry-day behaviour.", default: "false" },
+
+      // ── Signal ──
+      { key: "ITM20_SCALP_EMA_PERIOD", label: "EMA Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.SESSION, desc: "The EMA on 5-min closes. CE needs EMA above VWAP and rising; PE needs it below VWAP and falling.", default: "9", subheader: "Signal" },
+      { key: "ITM20_SCALP_RETEST_TOL_PTS", label: "Retest Tolerance (pts)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "How close a candle's low (CE) / high (PE) must come to the range edge to count as a retest. Example 5 with range high 24560: a low of 24565 or lower is a retest.", default: "5" },
+      { key: "ITM20_SCALP_RETEST_CANDLES", label: "Retest Window (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "The retest and the confirmation must both happen within this many 5-min candles after the breakout candle.", default: "3" },
+
+      // ── Exits & day limits ──
+      { key: "ITM20_SCALP_TARGET_PTS", label: "Target (premium pts)", type: "number", min: 1, max: 500, step: 1, effect: EFFECT.INSTANT, desc: "Exit the whole position when the option premium rises this much. Example 20: bought at 150 → target 170. Applies to new trades.", default: "20", subheader: "Exits & day limits" },
+      { key: "ITM20_SCALP_SL_PTS", label: "Stop-loss (premium pts)", type: "number", min: 1, max: 500, step: 1, effect: EFFECT.INSTANT, desc: "Exit the whole position when the option premium falls this much. Example 10: bought at 150 → stop 140. Never widened.", default: "10" },
+      { key: "ITM20_SCALP_MAX_TRADES", label: "Max Trades per Day", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Most trades in one day. Trading also stops after a winning trade or after two losing trades.", default: "2" },
+      { key: "ITM20_SCALP_DAILY_LOSS_PTS", label: "Max Daily Loss (premium pts)", type: "number", min: 1, max: 1000, step: 1, effect: EFFECT.INSTANT, desc: "Stop for the day once the day's premium points reach minus this. The second trade's stop is tightened so the day cannot lose more. Example 20: first loss −13 → second stop is 7 below entry.", default: "20" },
+
+      // ── Data plumbing ──
+      { key: "ITM20_SCALP_WARMUP_DAYS", label: "History Preload (calendar days)", type: "number", min: 2, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How far back to fetch on start so the previous session is always there to warm up the EMA, even after a long weekend.", default: "7", subheader: "Data plumbing" },
+      { key: "ITM20_SCALP_POLL_MS", label: "Option Premium Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option premium is refreshed while a trade is open.", default: "2000" },
+      { key: "ITM20_SCALP_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after a 5-min bar closes before the Fyers history endpoint is asked for it.", default: "5000" },
+    ],
+  },
     section: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
     icon: "\u{1F426}",
     nav: "EARLYBIRD",
@@ -1133,6 +1166,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_HA_SCALP_STARTED", label: "HA Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an HA Scalp session starts.", default: "true" },
       { key: "TG_PREV_ORB_SCALP_STARTED", label: "Prev ORB Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Prev ORB Scalp session starts.", default: "true" },
       { key: "TG_EARLYBIRD_STARTED", label: "EarlyBird — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EarlyBird session starts.", default: "true" },
+      { key: "TG_ITM20_SCALP_STARTED", label: "ITM20 Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ITM20 Scalp session starts.", default: "true" },
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
       { key: "TG_BN_PIVOT_RSI_ST_STARTED", label: "BN Pivot RSI ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN Pivot RSI ST session starts.", default: "true" },
@@ -1157,6 +1191,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_HA_SCALP_ENTRY", label: "HA Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp entries.", default: "true" },
       { key: "TG_PREV_ORB_SCALP_ENTRY", label: "Prev ORB Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on Prev ORB Scalp entries.", default: "true" },
       { key: "TG_EARLYBIRD_ENTRY", label: "EarlyBird — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird entries.", default: "true" },
+      { key: "TG_ITM20_SCALP_ENTRY", label: "ITM20 Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on ITM20 Scalp entries.", default: "true" },
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
       { key: "TG_BN_PIVOT_RSI_ST_ENTRY", label: "BN Pivot RSI ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST entry.", default: "true" },
@@ -1181,6 +1216,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_HA_SCALP_EXIT", label: "HA Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp exits.", default: "true" },
       { key: "TG_PREV_ORB_SCALP_EXIT", label: "Prev ORB Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on Prev ORB Scalp exits.", default: "true" },
       { key: "TG_EARLYBIRD_EXIT", label: "EarlyBird — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird exits.", default: "true" },
+      { key: "TG_ITM20_SCALP_EXIT", label: "ITM20 Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on ITM20 Scalp exits.", default: "true" },
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
       { key: "TG_BN_PIVOT_RSI_ST_EXIT", label: "BN Pivot RSI ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST exit.", default: "true" },
@@ -1210,6 +1246,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_HA_SCALP_DAYREPORT", label: "HA Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the HA Scalp day report when the session stops.", default: "true" },
       { key: "TG_PREV_ORB_SCALP_DAYREPORT", label: "Prev ORB Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the Prev ORB Scalp day report when the session stops.", default: "true" },
       { key: "TG_EARLYBIRD_DAYREPORT", label: "EarlyBird — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the EarlyBird day report when the session stops.", default: "true" },
+      { key: "TG_ITM20_SCALP_DAYREPORT", label: "ITM20 Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the ITM20 Scalp day report when the session stops.", default: "true" },
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
       { key: "TG_BN_PIVOT_RSI_ST_DAYREPORT", label: "BN Pivot RSI ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN Pivot RSI ST day summary on stop.", default: "true" },
@@ -1327,6 +1364,7 @@ const SETTINGS_SCHEMA = [
       { key: "HA_SCALP_MODE_ENABLED",  label: "HA Scalp Mode",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the HA Scalp menu and settings.", default: "true" },
       { key: "PREV_ORB_SCALP_MODE_ENABLED", label: "Prev ORB Scalp Mode",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Prev ORB Scalp menu and settings.", default: "true" },
       { key: "EARLYBIRD_MODE_ENABLED", label: "EarlyBird Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EarlyBird menu and settings.", default: "true" },
+      { key: "ITM20_SCALP_MODE_ENABLED", label: "ITM20 Scalp Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ITM20 Scalp menu and settings.", default: "true" },
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
       { key: "BN_PIVOT_RSI_ST_MODE_ENABLED", label: "BN Pivot RSI ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN Pivot RSI ST menu and settings. This is the NIFTY BANK replica of RSI Pivot ST.", default: "true" },
@@ -1394,6 +1432,10 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_PREV_ORB_SCALP_PAPER",    label: "Prev ORB Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_PREV_ORB_SCALP_HISTORY",  label: "Prev ORB Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_BACKTEST", label: "EarlyBird → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EarlyBird.", default: "false", subheader: "EarlyBird sub-menus" },
+      // ── ITM20 Scalp submenu ──
+      { key: "UI_SHOW_ITM20_SCALP_BACKTEST", label: "ITM20 Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under ITM20 Scalp.", default: "true", subheader: "ITM20 Scalp sub-menu" },
+      { key: "UI_SHOW_ITM20_SCALP_PAPER",    label: "ITM20 Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ITM20 Scalp.", default: "true" },
+      { key: "UI_SHOW_ITM20_SCALP_HISTORY",  label: "ITM20 Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ITM20 Scalp.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_PAPER",    label: "EarlyBird → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EarlyBird.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_HISTORY",  label: "EarlyBird → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EarlyBird.", default: "true" },
 
@@ -1520,6 +1562,7 @@ const MODE_SECTION_TITLES = {
   ha_scalp: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
   prev_orb_scalp: "PREV ORB SCALP STRATEGY (Prev-day range + 15m/3m) — Zerodha",
   simple930: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
+  itm20_scalp: "ITM20 SCALP STRATEGY (15m range break + retest, 1 ITM, +20/−10 premium) — Zerodha",
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   bn_pivot_rsi_st: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   ema_rsi_st_v2: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
@@ -1549,6 +1592,7 @@ _MODE_KEYS.sail_pivot_ema_st = new Set();
 _MODE_KEYS.gap_runaway = new Set();
 _MODE_KEYS.gap_runaway_stk = new Set();
 const _KEY_TO_MODES = new Map();
+_MODE_KEYS.itm20_scalp = new Set();
 (function buildModeKeyIndex() {
   const commonKeys = [];
   for (const section of SETTINGS_SCHEMA) {
@@ -2503,6 +2547,7 @@ router.get("/", (req, res) => {
   const prevOrbScalpModeOn = (envData["PREV_ORB_SCALP_MODE_ENABLED"] ?? process.env.PREV_ORB_SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const earlyBirdModeOn = (envData["EARLYBIRD_MODE_ENABLED"] ?? process.env.EARLYBIRD_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const simple930ModeOn = (envData["SIMPLE930_MODE_ENABLED"] ?? process.env.SIMPLE930_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const itm20ScalpModeOn = (envData["ITM20_SCALP_MODE_ENABLED"] ?? process.env.ITM20_SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const bnPivotRsiStModeOn = (envData["BN_PIVOT_RSI_ST_MODE_ENABLED"] ?? process.env.BN_PIVOT_RSI_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // V2 defaults to "false", not "true" — an unproven strategy stays hidden until asked for.
@@ -2556,6 +2601,7 @@ router.get("/", (req, res) => {
     "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)": gapRunawayStkModeOn,
     "COMMODITY (MCX crude / gold / silver) — shared by every commodity page, paper only": cmxEmaRsiStOn || cmxEmaRsiStV2On || cmxPivotModeOn,
     "COMMODITY EMA_RSI_ST (MCX crude / gold / silver) — paper only": cmxEmaRsiStOn,
+    "ITM20 SCALP STRATEGY (15m range break + retest, 1 ITM, +20/−10 premium) — Zerodha": itm20ScalpModeOn,
     "COMMODITY EMA_RSI_ST_V2 (MCX crude / gold / silver) — paper only": cmxEmaRsiStV2On,
     "COMMODITY PIVOT_EMA_ST (MCX crude / gold / silver) — paper only": cmxPivotModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,

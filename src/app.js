@@ -918,6 +918,11 @@ const OPEN_PATHS = [
   "/prev-orb-scalp-paper/status/data",
   "/prev-orb-scalp-paper/status/chart-data",
   "/prev-orb-scalp-paper/history",
+  // ITM20 Scalp — same reason: the dashboard tile polls status/data unsecured.
+  "/itm20-scalp-paper/status",
+  "/itm20-scalp-paper/status/data",
+  "/itm20-scalp-paper/status/chart-data",
+  "/itm20-scalp-paper/history",
   "/early-bird-paper/status",
   "/early-bird-paper/status/data",
   "/early-bird-paper/status/chart-data",
@@ -1050,6 +1055,11 @@ const OPEN_PATHS = [
   "/prev-orb-scalp-backtest/status",
   "/prev-orb-scalp-backtest/idle",
   "/prev-orb-scalp-backtest/result",
+  "/itm20-scalp-backtest",
+  "/itm20-scalp-backtest/status",
+  "/itm20-scalp-backtest/idle",
+  "/itm20-scalp-backtest/result",
+  "/itm20-scalp-backtest/csv",
   "/early-bird-backtest",
   "/early-bird-backtest/status",
   "/early-bird-backtest/idle",
@@ -1172,6 +1182,8 @@ const OPEN_PREFIXES = [
   "/ha-scalp-paper/download/",
   "/prev-orb-scalp-paper/view/",
   "/prev-orb-scalp-paper/download/",
+  "/itm20-scalp-paper/view/",
+  "/itm20-scalp-paper/download/",
   "/early-bird-paper/view/",
   "/early-bird-paper/download/",
   "/simple930-paper/view/",
@@ -1370,6 +1382,10 @@ app.use("/ha-scalp-backtest",   lazyRouter(() => require("./routes/haScalpBackte
 // ── PREV_ORB_SCALP routes (prev-day range + 15m/3m ORB scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/prev-orb-scalp-paper",    require("./routes/prevOrbScalpPaper"));        // ← canonical engine
 app.use("/prev-orb-scalp-backtest", lazyRouter(() => require("./routes/prevOrbScalpBacktest")));     // ← same signal engine, paper's exits
+
+// ── ITM20_SCALP routes (15m opening-range breakout + retest, 1 ITM, +20/−10 premium; paper + backtest) ─
+app.use("/itm20-scalp-paper",    require("./routes/itm20ScalpPaper"));          // ← canonical engine
+app.use("/itm20-scalp-backtest", lazyRouter(() => require("./routes/itm20ScalpBacktest")));       // ← same signal engine, paper's exits
 
 // ── EARLYBIRD routes (first 15-min breakout, CASH EQUITY on F&O stocks, Fyers) ─
 app.use("/early-bird-paper",    require("./routes/earlyBirdPaper"));          // ← canonical engine
@@ -1593,6 +1609,8 @@ app.get("/", (req, res) => {
   const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const prevOrbScalpMode   = sharedSocketState.getPrevOrbScalpMode ? sharedSocketState.getPrevOrbScalpMode() : null;
   const prevOrbScalpModeOn = (process.env.PREV_ORB_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const itm20ScalpMode   = sharedSocketState.getItm20ScalpMode ? sharedSocketState.getItm20ScalpMode() : null;
+  const itm20ScalpModeOn = (process.env.ITM20_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const earlyBirdMode   = sharedSocketState.getEarlyBirdMode ? sharedSocketState.getEarlyBirdMode() : null;
   const earlyBirdModeOn = (process.env.EARLYBIRD_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930Mode    = sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null;
@@ -1647,6 +1665,7 @@ app.get("/", (req, res) => {
     || (tdsModeOn && tdsMode)
     || (haScalpModeOn && haScalpMode)
     || (prevOrbScalpModeOn && prevOrbScalpMode)
+    || (itm20ScalpModeOn && itm20ScalpMode)
     || (earlyBirdModeOn && earlyBirdMode)
     || (simple930ModeOn && simple930Mode)
     || (rsiPivotStModeOn && rsiPivotStMode)
@@ -1686,6 +1705,7 @@ app.get("/", (req, res) => {
     { key: 'TDS',      cls: 'tds',      label: 'TREND DAY SCALP', on: tdsModeOn },
     { key: 'HA_SCALP', cls: 'hascalp',  label: 'HA SCALP',     on: haScalpModeOn },
     { key: 'PREV_ORB_SCALP', cls: 'prevorb', label: 'PREV ORB SCALP', on: prevOrbScalpModeOn },
+    { key: 'ITM20_SCALP', cls: 'itm20scalp', label: 'ITM20 SCALP', on: itm20ScalpModeOn },
     { key: 'EARLYBIRD', cls: 'earlybird', label: 'EARLYBIRD',   on: earlyBirdModeOn },
     { key: 'SIMPLE930', cls: 'simple930', label: 'SIMPLE_9:30', on: simple930ModeOn },
     { key: 'RSI_PIVOT_ST', cls: 'rsipivotst', label: 'RSI PIVOT ST', on: rsiPivotStModeOn },
@@ -1757,6 +1777,7 @@ app.get("/", (req, res) => {
     ['zerodha', 'BN_PIVOT_RSI_ST',  bnPivotRsiStModeOn],
     ['zerodha', 'HA_SCALP',         haScalpModeOn],
     ['zerodha', 'PREV_ORB_SCALP',   prevOrbScalpModeOn],
+    ['zerodha', 'ITM20_SCALP',      itm20ScalpModeOn],
     ['zerodha', 'SIMPLE930',        simple930ModeOn],
     ['zerodha', 'GAP_RUNAWAY',      gapRunawayModeOn],
     ['zerodha', 'GAP_RUNAWAY_STK',  gapRunawayStkModeOn],
@@ -2413,6 +2434,7 @@ app.get("/", (req, res) => {
     .mm-card.tds      .mm-dot { background:#a855f7; }
     .mm-card.hascalp  .mm-dot { background:#f97316; }
     .mm-card.prevorb  .mm-dot { background:#e879f9; }
+    .mm-card.itm20scalp .mm-dot { background:#22d3ee; }
     .mm-card.earlybird .mm-dot { background:#22d3ee; }
     .mm-card.simple930 .mm-dot { background:#fb923c; }
     .mm-card.rsipivotst .mm-dot { background:#c2410c; }
@@ -2885,6 +2907,17 @@ ${buildSidebar('dashboard', false)}
       <div class="mm-stats" id="mm-stats-PREV_ORB_SCALP">—</div>
       <div class="mm-wrap"><canvas id="mmChart-PREV_ORB_SCALP"></canvas></div>
       <div class="mm-empty" id="mm-empty-PREV_ORB_SCALP" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${itm20ScalpModeOn ? `
+    <div class="mm-card itm20scalp" data-mode="ITM20_SCALP">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">ITM20 SCALP</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-ITM20_SCALP">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-ITM20_SCALP"></canvas></div>
+      <div class="mm-empty" id="mm-empty-ITM20_SCALP" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${earlyBirdModeOn ? `
@@ -3748,6 +3781,7 @@ async function loadDashCumCharts(){
     ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
     _renderModuleChart('ST_RSI_PIV_BB');
     _renderModuleChart('SAIL_VWAP_ST');
+    _renderModuleChart('ITM20_SCALP');
     ['PIVOT_EMA_ST','BN_PIVOT_EMA_ST','SAIL_PIVOT_EMA_ST'].forEach(_renderModuleChart);
     ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
     _renderBrokerWallets();
@@ -3873,6 +3907,7 @@ async function loadModuleCharts(){
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
   _renderModuleChart('ST_RSI_PIV_BB');
   _renderModuleChart('SAIL_VWAP_ST');
+    _renderModuleChart('ITM20_SCALP');
   ['PIVOT_EMA_ST','BN_PIVOT_EMA_ST','SAIL_PIVOT_EMA_ST'].forEach(_renderModuleChart);
   ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
   _renderBrokerWallets();
@@ -4026,6 +4061,7 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     PIVOT_EMA_ST:'/pivot_ema_st-paper/status/data',
     BN_PIVOT_EMA_ST:'/bn_pivot_ema_st-paper/status/data',
     SAIL_PIVOT_EMA_ST:'/sail_pivot_ema_st-paper/status/data',
+    ITM20_SCALP:'/itm20-scalp-paper/status/data',
     GAP_RUNAWAY:'/gap_runaway-paper/status/data',
     GAP_RUNAWAY_STK:'/gap_runaway_stk-paper/status/data',
     BN_EMA_RSI_ST_V2:'/bn_ema_rsi_st_v2-paper/status/data'
@@ -4945,6 +4981,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getTrendDayScalpMode && sharedSocketState.getTrendDayScalpMode()) activeModes.push(sharedSocketState.getTrendDayScalpMode());
     if (sharedSocketState.getHaScalpMode && sharedSocketState.getHaScalpMode()) activeModes.push(sharedSocketState.getHaScalpMode());
     if (sharedSocketState.getPrevOrbScalpMode && sharedSocketState.getPrevOrbScalpMode()) activeModes.push(sharedSocketState.getPrevOrbScalpMode());
+    if (sharedSocketState.getItm20ScalpMode && sharedSocketState.getItm20ScalpMode()) activeModes.push(sharedSocketState.getItm20ScalpMode());
     if (sharedSocketState.getSimple930Mode && sharedSocketState.getSimple930Mode()) activeModes.push(sharedSocketState.getSimple930Mode());
     if (sharedSocketState.getRsiPivotStMode && sharedSocketState.getRsiPivotStMode()) activeModes.push(sharedSocketState.getRsiPivotStMode());
     if (sharedSocketState.getBnPivotRsiStMode && sharedSocketState.getBnPivotRsiStMode()) activeModes.push(sharedSocketState.getBnPivotRsiStMode());
@@ -4983,6 +5020,7 @@ async function gracefulShutdown(signal) {
       "TREND_DAY_SCALP_PAPER": require("./routes/trendDayScalpPaper"),
       "HA_SCALP_PAPER":        require("./routes/haScalpPaper"),
       "PREV_ORB_SCALP_PAPER":  require("./routes/prevOrbScalpPaper"),
+      "ITM20_SCALP_PAPER":     require("./routes/itm20ScalpPaper"),
       "EARLY_BIRD_PAPER":      require("./routes/earlyBirdPaper"),
       "SIMPLE930_PAPER":       require("./routes/simple930Paper"),
       "RSI_PIVOT_ST_PAPER":    require("./routes/rsiPivotStPaper"),

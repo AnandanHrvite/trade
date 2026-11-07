@@ -42,6 +42,9 @@ let haScalpMode = null;
 // Prev ORB Scalp mode: "PREV_ORB_SCALP_PAPER" | null
 let prevOrbScalpMode = null;
 
+// ITM20 Scalp mode: "ITM20_SCALP_PAPER" | null
+let itm20ScalpMode = null;
+
 
 // RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | null
 let rsiPivotStMode = null;
@@ -258,6 +261,24 @@ function getPrevOrbScalpMode() {
   return prevOrbScalpMode;
 }
 
+// ── ITM20 Scalp mode (15m opening-range breakout + retest, +20/−10 premium) ──
+
+function setItm20ScalpActive(mode) {
+  itm20ScalpMode = mode;
+}
+
+function clearItm20Scalp() {
+  itm20ScalpMode = null;
+}
+
+function isItm20ScalpActive() {
+  return itm20ScalpMode !== null;
+}
+
+function getItm20ScalpMode() {
+  return itm20ScalpMode;
+}
+
 
 // ── EarlyBird mode (first-15-min cash-equity breakout) ──────────────────────
 
@@ -442,6 +463,7 @@ function isAnyActive() {
          trendDayScalpMode !== null ||
          haScalpMode !== null ||
          prevOrbScalpMode !== null ||
+         itm20ScalpMode !== null ||
          earlyBirdMode !== null ||
          rsiPivotStMode !== null || bnPivotRsiStMode !== null ||
          emaRsiStV2Mode !== null ||
@@ -482,6 +504,9 @@ function _canStartRaw(mode) {
       return { allowed: true };
     case "PREV_ORB_SCALP_PAPER":
       if (prevOrbScalpMode === "PREV_ORB_SCALP_PAPER") return { allowed: false, reason: "Prev ORB Scalp Paper is already running" };
+      return { allowed: true };
+    case "ITM20_SCALP_PAPER":
+      if (itm20ScalpMode === "ITM20_SCALP_PAPER") return { allowed: false, reason: "ITM20 Scalp Paper is already running" };
       return { allowed: true };
     case "EARLY_BIRD_PAPER":
       if (earlyBirdMode === "EARLY_BIRD_PAPER") return { allowed: false, reason: "EarlyBird Paper is already running" };
@@ -590,6 +615,8 @@ module.exports = {
   setHaScalpActive, clearHaScalp, isHaScalpActive, getHaScalpMode,
   // Prev ORB Scalp
   setPrevOrbScalpActive, clearPrevOrbScalp, isPrevOrbScalpActive, getPrevOrbScalpMode,
+  // ITM20 Scalp
+  setItm20ScalpActive, clearItm20Scalp, isItm20ScalpActive, getItm20ScalpMode,
   // RSI Pivot SuperTrend
   setEarlyBirdActive, clearEarlyBird, isEarlyBirdActive, getEarlyBirdMode,
 
@@ -630,6 +657,7 @@ const _CLEAR_SLOT = {
   clearPivotEmaStMode: "PIVOT_EMA_ST", clearBnPivotEmaStMode: "BN_PIVOT_EMA_ST", clearSailPivotEmaStMode: "SAIL_PIVOT_EMA_ST",
   clearGapRunawayMode: "GAP_RUNAWAY", clearGapRunawayStkMode: "GAP_RUNAWAY_STK",
   clearSimple930: "SIMPLE930",
+  clearItm20Scalp: "ITM20_SCALP",
 };
 for (const name of Object.keys(module.exports)) {
   const fn = module.exports[name];

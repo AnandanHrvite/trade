@@ -40,6 +40,7 @@ const STRATEGY_DEFS = [
   { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
   { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
   { key:'PREV_ORB_SCALP', label:'PREV ORB SCALP', accentClass:'prevorb', accent:'#e879f9', paperPrefix:'/prev-orb-scalp-paper', hasDayLog:true, modeFlag:'PREV_ORB_SCALP_MODE_ENABLED' },
+  { key:'ITM20_SCALP', label:'ITM20 SCALP', accentClass:'itm20scalp', accent:'#22d3ee', paperPrefix:'/itm20-scalp-paper', hasDayLog:true, modeFlag:'ITM20_SCALP_MODE_ENABLED' },
   { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
   // Same rules as RSI_PIVOT_ST, different underlying: BN_PIVOT_RSI_ST (NIFTY BANK,
   // monthly options). Its Entry/Live Spot come from its OWN /status/data — this page
@@ -98,6 +99,7 @@ BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.BN_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.GAP_RUNAWAY = 'ZERODHA'; BROKER_OF.GAP_RUNAWAY_STK = 'ZERODHA';
+BROKER_OF.ITM20_SCALP = 'ZERODHA'; // paper only — charges modelled on Zerodha, like PREV_ORB_SCALP
 // COMMODITY pages (CMX_* keys) draw from the Fyers pool — their prices come from Fyers.
 const brokerOfKey = (key) => BROKER_OF[key] || (/^CMX_/.test(key) ? 'FYERS' : undefined);
 function brokerPools(strategies) {
@@ -297,6 +299,7 @@ ${faviconLink()}
   .card.tds      { border-top-color:#a855f7; }
 .card.hascalp  { border-top-color:#f97316; }
 .card.prevorb  { border-top-color:#e879f9; }
+.card.itm20scalp { border-top-color:#22d3ee; }
   .card.rsipivotst { border-top-color:#facc15; }
   .card.emarsistv2 { border-top-color:#38bdf8; }
   .card.bnpivotrsist { border-top-color:#818cf8; }
@@ -323,6 +326,7 @@ ${faviconLink()}
   .card.tds      .card-title { color:#c084fc; }
 .card.hascalp  .card-title { color:#fdba74; }
 .card.prevorb  .card-title { color:#f0abfc; }
+.card.itm20scalp .card-title { color:#67e8f9; }
   .card.rsipivotst .card-title { color:#fde047; }
   .card.emarsistv2 .card-title { color:#7dd3fc; }
   .card.bnpivotrsist .card-title { color:#a5b4fc; }
@@ -411,6 +415,7 @@ ${faviconLink()}
   .card.tds      .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
 .card.hascalp  .act-btn:not(.act-btn-disabled):hover { border-color:#f97316; }
 .card.prevorb  .act-btn:not(.act-btn-disabled):hover { border-color:#e879f9; }
+.card.itm20scalp .act-btn:not(.act-btn-disabled):hover { border-color:#22d3ee; }
   .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
   .card.emarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
   .card.bnpivotrsist .act-btn:not(.act-btn-disabled):hover { border-color:#818cf8; }
@@ -435,6 +440,7 @@ ${faviconLink()}
   .rollup tr.tds      td:first-child { color:#c084fc; }
 .rollup tr.hascalp  td:first-child { color:#fdba74; }
 .rollup tr.prevorb  td:first-child { color:#f0abfc; }
+.rollup tr.itm20scalp td:first-child { color:#67e8f9; }
   .rollup tr.rsipivotst td:first-child { color:#fde047; }
   .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
   .rollup tr.bnpivotrsist td:first-child { color:#a5b4fc; }
@@ -469,6 +475,7 @@ ${faviconLink()}
   :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
 :root[data-theme="light"] .card.hascalp  .card-title { color:#c2410c; }
 :root[data-theme="light"] .card.prevorb  .card-title { color:#a21caf; }
+:root[data-theme="light"] .card.itm20scalp .card-title { color:#0e7490; }
   :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.bnpivotrsist .card-title { color:#4338ca; }
@@ -512,6 +519,7 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
 :root[data-theme="light"] .rollup tr.hascalp  td:first-child { color:#c2410c; }
 :root[data-theme="light"] .rollup tr.prevorb  td:first-child { color:#a21caf; }
+:root[data-theme="light"] .rollup tr.itm20scalp td:first-child { color:#0e7490; }
   :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
   :root[data-theme="light"] .rollup tr.emarsistv2 td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.bnpivotrsist td:first-child { color:#4338ca; }

@@ -49,6 +49,10 @@ const { calcCharges } = require("../src/utils/charges");
 // Strategies whose price axis IS an option premium, so "the same strategy in
 // futures" does not exist. They must refuse the mode, not silently ignore it.
 const PREMIUM_DENOMINATED = new Set(["simple930Paper.js"]);
+PREMIUM_DENOMINATED.add("itm20ScalpPaper.js"); // ITM20_SCALP — +20/−10 premium-point target and stop
+// Their backtests simulate the option premium by definition, so a futures
+// branch would be meaningless — exempt only while they never read the toggle.
+const PREMIUM_DENOMINATED_BT = new Set(["itm20ScalpBacktest.js"]);
 
 // COMMODITY (MCX) pages. They never trade NIFTY, so the NIFTY_FUTURES toggle
 // has nothing to switch: they always buy MCX options. Exempt only while they stay
@@ -459,6 +463,13 @@ check("the discovery found the self-simulating backtests", () => {
 
 for (const file of btRoutes) {
   const src = decomment(read(path.join("routes", file)));
+  if (PREMIUM_DENOMINATED_BT.has(file)) {
+    check(`${file} is premium-denominated — always simulates the option, never reads the futures toggle`, () => {
+      assert.ok(!/instrumentMode\.isFutures\(\)|NIFTY_FUTURES/.test(src), `${file} must not branch on the futures toggle`);
+      assert.ok(/isFutures:\s*false/.test(src), `${file} must bill option charges`);
+    });
+    continue;
+  }
   if (stockUnderlyingOf(file)) {
     check(`${file} simulates ${stockUnderlyingOf(file)} stock options only — no NIFTY futures mode`, () => {
       assert.ok(/underlyingOf\(\s*["']SAIL["']\s*\)|UNDERLYING/.test(src), `${file} must fetch its own stock's candles`);

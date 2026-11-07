@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ITM20 Scalp — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #1d1024 100%);
+    border-bottom: 3px solid #e879f9;
+  }
+  header.hero .kicker { color: #e879f9; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #e879f9; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #e879f9; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(232,121,249,0.15); color: #e879f9; border: 1px solid rgba(232,121,249,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+  nav.toc { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px 22px; margin: 18px 0; }
+  nav.toc h2 { margin: 0 0 8px; border: 0; padding: 0; font-size: 1.05rem; color: #e879f9; }
+  nav.toc ol { margin: 0; columns: 2; column-gap: 28px; }
+  nav.toc a { color: #c9d1d9; text-decoration: none; }
+  nav.toc a:hover { color: #e879f9; }
+  .rule { display: flex; gap: 12px; align-items: flex-start; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+  @media (max-width: 768px) { nav.toc ol { columns: 1; } }
+  .rule .no { flex: 0 0 30px; height: 30px; border-radius: 50%; background: rgba(232,121,249,0.18); color: #e879f9; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">ITM20 Scalp · NIFTY 50 options · Paper + Backtest only · Plain-English edition</div>
+  <h1>ITM20 Scalp</h1>
+  <p>Mark the high and low of the first 15 minutes. When a 5-minute candle closes outside that box, wait for price to come back and touch the edge, then for one more strong candle. Buy an option one strike in the money. Take <b>+20</b> on the premium, or get out at <b>&minus;10</b>.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-11-08 &nbsp;·&nbsp; rules checked against <code>src/strategies/itm20_scalp.js</code>, <code>src/routes/itm20ScalpPaper.js</code> and <code>src/routes/itm20ScalpBacktest.js</code></p>
+</header>
+
+<nav class="toc">
+  <h2>What's inside</h2>
+  <ol>
+    <li><a href="#minute">In one minute</a></li>
+    <li><a href="#words">Words you'll see</a></li>
+    <li><a href="#range">Step 1 — The opening range</a></li>
+    <li><a href="#lines">Step 2 — VWAP and EMA9</a></li>
+    <li><a href="#setup">Step 3 — Breakout, retest, confirmation</a></li>
+    <li><a href="#entry">Step 4 — Strike, stop and target</a></li>
+    <li><a href="#exits">Every way a trade ends</a></li>
+    <li><a href="#day">Day limits</a></li>
+    <li><a href="#notrade">Days with no trade</a></li>
+    <li><a href="#data">What the backtest said</a></li>
+    <li><a href="#limits">Safety limits &amp; what is left out</a></li>
+    <li><a href="#modes">Paper, Backtest &amp; Replay</a></li>
+    <li><a href="#settings">All the settings</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</nav>
+
+<h2 id="minute">1. In one minute</h2>
+<div class="card accent">
+  <ul>
+    <li>Mark the <b>high</b> and <b>low</b> of the three 5-minute candles 09:15, 09:20 and 09:25. That is the <b>opening range</b>. Nothing trades before 09:30.</li>
+    <li><b>Breakout:</b> a 5-minute candle closes <b>above the range high</b>, above VWAP, and EMA9 is above VWAP and rising. (For a put: below the range low, below VWAP, EMA9 below VWAP and falling.)</li>
+    <li><b>Retest:</b> in the next 3 candles, price comes back to within <b>5 points</b> of the range edge &mdash; but no candle may <b>close</b> back inside the range.</li>
+    <li><b>Confirmation:</b> inside those same 3 candles, a green candle closes above the previous candle's high (red and below the previous low for a put), with the VWAP and EMA9 checks true again.</li>
+    <li>Buy the option <b>one strike in the money</b> right after the confirmation candle closes.</li>
+    <li>Exit the whole position at <b>premium +20</b> or <b>premium &minus;10</b>. Anything still open is closed at 15:15.</li>
+    <li>The confirmation must close by <b>11:30</b>. At most <b>2 trades</b> a day. Stop after a win, after 2 losses, or at &minus;20 premium points for the day. Weekly expiry day is skipped.</li>
+  </ul>
+</div>
+<div class="flow">
+  <div class="step">09:15–09:30 range</div><div class="arrow">→</div>
+  <div class="step">Close outside + VWAP + EMA9</div><div class="arrow">→</div>
+  <div class="step">Retest within 3 candles</div><div class="arrow">→</div>
+  <div class="step">Confirmation close</div><div class="arrow">→</div>
+  <div class="step">Buy 1 ITM · +20 / &minus;10</div>
+</div>
+<div class="card warn">
+  <b>Read this first.</b> This strategy has never traded &mdash; no paper sessions and no live orders. <b>There is no live trading for it at all:</b>
+  only Paper and Backtest exist. The only numbers we have come from a backtest with <b>simulated</b> option prices (Section 10), and that backtest lost money.
+</div>
+
+<!--LIVE_STATUS_PANEL-->
+
+<h2 id="words">2. Words you'll see</h2>
+<table>
+  <tr><th>Word</th><th>Plain meaning</th></tr>
+  <tr><td>Candle</td><td>One bar on the chart: the open, high, low and close for 5 minutes. Green = closed higher than it opened. Red = closed lower.</td></tr>
+  <tr><td>Opening range</td><td>The highest high and lowest low of the first three 5-minute candles (09:15&ndash;09:30).</td></tr>
+  <tr><td>VWAP</td><td>The day's running average price, restarted at 09:15. The NIFTY index has no volume, so here every candle counts equally: it is the average of each candle's (high + low + close) &divide; 3 so far today.</td></tr>
+  <tr><td>EMA9</td><td>A moving average of the last 9 candle closes that leans towards the newest ones. It carries on from the previous day, so it does not restart at 09:15. "Rising" means higher than on the previous candle.</td></tr>
+  <tr><td>Breakout</td><td>A candle that <b>closes</b> outside the opening range with VWAP and EMA9 agreeing.</td></tr>
+  <tr><td>Retest</td><td>Price coming back to touch the edge it broke (within 5 points) without closing back inside.</td></tr>
+  <tr><td>Confirmation</td><td>The candle that says "the breakout is real": the right colour, closing beyond the previous candle's high (CE) or low (PE).</td></tr>
+  <tr><td>CE / PE</td><td>A <b>CE</b> (call option) gains when NIFTY rises. A <b>PE</b> (put option) gains when NIFTY falls.</td></tr>
+  <tr><td>Premium</td><td>The price of the option, in rupees. Here the stop and target are measured on the premium, not on NIFTY.</td></tr>
+  <tr><td>One strike in the money (1 ITM)</td><td>For a CE: the highest strike below NIFTY. For a PE: the lowest strike above NIFTY. With strikes every 50 points and NIFTY at 24,000, that is the 23950 CE or the 24050 PE.</td></tr>
+  <tr><td>Points</td><td>Premium points. +20 on a &#8377;150 option means selling at &#8377;170.</td></tr>
+  <tr><td>Square-off</td><td>Closing any open trade at 15:15 so nothing is held overnight.</td></tr>
+</table>
+<div class="card">
+  <b>How to read the charts.</b> All three charts are <b>real NIFTY 50 days</b> from the cached 5-minute history, and every entry and exit on them is what the
+  backtest engine did on that day. Purple dashed line = range high. Pink dashed line = range low. Blue box = the opening range. Orange line = VWAP.
+  Blue dashed line = EMA9. Numbered dots: <b>1</b> = breakout, <b>2</b> = retest, <b>3</b> = confirmation. &#9650; = buy, &#9660; = exit.
+  The green and red lines show where NIFTY would have to go for the <b>simulated</b> premium to reach +20 or &minus;10 &mdash; on a real day those levels depend on
+  the real option price, so treat them as a guide.
+</div>
+
+<h2 id="range">3. Step 1 — The opening range</h2>
+<ol>
+  <li>At 09:30 the bot takes the three 5-minute candles 09:15, 09:20 and 09:25.</li>
+  <li>The highest high is the <b>range high</b>. The lowest low is the <b>range low</b>.</li>
+  <li>If one of the three candles is missing, the bot will not trade on a guessed range. A wrong range is worse than no trade.</li>
+  <li>The first candle that can break out is the 09:30 candle.</li>
+</ol>
+<p>Example: on 15 Jul 2025 the three candles made a range of <span class="num">25,088.45 – 25,151.15</span>. On 1 Jun 2026 it was <span class="num">23,587.75 – 23,733.7</span>, a much wider morning.</p>
+
+<h2 id="lines">4. Step 2 — VWAP and EMA9</h2>
+<p>Every decision candle is checked against two lines. Both must agree with the direction.</p>
+<table>
+  <tr><th>Check</th><th>For a CE</th><th>For a PE</th></tr>
+  <tr><td>Candle close vs VWAP</td><td>close <b>above</b> VWAP</td><td>close <b>below</b> VWAP</td></tr>
+  <tr><td>EMA9 vs VWAP</td><td>EMA9 <b>above</b> VWAP</td><td>EMA9 <b>below</b> VWAP</td></tr>
+  <tr><td>EMA9 direction</td><td>higher than last candle (<b>rising</b>)</td><td>lower than last candle (<b>falling</b>)</td></tr>
+</table>
+<ul>
+  <li>VWAP here is not volume-weighted, because the index has no volume. It is the plain average of (high + low + close) &divide; 3 of every candle since 09:15.</li>
+  <li>EMA9 is warmed up on the previous day's candles. If the previous day's data is incomplete, the bot does not trade &mdash; an EMA it cannot trust is no use.</li>
+  <li>The checks are made on the breakout candle <b>and again</b> on the confirmation candle.</li>
+</ul>
+
+<h2 id="setup">5. Step 3 — Breakout, retest, confirmation</h2>
+<ol>
+  <li><b>Breakout.</b> From 09:30, a candle closes above the range high (CE) or below the range low (PE), and the three checks above are true.</li>
+  <li><b>Retest.</b> In the next 3 candles, a candle's <b>low</b> comes within 5 points of the range high (CE) &mdash; or its <b>high</b> within 5 points of the range low (PE). The breakout candle itself does not count.</li>
+  <li><b>Never back inside.</b> If any of those 3 candles <b>closes</b> at or below the range high (CE) or at or above the range low (PE), the setup is dead. A wick back inside is fine; only the close counts.</li>
+  <li><b>Confirmation.</b> The retest candle itself or a later one, still inside the 3 candles, must be green and close above the previous candle's high (CE), or red and close below the previous candle's low (PE), with the three checks true again.</li>
+  <li>The confirmation candle must <b>close by 11:30</b>.</li>
+  <li>If 3 candles pass without a confirmation, the setup has expired.</li>
+</ol>
+<div class="tv-chart" id="iz-ce"></div>
+<p class="tv-cap"><b>What you see:</b> 15 Jul 2025. The opening range is 25,088.45&ndash;25,151.15. At 10:35 a candle closes at 25,156.9, above the range high. VWAP (25,124.01) is below it, and EMA9 (25,129.81) is above VWAP and higher than the 25,123.04 before it: <b>breakout (1)</b>. The 10:40 candle dips to 25,155.15 &mdash; anything at 25,156.15 or lower counts &mdash; so that is the <b>retest (2)</b>. It is green, but its close 25,160.35 is not above the 10:35 high 25,165.15, so it does not confirm. The 10:45 candle is green too, but closes 25,167.45, just under the 10:40 high 25,168.75. The 10:50 candle, the third and last one allowed, closes 25,191.4 &mdash; above the 10:45 high 25,167.9 &mdash; with EMA9 25,152.06 above VWAP 25,130.92 and still rising: <b>confirmation (3)</b>. None of the three candles closed back inside the range. <b>BUY CE</b> at 10:55 with NIFTY at 25,190.4, the 25150 strike. The simulated premium starts at &#8377;240 and reaches &#8377;260 at 11:05, when NIFTY touches 25,226.77: <b>target</b>. After slippage that is +18 points, or +&#8377;1,078 on one 65-unit lot after charges. <b>Why it matters:</b> the confirmation can come two candles after the retest, as long as it is inside the 3-candle window.</p>
+<div class="card">
+  <b>After a setup is used up.</b> A setup that expired, fired a signal, or ended in a trade does not reset by itself. Price must first <b>close back inside</b>
+  the range; only then can a new breakout count. A setup that died by closing back inside is already inside, so the bot is ready again at once.
+  A trade's own candles are skipped: the search starts again with the first candle that closes after the exit.
+</div>
+
+<h2 id="entry">6. Step 4 — Strike, stop and target</h2>
+<ul>
+  <li><b>When:</b> Paper buys on the first option quote after the confirmation candle closes. The backtest uses the next candle's open &mdash; the same moment.</li>
+  <li><b>Strike:</b> exactly one strike in the money. CE = the highest strike below NIFTY. PE = the lowest strike above NIFTY. The strike step comes from the instrument settings (50 for NIFTY).</li>
+  <li><b>Target:</b> entry premium <b>+20</b>. <b>Stop:</b> entry premium <b>&minus;10</b>. Both close the <b>whole</b> position.</li>
+  <li>Example: bought at &#8377;150 &rarr; target &#8377;170, stop &#8377;140.</li>
+  <li>The stop is checked before the target. In the backtest, a candle that touches both counts as the stop.</li>
+  <li>Anything still open at <b>15:15</b> is closed.</li>
+</ul>
+<div class="tv-chart" id="iz-pe"></div>
+<p class="tv-cap"><b>What you see:</b> 1 Jun 2026, a put. The opening range is 23,587.75&ndash;23,733.7. At 09:40 a candle closes at 23,576.7, below the range low. VWAP (23,610.13) is above it, and EMA9 (23,600.81) is below VWAP and lower than the 23,606.84 before it: <b>breakout (1)</b>. The 09:45 candle's high reaches 23,594.5 &mdash; back inside the range, and well past the 23,582.75 it needed &mdash; so that is the <b>retest (2)</b>. It still closes at 23,580.2, below the range low, so the setup lives: a wick inside is fine. The 09:45 and 09:50 candles are green, so neither can confirm a put. The 09:50 close, 23,585.55, is only 2.2 points under the range low &mdash; one close at or above 23,587.75 would have killed the setup. The 09:55 candle is red and closes at 23,561.8, below the 09:50 low 23,572.05, with EMA9 23,587.93 below VWAP 23,599.44 and still falling: <b>confirmation (3)</b>. <b>BUY PE</b> at 10:00 with NIFTY at 23,561.05, the 23600 strike. At 10:30 NIFTY touches 23,524.66, the simulated premium reaches &#8377;260: <b>target</b>, +18 points after slippage, +&#8377;1,078 after charges. <b>Why it matters:</b> a put is the exact mirror of a call &mdash; every "above" becomes "below".</p>
+<div class="card">
+  <b>When a valid signal is still not filled (Paper)</b>
+  <ul>
+    <li>No valid weekly expiry for the strike, or no option price &rarr; the entry is skipped. If the entry fails, the bot retries every 5 seconds until the next candle closes.</li>
+    <li>If the confirmation candle reaches the bot late, in a delayed batch of candles, it is not filled at a stale price. The setup is used up.</li>
+    <li>The capital pool must be able to pay for the lot.</li>
+    <li>The shared "wait after any exit" rule (<code>EXIT_REENTRY_COOLDOWN_CANDLES</code>, 2 candles by default) also applies.</li>
+  </ul>
+</div>
+
+<h2 id="exits">7. Every way a trade ends</h2>
+<p>While a trade is open, the bot watches the option premium. It checks the <b>stop first</b>, then the <b>target</b>. At 15:15 everything is closed.</p>
+<div class="tv-chart" id="iz-stop"></div>
+<p class="tv-cap"><b>What you see:</b> 27 May 2026. The opening range is 23,869.65&ndash;23,950.15. At 10:15 a candle closes at 23,951.95 &mdash; just 1.8 points above the range high &mdash; with VWAP 23,907.84 below it and EMA9 23,920.69 rising from 23,912.88: <b>breakout (1)</b>. The 10:20 candle dips to 23,942.45 (anything at 23,955.15 or lower counts): <b>retest (2)</b>. It closes at 23,953.65, still above the range, but not above the 10:15 high 23,955.6. The 10:25 candle is green and closes at 23,963.4, above the 10:20 high 23,959.05, with EMA9 23,934.51 above VWAP 23,914.4 and rising: <b>confirmation (3)</b>. <b>BUY CE</b> at 10:30 with NIFTY at 23,964.8, the 23950 strike. The 10:30 candle's low, 23,947.45, just misses the stop. The 10:40 candle falls to 23,934.45, and the simulated premium hits &#8377;230 when NIFTY passes 23,946.63: <b>stop</b>. After slippage it is booked at &#8377;228: &minus;12 points, or &minus;&#8377;868 after charges. The 10:40 candle closes at 23,936.2, back inside the range, so the bot is ready again. After one loss a second trade is still allowed. At 10:50 a new breakout closes at 23,966.95 (grey dot), but no confirmation comes in its 3 candles and it expires at 11:05. Price never closes back inside the range before 11:30, so no new breakout can count. The day ends with one loss. <b>Why it matters:</b> a breakout by less than 2 points, with a stop worth about 18 NIFTY points, is easily shaken out.</p>
+<table>
+  <tr><th>Exit</th><th>When</th><th>Default</th></tr>
+  <tr><td>Stop</td><td>Premium falls to entry &minus; 10</td><td>always</td></tr>
+  <tr><td>Daily-loss stop</td><td>Second trade only: its stop is raised so the day cannot lose more than 20 points (see Section 8)</td><td>always</td></tr>
+  <tr><td>Target</td><td>Premium rises to entry + 20</td><td>always</td></tr>
+  <tr><td>Square-off</td><td>15:15</td><td>always</td></tr>
+  <tr><td>Profit lock (shared, all strategies)</td><td>Only if you switch it on in Settings. It was off in the backtest below.</td><td>off</td></tr>
+</table>
+<p>There is no trailing stop, no partial exit and no move-to-breakeven. The trade ends at +20, at &minus;10, or at 15:15.</p>
+
+<h2 id="day">8. Day limits</h2>
+<table>
+  <tr><th>After…</th><th>What happens</th></tr>
+  <tr><td>a winning trade</td><td><b>Done for the day.</b> Example from the engine: +18 points &rarr; "Winning trade booked &mdash; done for the day".</td></tr>
+  <tr><td>one losing trade</td><td>One more trade is allowed, but its stop is <b>tightened</b> so the day cannot lose more than 20 points.</td></tr>
+  <tr><td>two losing trades</td><td><b>Done for the day.</b></td></tr>
+  <tr><td>&minus;20 points for the day</td><td><b>Done for the day.</b></td></tr>
+  <tr><td>2 trades</td><td><b>Done for the day</b> (the most allowed).</td></tr>
+</table>
+<p><b>How the second stop is tightened.</b> Normal stop = entry &minus; 10. Day cap = entry &minus; (20 &minus; points already lost). The bot uses whichever is <b>closer</b> to the entry &mdash; it never widens the stop.
+Example: the first trade lost 12 points (the usual loss in the backtest, after slippage). The second trade is bought at &#8377;240. The normal stop would be &#8377;230;
+the day cap gives 240 &minus; (20 &minus; 12) = &#8377;232. So the stop is <b>&#8377;232</b>, 8 points away. With slippage that trade loses 10 points, so the day ends at &minus;22 &mdash; a little worse than &minus;20.</p>
+
+<h2 id="notrade">9. Days with no trade</h2>
+<p>Most days end without a trade. This is how the 640 sessions from 1 Jan 2024 to 31 Jul 2026 split up in the backtest.</p>
+<table>
+  <tr><th>What happened</th><th>Days</th><th>Share</th></tr>
+  <tr><td>Traded</td><td>154</td><td>24.1%</td></tr>
+  <tr><td>A breakout came, but every setup died, expired or was too late</td><td>288</td><td>45.0%</td></tr>
+  <tr><td>Weekly expiry day &mdash; skipped</td><td>133</td><td>20.8%</td></tr>
+  <tr><td>No breakout with VWAP and EMA9 agreeing before 11:30</td><td>62</td><td>9.7%</td></tr>
+  <tr><td>Previous day's data incomplete &mdash; EMA9 not trusted</td><td>3</td><td>0.5%</td></tr>
+</table>
+<p>In words: a breakout happens on most days, but the retest-and-confirm rule throws most of them away.</p>
+
+<h2 id="data">10. What the backtest said</h2>
+<div class="card warn">
+  These numbers come from running the backtest (<code>runItm20ScalpBacktest</code>) over the cached NIFTY 50 5-minute data from 1 Jan 2024 to 31 Jul 2026, with the app's
+  own backtest settings. <b>The option premium is SIMULATED</b>: there is no historical option-chain data. Every trade starts at a &#8377;240 premium, which moves
+  0.55 rupee per NIFTY point (delta), minus a tiny time-decay allowance (&#8377;10 a day spread over the 65-unit lot, about &#8377;0.15 of premium a day). Each trade pays 2 points of slippage (1 each way) and full Zerodha charges
+  on one 65-unit lot. So the rupee figures show a <b>direction</b>, not an exact result. The profit lock was off.
+</div>
+<table>
+  <tr><th>Measure</th><th>Result</th></tr>
+  <tr><td>Trades</td><td>169 (84 CE, 85 PE)</td></tr>
+  <tr><td>Win rate</td><td>27.2% (46 wins / 123 losses)</td></tr>
+  <tr><td>Profit factor</td><td>0.47 (below 1 = losing)</td></tr>
+  <tr><td>Net (simulated)</td><td>&minus;&#8377;55,603</td></tr>
+  <tr><td>Gross profit / gross loss</td><td>&#8377;49,590 / &#8377;1,05,193</td></tr>
+  <tr><td>Average per trade</td><td>&minus;&#8377;329</td></tr>
+  <tr><td>Longest losing streak</td><td>17 trades in a row</td></tr>
+  <tr><td>Trades that ended in the same 5-minute candle they were bought in</td><td>46 (27.2%) &mdash; 42 of them stops</td></tr>
+</table>
+<table>
+  <tr><th>How trades ended</th><th>Count</th><th>Net (sim.)</th></tr>
+  <tr><td>Stop (&minus;10, booked &minus;12 after slippage)</td><td>111 (65.7%)</td><td>&minus;&#8377;96,335</td></tr>
+  <tr><td>Daily-loss stop on a second trade</td><td>12 (7.1%)</td><td>&minus;&#8377;8,858</td></tr>
+  <tr><td>Target (+20, booked +18 after slippage)</td><td>46 (27.2%)</td><td>+&#8377;49,590</td></tr>
+  <tr><td>15:15 square-off</td><td>0</td><td>&mdash;</td></tr>
+</table>
+<table>
+  <tr><th>Side</th><th>Trades</th><th>Win rate</th><th>Net (sim.)</th></tr>
+  <tr><td>CE</td><td>84</td><td>26.2%</td><td>&minus;&#8377;29,184</td></tr>
+  <tr><td>PE</td><td>85</td><td>28.2%</td><td>&minus;&#8377;26,419</td></tr>
+</table>
+<table>
+  <tr><th>Year</th><th>Trades</th><th>Win rate</th><th>Net (sim.)</th></tr>
+  <tr><td>2024</td><td>75</td><td>24.0%</td><td>&minus;&#8377;29,156</td></tr>
+  <tr><td>2025</td><td>67</td><td>28.4%</td><td>&minus;&#8377;20,916</td></tr>
+  <tr><td>2026 (Jan&ndash;Jul)</td><td>27</td><td>33.3%</td><td>&minus;&#8377;5,530</td></tr>
+</table>
+<table>
+  <tr><th>Entry time</th><th>Trades</th><th>Win rate</th><th>Net (sim.)</th></tr>
+  <tr><td>09:30&ndash;09:59</td><td>29</td><td>17.2%</td><td>&minus;&#8377;15,439</td></tr>
+  <tr><td>10:00&ndash;10:59</td><td>104</td><td>30.8%</td><td>&minus;&#8377;27,601</td></tr>
+  <tr><td>11:00&ndash;11:30</td><td>36</td><td>25.0%</td><td>&minus;&#8377;12,563</td></tr>
+</table>
+<div class="card bad">
+  <b>In plain words:</b> a win books +18 points (+&#8377;1,078 after charges) and a loss books &minus;12 points (&minus;&#8377;868). To break even you need to win about
+  <b>45%</b> of trades (40% before charges). The backtest won 27.2%. In the model, a &minus;10 stop is only about 18 NIFTY points away, while +20 needs about 36
+  points &mdash; and more than a quarter of all trades were over inside their first candle. Every year lost money. There is no edge here on the data we have.
+</div>
+<div class="card warn">
+  <b>A warning from another strategy.</b> In July 2026 a test on the ORB strategy found that <b>adding a retest made ORB worse</b>: waiting for the retest tended to
+  pick weak breakouts and skip the strong ones that never came back. ITM20 Scalp is built around a retest, so the same thing may be happening here.
+</div>
+
+<h2 id="limits">11. Safety limits &amp; what is left out</h2>
+<table>
+  <tr><th>Limit</th><th>Default</th><th>Plain meaning</th></tr>
+  <tr><td>Entry window</td><td>09:30 – 11:30</td><td>No breakout before 09:30; the confirmation must close by 11:30.</td></tr>
+  <tr><td>Trades per day</td><td>2</td><td>And stop after a win, or after 2 losses.</td></tr>
+  <tr><td>Daily loss</td><td>&minus;20 points</td><td>Counted on premium points. The second stop is tightened to respect it.</td></tr>
+  <tr><td>Square-off</td><td>15:15</td><td>Nothing is held overnight.</td></tr>
+  <tr><td>Expiry day</td><td>skipped</td><td>No entries on the weekly expiry day unless <code>ITM20_SCALP_TRADE_EXPIRY_DAY</code> is on.</td></tr>
+  <tr><td>Instrument</td><td>options only</td><td>In futures instrument mode the strategy refuses to trade &mdash; its whole rule is a premium target and stop.</td></tr>
+  <tr><td>Account-wide daily cap</td><td>shared</td><td><code>PORTFOLIO_MAX_DAILY_LOSS</code>, shared by every strategy, is checked before each entry.</td></tr>
+</table>
+<div class="card warn">
+  <b>Deliberately left out.</b> No volume rule (the index has none), no VIX filter, no OI filter, no ATR, no RSI, no ADX, no SuperTrend, no trailing stop,
+  no partial exit, no averaging, no extra re-entries beyond the day limits. The common 10:00&ndash;14:00 trade window is <b>not</b> applied &mdash; this
+  strategy's own 09:30&ndash;11:30 window is part of its rules. Adding any of these makes it a different strategy that needs its own testing.
+</div>
+
+<h2 id="modes">12. Paper, Backtest &amp; Replay</h2>
+<table>
+  <tr><th>Mode</th><th>What it does</th></tr>
+  <tr><td>Paper</td><td>Live Fyers data, pretend orders, real option quotes for the premium. This is the official version of the rules; the other modes are made to match it.</td></tr>
+  <tr><td>Backtest</td><td>Past 5-minute NIFTY candles. Buys at the next candle's open. Inside a candle it checks the stop before the target. The premium is simulated (Section 10).</td></tr>
+  <tr><td>Replay</td><td>Re-runs a recorded paper day tick by tick, so a change can be tested on a real session.</td></tr>
+  <tr><td>Live</td><td><b>Does not exist.</b> There is no live route and no live order code for this strategy.</td></tr>
+</table>
+<p>Every decision reads only closed 5-minute candles. The live option price is used only for the stop and the target.</p>
+
+<h2 id="settings">13. All the settings</h2>
+<p>Defaults are the values in the Settings page (section "ITM20 SCALP STRATEGY (15m range break + retest, 1 ITM, +20/−10 premium) — Zerodha"). All of them appear under ITM20 Scalp in Settings.</p>
+<h3>Mode</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ITM20_SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show the ITM20 Scalp menu and settings.</td></tr>
+<tr><td><code>ITM20_SCALP_PAPER_ENABLED</code></td><td><code>true</code></td><td>Allow new ITM20 Scalp paper sessions.</td></tr>
+</tbody></table>
+<h3>Session window</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ITM20_SCALP_SESSION_START</code></td><td><code>09:15</code></td><td>Where the 15-minute opening range starts (IST).</td></tr>
+<tr><td><code>ITM20_SCALP_ENTRY_START</code></td><td><code>09:30</code></td><td>No breakout candle may start before this (IST).</td></tr>
+<tr><td><code>ITM20_SCALP_ENTRY_END</code></td><td><code>11:30</code></td><td>The confirmation candle must CLOSE by this time (IST), or there is no trade.</td></tr>
+<tr><td><code>ITM20_SCALP_SQUARE_OFF</code></td><td><code>15:15</code></td><td>Any open trade is closed at this time (IST).</td></tr>
+<tr><td><code>ITM20_SCALP_TRADE_EXPIRY_DAY</code></td><td><code>false</code></td><td>Off = no entries on the weekly expiry day (monitor only).</td></tr>
+</tbody></table>
+<h3>Signal</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ITM20_SCALP_EMA_PERIOD</code></td><td><code>9</code></td><td>The EMA on 5-min closes.</td></tr>
+<tr><td><code>ITM20_SCALP_RETEST_TOL_PTS</code></td><td><code>5</code></td><td>How close a candle's low (CE) / high (PE) must come to the range edge to count as a retest.</td></tr>
+<tr><td><code>ITM20_SCALP_RETEST_CANDLES</code></td><td><code>3</code></td><td>The retest and the confirmation must both happen within this many 5-min candles after the breakout candle.</td></tr>
+</tbody></table>
+<h3>Exits &amp; day limits</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ITM20_SCALP_TARGET_PTS</code></td><td><code>20</code></td><td>Exit the whole position when the option premium rises this much.</td></tr>
+<tr><td><code>ITM20_SCALP_SL_PTS</code></td><td><code>10</code></td><td>Exit the whole position when the option premium falls this much.</td></tr>
+<tr><td><code>ITM20_SCALP_MAX_TRADES</code></td><td><code>2</code></td><td>Most trades in one day.</td></tr>
+<tr><td><code>ITM20_SCALP_DAILY_LOSS_PTS</code></td><td><code>20</code></td><td>Stop for the day once the day's premium points reach minus this.</td></tr>
+</tbody></table>
+<h3>Data plumbing</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ITM20_SCALP_WARMUP_DAYS</code></td><td><code>7</code></td><td>How far back to fetch on start so the previous session is always there to warm up the EMA, even after a long weekend.</td></tr>
+<tr><td><code>ITM20_SCALP_POLL_MS</code></td><td><code>2000</code></td><td>How often the option premium is refreshed while a trade is open.</td></tr>
+<tr><td><code>ITM20_SCALP_HISTORY_LAG_MS</code></td><td><code>5000</code></td><td>How long after a 5-min bar closes before the Fyers history endpoint is asked for it.</td></tr>
+</tbody></table>
+<p class="muted">The menu toggles (<code>UI_SHOW_ITM20_SCALP_*</code>) and Telegram switches (<code>TG_ITM20_SCALP_*</code>) live in the Interface and Telegram sections of Settings. The backtest's own cost settings (<code>BACKTEST_*</code>) are shared by every backtest.</p>
+
+<h2 id="missing">14. What's still missing</h2>
+<ul>
+  <li><b>It has never traded.</b> No paper session, no live order.</li>
+  <li><b>There is no live mode.</b> Real orders cannot be placed for this strategy at all.</li>
+  <li><b>Backtest rupees are simulated.</b> Every trade starts at the same &#8377;240 premium and moves 0.55 per NIFTY point. Real ITM premiums, delta and spreads change during the day, so real +20 / &minus;10 exits will come at different NIFTY levels.</li>
+  <li><b>No historical option data.</b> The +20 / &minus;10 rule is about the premium, but the backtest can only guess the premium from NIFTY.</li>
+  <li><b>On the data we have, the rules lose money</b> (27.2% wins against about 45% needed). The retest rule may be part of the problem (see the ORB warning above).</li>
+  <li><b>Next step:</b> collect clean paper sessions, check them on <code>/replay</code>, and compare real premiums with the backtest's guess before trusting any number here.</li>
+</ul>
+<p class="muted">Engine: <code>src/strategies/itm20_scalp.js</code> · Paper: <code>src/routes/itm20ScalpPaper.js</code> · Backtest: <code>src/routes/itm20ScalpBacktest.js</code>.</p>
+
+</div>
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+TVChart.render("iz-ce", {"title":"NIFTY 50 · 5 min","subtitle":"Real day · 15 Jul 2025 · CE breakout, retest, confirmation, target","lastPriceTag":false,"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05"],"candles":[[25089.5,25151.15,25088.45,25139.95],[25140,25149.65,25133.55,25147.75],[25147.8,25147.8,25132.65,25147.4],[25147.95,25155.8,25125.1,25139.95],[25140.15,25140.15,25117.75,25123.75],[25124.05,25125.35,25097.35,25101.65],[25101.5,25111.2,25089.25,25106.35],[25107.2,25122.7,25097.9,25098.4],[25097.7,25111.3,25096.2,25101.55],[25102.8,25122.8,25097.7,25118.8],[25119.15,25128.65,25115.3,25122.55],[25122.9,25130.9,25117.7,25128.25],[25127.85,25132.55,25100.8,25112.85],[25113.55,25120.85,25108.75,25112.55],[25112.15,25130.5,25110.65,25129.95],[25129.75,25146.15,25128,25143.85],[25143.1,25165.15,25142.5,25156.9],[25157.9,25168.75,25155.15,25160.35],[25159.7,25167.9,25158.15,25167.45],[25166.8,25195.95,25165.45,25191.4],[25190.4,25197.25,25185.75,25192.85],[25192.95,25218.45,25190.45,25213.45],[25214.4,25233.5,25213.05,25231.75]],"overlays":[{"name":"VWAP","data":[25126.52,25135.08,25137.59,25138.27,25136.06,25131.4,25127.24,25124.62,25122.22,25121.31,25121.39,25121.74,25121.25,25120.74,25120.94,25122.09,25124.01,25126.09,25128.11,25130.92,25133.83,25137.17,25141.04],"color":"#f59e0b","width":1.5},{"name":"EMA9","data":[25090.35,25101.83,25110.94,25116.74,25118.15,25114.85,25113.15,25110.2,25108.47,25110.53,25112.94,25116,25115.37,25114.81,25117.83,25123.04,25129.81,25135.92,25142.22,25152.06,25160.22,25170.86,25183.04],"color":"#60a5fa","width":1.5,"dash":true}],"hlines":[{"price":25151.15,"color":"#c084fc"},{"price":25088.45,"color":"#f472b6"},{"price":25226.77,"label":"Target ≈ 25227 (premium +20)","color":"#4ade80","labelAt":0.3},{"price":25172.23,"label":"Stop ≈ 25172 (premium −10)","color":"#f87171","solid":true,"labelAt":0.3}],"zones":[{"from":0,"to":2,"top":25151.15,"bottom":25088.45,"label":"Opening range 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":17,"to":19,"label":"3-candle window","color":"rgba(251,191,36,0.07)","text":"#c9a54a","labelBottom":true},{"from":20,"to":22,"label":"holding","labelBottom":true,"color":"rgba(38,166,154,0.08)"}],"markers":[{"i":16,"price":25156.9,"type":"dot","text":"1","color":"#fbbf24"},{"i":17,"price":25155.15,"type":"dot","text":"2","color":"#38bdf8"},{"i":19,"price":25191.4,"type":"dot","text":"3","color":"#c084fc"},{"i":20,"price":25165.45,"type":"buy","text":"BUY CE 25190"},{"i":22,"price":25226.77,"type":"dot","color":"#4ade80"},{"i":22,"price":25233.5,"type":"exit","text":"TARGET 25227","color":"#4ade80"}],"legend":[{"label":"VWAP (orange)","color":"#f59e0b"},{"label":"EMA9 (blue dashed)","color":"#60a5fa"},{"label":"1 breakout","color":"#fbbf24"},{"label":"2 retest","color":"#38bdf8"},{"label":"3 confirmation","color":"#c084fc"}]});
+TVChart.render("iz-pe", {"title":"NIFTY 50 · 5 min","subtitle":"Real day · 1 Jun 2026 · PE breakout below the range, retest, confirmation, target","lastPriceTag":false,"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30"],"candles":[[23654.5,23733.7,23614.5,23633],[23633.4,23646.05,23588.55,23598.9],[23597.95,23612.4,23587.75,23592.95],[23591.95,23618.7,23587.7,23609.6],[23609.7,23611.1,23565.8,23608.75],[23608.4,23623.8,23572.35,23576.7],[23575.35,23594.5,23567.45,23580.2],[23579.1,23595.4,23572.05,23585.55],[23584.95,23588.8,23556.75,23561.8],[23561.05,23567.55,23537,23538.7],[23539.35,23569.95,23537.95,23569.85],[23569.25,23572.35,23553.15,23553.15],[23552.7,23564.1,23539.05,23558.65],[23558.15,23566.4,23548.95,23549.6],[23549.15,23561.15,23536.8,23539.85],[23539.35,23550.2,23517.7,23530]],"overlays":[{"name":"VWAP","data":[23660.4,23635.78,23623.09,23618.65,23613.96,23610.13,23605.93,23603.23,23599.44,23594.27,23591.08,23588.46,23585.8,23583.6,23581.09,23578.06],"color":"#f59e0b","width":1.5},{"name":"EMA9","data":[23611.15,23608.7,23605.55,23606.36,23606.84,23600.81,23596.69,23594.46,23587.93,23578.08,23576.44,23571.78,23569.15,23565.24,23560.16,23554.13],"color":"#60a5fa","width":1.5,"dash":true}],"hlines":[{"price":23733.7,"color":"#c084fc"},{"price":23587.75,"color":"#f472b6"},{"price":23524.66,"label":"Target ≈ 23525 (premium +20)","color":"#4ade80","labelAt":0},{"price":23579.21,"label":"Stop ≈ 23579 (premium −10)","color":"#f87171","solid":true,"labelAt":0}],"zones":[{"from":0,"to":2,"top":23733.7,"bottom":23587.75,"label":"Opening range 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":6,"to":8,"label":"3-candle window","color":"rgba(251,191,36,0.07)","text":"#c9a54a","labelBottom":true},{"from":9,"to":15,"label":"holding","labelBottom":true,"color":"rgba(38,166,154,0.08)"}],"markers":[{"i":5,"price":23576.7,"type":"dot","text":"1","color":"#fbbf24"},{"i":6,"price":23594.5,"type":"dot","text":"2","color":"#38bdf8"},{"i":8,"price":23561.8,"type":"dot","text":"3","color":"#c084fc"},{"i":9,"price":23537,"type":"buy","text":"BUY PE 23561"},{"i":15,"price":23524.66,"type":"dot","color":"#4ade80"},{"i":15,"price":23550.2,"type":"exit","text":"TARGET 23525","color":"#4ade80"}],"legend":[{"label":"VWAP (orange)","color":"#f59e0b"},{"label":"EMA9 (blue dashed)","color":"#60a5fa"},{"label":"1 breakout","color":"#fbbf24"},{"label":"2 retest","color":"#38bdf8"},{"label":"3 confirmation","color":"#c084fc"}]});
+TVChart.render("iz-stop", {"title":"NIFTY 50 · 5 min","subtitle":"Real day · 27 May 2026 · CE setup that hits the stop","lastPriceTag":false,"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25"],"candles":[[23880.35,23937.8,23869.65,23926],[23928.55,23950.15,23920.5,23933.7],[23933.95,23934.45,23896.45,23903.95],[23899.9,23901.55,23869.75,23883.1],[23883.9,23896.8,23874.95,23885.25],[23886.25,23919.05,23884.85,23908.6],[23908.6,23909.65,23871.3,23890.45],[23890.45,23895.65,23878.85,23883.9],[23885.8,23894.45,23873.9,23874.75],[23875.45,23912.95,23868.5,23912.95],[23912.1,23941.05,23908.05,23933.85],[23933.55,23946.4,23927.35,23942.8],[23943.3,23955.6,23934.7,23951.95],[23953.1,23959.05,23942.45,23953.65],[23954.3,23971,23952.95,23963.4],[23964.8,23965.05,23947.45,23958.05],[23959.05,23971.05,23952.15,23953.85],[23956,23959.5,23934.45,23936.2],[23937.25,23942.4,23918.9,23941.75],[23943.2,23967.7,23937.7,23966.95],[23968,23976.4,23958.95,23966.95],[23968.25,23968.25,23950.7,23954.4],[23954.85,23973.2,23952.35,23965.6],[23966.5,23968.55,23955.05,23961.9],[23962.2,23976.4,23959,23972.5],[23972.45,23981.25,23970.2,23973.5],[23973.25,23977.35,23967,23974.65]],"overlays":[{"name":"VWAP","data":[23911.15,23922.97,23919.18,23910.59,23905.6,23905.36,23903.24,23901.1,23898.87,23898.8,23901.42,23904.54,23907.84,23910.97,23914.4,23917.06,23919.52,23920.85,23921.56,23923.35,23925.45,23926.92,23928.52,23929.91,23931.49,23933.16,23934.63],"color":"#f59e0b","width":1.5},{"name":"EMA9","data":[23919.57,23922.4,23918.71,23911.59,23906.32,23906.78,23903.51,23899.59,23894.62,23898.29,23905.4,23912.88,23920.69,23927.28,23934.51,23939.22,23942.14,23940.95,23941.11,23946.28,23950.41,23951.21,23954.09,23955.65,23959.02,23961.92,23964.46],"color":"#60a5fa","width":1.5,"dash":true}],"hlines":[{"price":23950.15,"color":"#c084fc"},{"price":23869.65,"color":"#f472b6"},{"price":24001.17,"label":"Target ≈ 24001 (premium +20)","color":"#4ade80","labelAt":0.3},{"price":23946.63,"label":"Stop ≈ 23947 (premium −10)","color":"#f87171","solid":true,"labelAt":0.3}],"zones":[{"from":0,"to":2,"top":23950.15,"bottom":23869.65,"label":"Opening range 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":13,"to":15,"label":"3-candle window","color":"rgba(251,191,36,0.07)","text":"#c9a54a","labelBottom":true},{"from":15,"to":17,"label":"holding","labelBottom":true,"color":"rgba(239,83,80,0.08)"}],"markers":[{"i":12,"price":23951.95,"type":"dot","text":"1","color":"#fbbf24"},{"i":13,"price":23942.45,"type":"dot","text":"2","color":"#38bdf8"},{"i":14,"price":23963.4,"type":"dot","text":"3","color":"#c084fc"},{"i":15,"price":23947.45,"type":"buy","text":"BUY CE 23965"},{"i":17,"price":23946.63,"type":"dot","color":"#ef5350"},{"i":17,"price":23959.5,"type":"exit","text":"STOP 23947","color":"#ef5350"},{"i":19,"price":23966.95,"type":"dot","color":"#94a3b8"}],"legend":[{"label":"VWAP (orange)","color":"#f59e0b"},{"label":"EMA9 (blue dashed)","color":"#60a5fa"},{"label":"1 breakout","color":"#fbbf24"},{"label":"2 retest","color":"#38bdf8"},{"label":"3 confirmation","color":"#c084fc"}]});
+</script>
+</body>
+</html>

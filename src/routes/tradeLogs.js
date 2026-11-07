@@ -50,6 +50,7 @@ MODES.push("st_rsi_piv_bb"); // ST_RSI_PIV_BB
 MODES.push("sail_vwap_st"); // SAIL_VWAP_ST
 MODES.push("pivot_ema_st", "bn_pivot_ema_st", "sail_pivot_ema_st"); // PIVOT_EMA_ST family
 MODES.push("gap_runaway", "gap_runaway_stk"); // GAP_RUNAWAY (NIFTY) + its stock scanner
+MODES.push("itm20_scalp"); // ITM20_SCALP
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -747,6 +748,7 @@ function enabledModesFromEnv() {
     // GAP_RUNAWAY + its stock scanner default ON.
     gap_runaway: on(process.env.GAP_RUNAWAY_MODE_ENABLED),
     gap_runaway_stk: on(process.env.GAP_RUNAWAY_STK_MODE_ENABLED),
+    itm20_scalp: on(process.env.ITM20_SCALP_MODE_ENABLED),
     bb_rsi:    on(process.env.BB_RSI_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
@@ -823,6 +825,7 @@ router.get("/", (req, res) => {
     .mode-sail_pivot_ema_st { color:#fde68a; }
     .mode-gap_runaway { color:#c4b5fd; }
     .mode-gap_runaway_stk { color:#d8b4fe; }
+    .mode-itm20_scalp { color:#67e8f9; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -1276,6 +1279,7 @@ ${buildSidebar('tradeLogs', false)}
     { key: 'sail_pivot_ema_st', label: 'SAIL PIVOT_EMA_ST', cls: 'mode-sail_pivot_ema_st' },
     { key: 'gap_runaway', label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
     { key: 'gap_runaway_stk', label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
+    { key: 'itm20_scalp', label: 'ITM20 SCALP', cls: 'mode-itm20_scalp' },
     { key: 'bb_rsi',    label: 'BB_RSI',        cls: 'mode-bb_rsi' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
@@ -1310,6 +1314,7 @@ ${buildSidebar('tradeLogs', false)}
   _filesPage.sail_pivot_ema_st = 1; _skipsPage.sail_pivot_ema_st = 1;
   _filesPage.gap_runaway = 1; _skipsPage.gap_runaway = 1;
   _filesPage.gap_runaway_stk = 1; _skipsPage.gap_runaway_stk = 1;
+  _filesPage.itm20_scalp = 1; _skipsPage.itm20_scalp = 1;
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

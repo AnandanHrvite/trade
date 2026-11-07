@@ -24,6 +24,7 @@ const trendPbStrategy = require("../strategies/trend_pb");
 const tdsStrategy     = require("../strategies/trend_day_scalp");
 const haScalpStrategy = require("../strategies/ha_scalp");
 const prevOrbScalpStrategy = require("../strategies/prev_orb_scalp");
+const itm20ScalpStrategy = require("../strategies/itm20_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
 const bnPivotRsiStStrategy = require("../strategies/bn_pivot_rsi_st");
 const sailVwapStStrategy = require("../strategies/sail_vwap_st");
@@ -40,6 +41,8 @@ const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
 const HA_SCALP_KEY = "HA_SCALP_BACKTEST";
 // MUST match the RESULT_KEY prevOrbScalpBacktest.js saves under.
 const PREV_ORB_SCALP_KEY = "PREV_ORB_SCALP_BACKTEST";
+// MUST match the RESULT_KEY itm20ScalpBacktest.js saves under.
+const ITM20_SCALP_KEY = "ITM20_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
 // MUST match the RESULT_KEY bnPivotRsiStBacktest.js saves under.
 const BN_PIVOT_RSI_ST_KEY = "BN_PIVOT_RSI_ST_BACKTEST";
@@ -162,6 +165,7 @@ router.get("/", (req, res) => {
   const tdsOn      = _modeOn("TDS_MODE_ENABLED");
   const haScalpOn  = _modeOn("HA_SCALP_MODE_ENABLED");
   const prevOrbScalpOn = _modeOn("PREV_ORB_SCALP_MODE_ENABLED");
+  const itm20ScalpOn = _modeOn("ITM20_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
   const bnPivotRsiStOn = _modeOn("BN_PIVOT_RSI_ST_MODE_ENABLED");
   // EMA_RSI_ST_V2 defaults OFF; _modeOn() defaults ON, so it is compared here.
@@ -181,6 +185,7 @@ router.get("/", (req, res) => {
   const tdsResult      = tdsOn      ? loadResult(TDS_KEY)      : null;
   const haScalpResult  = haScalpOn  ? loadResult(HA_SCALP_KEY)  : null;
   const prevOrbScalpResult = prevOrbScalpOn ? loadResult(PREV_ORB_SCALP_KEY) : null;
+  const itm20ScalpResult = itm20ScalpOn ? loadResult(ITM20_SCALP_KEY) : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
   const bnPivotRsiStResult = bnPivotRsiStOn ? loadResult(BN_PIVOT_RSI_ST_KEY) : null;
   const emaRsiStV2Result = emaRsiStV2On ? loadResult(EMA_RSI_ST_V2_KEY) : null;
@@ -228,6 +233,11 @@ router.get("/", (req, res) => {
     "PREV ORB SCALP", { bg: "rgba(232,121,249,0.12)", fg: "#f0abfc", border: "rgba(232,121,249,0.25)" },
     prevOrbScalpStrategy && prevOrbScalpStrategy.NAME ? prevOrbScalpStrategy.NAME : "PREV_ORB_SCALP",
     PREV_ORB_SCALP_KEY, "/prev-orb-scalp-backtest", prevOrbScalpResult
+  ) : "";
+  const itm20ScalpPanel = itm20ScalpOn ? renderPanel(
+    "ITM20 SCALP", { bg: "rgba(34,211,238,0.12)", fg: "#67e8f9", border: "rgba(34,211,238,0.25)" },
+    itm20ScalpStrategy && itm20ScalpStrategy.NAME ? itm20ScalpStrategy.NAME : "ITM20_SCALP",
+    ITM20_SCALP_KEY, "/itm20-scalp-backtest", itm20ScalpResult
   ) : "";
   const rsiPivotStPanel = rsiPivotStOn ? renderPanel(
     "RSI PIVOT ST", { bg: "rgba(250,204,21,0.12)", fg: "#facc15", border: "rgba(250,204,21,0.25)" },
@@ -421,6 +431,7 @@ ${buildSidebar('allBacktest', false)}
   ${tdsPanel}
         ${haScalpPanel}
   ${prevOrbScalpPanel}
+  ${itm20ScalpPanel}
   ${rsiPivotStPanel}
   ${bnPivotRsiStPanel}
   ${bnEmaRsiStV2Panel}

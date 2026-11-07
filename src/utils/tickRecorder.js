@@ -440,6 +440,8 @@ const _SETTINGS_KEY_MATCHERS = [
   /^PIVOT_EMA_ST_/, /^BN_PIVOT_EMA_ST_/, /^SAIL_PIVOT_EMA_ST_/,
   //   GAP_RUNAWAY + GAP_RUNAWAY_STK — no older prefix matches "GAP_RUNAWAY_".
   /^GAP_RUNAWAY_/,
+  //   ITM20_SCALP_* — the ITM20 Scalp strategy; no older prefix matches "ITM20_".
+  /^ITM20_SCALP_/,
   //   EXIT_REENTRY_* — the global wait-after-any-exit cooldown; it blocks entries.
   /^EXIT_REENTRY_/,
   //   PREMIUM_SL_* — the global premium stop-loss & trail; it changes exits.

@@ -41,6 +41,8 @@ All strategies run **in parallel** on the same WebSocket — different candle re
 | **HA Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering) | 15-min historical | Historical | `/ha-scalp-backtest` |
 | **Prev ORB Scalp Paper** | The 09:15 15-min candle closes beyond yesterday's high/low; the first 3-min close beyond that candle is entered, stop at its other end, target = its size, then trailed | 15-min setup / 3-min entry | Simulated | `/prev-orb-scalp-paper` |
 | **Prev ORB Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering, profit lock simulated) | 3-min historical | Historical | `/prev-orb-scalp-backtest` |
+| **ITM20 Scalp Paper** | 09:15–09:30 range break (close beyond + VWAP + EMA9 agreeing) → retest within 3 candles → confirmation close; 1 strike ITM, +20 / −10 premium points, max 2 trades/day | 5-min | Simulated | `/itm20-scalp-paper` |
+| **ITM20 Scalp Backtest** | Same engine over a date range (stop before target inside a bar, next-bar-open fills, CSV export) | 5-min historical | Historical | `/itm20-scalp-backtest` |
 | **EarlyBird Paper** | The day's **first 15-min candle** on NIFTY sets the side. `stock` mode buys/shorts the **cash equity** of any F&O stock printing the same shape (up to 5 at once); `option` mode buys ONE **NIFTY CE/PE** off NIFTY's own candle with **no stock check**; `both` runs the two independently | 15-min (first bar) | Simulated | `/early-bird-paper` |
 | **EarlyBird Backtest** | Same engine over a date range (conservative intra-bar ordering, equity-intraday charges) | 15-min historical | Historical | `/early-bird-backtest` |
 | **OI Monitor** | Read-only per-strike OI ladder, walls, band PCR — no position, no order | live OI ladder | — | `/oi-monitor` |
@@ -294,6 +296,16 @@ Engine: [src/strategies/prev_orb_scalp.js](src/strategies/prev_orb_scalp.js). On
 - **Stop / target**: stop = that 3-min candle's high (PE) / low (CE); target = its size from the entry. At the target the stop moves to the target, then trails each closed 3-min candle's high (PE) / low (CE) (`PREV_ORB_SCALP_TRAIL_AFTER_TARGET`, off = exit at target). The global premium profit lock applies. Square-off 15:15.
 - **Not here on purpose**: no VIX/OI/RSI/MA/volume/ATR filter, no retest, no second trade.
 
+### Strategy 8c: ITM20 SCALP — 15-min opening-range breakout + retest, 1 strike ITM, +20 / −10 premium points (paper + backtest only)
+
+Engine: [src/strategies/itm20_scalp.js](src/strategies/itm20_scalp.js). **Never traded on paper or live.** Paper and Backtest only — there is no live route.
+
+- **Levels**: the 09:15–09:30 high/low (three 5-min candles), a session VWAP (equal-weighted HLC3 — the index has no volume) and EMA9 on 5-min closes.
+- **CE**: a 5-min candle from 09:30 closes above the range high with close > VWAP, EMA9 > VWAP and EMA9 rising → within the next 3 candles a low comes within 5 pts of the high, no candle closes back inside → a green candle closes above the previous candle's high (VWAP/EMA re-checked) → buy the first ITM CE (highest strike below spot). **PE** is the mirror.
+- **Exits** on option premium: +20 target / −10 stop, whole position, square-off 15:15.
+- **Day limits**: entries until 11:30, max 2 trades, stop after a win, after 2 losses or at −20 points (the second stop is tightened to keep the day inside −20). Weekly expiry day skipped by default.
+- **Not here on purpose**: no volume rule, VIX, OI, ATR, trailing stop, partial exit or averaging. The common 10:00–14:00 trade window is not applied — the 09:30–11:30 window is part of the rules. Options only: futures instrument mode is refused.
+
 ### Strategy 9: RSI PIVOT ST — RSI extreme + a Standard Pivot R1/S1 break, SuperTrend-stopped (single-leg OTM CE/PE, Zerodha)
 
 **Never traded, and no backtest has been run against it.** Zero paper sessions, zero live orders. Every threshold below is the user's stated rule or a repo convention, not a fitted value. Collect clean paper days and diff them against `/replay` before touching any live gate.
@@ -471,6 +483,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   ha_scalp_paper_trades.json      # HA Scalp paper sessions
   prev_orb_scalp_paper_trades.json # Prev ORB Scalp paper sessions
+  itm20_scalp_paper_trades.json   # ITM20 Scalp paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   bn_pivot_rsi_st_paper_trades.json # BN Pivot RSI ST (NIFTY BANK) paper sessions
   st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
@@ -489,6 +502,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
   .active_ha_scalp_position.json  # Crash recovery — HA Scalp position
   .active_prev_orb_scalp_position.json # Crash recovery — Prev ORB Scalp position
+  .active_itm20_scalp_position.json # Crash recovery — ITM20 Scalp position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .active_bn_pivot_rsi_st_position.json # Crash recovery — BN Pivot RSI ST position
   .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
@@ -601,6 +615,13 @@ log, so each session's trades carry the exact config that produced them.
 | `/prev-orb-scalp-backtest` | Prev ORB Scalp date-range backtest (3-min bars, next-candle-open fills) |
 | `/prev-orb-scalp-paper/status` | Paper trade — 3-min chart with yesterday's high/low, the 09:15 high/low, entry, stop and target |
 | `/prev-orb-scalp-paper/history` | Sessions (per-session delete + view modal) |
+
+### ITM20 Scalp
+| URL | Description |
+|-----|-------------|
+| `/itm20-scalp-backtest` | ITM20 Scalp date-range backtest (5-min bars, next-bar-open fills, CE/PE, month and time tables, CSV export) |
+| `/itm20-scalp-paper/status` | Paper trade — BUY CE / BUY PE / NO TRADE light, range, VWAP, EMA9, breakout/retest status, ITM strike, entry/target/stop, day risk |
+| `/itm20-scalp-paper/history` | Sessions (per-session delete + view modal) |
 
 ### RSI Pivot ST
 | URL | Description |

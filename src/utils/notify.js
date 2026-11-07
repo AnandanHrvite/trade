@@ -109,6 +109,8 @@ function modeGroup(mode) {
   // Group key PREV_ORB_SCALP keeps env keys on the PREV_ORB_SCALP_ prefix
   // (PREV_ORB_SCALP_MODE_ENABLED, TG_PREV_ORB_SCALP_ENTRY, …).
   if (m === "PREV_ORB_SCALP" || m.startsWith("PREV-ORB-SCALP") || m.startsWith("PREV_ORB_SCALP")) return "PREV_ORB_SCALP";
+  // ITM20 Scalp — env keys on the ITM20_SCALP_ prefix (TG_ITM20_SCALP_ENTRY, …).
+  if (m === "ITM20_SCALP" || m.startsWith("ITM20-SCALP") || m.startsWith("ITM20_SCALP")) return "ITM20_SCALP";
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
   if (m === "EMA9VWAP" || m.startsWith("EMA9VWAP-") || m.startsWith("EMA9VWAP_")) return "EMA9VWAP";
   if (m === "TREND_PB" || m.startsWith("TREND_PB-") || m.startsWith("TREND_PB_")) return "TREND_PB";
@@ -435,6 +437,8 @@ function modeLabel(mode) {
   // spellings are matched.
   if (m.startsWith("PREV-ORB-SCALP-PAPER")) return "📐 PREV ORB SCALP PAPER" + m.slice("PREV-ORB-SCALP-PAPER".length);
   if (m.startsWith("PREV_ORB_SCALP-PAPER")) return "📐 PREV ORB SCALP PAPER" + m.slice("PREV_ORB_SCALP-PAPER".length);
+  if (m.startsWith("ITM20-SCALP-PAPER")) return "🎯 ITM20 SCALP PAPER" + m.slice("ITM20-SCALP-PAPER".length);
+  if (m.startsWith("ITM20_SCALP-PAPER")) return "🎯 ITM20 SCALP PAPER" + m.slice("ITM20_SCALP-PAPER".length);
   if (m.startsWith("ORB-PAPER"))       return "📄 ORB PAPER" + m.slice("ORB-PAPER".length);
   if (m.startsWith("EMA9VWAP-PAPER"))  return "📄 EMA9+VWAP PAPER" + m.slice("EMA9VWAP-PAPER".length);
   if (m.startsWith("TREND_PB-PAPER"))  return "📈 TREND PB PAPER" + m.slice("TREND_PB-PAPER".length);
@@ -766,6 +770,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (isModeEnabled("SAIL_VWAP_ST")) groups.push("SAIL_VWAP_ST");
   for (const g of ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST"]) if (isModeEnabled(g)) groups.push(g);
   for (const g of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) if (isModeEnabled(g)) groups.push(g);
+  if (isModeEnabled("ITM20_SCALP")) groups.push("ITM20_SCALP");
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 
