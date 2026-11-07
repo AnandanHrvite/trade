@@ -385,6 +385,18 @@ function _superTrendGate(candles, side, cfg) {
   };
 }
 
+// Did breakout `i`'s confirmation candle (i + 1) extend the move, yet get refused by
+// the RSI / SuperTrend gate? Judged on the series exactly as it stood at that
+// candle's close, the same inputs _fire() used then.
+function _confirmGateBlocked(candles, i, side, or, cfg) {
+  const upto = candles.slice(0, i + 2);
+  const conf = candles[i + 1];
+  const extended = _extends(conf, candles[i], side, or.high, or.low, cfg.confirmMode) &&
+                   _vwapSideOk(conf, side, cfg.vwapOn ? computeVwap(upto) : null, cfg.vwapOn);
+  if (!extended) return false;
+  return !_rsiGate(upto, side, cfg).ok || !_superTrendGate(upto, side, cfg).ok;
+}
+
 function _vwapSideOk(c, side, vwap, on) {
   if (on === false) return true;
   if (vwap == null) return true;
@@ -736,7 +748,12 @@ function getSignal(candles, opts) {
   // ORB_BREAKOUT_RESCAN=false restores the old first-close-is-final behaviour.
   const rescan = (process.env.ORB_BREAKOUT_RESCAN || "true").toLowerCase() === "true";
 
-  let b = -1, side = null, q = null, rejected = null;
+  // 2026-11-08: a breakout whose confirmation candle DID extend the move but was
+  // refused by the RSI / SuperTrend gate is spent, not the whole day — with rescan
+  // on, the hunt moves on to a fresh breakout. Only judged once that confirmation
+  // candle is in the past (i + 1 < lastIdx); while it is the latest candle the
+  // normal path below evaluates it.
+  let b = -1, side = null, q = null, rejected = null, gateBlocked = null;
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
     if (_istDay(c.time) !== day) continue;
@@ -747,9 +764,20 @@ function getSignal(candles, opts) {
     else if (c.close < or.low - buffer) s = "PE";
     if (!s) continue;
     const cand = _breakoutQuality(candles, i, s, minBody);
-    if (cand.ok) { b = i; side = s; q = cand; break; }
+    if (cand.ok) {
+      if (rescan && i + 1 < lastIdx && _confirmGateBlocked(candles, i, s, or, cfg)) {
+        gateBlocked = { idx: i, side: s };
+        continue;
+      }
+      b = i; side = s; q = cand; break;
+    }
     rejected = { idx: i, side: s, close: c.close, q: cand };
     if (!rescan) break;
+  }
+
+  if (b < 0 && gateBlocked && (!rejected || gateBlocked.idx > rejected.idx)) {
+    tr.check("breakout", true, `${gateBlocked.side} breakout at candle #${gateBlocked.idx} was confirmed but RSI/SuperTrend blocked it`);
+    return done(Object.assign(sig, { reason: `${gateBlocked.side} breakout confirmed but blocked by RSI/SuperTrend — waiting for a fresh breakout` }));
   }
 
   if (b < 0) {

@@ -458,6 +458,37 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     assert.strictEqual(typeof strat.TARGET_OR_MULT, "number", "the strategy must own the target multiplier the routes draw");
   });
 
+  // ── 2026-11-08: an RSI/SuperTrend block spends that breakout, not the day ──
+  console.log("\nGate-blocked confirmation");
+  check("RSI blocks the first confirmation → the next breakout is hunted and can enter", () => {
+    const keys = ["ORB_ENTRY_START","ORB_RETEST_MAX_WAIT","ORB_ST_ENABLED","ORB_RSI_ENABLED","ORB_RSI_CE_MIN",
+      "ORB_BODY_ATR_MULT","ORB_OR_ATR_MAX","ORB_GAP_OR_MULT","ORB_BUFFER_MIN_PTS","ORB_CONFIRM_MODE","ORB_BREAKOUT_RESCAN"];
+    const saved = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+    Object.assign(process.env, { ORB_ENTRY_START: "09:30", ORB_RETEST_MAX_WAIT: "0", ORB_ST_ENABLED: "false",
+      ORB_RSI_ENABLED: "true", ORB_RSI_CE_MIN: "82", ORB_BODY_ATR_MULT: "0", ORB_OR_ATR_MAX: "0", ORB_GAP_OR_MULT: "0",
+      ORB_BUFFER_MIN_PTS: "5", ORB_CONFIRM_MODE: "close", ORB_BREAKOUT_RESCAN: "true" });
+    try {
+      const base = Math.floor(Date.UTC(2026, 2, 2, 3, 45) / 1000);   // 09:15 IST
+      const bars = [];
+      for (let d = 0; d < 3; d++) { let px = 24000; for (let i = 0; i < 75; i++) {
+        const o = px, c = px + (i % 2 ? 3 : -3);
+        bars.push({ time: base + d * 86400 + i * 300, open: o, high: Math.max(o, c) + 5, low: Math.min(o, c) - 5, close: c, volume: 1 }); px = c; } }
+      const t0 = base + 3 * 86400;
+      const mk = (i, o, c) => ({ time: t0 + i * 300, open: o, high: Math.max(o, c) + 2, low: Math.min(o, c) - 2, close: c, volume: 1 });
+      for (let i = 0; i < 3; i++) bars.push({ time: t0 + i * 300, open: 24000, high: 24010, low: 23990, close: 24002, volume: 1 });
+      bars.push(mk(3, 24005, 24030), mk(4, 24030, 24045), mk(5, 24045, 24060));
+      const n = bars.length;
+      const atConfirm = S.getSignal(bars.slice(0, n - 1), { silent: true });   // 09:35 confirm, RSI ~79.6 < 82
+      assert.strictEqual(atConfirm.signal, "NONE");
+      assert.ok(/RSI gate blocked/.test(atConfirm.reason), atConfirm.reason);
+      const next = S.getSignal(bars, { silent: true });                         // 09:40: fresh breakout confirmed, RSI ~83
+      assert.strictEqual(next.signal, "BUY_CE", next.reason);
+      assert.ok(!/already confirmed/.test(next.reason), next.reason);
+    } finally {
+      for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    }
+  });
+
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
   process.exit(fail === 0 ? 0 : 1);
 })().catch(err => { console.error("SUITE ERROR:", err); process.exit(1); });

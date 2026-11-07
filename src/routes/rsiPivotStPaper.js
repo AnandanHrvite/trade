@@ -720,6 +720,15 @@ function _checkExits() {
       return;
     }
   }
+  // Futures: the same common stop mapped to index points (entry = fill spot).
+  if (pos.isFutures && typeof spot === "number" && spot > 0) {
+    const _fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entrySpot, spot, pos.mfeSpotPts);
+    if (_fsMsg) {
+      log(`🔒 [RSI_PIVOT_ST-PAPER] ${_fsMsg}`);
+      simulateSell(_fsMsg);
+      return;
+    }
+  }
 
   // MFE/MAE bookkeeping.
   if (typeof spot === "number" && Number.isFinite(spot)) {

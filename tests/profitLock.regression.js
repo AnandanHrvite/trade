@@ -468,6 +468,32 @@ check("bad config never becomes a stop", () => {
   }
 });
 
+check("futures: the stop in index points — 40 / +40 / 15", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
+  assert.strictEqual(guards.checkFuturesStop("CE", 24000, 23961, 0), null);
+  assert.ok(/^Stop-loss -20%/.test(guards.checkFuturesStop("CE", 24000, 23960, 0)));
+  assert.ok(/^Stop-loss -20%/.test(guards.checkFuturesStop("PE", 24000, 24040, 0)));        // short
+  assert.strictEqual(guards.futuresStopLevel("CE", 24000, 60), 24045);                     // best +60 → trail 15
+  assert.strictEqual(guards.futuresStopLevel("PE", 24000, 60), 23955);
+  assert.ok(/^Stop-loss trail/.test(guards.checkFuturesStop("CE", 24000, 24025, 40)));       // best +40 → stop +25
+  assert.strictEqual(guards.checkFuturesStop("CE", 24000, 24026, 40), null);
+  // The rescaled options give the same level on the index itself.
+  assert.strictEqual(guards.exitLevelLtp(24000, 24000, guards.futuresStopOpts(24000)), 23960);
+  assert.strictEqual(guards.exitLevelLtp(24000, 24060, guards.futuresStopOpts(24000)), 24045);
+}));
+
+check("futures + stock stops stay off with the switch off", () => withSl({}, () => {
+  assert.strictEqual(guards.checkFuturesStop("CE", 24000, 20000, 0), null);
+  assert.strictEqual(guards.checkProfitLock(1000, 500, 1000, guards.stockStopOpts(1000)), null);
+}));
+
+check("stocks: 1 / 1 / 0.5% — buy 1000 → stop 990; best 1010 → 1005", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
+  const o = guards.stockStopOpts(1000);
+  assert.strictEqual(guards.exitLevelLtp(1000, 1000, o), 990);
+  assert.strictEqual(guards.exitLevelLtp(1000, 1010, o), 1005);
+  assert.strictEqual(guards.checkProfitLock(1000, 990.5, 1000, o), null);
+  assert.ok(/^Stop-loss -1%/.test(guards.checkProfitLock(1000, 990, 1000, o)));
+}));
+
 check("next to the profit lock, the higher level wins (and is the fill level)", () => withSl({
   PREMIUM_SL_ENABLED: "true", PROFIT_LOCK_ENABLED: "true",
 }, () => {

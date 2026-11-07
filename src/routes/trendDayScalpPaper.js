@@ -566,6 +566,14 @@ function _checkExits(spotPrice) {
       simulateSell(_plMsg);
     }
   }
+  // Futures: the same common stop mapped to index points (entry = fill spot).
+  if (pos.isFutures && spotPrice > 0) {
+    const _fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entrySpot, spotPrice, pos.mfeSpotPts);
+    if (_fsMsg) {
+      log(`🔒 [TDS-PAPER] ${_fsMsg}`);
+      simulateSell(_fsMsg);
+    }
+  }
 }
 
 // ── The day gate — evaluated ONCE, then frozen ───────────────────────────────

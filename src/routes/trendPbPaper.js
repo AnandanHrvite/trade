@@ -555,6 +555,15 @@ function _checkExits(spotPrice) {
       return;
     }
   }
+  // Futures: the same common stop mapped to index points (entry = fill spot).
+  if (pos.isFutures && spotPrice > 0) {
+    const _fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entrySpot, spotPrice, pos.mfeSpotPts);
+    if (_fsMsg) {
+      log(`🔒 [TREND_PB-PAPER] ${_fsMsg}`);
+      simulateSell(_fsMsg);
+      return;
+    }
+  }
 }
 
 // ── Candle close handler ──────────────────────────────────────────────────────

@@ -144,6 +144,24 @@ test("PE: no break yet → waiting", () => {
   assert.strictEqual(s.spent, false);
 });
 
+test("common window on: a break before 10:00 spends the setup — no late chase at 10:00", () => {
+  process.env.COMMON_TRADE_WINDOW_ENABLED = "true";
+  try {
+    const early = bar(TODAY, 9, 33, 22910, 22915, 22880, 22885);    // first close below the 09:15 low
+    const s1 = strat.getSignal(peDay().concat([bar(TODAY, 9, 30, 22920, 22930, 22905, 22910), early]), { silent: true });
+    assert.strictEqual(s1.signal, "NONE");
+    assert.strictEqual(s1.spent, true);
+    assert.ok(/before the 10:00 entry start/.test(s1.skipReason), s1.skipReason);
+    // Price is still below the level at 10:00 — the stale break is NOT bought.
+    const later = [];
+    for (let m = 36; m < 60; m += 3) later.push(bar(TODAY, 9, m, 22885, 22890, 22870, 22880));
+    const s2 = strat.getSignal(peDay().concat([bar(TODAY, 9, 30, 22920, 22930, 22905, 22910), early], later,
+      [bar(TODAY, 10, 0, 22880, 22885, 22860, 22870)]), { silent: true });
+    assert.strictEqual(s2.signal, "NONE");
+    assert.strictEqual(s2.spent, true);
+  } finally { process.env.COMMON_TRADE_WINDOW_ENABLED = "false"; }
+});
+
 test("PE: a WICK below the 09:15 low without a close below is not a break", () => {
   const s = strat.getSignal(peDay().concat([bar(TODAY, 9, 30, 22920, 22930, 22880, 22905)]), { silent: true });
   assert.strictEqual(s.signal, "NONE");

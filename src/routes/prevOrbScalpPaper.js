@@ -745,6 +745,14 @@ function _checkExits(spotPrice) {
       simulateSell(plMsg);
     }
   }
+  // Futures: the same common stop mapped to index points (entry = fill spot).
+  if (pos.isFutures) {
+    const fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entrySpot, spotPrice, pos.mfeSpotPts);
+    if (fsMsg) {
+      log(`🔒 ${TAG} ${fsMsg}`);
+      simulateSell(fsMsg);
+    }
+  }
 }
 
 // ── Entry evaluation (on candle close — CLOSED bars only) ────────────────────

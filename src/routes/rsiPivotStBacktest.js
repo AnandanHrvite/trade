@@ -42,6 +42,15 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+
+// Futures stop on the long-equivalent futures "premium" (entry, price and peak
+// all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
+function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak) {
+  const lvl = _futStopLvl(entry, peak);
+  if (lvl == null || px > lvl) return null;
+  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+}
 const backtestCosts = require("../config/backtestCosts");
 
 const ACCENT = "#c2410c";
@@ -189,24 +198,28 @@ async function runRsiPivotStBacktest(intraday, daily) {
      * is the spot itself.
      */
     function lockExit(c) {
-      if (IS_FUT) return;
+      // Futures: paper skips the profit lock but runs the common stop in index
+      // points. The "premium" here IS the futures price (DELTA 1, no theta), so
+      // the same walk applies with that stop alone.
+      const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
+      const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
       const isCE = pos.side === "CE";
       const entry = pos.optionEntryLtp;
       const pOpen = premiumAt(c.open, c.time);
       if (pOpen > pos.peakPremium) pos.peakPremium = pOpen;
-      let msg = tradeGuards.checkProfitLock(entry, pOpen, pos.peakPremium);
+      let msg = lockAt(entry, pOpen, pos.peakPremium);
       if (msg) { close(c.open, c.time, `${msg} (bar opened through it — filled at the open)`); return; }
-      msg = tradeGuards.checkProfitLock(entry, premiumAt(isCE ? c.low : c.high, c.time), pos.peakPremium);
+      msg = lockAt(entry, premiumAt(isCE ? c.low : c.high, c.time), pos.peakPremium);
       if (msg) {
         // Fill at the spot that produces the locked floor, never better than the open.
-        const floor = tradeGuards.exitLevelLtp(entry, pos.peakPremium);
+        const floor = levelAt(entry, pos.peakPremium);
         const raw = pos.entrySpot + (isCE ? 1 : -1) * ((floor - entry) / DELTA);
         close(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), c.time, msg);
         return;
       }
       const pFav = premiumAt(isCE ? c.high : c.low, c.time);
       if (pFav > pos.peakPremium) pos.peakPremium = pFav;
-      msg = tradeGuards.checkProfitLock(entry, premiumAt(c.close, c.time), pos.peakPremium);
+      msg = lockAt(entry, premiumAt(c.close, c.time), pos.peakPremium);
       if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, true);
     }
 

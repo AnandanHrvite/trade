@@ -1725,6 +1725,18 @@ function onTick(tick) {
       return;
     }
   }
+  // Futures: no option premium, so the same stop runs on the index move
+  // (tradeGuards.checkFuturesStop). Entry/exit are index levels (see simulateSell).
+  if (ptState.position && instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" && ltp > 0) {
+    const _fsPos = ptState.position;
+    const _fsMsg = tradeGuards.checkFuturesStop(_fsPos.side, _fsPos.entryPrice, ltp, _fsPos.mfeSpotPts);
+    if (_fsMsg) {
+      log(`🔒 [PAPER] ${_fsMsg}`);
+      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+      simulateSell(ltp, _fsMsg, ltp);
+      return;
+    }
+  }
 }
 
 // -- Save completed session to disk ───────────────────────────────────────────

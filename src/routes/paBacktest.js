@@ -235,7 +235,8 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         _lvlWhy = `Profit lock (≈${_lvlPts.toFixed(0)}pt spot kept of ${_bestFav.toFixed(0)}pt)`;
       }
       // Common premium stop-loss (tradeGuards.premiumStopLtp) in spot points.
-      if (!isFutures) {
+      // Futures too: DELTA is 1.0 there, so this is tradeGuards.futuresStopLevel.
+      {
         const _stopPts = tradeGuards.premiumStopSpotPts(_bestFav, DELTA);
         if (_stopPts != null && (_lvlPts == null || _stopPts > _lvlPts)) {
           _lvlPts = _stopPts;

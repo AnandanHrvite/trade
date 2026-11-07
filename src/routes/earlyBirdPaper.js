@@ -968,7 +968,8 @@ async function _stepOptionLeg() {
       const lockSide = pos.isFutures ? pos.side : "LONG";
       if (!(pos.bestPremium > 0)) pos.bestPremium = pos.optionEntryLtp;
       if (lockSide === "SHORT" ? ltp < pos.bestPremium : ltp > pos.bestPremium) pos.bestPremium = ltp;
-      const ex = earlyBird.checkProfitLockExit(lockSide, pos.optionEntryLtp, ltp, pos.bestPremium);
+      const ex = earlyBird.checkProfitLockExit(lockSide, pos.optionEntryLtp, ltp, pos.bestPremium,
+        pos.isFutures ? tradeGuards.futuresStopOpts(pos.optionEntryLtp) : undefined);
       if (ex) {
         // `price` is what _closeOptionPosition reads as the SPOT (the index level
         // itself for futures); the exit premium is fetched there.
@@ -1836,7 +1837,7 @@ function _checkExits() {
     _trackExcursion(pos, price);
 
     const best = pos.side === "SHORT" ? pos.troughPrice : pos.peakPrice;
-    const ex = earlyBird.checkProfitLockExit(pos.side, pos.entryPrice, price, best);
+    const ex = earlyBird.checkProfitLockExit(pos.side, pos.entryPrice, price, best, tradeGuards.stockStopOpts(pos.entryPrice));
     if (ex) {
       log(`🔒 ${LOG_TAG} ${pos.symbol} ${ex.reason}`);
       _closePosition(pos, ex);

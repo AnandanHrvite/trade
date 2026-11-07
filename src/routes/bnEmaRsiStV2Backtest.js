@@ -71,6 +71,15 @@ const router  = express.Router();
 const engine             = require("../strategies/ema_rsi_st_v2");
 const confirmCandle      = require("../utils/confirmCandle");
 const tradeGuards        = require("../utils/tradeGuards");
+
+// Futures stop on the long-equivalent futures "premium" (entry, price and peak
+// all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
+function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak) {
+  const lvl = _futStopLvl(entry, peak);
+  if (lvl == null || px > lvl) return null;
+  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+}
 const { fetchCandles }   = require("../services/backtestEngine");
 const { fyersErrText }   = require("../utils/fyersErr");
 const { faviconLink }    = require("../utils/sharedNav");
@@ -386,7 +395,11 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       // The global profit lock is the ONLY automatic exit. The bar is walked
       // open → adverse extreme → favourable extreme → close, so the lock is
       // tested on the adverse leg BEFORE the favourable extreme raises the peak.
-      if (pos && LOCK_ON) {
+      // Futures: paper skips the lock but runs the common stop in index points.
+      // The "premium" here IS the futures price (DELTA 1, no theta), same walk.
+      if (pos && (LOCK_ON || IS_FUT)) {
+        const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
+        const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
         const isCE = pos.side === "CE";
         const entryPrem = pos.optionEntryLtp;
         // Simulated premium at a spot level on this bar, in paise like a real quote.
@@ -394,15 +407,15 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
         // a) the open
         const pOpen = prem(c.open);
         if (pOpen > pos.peak) pos.peak = pOpen;
-        let lock = tradeGuards.checkProfitLock(entryPrem, pOpen, pos.peak, lockOpts);
+        let lock = lockAt(entryPrem, pOpen, pos.peak, lockOpts);
         if (lock) {
           close(c.open, c.time, `${lock} (bar opened through it — filled at the open ${c.open})`, gIdx);
         } else {
           // b) open → adverse extreme: the floor set by the peak so far is crossed.
           const adverse = isCE ? c.low : c.high;
-          lock = tradeGuards.checkProfitLock(entryPrem, prem(adverse), pos.peak, lockOpts);
+          lock = lockAt(entryPrem, prem(adverse), pos.peak, lockOpts);
           if (lock) {
-            const floor = tradeGuards.exitLevelLtp(entryPrem, pos.peak, lockOpts);
+            const floor = levelAt(entryPrem, pos.peak, lockOpts);
             const raw = spotForPremium(floor, c.time);
             // Never better than the open — the open did not trigger, so the floor lies past it.
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
@@ -412,7 +425,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
             const pFav = prem(isCE ? c.high : c.low);
             if (pFav > pos.peak) pos.peak = pFav;
             // d) favourable → close: a lock armed by THIS bar's peak and given back.
-            lock = tradeGuards.checkProfitLock(entryPrem, prem(c.close), pos.peak, lockOpts);
+            lock = lockAt(entryPrem, prem(c.close), pos.peak, lockOpts);
             if (lock) close(c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close ${c.close})`, gIdx, true);
           }
         }

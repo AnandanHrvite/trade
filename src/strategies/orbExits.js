@@ -65,7 +65,7 @@ function trackExcursion(pos, spotPrice, optionLtp, nowMs) {
  *
  * @returns {{exit:boolean, reason:string|null}}
  */
-function evaluateTickExits(pos, { optionLtp }) {
+function evaluateTickExits(pos, { spotPrice, optionLtp }) {
   if (!pos) return { exit: false, reason: null };
   // Global profit lock (shared across every strategy — see tradeGuards). Options
   // only: it is defined on option premium, and in futures mode optionLtp mirrors
@@ -73,6 +73,10 @@ function evaluateTickExits(pos, { optionLtp }) {
   if (!pos.isFutures) {
     const plMsg = require("../utils/tradeGuards").checkProfitLock(pos.optionEntryLtp, optionLtp, pos.peakPremium);
     if (plMsg) return { exit: true, reason: plMsg };
+  } else {
+    // Futures: the same common stop mapped to index points (entry = fill spot).
+    const fsMsg = require("../utils/tradeGuards").checkFuturesStop(pos.side, pos.entrySpot, spotPrice, pos.mfeSpotPts);
+    if (fsMsg) return { exit: true, reason: fsMsg };
   }
   return { exit: false, reason: null };
 }

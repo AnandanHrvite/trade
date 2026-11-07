@@ -116,7 +116,8 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   // FUTURES MODE (2026-08-13). INSTRUMENT=NIFTY_FUTURES prices the SAME trades in
   // spot points: no delta, no theta, futures charges, slippage in index points.
   // Paper/live never apply the premium profit lock to a futures leg, so here too a
-  // futures trade is held to the end of the session.
+  // futures trade is held to the end of the session unless the common stop
+  // (PREMIUM_SL_ENABLED, in index points) closes it first.
   const IS_FUT = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "120");           // widened for slightly-ITM
@@ -189,6 +190,33 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
       // This candle's index in the flat multi-day array. The signal engine needs
       // the multi-day window, not just today's bars.
       const gIdx = globalBase + i;
+
+      // ── Futures: no premium lock (paper/live skip it), but the common stop in
+      //    index points (tradeGuards.futuresStopLevel), same open → adverse →
+      //    favourable → close walk. bestFavPts = best favourable index move so far.
+      if (position && IS_FUT) {
+        const isCE = position.side === "CE";
+        const _fav = (px) => (px - position.entrySpot) * (isCE ? 1 : -1);
+        const _lvl = () => tradeGuards.futuresStopLevel(position.side, position.entrySpot, position.bestFavPts);
+        const _hit = (px, lvl) => lvl != null && (isCE ? px <= lvl : px >= lvl);
+        const _why = (lvl) => tradeGuards.premiumStopSpotReason(Math.round(_fav(lvl) * 100) / 100, position.bestFavPts);
+        position.bestFavPts = Math.max(position.bestFavPts || 0, _fav(c.open));
+        let lvl = _lvl();
+        if (_hit(c.open, lvl)) {
+          closePos(position, c.open, c.time, `${_why(lvl)} (bar opened through it — filled at the open)`);
+          _book(position, c.time); position = null; continue;
+        }
+        if (_hit(isCE ? c.low : c.high, lvl)) {
+          closePos(position, lvl, c.time, _why(lvl));
+          _book(position, c.time); position = null; continue;
+        }
+        position.bestFavPts = Math.max(position.bestFavPts, _fav(isCE ? c.high : c.low));
+        lvl = _lvl();
+        if (_hit(c.close, lvl)) {
+          closePos(position, c.close, c.time, `${_why(lvl)} (trailed and given back inside the bar — filled at the close)`);
+          _book(position, c.time + 5 * 60); position = null; continue;
+        }
+      }
 
       // ── In-position: the global profit lock, simulated on the δ-modelled premium ──
       //    Paper checks it on every tick; a bar is replayed as open → adverse
@@ -378,7 +406,7 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
   });
   res.send(html);
 }

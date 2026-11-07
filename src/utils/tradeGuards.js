@@ -224,6 +224,58 @@ function premiumStopSpotReason(stopPts, bestFavPts) {
   return `Stop-loss trail (≈${stopPts.toFixed(0)}pt spot kept of ${(bestFavPts || 0).toFixed(0)}pt best)`;
 }
 
+// ── Futures stop (all strategies) ───────────────────────────────────────────
+// A futures position has no premium, so the premium stop above is applied in
+// INDEX POINTS with the same mapping the backtests use for futures (seed 200,
+// delta 1): at 20 / 20 / 15 → stop 40pt against entry, moved to entry once the
+// best move reaches +40pt, then trailed 15pt behind the best move.
+// side: "CE" = LONG, "PE" = SHORT. bestFavPts = best favourable move so far (pts).
+// Example: long at 24000 → stop 23960; best 24060 → stop 24045.
+// Returns an exit reason, or null (stop off, or not hit).
+function futuresStopLevel(side, entrySpot, bestFavPts) {
+  if (!Number.isFinite(entrySpot) || entrySpot <= 0) return null;
+  const stopPts = premiumStopSpotPts(Number.isFinite(bestFavPts) ? bestFavPts : 0, 1.0);
+  if (stopPts == null) return null;
+  return parseFloat((entrySpot + stopPts * (side === "PE" ? -1 : 1)).toFixed(2));
+}
+function checkFuturesStop(side, entrySpot, spot, bestFavPts) {
+  if (!Number.isFinite(entrySpot) || entrySpot <= 0 || !Number.isFinite(spot) || spot <= 0) return null;
+  const dir = side === "PE" ? -1 : 1;
+  const fav = (spot - entrySpot) * dir;
+  const best = Math.max(fav, Number.isFinite(bestFavPts) ? bestFavPts : 0);
+  const stopPts = premiumStopSpotPts(best, 1.0);
+  if (stopPts == null || fav > stopPts) return null;
+  const lvl = parseFloat((entrySpot + stopPts * dir).toFixed(2));
+  return `${premiumStopSpotReason(stopPts, best)} — futures ${spot} hit the stop ${lvl} (entry ${entrySpot})`;
+}
+
+// The same futures stop as checkProfitLock / exitLevelLtp options, for engines
+// that run the lock on the index level itself (entry = the futures fill): the %
+// are rescaled so the stop lands at the same 40pt / +40pt / 15pt as above.
+function futuresStopOpts(entryLevel) {
+  const k = Number.isFinite(entryLevel) && entryLevel > 0 ? 200 / entryLevel : NaN;
+  return { slPct: livePremiumSlPct() * k, slBePct: livePremiumSlBePct() * k, slTrailPts: livePremiumSlTrailPts() };
+}
+
+// ── Stock stop (cash-equity legs: EarlyBird stock, GAP_RUNAWAY_STK) ─────────
+// The premium stop's % are sized for an option premium; on a share price a 20%
+// stop never fires. Stocks get their own sizes, switched by the same
+// PREMIUM_SL_ENABLED: sell STOCK_SL_PCT % against entry, move to entry once
+// +STOCK_SL_BE_PCT %, then trail STOCK_SL_TRAIL_PCT % of entry behind the best.
+// Example (1 / 1 / 0.5): buy ₹1000 → stop 990; best 1010 → stop 1005.
+// Pass the result as checkProfitLock / exitLevelLtp options (prices mirrored for a short).
+function liveStockSlPct()      { return parseFloat(process.env.STOCK_SL_PCT ?? "1"); }
+function liveStockSlBePct()    { return parseFloat(process.env.STOCK_SL_BE_PCT ?? "1"); }
+function liveStockSlTrailPct() { return parseFloat(process.env.STOCK_SL_TRAIL_PCT ?? "0.5"); }
+function stockStopOpts(entryPrice) {
+  const trailPct = liveStockSlTrailPct();
+  return {
+    slPct:      liveStockSlPct(),
+    slBePct:    liveStockSlBePct(),
+    slTrailPts: Number.isFinite(entryPrice) && Number.isFinite(trailPct) ? entryPrice * trailPct / 100 : NaN,
+  };
+}
+
 function _premiumStopOpts(o) {
   return { enabled: o.slEnabled, slPct: o.slPct, bePct: o.slBePct, trailPts: o.slTrailPts };
 }
@@ -323,6 +375,10 @@ module.exports = {
   premiumStopLtp,
   premiumStopSpotPts,
   premiumStopSpotReason,
+  futuresStopLevel,
+  checkFuturesStop,
+  futuresStopOpts,
+  stockStopOpts,
   exitLevelLtp,
   reentryCooldownMs,
   reentryCooldownUntil,

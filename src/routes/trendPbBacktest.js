@@ -36,6 +36,15 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+
+// Futures stop on the long-equivalent futures "premium" (entry, price and peak
+// all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
+function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak) {
+  const lvl = _futStopLvl(entry, peak);
+  if (lvl == null || px > lvl) return null;
+  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+}
 const backtestCosts = require("../config/backtestCosts");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -160,22 +169,26 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
       // ── In-position management (mirrors paper _checkExits): the global profit
       //    lock on the simulated premium is the only automatic exit. Intra-bar
       //    path, NO look-ahead: open → adverse extreme → favourable extreme →
-      //    close. Futures have no premium, so paper skips the lock — so do we. ──
+      //    close. Futures: paper skips the lock, runs the index-point stop. ──
       if (position) {
         const pos = position;
-        if (!IS_FUT) {
+        // Futures: paper skips the lock but runs the common stop in index points.
+        // The "premium" here IS the futures price (DELTA 1, no theta), same walk.
+        const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
+        const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
+        {
           const isCE = pos.side === "CE";
           const barEnd = c.time + 5 * 60;
           // a) the open
           const pOpen = premAt(pos, c.open, c.time);
           if (pOpen > pos.peak) pos.peak = pOpen;
-          let lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, pOpen, pos.peak);
+          let lock = lockAt(pos.optionEntryLtp, pOpen, pos.peak);
           if (lock) { closeAndPush(pos, c.open, c.time, `${lock} (bar opened through it — filled at the open)`); position = null; continue; }
           // b) open → adverse extreme: the floor is crossed on the way down.
           const pAdv = premAt(pos, isCE ? c.low : c.high, barEnd);
-          lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, pAdv, pos.peak);
+          lock = lockAt(pos.optionEntryLtp, pAdv, pos.peak);
           if (lock) {
-            const lvl = tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak);
+            const lvl = levelAt(pos.optionEntryLtp, pos.peak);
             const raw = spotForPrem(pos, lvl, barEnd);
             // Never better than the open (the open did not trigger, so the level lies past it).
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
@@ -186,7 +199,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
           if (pFav > pos.peak) pos.peak = pFav;
           // d) favourable → close: a lock armed by THIS peak and given back.
           const pClose = premAt(pos, c.close, barEnd);
-          lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, pClose, pos.peak);
+          lock = lockAt(pos.optionEntryLtp, pClose, pos.peak);
           if (lock) { closeAndPush(pos, c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close)`, true); position = null; continue; }
         }
         continue;   // in-position candle handled

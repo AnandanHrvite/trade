@@ -36,6 +36,15 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+
+// Futures stop on the long-equivalent futures "premium" (entry, price and peak
+// all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
+function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak) {
+  const lvl = _futStopLvl(entry, peak);
+  if (lvl == null || px > lvl) return null;
+  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+}
 const backtestCosts = require("../config/backtestCosts");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -161,9 +170,10 @@ async function runTrendDayScalpBacktest(intraday) {
       const spotMove = (prem - pos.optionEntryLtp + thetaCost / LOT_SIZE) / DELTA;
       return pos.side === "CE" ? pos.entrySpot + spotMove : pos.entrySpot - spotMove;
     }
-    /** The profit lock on one simulated premium (options only — paper skips futures). */
+    /** The profit lock on one simulated premium. Futures: paper skips the lock but
+     *  runs the common stop in index points — the "premium" IS the futures price. */
     function lockHit(prem) {
-      if (IS_FUT) return null;
+      if (IS_FUT) return _futStopMsg(pos.optionEntryLtp, prem, pos.peak);
       return tradeGuards.checkProfitLock(pos.optionEntryLtp, prem, pos.peak);
     }
     function close(exitSpot, exitTime, reason) {
@@ -206,7 +216,7 @@ async function runTrendDayScalpBacktest(intraday) {
           const adv = isCE ? c.low : c.high;
           hit = lockHit(premiumAt(adv, barEnd));
           if (hit) {
-            const lvl = tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak);
+            const lvl = IS_FUT ? _futStopLvl(pos.optionEntryLtp, pos.peak) : tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak);
             const raw = spotForPrem(lvl, barEnd);
             // Never better than the open (the open did not trigger, so the level lies past it).
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);

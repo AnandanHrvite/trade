@@ -85,6 +85,37 @@ Every Start-All run ends in a **confirmation modal that lists each strategy by n
 
 ## Strategies
 
+### Entry & exit at a glance (checked against the code 2026-11-08)
+
+This list is the current truth. Where an older strategy section below talks about its own stop, target, trail or signal exit, that text is history — those exits were removed on 2026-11-07.
+
+**Exit — the same for every strategy.** No strategy has its own exit any more. A trade closes only by:
+- **Stop-loss & trail** (Settings → Common Rules, `PREMIUM_SL_*`): sell if the option premium falls 20% below entry; once it is up 20%, the stop moves to entry; after that it trails ₹15 below the best premium. Example: buy 100 → stop 80; best 120 → stop 105; best 150 → stop 135.
+  - **Futures mode**: the same stop in index points — 40 pts against you, moved to entry at +40 pts, then 15 pts behind the best. Example: long at 24000 → stop 23960.
+  - **Stock trades** (EarlyBird stock, Gap Runaway stock): own sizes `STOCK_SL_*` — 1% against you, moved to entry at +1%, then 0.5% of entry behind the best. Example: buy ₹1000 → stop ₹990.
+- **Profit lock** (`PROFIT_LOCK_*`, when on): once premium is up the arm %, never sell below the floor %. When both are on, the higher level wins.
+- A manual exit, `/stop`, or the session end at `TRADE_STOP_TIME`.
+- After any exit, no new entry for `EXIT_REENTRY_COOLDOWN_CANDLES` candles (default 2).
+
+**Entry** (CE = buy a call, PE = buy a put; PE is always the mirror). With the common trade window on, NIFTY / BANK NIFTY entries are only taken 10:00–14:00.
+- **EMA_RSI_ST** — EMA20 above EMA50, RSI between 52 and 70, SuperTrend green, candle closes above EMA20; the next candle must then break that close.
+- **EMA_RSI_ST_V2** — EMA20 above EMA50, close above EMA20, RSI above 52; no SuperTrend gate, no RSI cap.
+- **BB_RSI** — `BB_RSI_DIRECTION=breakout`: close above the upper band with RSI ≥ 75 → CE. `fade`: close below the lower band with RSI ≤ 25 → CE. Skinny bands and a flat RSI are skipped.
+- **Price Action** — break of the last swing high, a dip that takes out the pullback low, then the first up-close back at an untouched order block.
+- **ORB** — 09:15–09:30 range. A candle closes beyond it, the next candle closes beyond that one, and RSI + SuperTrend agree. If RSI or SuperTrend blocks it, it waits for a fresh breakout.
+- **EMA9_VWAP** — EMA9 crosses above VWAP + 1σ (CE) or below VWAP − 1σ (PE).
+- **Trend Pullback** — 15-min trend up (higher highs/lows, EMA20 > EMA50, above VWAP), a small 5-min dip to EMA20, then a strong candle closing back above it. VWAP is a plain average (no volume).
+- **Trend Day Scalp** — by 10:15 the day must have moved a lot on one side of VWAP; then one dip to VWAP/EMA20 that is bought back.
+- **RSI Pivot ST / BN Pivot RSI ST** — RSI above 70 and a candle crosses and closes above R1; the next candle must clear that candle's high (BANK NIFTY version: same rules).
+- **PIVOT_EMA_ST** — EMA20 crosses EMA50 inside the PP–R1 zone, SuperTrend green.
+- **ST_RSI_PIV_BB** — all four on one candle: SuperTrend green, RSI above 70, close above R1, close above the upper Bollinger band.
+- **SAIL_VWAP_ST** — a SAIL candle crosses VWAP, then within 3 candles one closes past the cross candle's high, SuperTrend green.
+- **Prev ORB Scalp** — the 09:15 15-min candle closes outside yesterday's high/low; enter on the first 3-min close beyond that candle. If that first break comes before the entry start (10:00 with the common window), there is no trade that day.
+- **HA Scalp** — a 15-min Heikin Ashi candle with no wick against the trend, on the right side of the 50 MA.
+- **SIMPLE_9:30** — at 09:25 pick the CE and PE nearest ₹180; buy the first one to trade above ₹180 by 09:35.
+- **EarlyBird** — NIFTY's first 15-min candle is strong one way; buy (or short) when price breaks that candle's high (low) by ₹5.
+- **Gap Runaway** — yesterday's daily RSI is extreme and today gaps the other way; buy at the open.
+
 ### Strategy 1: EMA_RSI_ST — EMA 20/50 (+9 opt) + RSI + SuperTrend (entry redefined 2026-05-31; PSAR stripped 2026-06-12; 3 / 5 / 15-min via env)
 - **Entry (all 4 true; signal candle, entered on the confirmation cross by default)**:
   - **CE**: EMA alignment bullish — 2-EMA (default) EMA20 **above** EMA50, or triple-stack (`EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED`) EMA9 > EMA20 > EMA50 (`EMA_RSI_ST_EMA_FASTEST`/`EMA_RSI_ST_EMA_FAST`/`EMA_RSI_ST_EMA_SLOW`) · RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · **SuperTrend bullish** · **close beyond base EMA** (`EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED`, default on): signal candle close **above** the base EMA — base = EMA-fastest (9) when triple-stack is on, else EMA-fast (20).

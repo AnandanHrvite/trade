@@ -40,6 +40,15 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+
+// Futures stop on the long-equivalent futures "premium" (entry, price and peak
+// all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
+function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak) {
+  const lvl = _futStopLvl(entry, peak);
+  if (lvl == null || px > lvl) return null;
+  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+}
 const backtestCosts = require("../config/backtestCosts");
 
 const ACCENT = "#e879f9";
@@ -189,23 +198,27 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
 
     /** The global profit lock on one bar — options only (futures mirror spot). */
     function lockExit(c) {
-      if (IS_FUT) return;
+      // Futures: paper skips the profit lock but runs the common stop in index
+      // points. The "premium" here IS the futures price (DELTA 1, no theta), so
+      // the same walk applies with that stop alone.
+      const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
+      const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
       const isCE = pos.side === "CE";
       const entry = pos.optionEntryLtp;
       const pOpen = premAt(c.open, c.time);
       if (pOpen > pos.peakPrem) pos.peakPrem = pOpen;
-      let msg = tradeGuards.checkProfitLock(entry, pOpen, pos.peakPrem, lockOpts);
+      let msg = lockAt(entry, pOpen, pos.peakPrem, lockOpts);
       if (msg) { close(c.open, c.time, `${msg} (bar opened through it — filled at the open)`, "PROFIT_LOCK"); return; }
-      msg = tradeGuards.checkProfitLock(entry, premAt(isCE ? c.low : c.high, c.time), pos.peakPrem, lockOpts);
+      msg = lockAt(entry, premAt(isCE ? c.low : c.high, c.time), pos.peakPrem, lockOpts);
       if (msg) {
-        const floor = tradeGuards.exitLevelLtp(entry, pos.peakPrem, lockOpts);
+        const floor = levelAt(entry, pos.peakPrem, lockOpts);
         const raw = pos.entrySpot + (isCE ? 1 : -1) * (floor - entry) / DELTA;
         close(isCE ? Math.min(c.open, raw) : Math.max(c.open, raw), c.time, msg, "PROFIT_LOCK");
         return;
       }
       const pFav = premAt(isCE ? c.high : c.low, c.time);
       if (pFav > pos.peakPrem) pos.peakPrem = pFav;
-      msg = tradeGuards.checkProfitLock(entry, premAt(c.close, c.time), pos.peakPrem, lockOpts);
+      msg = lockAt(entry, premAt(c.close, c.time), pos.peakPrem, lockOpts);
       if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, "PROFIT_LOCK", true);
     }
 

@@ -46,27 +46,24 @@ function _utcSecToIstMins(unixSec) { return Math.floor((unixSec + 19800) / 60) %
 function _istDayOf(unixSec) { return Math.floor((unixSec + 19800) / 86400); }
 function _r2(x) { return Math.round(x * 100) / 100; }
 
-function _hasVolume(c) { return c && typeof c.volume === "number" && c.volume > 0; }
 
 /**
- * Day-anchored session VWAP (09:15 → last candle) on the given candles. Falls
- * back to TWAP when candles carry no volume (indices have no spot volume). The
- * alignment test (close above/below) stays meaningful either way.
+ * Day-anchored session VWAP (09:15 → last candle) on the given candles, as an
+ * EQUAL-WEIGHTED mean of HLC3 — volume is never read. Paper bars count ticks as
+ * "volume" and history bars carry exchange volume, so a volume-weighted mean gave
+ * Paper and Backtest different VWAPs for the same session (same reason as EMA9_VWAP).
  */
 function computeVwap(candles) {
   const rangeStartMin = _parseMins("TREND_PB_SESSION_START", "09:15");
   if (!candles || candles.length === 0) return null;
   const day = _istDayOf(candles[candles.length - 1].time);
-  let sumPV = 0, sumV = 0, sumP = 0, count = 0, anyVol = false;
+  let sumP = 0, count = 0;
   for (const c of candles) {
     if (_istDayOf(c.time) !== day) continue;
     if (_utcSecToIstMins(c.time) < rangeStartMin) continue;
-    const tp = (c.high + c.low + c.close) / 3;
-    sumP += tp; count++;
-    if (_hasVolume(c)) { sumPV += tp * c.volume; sumV += c.volume; anyVol = true; }
+    sumP += (c.high + c.low + c.close) / 3; count++;
   }
   if (count === 0) return null;
-  if (anyVol && sumV > 0) return _r2(sumPV / sumV);
   return _r2(sumP / count);
 }
 

@@ -444,6 +444,8 @@ const _SETTINGS_KEY_MATCHERS = [
   /^EXIT_REENTRY_/,
   //   PREMIUM_SL_* — the global premium stop-loss & trail; it changes exits.
   /^PREMIUM_SL_/,
+  //   STOCK_SL_* — the stop sizes for stock legs (same switch as PREMIUM_SL_ENABLED).
+  /^STOCK_SL_/,
 ];
 
 function snapshotSettings() {

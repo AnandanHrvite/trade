@@ -1469,6 +1469,17 @@ function onTick(tick) {
         return;
       }
     }
+    // Futures: the same common stop mapped to index points (entry = fill price).
+    if (pos.isFutures && ltp > 0) {
+      const _dir = pos.side === "CE" ? 1 : -1;
+      const _bestFav = pos.bestPrice ? (pos.bestPrice - pos.entryPrice) * _dir : 0;
+      const _fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entryPrice, ltp, _bestFav);
+      if (_fsMsg) {
+        log(`🔒 [PAPER] ${_fsMsg}`);
+        simulateSell(ltp, _fsMsg, ltp);
+        return;
+      }
+    }
     return;
   }
 

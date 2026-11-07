@@ -336,11 +336,15 @@ function getSignal(candles, opts) {
   base.breakLevel = level;
 
   // ── 3. ENTRY — the FIRST close beyond the analysis candle's extreme. ──────
+  // The scan starts at the setup time, NOT at the common-window start: a break
+  // before the window opens is still the day's first break, so it spends the setup
+  // (refused below) instead of letting a stale break be chased when the window opens.
   const today = lv.day;
+  const floorMin = commonTradeWindow.entryStartFloor(cfg.entryStartMin);
   let first = null;
   for (const c of candles) {
     if (!_okBar(c) || _istDayOf(c.time) !== today) continue;
-    if (_utcSecToIstMins(c.time) < commonTradeWindow.entryStartFloor(cfg.entryStartMin)) continue;
+    if (_utcSecToIstMins(c.time) < cfg.entryStartMin) continue;
     if (isPE ? c.close < level : c.close > level) { first = c; break; }
   }
   const setupTxt =
@@ -353,6 +357,13 @@ function getSignal(candles, opts) {
     return base;
   }
   base.firstBreakTime = first.time;
+  if (_utcSecToIstMins(first.time) < floorMin) {
+    base.spent = true;
+    base.skipReason = base.reason =
+      `${setupTxt} · the first ${cfg.resolutionMins}-min close beyond ${level} was the ${_fmtMins(_utcSecToIstMins(first.time))} ` +
+      `candle, before the ${_fmtMins(floorMin)} entry start — setup used, no trade today`;
+    return base;
+  }
   if (first.time !== sig.time) {
     base.spent = true;
     base.skipReason = base.reason =

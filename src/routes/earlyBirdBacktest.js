@@ -751,7 +751,7 @@ function _walkLeg(setup, bars, cfg, ctx) {
       entryIdx = i;
     }
     const held = Math.max(1, Math.round((bar.time - pos.entryTime) / 60 / cfg.resolutionMins) + 1);
-    const hit = _lockExitOnBar(ls, pos, bar, held, i === entryIdx, ctx.lock);
+    const hit = _lockExitOnBar(ls, pos, bar, held, i === entryIdx, ctx.lockFor ? ctx.lockFor(ls.E) : ctx.lock);
     if (hit && _num(hit.price)) {
       return { pos, exit: { bar, price: hit.price, type: "PROFIT_LOCK", reason: hit.reason, held, atClose: hit.atClose } };
     }
@@ -828,7 +828,15 @@ async function runEarlyBirdBacktest(data, onProgress) {
   const LOCK = _lockOpts();
   // Per-leg walk context: the option leg locks on its modelled premium, a stock
   // leg on its share price.
-  const ctxFor = (setup) => ({ SLIP, lock: LOCK, opt: setup && setup.optionSide ? OPT : null });
+  // The stop is sized per leg, the same as paper: a stock leg uses the stock stop,
+  // a futures leg the futures stop, a premium leg the premium stop.
+  const ctxFor = (setup) => {
+    const opt = setup && setup.optionSide ? OPT : null;
+    const lockFor = !opt ? (E) => Object.assign({}, LOCK, tradeGuards.stockStopOpts(E))
+      : opt.isFutures ? (E) => Object.assign({}, LOCK, tradeGuards.futuresStopOpts(E))
+      : null;
+    return { SLIP, lock: LOCK, lockFor, opt };
+  };
   if (earlyBird.tradesOption(cfg)) {
     console.log(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" — NIFTY option leg is simulated: ` +
       (OPT.on

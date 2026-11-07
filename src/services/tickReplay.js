@@ -212,7 +212,10 @@ function requestCancel() {
 //      breakeven, time stop, signal exit, per-strategy EOD and daily-loss limit
 //      was removed from the engines, so results cached under the old exits are stale.
 // v22: common premium stop-loss & trail (PREMIUM_SL_*) — forced off for recordings that lack it.
-const REPLAY_CACHE_VERSION = 22;
+// v23: stock legs use STOCK_SL_* stop sizes, futures get the stop in index points,
+//      Trend_PB VWAP is equal-weighted, ORB hunts a fresh breakout after an RSI/ST
+//      block, PREV_ORB_SCALP spends a setup broken before the entry start.
+const REPLAY_CACHE_VERSION = 23;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");

@@ -268,13 +268,22 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         const isCE = position.side === "CE";
         const pOpen = _priceAt(candle.open);
         if (pOpen > position.peak) position.peak = pOpen;
+        // Futures: the common stop in index points (tradeGuards.futuresStopLevel), as
+        // paper. The price here IS the futures price, so peak − entry = best move.
+        const _fsBest = isFutures ? position.peak - position.entryPrice : 0;
+        const _fsLvl  = isFutures ? tradeGuards.futuresStopLevel(position.side, position.entryPrice, _fsBest) : null;
+        const _fsWhy  = () => tradeGuards.premiumStopSpotReason((_fsLvl - position.entryPrice) * (isCE ? 1 : -1), _fsBest);
         const lockOpen = tradeGuards.checkProfitLock(_priceBase(), pOpen, position.peak);
         if (lockOpen) {
           exitPrice  = candle.open;
           exitReason = `${lockOpen} (bar opened through it — filled at the open)`;
+        } else if (_fsLvl != null && (isCE ? candle.open <= _fsLvl : candle.open >= _fsLvl)) {
+          exitPrice  = candle.open;
+          exitReason = `${_fsWhy()} (bar opened through it — filled at the open)`;
         } else {
           const pAdv = _priceAt(isCE ? candle.low : candle.high);
           const lockAdv = tradeGuards.checkProfitLock(_priceBase(), pAdv, position.peak);
+          const fsHit = _fsLvl != null && (isCE ? candle.low <= _fsLvl : candle.high >= _fsLvl);
           if (lockAdv) {
             const g = tradeGuards;
             const floor = g.exitLevelLtp(_priceBase(), position.peak);
@@ -282,6 +291,11 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
             // Never better than the open (the open did not trigger, so the level lies past it).
             exitPrice  = parseFloat((isCE ? Math.min(candle.open, raw) : Math.max(candle.open, raw)).toFixed(2));
             exitReason = lockAdv;
+            // The futures stop, if it sits nearer the open, is touched first.
+            if (fsHit && (isCE ? _fsLvl > exitPrice : _fsLvl < exitPrice)) { exitPrice = _fsLvl; exitReason = _fsWhy(); }
+          } else if (fsHit) {
+            exitPrice  = _fsLvl;
+            exitReason = _fsWhy();
           } else {
             const pFav = _priceAt(isCE ? candle.high : candle.low);
             if (pFav > position.peak) position.peak = pFav;

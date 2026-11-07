@@ -659,9 +659,11 @@ function mirrorPrice(side, entry, px) {
   return side === "SHORT" ? 2 * entry - px : px;
 }
 
-function checkProfitLockExit(side, entry, price, best) {
+// `opts` = checkProfitLock options; the routes pass tradeGuards.stockStopOpts for a
+// stock leg and futuresStopOpts for a futures leg, so the stop is sized for that price.
+function checkProfitLockExit(side, entry, price, best, opts) {
   if (!_num(entry) || !_num(price) || !_num(best)) return null;
-  const msg = tradeGuards.checkProfitLock(entry, mirrorPrice(side, entry, price), mirrorPrice(side, entry, best));
+  const msg = tradeGuards.checkProfitLock(entry, mirrorPrice(side, entry, price), mirrorPrice(side, entry, best), opts);
   if (!msg) return null;
   return {
     exit: true,

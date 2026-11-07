@@ -710,6 +710,16 @@ function onTick(tick) {
         return;
       }
     }
+    // Futures: no option premium, so the same stop runs on the index move
+    // (tradeGuards.checkFuturesStop). Entry/exit are index levels (see simulateSell).
+    if (isFut && price > 0) {
+      const _fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entryPrice, price, pos.mfeSpotPts);
+      if (_fsMsg) {
+        log(`🔒 [PA-PAPER] ${_fsMsg}`);
+        simulateSell(price, _fsMsg, price);
+        return;
+      }
+    }
   }
 }
 
