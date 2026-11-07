@@ -105,7 +105,8 @@ const INDICATOR_HISTORY_CANDLES = 400;
 // the option premium, never spot.
 function liveProfitLockArmPct()   { return parseFloat(process.env.PROFIT_LOCK_ARM_PCT   || "8"); }
 function liveProfitLockFloorPct() { return parseFloat(process.env.PROFIT_LOCK_FLOOR_PCT || "5"); }
-function liveProfitLockEnabled()  { return String(process.env.PROFIT_LOCK_ENABLED ?? "true").toLowerCase() === "true"; }
+// Default OFF: unset = no profit lock in any strategy. Turn it on from Settings → Common Rules.
+function liveProfitLockEnabled()  { return String(process.env.PROFIT_LOCK_ENABLED ?? "false").toLowerCase() === "true"; }
 // TRAIL — once armed, the floor also follows the peak: it is never below
 // entry + TRAIL% of the best premium gain so far (0 = off, fixed floor only).
 // Added 2026-10-01 after a V2 PE ran 142.75 → 330 with the floor stuck at

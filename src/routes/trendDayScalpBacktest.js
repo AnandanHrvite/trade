@@ -80,7 +80,6 @@ async function runTrendDayScalpBacktest(intraday) {
   // position), so each one is measured from the exit bar's open (≈ c.time here).
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
 
-  const PROFIT_LOCK  = parseFloat(process.env.TDS_DAILY_PROFIT_LOCK || "3000");
   // Global per-trade profit lock — the same live settings paper reads.
   const LOCK_FLOOR_PCT = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
   const LOCK_TRAIL_PCT = tradeGuards.PROFIT_LOCK_TRAIL_PCT;
@@ -132,7 +131,6 @@ async function runTrendDayScalpBacktest(intraday) {
     gateStats.tradeable++;
 
     // ── Hunt entries on later closed bars. ────────────────────────────────────
-    let dayPnl = 0, dayClosed = false;
     let reentryBlockUntilTs = 0;   // wait-after-any-exit cooldown, per day like paper's session
     let pos = null;
 
@@ -174,7 +172,6 @@ async function runTrendDayScalpBacktest(intraday) {
     }
     function close(exitSpot, exitTime, reason) {
       const p = priceAt(exitSpot, exitTime);
-      dayPnl += p.pnl;
       trades.push({
         side: pos.side,
         entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),
@@ -191,8 +188,6 @@ async function runTrendDayScalpBacktest(intraday) {
       pos = null;
       // Wait-after-any-exit cooldown — every exit reason, both sides.
       if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = exitTime + REENTRY_COOLDOWN_SECS;
-      // Day-level breaker — identical threshold to the paper route.
-      if (PROFIT_LOCK > 0 && dayPnl >= PROFIT_LOCK) dayClosed = true;
     }
 
     for (let p = gateIdxPos + 1; p < idxs.length; p++) {
@@ -232,7 +227,7 @@ async function runTrendDayScalpBacktest(intraday) {
       }
 
       // ── Look for a new entry on this bar's close. ──────────────────────────
-      if (!pos && !dayClosed) {
+      if (!pos) {
         const closeMins = istMin + RES;
         if (closeMins > cfg.entryEndMin) continue;
         const sig = tdsStrategy.getSignal(sorted, {
@@ -302,7 +297,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Day gate PASSED", value: `${gs.tradeable} / ${gs.decided} (${gs.decided ? ((gs.tradeable / gs.decided) * 100).toFixed(0) : 0}%)` },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. New entries stop for the day at a ₹${process.env.TDS_DAILY_PROFIT_LOCK || "3000"} day profit. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.TDS_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.TDS_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.TDS_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.TDS_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
   });
   res.send(html);
 }

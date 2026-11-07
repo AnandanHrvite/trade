@@ -158,7 +158,6 @@ function _pollMs()          { return _intEnv(process.env.EARLYBIRD_POLL_MS, 2000
 function _historyLagMs()    { return _intEnv(process.env.EARLYBIRD_HISTORY_LAG_MS, 5000, 0, 120000); }
 /** Calendar days of daily history to reach back for the previous close. */
 function _warmupDays()      { return _intEnv(process.env.EARLYBIRD_WARMUP_DAYS, 10, 3, 120); }
-function _dailyProfitLock() { return _floatEnv(process.env.EARLYBIRD_DAILY_PROFIT_LOCK, 0); }
 /** Symbols per getQuotes call. Fyers accepts a comma list; keep it modest. */
 function _quoteChunk()      { return _intEnv(process.env.EARLYBIRD_QUOTE_CHUNK, 20, 1, 50); }
 /** A quote older than this stops being used to test an exit. */
@@ -1379,8 +1378,6 @@ async function _closeOptionPositionInner(ex) {
         spotExit: exitSpot, optionExit: exitPremium, pnl, reason: ex.reason,
       });
     } catch (_) {}
-
-    if (s === state) _applyDayBreakers();
   } finally {
     if (!released) {
       log(`⚠️ ${LOG_TAG} OPTION — exit for ${pos.symbol} did not complete; releasing its capital block (P&L ₹${bookedPnl}).`);
@@ -1974,8 +1971,6 @@ function _closePosition(pos, ex) {
       spotExit: exitPrice, optionExit: exitPrice, pnl, reason: ex.reason,
     });
   } catch (_) {}
-
-  _applyDayBreakers();
 }
 
 /**
@@ -2003,20 +1998,7 @@ function _equityCharges(qty, entryPrice, exitPrice) {
   return _r2(brokerage + stt + txn + sebi + stamp + gst);
 }
 
-// ── Day-level breaker ────────────────────────────────────────────────────────
-/**
- * Evaluated after every exit. The daily PROFIT lock closes the day for NEW
- * entries; open positions are left to the profit lock / manual exit / session
- * stop. (Loss-based day limits were removed — the profit lock is the only exit.)
- */
-function _applyDayBreakers() {
-  if (state.dayClosed) return;
-  const lock = _dailyProfitLock();
-  if (lock > 0 && state.sessionPnl >= lock) {
-    _closeDay(`Daily profit lock hit (₹${state.sessionPnl} ≥ ₹${lock}) — banking the day`);
-  }
-}
-
+// ── Day close ────────────────────────────────────────────────────────────────
 function _closeDay(reason) {
   if (state.dayClosed) return;
   state.dayClosed = true;
@@ -2145,7 +2127,6 @@ router.get("/start", async (req, res) => {
   log(`⚙️ ${LOG_TAG} Gap rule  : a stock opening more than ${cfg.maxGapPct}% from its previous daily close is dropped either way.`);
   log(`⚙️ ${LOG_TAG} Levels    : entry = signal high/low ±${cfg.entryBufferPts}, frozen at ${_fmtMins(cfg.sessionStartMin + cfg.resolutionMins)}. Exit = the global profit lock only (no stop, target or square-off time).`);
   log(`⚙️ ${LOG_TAG} Windows   : entries ${_fmtMins(cfg.entryStartMin)}–${_fmtMins(cfg.entryEndMin)} · open positions close at the session auto-stop (TRADE_STOP_TIME)`);
-  log(`⚙️ ${LOG_TAG} Breakers  : daily profit lock ${_dailyProfitLock() > 0 ? "₹" + _dailyProfitLock() : "off"}`);
   log(`⚙️ ${LOG_TAG} Prices    : REST quote poll every ${_pollMs()}ms for the SHORTLIST only (candidates + open positions, ${_quoteChunk()} symbols per call). No second socket — that is a repo invariant — and socketManager.subscribeExtra is reserved for option contracts.`);
   log(`⏳ ${LOG_TAG} Waiting for ${_fmtMins(cfg.sessionStartMin + cfg.resolutionMins)} + ${_historyLagMs()}ms before the one and only scan of the day.`);
 
@@ -2484,7 +2465,6 @@ router.get("/status/data", (req, res) => {
     shortlistSize: _shortlist().size,
 
     dayClosed: state.dayClosed, dayClosedReason: state.dayClosedReason,
-    dailyProfitLock: _dailyProfitLock(),
 
     cfg: {
       resMin: cfg.resolutionMins,

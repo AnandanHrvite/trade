@@ -451,9 +451,9 @@ function snapshotSettings() {
       out[k] = process.env[k];
     }
   }
-  // Default-ON global guard: write the effective value even when the key is
+  // Global guard (default OFF): write the effective value even when the key is
   // unset, so a recording always says whether it was on.
-  if (out.PROFIT_LOCK_ENABLED === undefined) out.PROFIT_LOCK_ENABLED = "true";
+  if (out.PROFIT_LOCK_ENABLED === undefined) out.PROFIT_LOCK_ENABLED = "false";
   if (out.PROFIT_LOCK_TRAIL_PCT === undefined) out.PROFIT_LOCK_TRAIL_PCT = "70";
   if (out.PROFIT_LOCK_TRAIL_TIERS === undefined) out.PROFIT_LOCK_TRAIL_TIERS = "20:85,40:80";
   if (out.EXIT_REENTRY_COOLDOWN_CANDLES === undefined) out.EXIT_REENTRY_COOLDOWN_CANDLES = "2";

@@ -311,7 +311,6 @@ const SETTINGS_SCHEMA = [
 
       // ── Sizing & day-level breakers ──
       { key: "TDS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1", subheader: "Sizing & Day Breakers" },
-      { key: "TDS_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off). Giving profit back is what wrecks a steady curve.", default: "3000" },
 
       // ── Backtest ──
       { key: "TDS_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
@@ -354,7 +353,6 @@ const SETTINGS_SCHEMA = [
 
       // ── Sizing & day-level breakers ──
       { key: "HA_SCALP_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1", subheader: "Sizing & Day Breakers" },
-      { key: "HA_SCALP_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
 
       // ── Data plumbing ──
       { key: "HA_SCALP_POLL_MS", label: "Option Premium Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option premium is refreshed while a trade is open. Spot comes from the shared tick socket, so nothing else is polled.", default: "2000", subheader: "Data plumbing" },
@@ -431,7 +429,6 @@ const SETTINGS_SCHEMA = [
       // ── Sizing & day breakers ──
       { leg: "stock", key: "EARLYBIRD_QTY", label: "Quantity per Stock (shares)", type: "number", min: 1, max: 100000, step: 1, effect: EFFECT.INSTANT, desc: "Shares per position. This is CASH EQUITY, not options — there are no lots.", default: "100", subheader: "Sizing & Day Breakers" },
       { leg: "stock", key: "EARLYBIRD_MAX_CONCURRENT", label: "Max Positions At Once", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many stocks may be held simultaneously. When more confirm than this, the tightest-stop names are taken first.", default: "5" },
-      { key: "EARLYBIRD_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
 
       // ── Data plumbing ──
       { key: "EARLYBIRD_POLL_MS", label: "Stock Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the shortlisted stocks' prices are refreshed while setups are pending or positions are open.", default: "2000", subheader: "Data plumbing" },
@@ -980,7 +977,7 @@ const SETTINGS_SCHEMA = [
     nav: "Common Rules",
     group: "Trading",
     fields: [
-      { key: "PROFIT_LOCK_ENABLED", label: "Profit Lock (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail.", default: "true", subheader: "Rules (on / off)" },
+      { key: "PROFIT_LOCK_ENABLED", label: "Profit Lock (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail. Off (the default) = no strategy uses a profit lock.", default: "false", subheader: "Rules (on / off)" },
       { key: "EXIT_REENTRY_COOLDOWN_ENABLED", label: "Wait after any exit (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "After a trade closes, take no new trade for the number of candles set in \"Wait after any exit (candles)\". Off = a new trade can start on the very next signal.", default: "true" },
       { key: "MAX_BID_ASK_SPREAD_ENABLED", label: "Bid-Ask Spread Check (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Skip an entry when the option's bid-ask gap is wider than \"Max Bid-Ask Spread (pts)\". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap.", default: "true" },
       { key: "COMMON_TRADE_WINDOW_ENABLED", label: "Trade Window 10:00–14:00, exit 15:00 (all strategies)", type: "toggle", effect: EFFECT.SESSION, desc: "Every NIFTY / BANK NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle) and not Commodity (MCX hours). Overrides each strategy's own Entry Start / Entry End / Forced Exit; the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.", default: "true" },

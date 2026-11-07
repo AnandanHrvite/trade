@@ -58,25 +58,31 @@ function check(name, fn) {
   catch (e) { console.log(`  ❌ ${name}\n       ${e.message}`); fail++; }
 }
 /** Wipe every PROFIT_LOCK_ key so one case cannot leak into the next. */
-function freshEnv(over) {
+function wipeEnv() {
   for (const k of Object.keys(process.env)) if (k.startsWith("PROFIT_LOCK_")) delete process.env[k];
-  Object.assign(process.env, over || {});
+}
+/** Wiped env with the lock switched ON (it ships OFF), so the lock math is tested. */
+function freshEnv(over) {
+  wipeEnv();
+  Object.assign(process.env, { PROFIT_LOCK_ENABLED: "true" }, over || {});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 section("Defaults — the shipped numbers ARE the rule");
 
-check("ships armed at +8% with a +5% floor, enabled", () => {
-  freshEnv();
+check("ships armed at +8% with a +5% floor, switched OFF", () => {
+  wipeEnv();
   assert.strictEqual(guards.PROFIT_LOCK_ARM_PCT, 8);
   assert.strictEqual(guards.PROFIT_LOCK_FLOOR_PCT, 5);
-  assert.strictEqual(guards.PROFIT_LOCK_ENABLED, true);
+  assert.strictEqual(guards.PROFIT_LOCK_ENABLED, false);
 });
 
-check("defaults are ON — a strategy inherits the lock without opting in", () => {
+check("default is OFF — no strategy uses the lock until Common Rules turns it on", () => {
+  wipeEnv();
+  // Entry 100, peaked 108 (+8%), now back at 105 (the floor) — would fire if on.
+  assert.strictEqual(guards.checkProfitLock(100, 105, 108), null);
   freshEnv();
-  // Entry 100, peaked 108 (+8% → armed), now back at 105 (the floor).
-  assert.ok(guards.checkProfitLock(100, 105, 108), "the shipped default did not fire");
+  assert.ok(guards.checkProfitLock(100, 105, 108), "the switched-on lock did not fire");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

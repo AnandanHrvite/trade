@@ -360,7 +360,8 @@ function rallyThenFade() {
 }
 test("backtest: exit reasons are only 'profit lock' and 'session end'", () => {
   assert.deepStrictEqual(Object.values(BT.EXIT).sort(), ["profit lock", "session end"]);
-  const r = BT.simulate(rallyThenFade(), { tradeFrom: DAY, tradeTo: DAY });
+  // The lock ships OFF (Common Rules) — switch it on to test it.
+  const r = BT.simulate(rallyThenFade(), { tradeFrom: DAY, tradeTo: DAY, guards: { lockEnabled: true } });
   assert.ok(r.trades.length > 0, "the fixture must trade");
   for (const t of r.trades) assert.ok(Object.values(BT.EXIT).includes(t.exitReason), t.exitReason);
   assert.strictEqual(r.trades[0].exitReason, "profit lock", r.trades[0].exitDetail);

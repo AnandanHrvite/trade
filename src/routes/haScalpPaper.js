@@ -31,9 +31,6 @@
  * manual exit, /stop, or the global TRADE_STOP_TIME session auto-stop. There is
  * no stop loss, trail, breakeven, target, candle exit or day-loss breaker.
  *
- * Day-level breaker: HA_SCALP_DAILY_PROFIT_LOCK (stops new entries once the
- * day's P&L reaches it).
- *
  * Signal engine: src/strategies/ha_scalp.js (shared by paper, backtest
  * and replay — no rule is re-implemented in this file).
  *
@@ -85,7 +82,6 @@ const PT_FILE  = path.join(DATA_DIR, "ha_scalp_paper_trades.json");
 // ── Config readers (Settings mutates process.env live — never cache) ──────────
 function _resMin() { return haStrategy.getConfig().resolutionMins; }
 function _envStr(key, fallback) { return String(process.env[key] || fallback); }
-function _dailyProfitLock() { return parseFloat(process.env.HA_SCALP_DAILY_PROFIT_LOCK || "0"); }
 function _pollMs() {
   const v = parseInt(process.env.HA_SCALP_POLL_MS || "2000", 10);
   return Number.isFinite(v) && v >= 500 && v <= 30000 ? v : 2000;
@@ -782,17 +778,6 @@ function simulateSell(reason) {
   state.optionLtpUpdatedAt = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
-
-  _applyDayBreakers();
-}
-
-/** Day-level breaker, evaluated after every exit: the daily profit lock CLOSES the day. */
-function _applyDayBreakers() {
-  if (state.dayClosed) return;
-  const lock = _dailyProfitLock();
-  if (lock > 0 && state.sessionPnl >= lock) {
-    _closeDay(`Daily profit lock hit (₹${state.sessionPnl} ≥ ₹${lock}) — banking the day`);
-  }
 }
 
 function _closeDay(reason) {
@@ -1264,7 +1249,6 @@ router.get("/status/data", (req, res) => {
     lastUpperWickPct: s ? s.upperWickPct : null,
     lastLowerWickPct: s ? s.lowerWickPct : null,
     dayClosed: state.dayClosed, dayClosedReason: state.dayClosedReason,
-    dailyProfitLock: _dailyProfitLock(),
     lastSkipReason: s && s.signal === "NONE" ? (s.skipReason || s.reason) : null,
     cfg: {
       resMin: cfg.resolutionMins, maPeriod: cfg.maPeriod, maType: cfg.maType,

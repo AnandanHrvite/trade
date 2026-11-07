@@ -250,7 +250,6 @@
 <tr><td>Max trades per day</td><td>2</td><td>Costs are paid per trade, so fewer is usually better.</td></tr>
 <tr><td>Stop-outs that end the day</td><td>2</td><td>After 2 real stop-outs, no more entries. Breakeven and time-stop exits do not count.</td></tr>
 <tr><td>Max daily loss</td><td>₹3,000</td><td>Day ends once the loss reaches this. (At ₹1,500 a single 40-point stop-out would end the day.)</td></tr>
-<tr><td>Daily profit lock</td><td>₹3,000</td><td>Day ends once the profit reaches this — bank it, do not give it back.</td></tr>
 <tr><td>Max weekly loss</td><td>0 (off)</td><td>If set, no entries for the rest of the week once the week's loss reaches it.</td></tr>
 <tr><td>App-wide loss cap</td><td>shared</td><td>If hit, this strategy stops for the day too.</td></tr>
 <tr><td>Entry window</td><td>10:15–14:00</td><td>Late entries have no time left to reach a 2.5R target.</td></tr>
@@ -323,7 +322,7 @@
 <tr><td><code>TDS_MAX_DAILY_TRADES</code></td><td>2</td><td>Max entries per day.</td></tr>
 <tr><td><code>TDS_MAX_DAILY_LOSSES</code></td><td>2</td><td>Real stop-outs that end the day (0 = off).</td></tr>
 <tr><td><code>TDS_MAX_DAILY_LOSS</code></td><td>3000</td><td>Stop for the day after this much loss in ₹ (0 = off).</td></tr>
-<tr><td><code>TDS_DAILY_PROFIT_LOCK</code></td><td>3000</td><td>Stop for the day once this much profit is banked (0 = off).</td></tr>
+
 <tr><td><code>TDS_MAX_WEEKLY_LOSS</code></td><td>0</td><td>Stop for the week after this much loss in ₹ (0 = off).</td></tr>
 </table>
 <h3>Backtest only</h3>

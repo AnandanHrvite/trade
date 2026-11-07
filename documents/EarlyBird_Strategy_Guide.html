@@ -333,7 +333,6 @@
 <tr><td>Max trades per day</td><td class="num">5</td><td>After 5 entries, no new entries.</td></tr>
 <tr><td>Stop-outs that end the day</td><td class="num">3</td><td>After 3 stop-losses, no new entries. 0 = off.</td></tr>
 <tr><td>Max daily loss</td><td class="num">₹5,000</td><td>When the day's P&amp;L reaches −₹5,000, no new entries. 0 = off.</td></tr>
-<tr><td>Daily profit lock</td><td class="num">0 (off)</td><td>When set, stop new entries once the day's profit reaches it.</td></tr>
 <tr><td>Max weekly loss</td><td class="num">0 (off)</td><td>When set, checked when a session starts. If the week is already down that much, no trading that day.</td></tr>
 <tr><td>Capital check</td><td>—</td><td>Before each entry the bot checks the shared capital pool. If there is not enough money, that entry is refused and not retried that day.</td></tr>
 </table>
@@ -427,7 +426,7 @@
 <tr><td><code>EARLYBIRD_MAX_DAILY_TRADES</code><br><span class="muted">Max Trades/Day</span></td><td class="num">5</td><td>Next session</td><td>Most entries per day, both legs together.</td></tr>
 <tr><td><code>EARLYBIRD_MAX_DAILY_LOSSES</code><br><span class="muted">Stop-outs That End the Day</span></td><td class="num">3</td><td>Next session</td><td>Stop-losses that end the day for new entries. 0 = off.</td></tr>
 <tr><td><code>EARLYBIRD_MAX_DAILY_LOSS</code><br><span class="muted">Max Daily Loss (₹)</span></td><td class="num">5000</td><td>Next session</td><td>Day's loss (₹) that ends new entries. 0 = off.</td></tr>
-<tr><td><code>EARLYBIRD_DAILY_PROFIT_LOCK</code><br><span class="muted">Daily Profit Lock (₹)</span></td><td class="num">0</td><td>Next session</td><td>Day's profit (₹) that ends new entries. 0 = off.</td></tr>
+
 <tr><td><code>EARLYBIRD_MAX_WEEKLY_LOSS</code><br><span class="muted">Max Weekly Loss (₹)</span></td><td class="num">0</td><td>Next session</td><td>Week's loss (₹) that blocks a new session. 0 = off.</td></tr>
 </table>
 <h3>Data and timing</h3>

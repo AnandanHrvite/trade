@@ -94,7 +94,7 @@ const SCAN_CONCURRENCY = 4;
 // the log lines — the check itself reads them in tradeGuards.
 function _plArmPct()   { return parseFloat(process.env.PROFIT_LOCK_ARM_PCT || "8"); }
 function _plFloorPct() { return parseFloat(process.env.PROFIT_LOCK_FLOOR_PCT || "5"); }
-function _plOn() { return String(process.env.PROFIT_LOCK_ENABLED ?? "true").toLowerCase() === "true"; }
+function _plOn() { return tradeGuards.PROFIT_LOCK_ENABLED; }
 function _tradeAmount() { const v = parseFloat(process.env.GAP_RUNAWAY_STK_TRADE_AMOUNT || "100000"); return Number.isFinite(v) && v > 0 ? v : 100000; }
 function _maxTrades()   { const v = parseInt(process.env.GAP_RUNAWAY_STK_MAX_TRADES || "3", 10); return Number.isFinite(v) && v >= 1 && v <= 20 ? v : 3; }
 function _universeKey() { return String(process.env.GAP_RUNAWAY_STK_UNIVERSE || "FNO").trim().toUpperCase() || "FNO"; }
@@ -744,7 +744,7 @@ router.get("/start", async (req, res) => {
   log(`   Setup     : daily RSI(${cfg.RSI_LENGTH}) on EMA(${cfg.EMA_LENGTH}) of yesterday — < ${cfg.RSI_LOWER} oversold → gap UP = BUY · > ${cfg.RSI_UPPER} overbought → gap DOWN = SHORT`);
   log(`   Exit      : common profit lock on the share price (the only automatic exit) · session end ${engine._fmtMins(_stopMins())} · window ${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`);
   const _onOff = (k) => String(process.env[k] ?? "true").toLowerCase() !== "false" ? "on" : "OFF";
-  log(`   Common    : profit lock ${_onOff("PROFIT_LOCK_ENABLED")} (arm +${_plArmPct()}% / floor +${_plFloorPct()}% of the share price, trail keeps ${process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"}% · tiers ${process.env.PROFIT_LOCK_TRAIL_TIERS ?? "20:85,40:80"})`);
+  log(`   Common    : profit lock ${_plOn() ? "on" : "OFF"} (arm +${_plArmPct()}% / floor +${_plFloorPct()}% of the share price, trail keeps ${process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"}% · tiers ${process.env.PROFIT_LOCK_TRAIL_TIERS ?? "20:85,40:80"})`);
   log(`              wait-after-exit ${tradeGuards.reentryCooldownMs(COOLDOWN_RES_MIN) / 60000} min · spread check ${_onOff("MAX_BID_ASK_SPREAD_ENABLED")} (max ${process.env.MAX_BID_ASK_SPREAD_PTS || "2"} pts) · portfolio cap ${portfolioRisk.checkPortfolioCap().disabled ? "OFF" : "on"} · trade window 10:00–14:00 NOT applied (09:15 gap rule)`);
   if (st._dayDone) log(`   Today     : ${st._dayDoneReason}`);
   log(`════════════════════════════════════════════════════════════════════`);

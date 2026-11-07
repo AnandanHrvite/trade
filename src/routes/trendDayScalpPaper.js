@@ -16,8 +16,7 @@
  * per tick) is the ONLY automatic exit. Beyond it: manual exit, /stop, and the
  * session teardown at TRADE_STOP_TIME.
  *
- * Day-level breaker: TDS_DAILY_PROFIT_LOCK (stop new entries while ahead) and
- * the shared portfolio cap.
+ * Day-level breaker: the shared portfolio cap.
  *
  * Signal engine: src/strategies/trend_day_scalp.js (shared by paper, backtest
  * and replay — no rule is re-implemented in this file).
@@ -74,7 +73,6 @@ function _parseMins(envKey, fallback) {
   return tdsStrategy._parseHHMM(process.env[envKey], tdsStrategy._parseHHMM(fallback, 0));
 }
 function _envStr(key, fallback) { return String(process.env[key] || fallback); }
-function _dailyProfitLock() { return parseFloat(process.env.TDS_DAILY_PROFIT_LOCK || "3000"); }
 
 /** Position size — the one common Lot Multiplier (Settings → Common Rules). */
 function tdsLotQty() {
@@ -523,21 +521,6 @@ function simulateSell(reason) {
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();
-
-  _applyDayBreakers();
-}
-
-/**
- * Day-level breaker, evaluated after every exit: the daily profit lock CLOSES
- * the day for new entries — TREND_DAY_SCALP would rather book a small green day
- * than hand it back.
- */
-function _applyDayBreakers() {
-  if (state.dayClosed) return;
-  const lock = _dailyProfitLock();
-  if (lock > 0 && state.sessionPnl >= lock) {
-    _closeDay(`Daily profit lock hit (₹${state.sessionPnl} ≥ ₹${lock}) — banking the day`);
-  }
 }
 
 function _closeDay(reason) {
@@ -892,7 +875,7 @@ router.get("/start", async (req, res) => {
   const cfg = tdsStrategy.getConfig();
   log(`🟢 [TDS-PAPER] Session started — ${tdsStrategy.NAME}`);
   log(`⚙️ [TDS-PAPER] Gate ${_envStr("TDS_GATE_TIME", "10:15")} (range ≥${cfg.minRangePct}% · ${cfg.vwapStreakBars} closes one side of VWAP · extension ≥${cfg.extensionMult}×range) · zone VWAP/EMA${cfg.emaPeriod} · body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod} · depth ≤${cfg.maxSlPts}pt · exit = global profit lock`);
-  log(`⚙️ [TDS-PAPER] Entries until ${_envStr("TDS_ENTRY_END", "14:00")} · daily profit lock ₹${_dailyProfitLock()} · qty ${tdsLotQty()}`);
+  log(`⚙️ [TDS-PAPER] Entries until ${_envStr("TDS_ENTRY_END", "14:00")} · qty ${tdsLotQty()}`);
 
   await preloadHistory();
 
@@ -934,7 +917,7 @@ router.get("/start", async (req, res) => {
       `Strategy  : ${tdsStrategy.NAME}`,
       `Day gate  : ${_envStr("TDS_GATE_TIME", "10:15")} — range ≥${cfg.minRangePct}%, ${cfg.vwapStreakBars} closes one side of VWAP, extension ≥${cfg.extensionMult}×range`,
       `Entry     : pullback into VWAP/EMA${cfg.emaPeriod} then reclaim, body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod}`,
-      `Exit      : global profit lock · daily profit lock ₹${_dailyProfitLock()}`,
+      `Exit      : global profit lock`,
     ].filter(Boolean).join("\n"),
   });
 
@@ -1069,7 +1052,6 @@ router.get("/status/data", (req, res) => {
     gateExtensionNeeded: g ? g.extensionNeeded : null,
     gateTime:      _envStr("TDS_GATE_TIME", "10:15"),
     dayClosed:     state.dayClosed, dayClosedReason: state.dayClosedReason,
-    dailyProfitLock: _dailyProfitLock(),
     lastSkipReason: state.lastSignal && state.lastSignal.signal === "NONE" ? (state.lastSignal.skipReason || state.lastSignal.reason) : null,
     cfg: {
       gateTime: _envStr("TDS_GATE_TIME", "10:15"), minRangePct: cfg.minRangePct,
