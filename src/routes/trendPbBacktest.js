@@ -9,7 +9,7 @@
  *
  * Honesty features (agreed in design review):
  *   • Realistic costs — getCharges (brokerage + statutory) PLUS a spread/slippage
- *     haircut of TREND_PB_BT_SLIPPAGE_PTS premium points EACH WAY. Without this a
+ *     haircut of BACKTEST_SLIPPAGE_PTS premium points EACH WAY. Without this a
  *     backtest of option BUYING looks great and loses money live.
  *   • Dumb baseline — the same range is run with a naive "enter in the 15m-trend
  *     direction at the window open, same exit; no pullback filter" engine. The strategy must BEAT this baseline, else its filters are
@@ -36,6 +36,7 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#ec4899";
@@ -76,9 +77,9 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
-  const SEED_PREMIUM = parseFloat(process.env.TREND_PB_BT_SEED_PREMIUM || "240");
+  const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.     // slightly-ITM ≈ ATM + one strike intrinsic
-  const SLIPPAGE_PTS = parseFloat(process.env.TREND_PB_BT_SLIPPAGE_PTS || "1.5");     // spread+slippage haircut EACH way (premium pts)
+  const SLIPPAGE_PTS = backtestCosts.slippagePts();     // spread+slippage haircut EACH way (premium pts)
   const SIG_WINDOW   = parseInt(process.env.TREND_PB_SIG_WINDOW || "300", 10);        // trailing bars to seed EMA50(15m)
 
   const ENTRY_START_MIN = _parseMin("TREND_PB_ENTRY_START", "09:45");
@@ -293,7 +294,7 @@ function _renderResults(res, from, to, trades, stats, baselineStats, wf) {
       { label: "vs Dumb Baseline", value: `${beatsBaseline >= 0 ? "+" : ""}₹${beatsBaseline.toFixed(0)} (base ₹${baselineStats.totalPnl}, ${baselineStats.totalTrades}t/${baselineStats.winRate}%)` },
       { label: "WF verdict", value: wf.foldCount ? `${wf.positiveFolds}/${wf.foldCount} folds +ve` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}Option premium δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded slightly-ITM at ₹${process.env.TREND_PB_BT_SEED_PREMIUM || "240"}, PLUS a spread/slippage haircut of ${process.env.TREND_PB_BT_SLIPPAGE_PTS || "1.5"}pt EACH way — treat ₹ as directional, not exact. Entry: 15m bias (HH/HL + EMA20>EMA50 + slope + VWAP) → healthy 5m pullback to EMA20 → resumption body ≥ ${process.env.TREND_PB_BODY_ATR_MULT || "0.5"}×ATR5. Exit: the global profit lock on the simulated premium is the only automatic exit; otherwise the trade is held to the day's last candle (session end). <b>${wfLine}</b> The DUMB BASELINE (enter in the 15m-trend direction at the window open, same exit, NO pullback filter) is the bar to beat: if the strategy doesn't clear it out-of-sample, the pullback filter is noise. Use Replay (recorded ticks) for tick-accurate fills.`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}Option premium δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded slightly-ITM at ₹${backtestCosts.seedPremium()}, PLUS a spread/slippage haircut of ${backtestCosts.slippagePts()}pt EACH way — treat ₹ as directional, not exact. Entry: 15m bias (HH/HL + EMA20>EMA50 + slope + VWAP) → healthy 5m pullback to EMA20 → resumption body ≥ ${process.env.TREND_PB_BODY_ATR_MULT || "0.5"}×ATR5. Exit: the global profit lock on the simulated premium is the only automatic exit; otherwise the trade is held to the day's last candle (session end). <b>${wfLine}</b> The DUMB BASELINE (enter in the 15m-trend direction at the window open, same exit, NO pullback filter) is the bar to beat: if the strategy doesn't clear it out-of-sample, the pullback filter is noise. Use Replay (recorded ticks) for tick-accurate fills.`,
   });
   res.send(html);
 }

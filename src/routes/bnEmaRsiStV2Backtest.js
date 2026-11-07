@@ -47,7 +47,7 @@
  *     raise the peak;
  *   • a bar that OPENED already through the locked floor fills at the OPEN, never
  *     at the better floor level;
- *   • a spread/slippage haircut of BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS is applied EACH
+ *   • a spread/slippage haircut of BACKTEST_SLIPPAGE_PTS is applied EACH
  *     way — without it a backtest of option BUYING always flatters.
  *
  * CONFIRMATION CANDLE (BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED, default ON): the
@@ -79,6 +79,7 @@ const { renderBacktestResults, computeBacktestStats } = require("../utils/backte
 const { saveResult }     = require("../utils/resultStore");
 const backtestJobs       = require("../utils/backtestJobManager");
 const instrumentConfig   = require("../config/instrument");
+const backtestCosts = require("../config/backtestCosts");
 
 const ACCENT      = "#2563eb";
 const ENDPOINT    = "/bn_ema_rsi_st_v2-backtest";
@@ -165,11 +166,9 @@ function getGuardConfig() {
     // Session teardown — the same global key paper's auto-stop reads. Entries
     // stop 10 min before it (paper's _ENTRY_STOP_MINS).
     sessionStopMin: _parseMins("TRADE_STOP_TIME", "15:30"),
-    oppCooldownEnabled: _bool("BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", "true"),
-    oppCooldownCandles: _int("BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES", "2"),
     warmupDays:     _int("BN_EMA_RSI_ST_V2_WARMUP_DAYS", "5"),
-    slippagePts:    _num("BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS", "2"),
-    seedPremium:    _num("BN_EMA_RSI_ST_V2_BT_SEED_PREMIUM", "180"),
+    slippagePts:    backtestCosts.slippagePts(),
+    seedPremium:    backtestCosts.seedPremium(),
     resolutionMins: _int("TRADE_RESOLUTION", "5"),
     confirmEnabled: confirmCandle.enabled("BN_EMA_RSI_ST_V2"),
   };
@@ -190,7 +189,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
     trades: [], days: 0, warmupViolations: 0, warmupBars: 0,
     gateStats: { setups: 0, confirmArmed: 0, confirmFilled: 0, confirmExpired: 0,
                  blockedWarmup: 0, blockedWindow: 0,
-                 blockedOppCooldown: 0, blockedReentry: 0 },
+                 blockedReentry: 0 },
   };
   if (!Array.isArray(candles) || !candles.length) return empty;
 
@@ -266,8 +265,6 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
     // Only sessions inside the requested range count as "scanned".
     if (bars[bars.length - 1].time >= activeFromTs) days++;
 
-    let oppCooldownSide = null;    // side we may NOT take
-    let oppCooldownUntilIdx = -1;
     let reentryBlockUntilTs = 0;   // wait-after-any-exit — no entry on a bar opening before this
     let pos = null;
     let armed = null;              // { side, triggerLevel, barTime, signal }
@@ -328,13 +325,6 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
         eOpt: pos.optionEntryLtp, xOpt: p.exitPrem, held: p.held,
       });
 
-      if (g.oppCooldownEnabled && g.oppCooldownCandles > 0) {
-        // Cool off the OPPOSITE side for N candles after any exit — flipping
-        // straight into the other side on the same bar is how paper's cooldown
-        // stops a whipsaw pair.
-        oppCooldownSide     = pos.side === "CE" ? "PE" : "CE";
-        oppCooldownUntilIdx = globalIdx + g.oppCooldownCandles;
-      }
       // Wait-after-any-exit cooldown — every exit reason, both sides.
       if (REENTRY_COOLDOWN_SECS > 0) {
         reentryBlockUntilTs = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
@@ -358,9 +348,6 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       // The engine already refuses outside its own window, but the SIGNAL bar's
       // close is what arms — re-checking here keeps the funnel counters honest.
       if (istMin < g.entryStartMin || istMin >= g.entryEndMin || istMin >= ENTRY_CUTOFF_MIN) return "blockedWindow";
-      if (g.oppCooldownEnabled && side === oppCooldownSide && gIdx <= oppCooldownUntilIdx) {
-        return "blockedOppCooldown";
-      }
       return null;
     }
 
@@ -583,7 +570,6 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Confirmations expired", value: gs.confirmExpired || 0 },
       { label: "Blocked — warm-up runway", value: gs.blockedWarmup || 0 },
       { label: "Blocked — entry window", value: gs.blockedWindow || 0 },
-      { label: "Blocked — opp cooldown",  value: gs.blockedOppCooldown || 0 },
       { label: "Warm-up bars fetched",    value: meta.warmupBars || 0 },
       {
         label: "Warm-up leak", value: wv === 0 ? "none ✓" : `${wv} ⚠`,
@@ -600,10 +586,10 @@ function _renderResults(res, from, to, trades, stats, meta) {
       `<b>Confirmation candle is ${g.confirmEnabled ? "ON" : "OFF"}</b> (<code>BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED</code>)${g.confirmEnabled ? ": the signal bar never enters — its CLOSE is armed as the trigger and the fill is taken on the IMMEDIATELY-next bar, the same market moment paper fills at on its first tick past the trigger" : ": entry is the signal bar's close"}. ` +
       `<b>Exit:</b> the global profit lock is the ONLY automatic exit (arm +${lockArm}%, floor +${lockFloor}%, trail ${lockTrail}%${lockTiers ? `, tiers ${_escHtml(lockTiers)}` : ""} — the shared <code>PROFIT_LOCK_*</code> keys)${lockOn ? "" : " — <b>currently OFF</b>"}${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? " — off in futures mode (it is defined on option premium)" : ""}, tested on the simulated premium with the peak tracked intra-bar. Anything still open is squared off at the session end (${_fmtMins(g.sessionStopMin)} IST, <code>TRADE_STOP_TIME</code>) or the day's last bar. ` +
       `There is <b>no stop loss, no trail, no target</b>, no breakeven, no time-stop, no signal exit and no early square-off. ` +
-      `<b>Guards (V2's own keys):</b> entries ${_fmtMins(g.entryStartMin)}–${_fmtMins(g.entryEndMin)}, opposite-side cooldown ${g.oppCooldownEnabled ? `${g.oppCooldownCandles} candles` : "off"}, plus the global wait-after-exit cooldown. No loss-based day limits. ` +
+      `<b>Guards (V2's own keys):</b> entries ${_fmtMins(g.entryStartMin)}–${_fmtMins(g.entryEndMin)}, plus the global wait-after-exit cooldown. No loss-based day limits. ` +
       `<b>Warm-up:</b> the engine refuses below ${engine.warmupBars(c)} candles — more than one session — so ${g.warmupDays} calendar days of runway are fetched BEFORE ${_escHtml(from)} purely to seed the indicators. ${meta.warmupBars || 0} such bars were loaded and ${wv === 0 ? "<b>none of them produced a trade</b> (asserted, not assumed)" : `<b>⚠ ${wv} produced a trade — this is a bug, do not trust these results</b>`}. ` +
       `<b>Intra-bar ordering is conservative:</b> each bar is walked open → adverse extreme → favourable extreme → close, so the lock is tested on the adverse leg before the favourable extreme can raise the peak, and a bar that opened through the locked floor fills at the OPEN. ` +
-      `<b>P&L is simulated</b> — no historical option chain exists here, so premium is δ+θ modelled (BACKTEST_DELTA ${_num("BACKTEST_DELTA", "0.55")}, θ ₹${_num("BACKTEST_THETA_DAY", "8")}/day) seeded at ₹${g.seedPremium}, PLUS ${g.slippagePts}pt slippage EACH way (<code>BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS</code>) and real brokerage. Treat ₹ as directional, not exact.`,
+      `<b>P&L is simulated</b> — no historical option chain exists here, so premium is δ+θ modelled (BACKTEST_DELTA ${_num("BACKTEST_DELTA", "0.55")}, θ ₹${_num("BACKTEST_THETA_DAY", "8")}/day) seeded at ₹${g.seedPremium}, PLUS ${g.slippagePts}pt slippage EACH way (<code>BACKTEST_SLIPPAGE_PTS</code>) and real brokerage. Treat ₹ as directional, not exact.`,
   });
   res.send(html);
 }

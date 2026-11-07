@@ -26,7 +26,7 @@
  * bar can never lock in a gain it had not yet printed. A trade still open at the
  * day's last bar is closed there (paper's session teardown).
  *
- * A spread/slippage haircut of RSI_PIVOT_ST_BT_SLIPPAGE_PTS is applied EACH way —
+ * A spread/slippage haircut of BACKTEST_SLIPPAGE_PTS is applied EACH way —
  * without it a backtest of option BUYING always flatters.
  */
 
@@ -42,6 +42,7 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 const ACCENT = "#c2410c";
 const ENDPOINT = "/rsi-pivot-st-backtest";
@@ -86,9 +87,9 @@ async function runRsiPivotStBacktest(intraday, daily) {
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
-  const SEED_PREMIUM = parseFloat(process.env.RSI_PIVOT_ST_BT_SEED_PREMIUM || "180");
+  const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
-  const SLIPPAGE_PTS = parseFloat(process.env.RSI_PIVOT_ST_BT_SLIPPAGE_PTS || "2");
+  const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const RES          = cfg.resolutionMins;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
   // Paper measures it from the exit's clock time: an exit INSIDE the bar
@@ -308,7 +309,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Skipped — SuperTrend disagreed", value: gs.noSuperTrend },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 INDEX ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest 50. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>RSI_PIVOT_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.RSI_PIVOT_ST_BT_SEED_PREMIUM || "180"}, and the lock is measured against that simulated number rather than a real quote, PLUS ${process.env.RSI_PIVOT_ST_BT_SLIPPAGE_PTS || "2"}pt slippage EACH way. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 INDEX ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest 50. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>RSI_PIVOT_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, and the lock is measured against that simulated number rather than a real quote, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
   });
   res.send(html);
 }

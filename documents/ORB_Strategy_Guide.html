@@ -477,7 +477,7 @@
   <div class="note note-warn">
     <strong>The backtest cannot run these checks</strong>
     Old market data has no option chain. So the backtest cannot check the price band, the spread or OI, and it guesses the option price
-    (starting at &#8377;240, <code>ORB_BT_SEED_PREMIUM</code>) and charges 1.5 points of slippage each way (<code>ORB_BT_SLIPPAGE_PTS</code>).
+    (starting at &#8377;240, <code>BACKTEST_SEED_PREMIUM</code>, common) and charges 1.5 points of slippage each way (<code>BACKTEST_SLIPPAGE_PTS</code>, common).
     Paper therefore takes the same number of trades or fewer than the backtest &mdash; never more.
   </div>
 </section>
@@ -708,8 +708,6 @@
 <tr><td><code>ORB_LOSS_STREAK_SKIP</code></td><td><code>4</code></td><td>Skip a day after this many losing days in a row. 0 = off.</td></tr>
 <tr><td><code>PORTFOLIO_MAX_DAILY_LOSS</code></td><td><code>0 (off)</code></td><td>Account-wide daily loss cap across all strategies.</td></tr>
 <tr><td><code>ORB_SIG_WINDOW</code></td><td><code>260</code></td><td>Backtest only: how many past candles are fed to the engine.</td></tr>
-<tr><td><code>ORB_BT_SEED_PREMIUM</code></td><td><code>240</code></td><td>Backtest only: assumed option price (₹).</td></tr>
-<tr><td><code>ORB_BT_SLIPPAGE_PTS</code></td><td><code>1.5</code></td><td>Backtest only: cost per side, in premium points.</td></tr>
 <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting paper capital (₹), shared by Fyers strategies.</td></tr>
 </tbody></table>
   <div class="env-group">Dead keys &mdash; the code ignores them</div>

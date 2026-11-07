@@ -319,7 +319,7 @@ function mkDay(over) {
 }
 const mkLeg = (side, strike, bars) => ({ strike, side, steps: 1, moneyness: "ITM", symbol: S.optionSymbol("26826", strike, side), bars });
 const QTY = 75;
-const NOSLIP = { SIMPLE930_BT_SLIPPAGE_PTS: "0" };
+const NOSLIP = { BACKTEST_SLIPPAGE_PTS: "0" };
 
 check("a clean break fills at the trigger-breaking premium, with no stop of its own", () => {
   const c = freshEnv(NOSLIP);
@@ -347,7 +347,7 @@ check("a bar that OPENS above the trigger fills at the open, not at the trigger"
   assert.strictEqual(trade.ePrice, 195);
 });
 check("slippage is charged on BOTH sides, always adversely", () => {
-  const c = freshEnv({ SIMPLE930_BT_SLIPPAGE_PTS: "2" });
+  const c = freshEnv({ BACKTEST_SLIPPAGE_PTS: "2" });
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) ce.push(flat(m, 181));
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);

@@ -27,7 +27,7 @@
  * bar can never lock in a gain it had not yet printed. A trade still open at the
  * day's last bar is closed there (paper's session teardown).
  *
- * A spread/slippage haircut of BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS is applied EACH way —
+ * A spread/slippage haircut of BACKTEST_SLIPPAGE_PTS is applied EACH way —
  * without it a backtest of option BUYING always flatters.
  */
 
@@ -43,6 +43,7 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 const ACCENT = "#c2410c";
 const ENDPOINT = "/bn-pivot-rsi-st-backtest";
@@ -113,9 +114,9 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty(UNDERLYING);   // BANKNIFTY lot, not NIFTY's
-  const SEED_PREMIUM = parseFloat(process.env.BN_PIVOT_RSI_ST_BT_SEED_PREMIUM || "180");
+  const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
-  const SLIPPAGE_PTS = parseFloat(process.env.BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS || "2");
+  const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const RES          = cfg.resolutionMins;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
   // Paper measures it from the exit's clock time: an exit INSIDE the bar
@@ -345,7 +346,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Skipped — SuperTrend disagreed", value: gs.noSuperTrend },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Instrument:</b> ${escHtml(instrumentBanner())}. <b>Chart:</b> ${escHtml(_u().label)} INDEX (<code>${escHtml(_u().spot)}</code>) ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest ${bnPivotStrategy.strikeStep()}-point BANKNIFTY strike, ${_u().weekly ? "weekly or monthly expiry" : "<b>MONTHLY expiry only</b> (NSE withdrew BANKNIFTY weeklies in Nov-2024, so the premium decays more slowly than a NIFTY weekly)"}. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>BN_PIVOT_RSI_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.BN_PIVOT_RSI_ST_BT_SEED_PREMIUM || "180"}, and the lock is measured against that simulated number rather than a real quote, PLUS ${process.env.BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS || "2"}pt slippage EACH way. The δ, θ and seed-premium DEFAULTS are NIFTY-weekly-shaped — a BANKNIFTY monthly ATM premium is several times ₹180 and decays slower — so set <code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code>, <code>BACKTEST_THETA_DAY</code> and <code>BACKTEST_DELTA</code> for the contract you are actually simulating. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Instrument:</b> ${escHtml(instrumentBanner())}. <b>Chart:</b> ${escHtml(_u().label)} INDEX (<code>${escHtml(_u().spot)}</code>) ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest ${bnPivotStrategy.strikeStep()}-point BANKNIFTY strike, ${_u().weekly ? "weekly or monthly expiry" : "<b>MONTHLY expiry only</b> (NSE withdrew BANKNIFTY weeklies in Nov-2024, so the premium decays more slowly than a NIFTY weekly)"}. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>BN_PIVOT_RSI_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, and the lock is measured against that simulated number rather than a real quote, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way. The δ, θ and seed-premium DEFAULTS are NIFTY-weekly-shaped — a BANKNIFTY monthly ATM premium is several times ₹180 and decays slower — so set <code>BACKTEST_SEED_PREMIUM</code>, <code>BACKTEST_THETA_DAY</code> and <code>BACKTEST_DELTA</code> for the contract you are actually simulating. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
   });
   res.send(html);
 }
@@ -366,8 +367,8 @@ router.get("/", async (req, res) => {
       try {
         console.log(`🔍 BN_PIVOT_RSI_ST Backtest job ${id}: ${from} → ${to}`);
         console.log(`   └ instrument: ${instrumentBanner()}`);
-        if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES" && !process.env.BN_PIVOT_RSI_ST_BT_SEED_PREMIUM) {
-          console.warn(`   ⚠️ BN_PIVOT_RSI_ST_BT_SEED_PREMIUM unset — simulating on the ₹180 NIFTY-weekly default. A BANKNIFTY MONTHLY ATM premium is several times that and decays slower, so the simulated premium (and the profit lock measured on it) is off. Rule unchanged; only the simulation's premium seed is wrong.`);
+        if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
+          console.warn(`   ⚠️ Seed premium is the common BACKTEST_SEED_PREMIUM (₹${backtestCosts.seedPremium()}), a NIFTY-weekly figure. A BANKNIFTY MONTHLY ATM premium is several times that and decays slower, so the simulated premium (and the profit lock measured on it) is off. Rule unchanged; only the simulation's premium seed is wrong.`);
         }
         backtestJobs.updateProgress(id, { phase: `Fetching ${_resMin()}-min ${_u().label} candles (${BANKNIFTY_INDEX_SYMBOL})…`, pct: 20 });
 

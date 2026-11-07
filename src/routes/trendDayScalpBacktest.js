@@ -20,7 +20,7 @@
  * the open; a lock armed by THIS bar's peak and given back fills at the close.
  *
  * There is NO historical option chain, so premium is δ+θ simulated. Treat ₹ as
- * DIRECTIONAL, not exact. A spread/slippage haircut of TDS_BT_SLIPPAGE_PTS is
+ * DIRECTIONAL, not exact. A spread/slippage haircut of BACKTEST_SLIPPAGE_PTS is
  * applied EACH way — without it a backtest of option BUYING always flatters.
  * Futures mode: paper skips the premium lock, so trades run to the day's end.
  */
@@ -36,6 +36,7 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#a855f7";
@@ -71,9 +72,9 @@ async function runTrendDayScalpBacktest(intraday) {
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
-  const SEED_PREMIUM = parseFloat(process.env.TDS_BT_SEED_PREMIUM || "240");
+  const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
-  const SLIPPAGE_PTS = parseFloat(process.env.TDS_BT_SLIPPAGE_PTS || "1.5");
+  const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const RES          = _resMin();
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper takes EVERY TDS exit on a tick (onCandleClose returns while in a
@@ -297,7 +298,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Day gate PASSED", value: `${gs.tradeable} / ${gs.decided} (${gs.decided ? ((gs.tradeable / gs.decided) * 100).toFixed(0) : 0}%)` },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.TDS_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.TDS_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
   });
   res.send(html);
 }

@@ -27,6 +27,7 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#10b981";
@@ -131,8 +132,8 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   // sized to the indicators, not a tuning dial.
   const SIG_WINDOW      = parseInt(process.env.ORB_SIG_WINDOW || "260", 10);
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "11:30");
-  const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");   // slightly-ITM ≈ ATM + one strike intrinsic
-  const SLIPPAGE_PREM   = parseFloat(process.env.ORB_BT_SLIPPAGE_PTS || "1.5");   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
+  const SEED_PREMIUM    = backtestCosts.seedPremium();   // slightly-ITM ≈ ATM + one strike intrinsic
+  const SLIPPAGE_PREM   = backtestCosts.slippagePts();   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper measures it from the exit's clock time: a tick exit inside the bar is
   // stamped at the bar open here, one given back by the close at the bar's CLOSE.
@@ -294,7 +295,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
 
     if (IS_FUT) {
       // Index points, both ways, with the same per-side slippage the option run pays
-      // (ORB_BT_SLIPPAGE_PTS, read here as INDEX points rather than premium points).
+      // (BACKTEST_SLIPPAGE_PTS, read here as INDEX points rather than premium points).
       const netPts  = spotMove - 2 * SLIPPAGE_PREM;
       const charges = getCharges({ broker: "fyers", isFutures: true, entryPremium: pos.entrySpot, exitPremium: exitSpot, qty: LOT_SIZE });
       const fpnl = parseFloat((netPts * LOT_SIZE - charges).toFixed(2));
@@ -378,7 +379,7 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
   });
   res.send(html);
 }

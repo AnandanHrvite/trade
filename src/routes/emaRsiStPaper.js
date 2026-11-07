@@ -52,8 +52,6 @@ const { EMA, RSI } = require("technicalindicators");
 // process.env mutations would never reach the running strategy code.
 let TRADE_RES;            // candle resolution in minutes
 let _STOP_MINS;
-let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
-let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RESOLUTION → minutes)
 // Entry-window bounds — declared HERE (not further down as const) so
 // _refreshConfig() can keep them in step with _STOP_MINS. See the note there.
 let _START_MINS;
@@ -66,8 +64,6 @@ function _refreshConfig() {
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
-  _OPP_COOLDOWN_ENABLED = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
-  _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
   // Entry-window bounds. These were `const` computed once at module load while
   // _STOP_MINS above was refreshed here, so after a Settings change the two
   // disagreed: set TRADE_STOP_TIME 15:30 → 16:00 and the session ran to 16:00
@@ -82,19 +78,6 @@ _refreshConfig();
 // True when the last FULLY CLOSED candle produced a BUY signal — updated in
 // onCandleClose. The 15-min intra-candle entry path waits for it (see onTick).
 let _closedCandleHadSignal = false;
-
-// ── Opposite-side (flip) cooldown ───────────────────────────────────────────
-// After any non-flip exit, block entries on the OPPOSITE side for
-// EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
-// Skipped for opposite-signal / EOD / manual exits.
-function _setOppositeCooldown(exitedSide, reason) {
-  if (!_OPP_COOLDOWN_ENABLED || !_OPP_COOLDOWN_CANDLES || _OPP_COOLDOWN_CANDLES <= 0) return;
-  if (reason && /opposite signal|eod|day close|market closed|auto-stop|manual|session restart|simulation ended/i.test(reason)) return;
-  ptState._oppositeCooldownUntilTs   = simNow() + _OPP_COOLDOWN_CANDLES * getTradeResolution() * 60 * 1000;
-  ptState._oppositeCooldownLastSide  = exitedSide;
-  const opp = exitedSide === "CE" ? "PE" : "CE";
-  log(`🔁 [PAPER] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * getTradeResolution()} min)`);
-}
 
 // ── One trade per move (EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED, default on) ──
 // After a trade on a side closes, no new entry on THAT side until SuperTrend
@@ -821,14 +804,6 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
     ptState._entryPending = false;
     return;
   }
-  // Opposite-side cooldown: reject opposite-side entry within cooldown window after a recent exit.
-  if (_OPP_COOLDOWN_ENABLED && ptState._oppositeCooldownLastSide
-      && ptState._oppositeCooldownLastSide !== side
-      && ptState._oppositeCooldownUntilTs > simNow()) {
-    log(`⏸️ [PAPER] Opposite-side cooldown active — entry rejected (last exit ${ptState._oppositeCooldownLastSide}, new ${side} @ ₹${price})`);
-    ptState._entryPending = false;
-    return;
-  }
   const optDetails = parseOptionDetails(symbol);
   const _entrySpot = spotAtEntry || price;
 
@@ -1096,8 +1071,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   ptState.position = null;
   capitalPool.release("ema_rsi_st", netPnl, { sim: (ptState._simMode || ptState._simSession) });
 
-  // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
-  _setOppositeCooldown(side, reason);
   // One trade per move — this side waits for a SuperTrend flip.
   ptState._moveLockSide = side;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
@@ -1935,8 +1908,6 @@ router.get("/start", async (req, res) => {
   ptState._cachedPE            = null;
   ptState._slHitCandleTime     = null;
   ptState._reentryBlockUntil   = 0;
-  ptState._oppositeCooldownUntilTs  = 0;
-  ptState._oppositeCooldownLastSide = null;
   ptState._moveLockSide        = null;
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
@@ -4337,8 +4308,6 @@ router.post("/simulate/start", async (req, res) => {
     ptState._cachedPE            = null;
     ptState._slHitCandleTime     = null;
     ptState._reentryBlockUntil   = 0;
-    ptState._oppositeCooldownUntilTs  = 0;
-    ptState._oppositeCooldownLastSide = null;
     ptState._moveLockSide        = null;
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;

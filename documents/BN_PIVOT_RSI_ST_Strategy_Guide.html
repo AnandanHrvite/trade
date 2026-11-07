@@ -336,10 +336,8 @@
   <strong>The rupees are modelled, and the defaults suit NIFTY weeklies, not BANKNIFTY monthlies.</strong>
   <table style="margin-top:10px;">
     <tr><th>Key</th><th>Default</th><th>Problem here</th></tr>
-    <tr><td><code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code></td><td>180</td><td>Starting option price. A BANKNIFTY monthly ATM option costs several times this.</td></tr>
     <tr><td><code>BACKTEST_THETA_DAY</code></td><td>8</td><td>₹ lost to time per day. A monthly decays more slowly.</td></tr>
     <tr><td><code>BACKTEST_DELTA</code></td><td>0.55</td><td>₹ of premium per index point. Not checked for a 5-strike-OTM monthly.</td></tr>
-    <tr><td><code>BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS</code></td><td>2</td><td>Cost per side for the spread.</td></tr>
   </table>
   <p style="margin:10px 0 0;">The 25% floor is measured on this modelled price, and on a PE it is the only stop &mdash; so a PE backtest mostly tests the model. Treat backtest ₹ as a direction, not a P&amp;L.</p>
 </div>
@@ -397,8 +395,6 @@
 <h3>Backtest</h3>
 <table>
   <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-  <tr><td><code>BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS</code></td><td><code>2</code></td><td>Backtest cost per side, in points.</td></tr>
-  <tr><td><code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code></td><td><code>180</code></td><td>Starting option price in the backtest.</td></tr>
 </table>
 <h3>Shared NIFTY BANK settings (Settings &rarr; Instrument)</h3>
 <table>

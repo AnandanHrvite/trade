@@ -40,6 +40,7 @@ const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 const ACCENT = "#e879f9";
 const ENDPOINT = "/prev-orb-scalp-backtest";
@@ -97,8 +98,8 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
-  const SEED_PREMIUM = parseFloat(process.env.PREV_ORB_SCALP_BT_SEED_PREMIUM || "260");
-  const SLIPPAGE_PTS = parseFloat(process.env.PREV_ORB_SCALP_BT_SLIPPAGE_PTS || "1.5");
+  const SEED_PREMIUM = backtestCosts.seedPremium();
+  const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const RES          = cfg.resolutionMins;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // A lock exit inside the bar is measured from the exit bar's open, one at the
@@ -358,7 +359,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Exit mix", value: exitMix },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `<b>Chart:</b> NIFTY 50 INDEX spot (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min. The ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle is built from those bars. <b>Setup:</b> it closes below yesterday's LOW → PE day, above yesterday's HIGH → CE day. <b>Entry:</b> the FIRST ${cfg.resolutionMins}-min close beyond that candle's low/high, filled at the NEXT bar's open (paper fills on the first tick after the close), until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> the global profit lock (${lockText()}) is the ONLY automatic exit — no stop, target, trail or early square-off — simulated on the δ premium, each bar walked open → adverse → favourable → close; a trade still open at the day's last candle is closed there. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) fetched before ${escHtml(from)} so day one has a yesterday. Premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}) seeded at ₹${escHtml(process.env.PREV_ORB_SCALP_BT_SEED_PREMIUM || "260")} with ${escHtml(process.env.PREV_ORB_SCALP_BT_SLIPPAGE_PTS || "1.5")}pt slippage each way — treat ₹ as directional. <b>Never traded live or on paper; nothing here is validated.</b>`,
+    notes: `<b>Chart:</b> NIFTY 50 INDEX spot (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min. The ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle is built from those bars. <b>Setup:</b> it closes below yesterday's LOW → PE day, above yesterday's HIGH → CE day. <b>Entry:</b> the FIRST ${cfg.resolutionMins}-min close beyond that candle's low/high, filled at the NEXT bar's open (paper fills on the first tick after the close), until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> the global profit lock (${lockText()}) is the ONLY automatic exit — no stop, target, trail or early square-off — simulated on the δ premium, each bar walked open → adverse → favourable → close; a trade still open at the day's last candle is closed there. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) fetched before ${escHtml(from)} so day one has a yesterday. Premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}) seeded at ₹${escHtmlbacktestCosts.seedPremium()} with ${escHtmlbacktestCosts.slippagePts()}pt slippage each way — treat ₹ as directional. <b>Never traded live or on paper; nothing here is validated.</b>`,
   });
   res.send(html.replace("</body>", `${MOBILE_CSS}</body>`));
 }

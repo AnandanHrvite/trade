@@ -399,7 +399,7 @@
   <div class="gate"><div class="gate-num">1</div><div class="gate-content"><div class="gate-name">Shared profit lock and breakeven stop &mdash; every tick, on the option price</div><div class="gate-desc">Once the premium is up 5%, the trade may not fall back below the price paid. Once it is up 8%, a rising floor keeps most of the gain. These two rules are global: they apply to every strategy in the app. Both are ON by default.</div><div class="gate-rule">BREAKEVEN_STOP_ENABLED = true &middot; PROFIT_LOCK_ENABLED = true</div></div></div>
   <div class="gate"><div class="gate-num">2</div><div class="gate-content"><div class="gate-name">Sharp reversal candle &mdash; at candle close (ON by default)</div><div class="gate-desc">CE: a red candle that closes below the lows of both of the two candles before it. PE: a green candle that closes above the highs of both of the two candles before it.</div><div class="gate-rule">EMA9VWAP_REVERSAL_EXIT_ENABLED = true</div></div></div>
   <div class="gate"><div class="gate-num">3</div><div class="gate-content"><div class="gate-name">Fast line back inside the channel &mdash; at candle close</div><div class="gate-desc">CE: the fast line closes back below the top edge. PE: it closes back above the bottom edge. The reason for the trade is gone.</div><div class="gate-rule">CE: EMA9 back below top &middot; PE: EMA9 back above bottom</div></div></div>
-  <div class="gate"><div class="gate-num">4</div><div class="gate-content"><div class="gate-name">Square-off at 15:15</div><div class="gate-desc">Anything still open is sold when the candle ending at 15:15 closes. At 15:30 the engine stops for the day; if anything were somehow still open, it is sold then.</div><div class="gate-rule">EMA9VWAP_EOD_EXIT_TIME = 15:15 &middot; EMA9VWAP_STOP_TIME = 15:30</div></div></div>
+  <div class="gate"><div class="gate-num">4</div><div class="gate-content"><div class="gate-name">Square-off at 15:15</div><div class="gate-desc">Anything still open is sold when the candle ending at 15:15 closes. At 15:30 the engine stops for the day; if anything were somehow still open, it is sold then.</div><div class="gate-rule">EMA9VWAP_EOD_EXIT_TIME = 15:15 &middot; TRADE_STOP_TIME = 15:30</div></div></div>
   <p>At candle close the order is: reversal first, then the fast-line exit, then the 15:15 check.</p>
 
   <h3>Exit by the fast line falling back inside</h3>
@@ -570,7 +570,6 @@
       <tr><td><code>EMA9VWAP_ENTRY_START</code></td><td>10:30</td><td>Earliest signal-candle close for a new trade.</td></tr>
       <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td>14:30</td><td>Latest. Open trades may run past it.</td></tr>
       <tr><td><code>EMA9VWAP_EOD_EXIT_TIME</code></td><td>15:15</td><td>Square-off time.</td></tr>
-      <tr><td><code>EMA9VWAP_STOP_TIME</code></td><td>15:30</td><td>Engine stops for the day.</td></tr>
       <tr><td><code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code></td><td>false</td><td>Wait for the next candle to confirm.</td></tr>
       <tr><td><code>EMA9VWAP_INTRACANDLE_ENTRY</code></td><td>false</td><td>Buy inside a forming candle.</td></tr>
       <tr><td><code>TRADE_EXPIRY_DAY_ONLY</code></td><td>false</td><td>Global: trade only on weekly expiry day.</td></tr>
@@ -601,7 +600,6 @@
       <tr><td><code>PORTFOLIO_MAX_DAILY_LOSS</code></td><td>0</td><td>All-strategy daily loss cap in ₹. 0 = off. Set in <code>.env</code>.</td></tr>
       <tr><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td>0</td><td>Losing-streak brake. 0 = off.</td></tr>
       <tr><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side pause after an extra stop is hit.</td></tr>
-      <tr><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td>true / 3</td><td>Opposite-side cool-off after an exit.</td></tr>
       <tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td>2</td><td>Global: skip an option whose bid-ask gap is wider.</td></tr>
     </tbody>
   </table>

@@ -69,8 +69,6 @@ const { EMA } = require("technicalindicators");
 // process.env mutations would never reach the running strategy code.
 let TRADE_RES;            // candle resolution in minutes
 let _STOP_MINS;
-let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
-let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× resolution → minutes)
 let _START_MINS;               // entry-window open  (IST minutes) — refreshed at /start
 let _ENTRY_STOP_MINS;          // entry-window close (IST minutes) — refreshed at /start
 function _refreshConfig() {
@@ -84,28 +82,13 @@ function _refreshConfig() {
   // "Session restart" badge is truthful: stop + start now really does apply it.
   _START_MINS                            = parseMins("EMA9VWAP_ENTRY_START", "10:30");
   _ENTRY_STOP_MINS                       = parseMins("EMA9VWAP_ENTRY_END", "14:30");
-  // Engine auto-stop time — the session teardown closes any open position here.
-  const raw = process.env.EMA9VWAP_STOP_TIME || "15:30";
+  // Engine auto-stop time — the common TRADE_STOP_TIME; the session teardown closes any open position here.
+  const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
-  _OPP_COOLDOWN_ENABLED = (process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
-  _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
 }
 _refreshConfig();
 let _cachedClosedCandleSL = null; // cached getSignal stopLoss from last FULLY CLOSED candle — always null for EMA9+VWAP (no stop loss); used in every tick
-
-// ── Opposite-side (flip) cooldown ───────────────────────────────────────────
-// After any non-flip exit, block entries on the OPPOSITE side for
-// EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
-// Skipped for opposite-signal / EOD / manual exits.
-function _setOppositeCooldown(exitedSide, reason) {
-  if (!_OPP_COOLDOWN_ENABLED || !_OPP_COOLDOWN_CANDLES || _OPP_COOLDOWN_CANDLES <= 0) return;
-  if (reason && /opposite signal|eod|day close|market closed|auto-stop|manual|session restart|simulation ended/i.test(reason)) return;
-  ptState._oppositeCooldownUntilTs   = simNow() + _OPP_COOLDOWN_CANDLES * getTradeResolution() * 60 * 1000;
-  ptState._oppositeCooldownLastSide  = exitedSide;
-  const opp = exitedSide === "CE" ? "PE" : "CE";
-  log(`🔁 [PAPER] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * getTradeResolution()} min)`);
-}
 
 // _STOP_MINS declared and populated by _refreshConfig() above
 
@@ -801,18 +784,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ptState._entryPending = false;
     return;
   }
-  // Opposite-side cooldown: reject opposite-side entry within cooldown window after a recent exit.
-  if (_OPP_COOLDOWN_ENABLED && ptState._oppositeCooldownLastSide
-      && ptState._oppositeCooldownLastSide !== side
-      && ptState._oppositeCooldownUntilTs > simNow()) {
-    log(`⏸️ [PAPER] Opposite-side cooldown active — entry rejected (last exit ${ptState._oppositeCooldownLastSide}, new ${side} @ ₹${price})`);
-    if (ptState._skipSignalCtx) {
-      ptState._skipSignalCtx("opposite_cooldown",
-        `opposite-side cooldown after a ${ptState._oppositeCooldownLastSide} exit — ${side} blocked for another ${Math.ceil((ptState._oppositeCooldownUntilTs - simNow()) / 60000)} min`, side);
-    }
-    ptState._entryPending = false;
-    return;
-  }
 
   // ── Capital gate — HARD: the pool must fund qty × premium or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
@@ -1121,8 +1092,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     try { require("../utils/positionPersist").clearEma9VwapPosition(); } catch (_) {}
   }
 
-  // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
-  _setOppositeCooldown(side, reason);
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
 
@@ -1272,7 +1241,6 @@ async function onCandleClose(candle) {
   //   • the three conditions swallowed by the entry `if` itself → logged right below
   //   • VIX / OI / spread                                      → already self-logging
   //   • portfolio cap                                          → logged at its `return`
-  //   • opposite-side cooldown                                 → logged in simulateBuy
   // `_skipSignal` is the shared writer so every row carries the same band context.
   const _skipSignal = (gate, reason, side) => {
     log(`🚫 [PAPER] Signal NOT taken — ${reason} | ${signal} @ ₹${candle.close}`);
@@ -2002,8 +1970,6 @@ router.get("/start", async (req, res) => {
   ptState._skipSignalCtx       = null; // per-candle skip-log writer (set in onCandleClose)
   ptState._slHitCandleTime     = null;
   ptState._reentryBlockUntil   = 0;
-  ptState._oppositeCooldownUntilTs  = 0;
-  ptState._oppositeCooldownLastSide = null;
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._missedLoggedCandle  = null;
@@ -2038,7 +2004,7 @@ router.get("/start", async (req, res) => {
     log(`   Exit        : global profit lock ${tradeGuards.PROFIT_LOCK_ENABLED ? "(on)" : "(OFF — no automatic exit)"} | session close ${_stopLbl}`);
   }
   // Print the RESOLVED per-strategy values actually in force (_refreshConfig has run).
-  log(`   Entry guards: opposite-side cooldown ${_OPP_COOLDOWN_ENABLED ? _OPP_COOLDOWN_CANDLES + " candles" : "off"} | VIX ${vixFilter.getVixEnabled("ema9vwap") ? ("≤" + vixFilter.getVixMaxEntry("ema9vwap")) : "off"} | OI ${oiFilter.getOiEnabled("ema9vwap") ? "on" : "off"}`);
+  log(`   Entry guards: VIX ${vixFilter.getVixEnabled("ema9vwap") ? ("≤" + vixFilter.getVixMaxEntry("ema9vwap")) : "off"} | OI ${oiFilter.getOiEnabled("ema9vwap") ? "on" : "off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
   // Telegram: session started + checklist (same as live trade)
@@ -4399,8 +4365,6 @@ router.post("/simulate/start", async (req, res) => {
     ptState._cachedPE            = null;
     ptState._slHitCandleTime     = null;
     ptState._reentryBlockUntil   = 0;
-    ptState._oppositeCooldownUntilTs  = 0;
-    ptState._oppositeCooldownLastSide = null;
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;
     ptState._missedLoggedCandle  = null;

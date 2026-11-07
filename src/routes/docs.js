@@ -824,7 +824,6 @@ const GUIDE_STATUS = {
   "EMA_RSI_ST_Strategy_Guide.html": { title: "EMA_RSI_ST — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EMA_RSI_ST Mode (sidebar + Settings section)", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "VIX Filter", key: "VIX_FILTER_ENABLED", def: "true" },
-    { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "TRADE_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
   // EMA_RSI_ST_V2 — a separate strategy from V1: every key below is V2's own.
@@ -833,7 +832,6 @@ const GUIDE_STATUS = {
   "EMA_RSI_ST_V2_Strategy_Guide.html": { title: "EMA_RSI_ST_V2 — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
     { type: "bool", label: "Confirmation Candle", key: "EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
-    { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "value", label: "SuperTrend Period", key: "EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
   ] }] },
@@ -842,7 +840,6 @@ const GUIDE_STATUS = {
   "BN_EMA_RSI_ST_V2_Strategy_Guide.html": { title: "BN EMA_RSI_ST_V2 (NIFTY BANK) — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
     { type: "bool", label: "Confirmation Candle", key: "BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
-    { type: "bool", label: "Opposite-Side Cooldown", key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "value", label: "SuperTrend Period", key: "BN_EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "BN_EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
   ] }] },
@@ -922,7 +919,6 @@ const GUIDE_STATUS = {
   "EMA9_VWAP_Strategy_Guide.html": { title: "EMA9 + VWAP — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "EMA9+VWAP Mode (sidebar + Settings section)", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
     { type: "bool", label: "VIX Filter (global keys)", key: "VIX_FILTER_ENABLED", def: "true" },
-    { type: "bool", label: "Opposite-Side Cooldown", key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
   ] }] },
   "Trend_Pullback_Strategy_Guide.html": { title: "Trend Pullback — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "Trend Pullback Mode (sidebar + Settings section)", key: "TREND_PB_MODE_ENABLED", def: "true" },
@@ -963,7 +959,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Weekly expiries exist (must stay OFF — NSE withdrew BANKNIFTY weeklies)", key: "BANKNIFTY_WEEKLY_EXPIRY_ENABLED", def: "false" },
     ] },
     { heading: "Backtest premium model — the defaults are NIFTY-weekly-shaped", rows: [
-      { type: "value", label: "Seed premium (₹180 is a NIFTY weekly, not a BANKNIFTY monthly)", key: "BN_PIVOT_RSI_ST_BT_SEED_PREMIUM", def: "180" },
+      { type: "value", label: "Seed premium — common to every backtest (₹240 is a NIFTY weekly, not a BANKNIFTY monthly)", key: "BACKTEST_SEED_PREMIUM", def: "240" },
       { type: "value", label: "Theta per day (₹) used by every backtest", key: "BACKTEST_THETA_DAY", def: "8" },
       { type: "value", label: "Delta used by every backtest", key: "BACKTEST_DELTA", def: "0.55" },
     ] },

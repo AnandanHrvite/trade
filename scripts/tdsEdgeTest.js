@@ -39,6 +39,7 @@ const tradeGuards = require(path.join(__dirname, "../src/utils/tradeGuards"));
 const { fetchCandlesCachedBT } = require(path.join(__dirname, "../src/services/backtestEngine"));
 const { getCharges } = require(path.join(__dirname, "../src/utils/charges"));
 const instrumentConfig = require(path.join(__dirname, "../src/config/instrument"));
+const backtestCosts = require("../src/config/backtestCosts");
 
 const SYMBOL = "NSE:NIFTY50-INDEX";
 const MIN = t => Math.floor((t + 19800) / 60) % 1440;
@@ -121,8 +122,8 @@ function stats(trades) {
   const LOT = instrumentConfig.getLotQty();
   const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const SEEDP = parseFloat(process.env.TDS_BT_SEED_PREMIUM || "240");
-  const SLIP  = parseFloat(process.env.TDS_BT_SLIPPAGE_PTS || "1.5");
+  const SEEDP = backtestCosts.seedPremium();
+  const SLIP  = backtestCosts.slippagePts();
   const barsPerDay = Math.max(1, Math.round(375 / cfg.resolutionMins));
 
   // Identical premium model for both arms — only the entry bar differs. premAt is

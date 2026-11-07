@@ -21,6 +21,7 @@ const path = require("path");
 const orb = require(path.join(__dirname, "../../src/strategies/orb_breakout"));
 const orbExits = require(path.join(__dirname, "../../src/strategies/orbExits"));
 const tradeGuards = require(path.join(__dirname, "../../src/utils/tradeGuards"));
+const backtestCosts = require("../../src/config/backtestCosts");
 
 const r2 = x => Math.round(x * 100) / 100;
 const DAY = t => Math.floor((t + 19800) / 86400);
@@ -35,7 +36,7 @@ const CHARGE = 60;   // INR round trip
 function costModel() {
   const qty = parseInt(process.env.NIFTY_LOT_SIZE || "65", 10) * parseInt(process.env.LOT_MULTIPLIER || "1", 10);
   const delta = parseFloat(process.env.BACKTEST_DELTA || "0.6");
-  const slip = parseFloat(process.env.ORB_BT_SLIPPAGE_PTS || "1.5");   // premium pts EACH way
+  const slip = backtestCosts.slippagePts();   // premium pts EACH way
   return { qty, delta, slip, theta: THETA, charge: CHARGE, toINR: pts => r2((delta * pts - 2 * slip - THETA) * qty - CHARGE) };
 }
 
@@ -61,7 +62,7 @@ function stats(list) {
 function simulate(candles) {
   const { toINR, delta } = costModel();
   // Premium model for the lock — the same δ model and seed the backtest route uses.
-  const SEED = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");
+  const SEED = backtestCosts.seedPremium();
   const premAt = (side, entry, spot) => Math.max(0.05, SEED + (side === "CE" ? spot - entry : entry - spot) * delta);
   const spotForPrem = (side, entry, prem) => {
     const move = delta > 0 ? (prem - SEED) / delta : 0;

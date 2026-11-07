@@ -364,7 +364,6 @@
 <tr><td><code>PROFIT_LOCK_ARM_PCT</code> / <code>PROFIT_LOCK_FLOOR_PCT</code></td><td>8 / 5</td><td>Lock arms at +8% premium; the first floor is +5%.</td></tr>
 <tr><td><code>PROFIT_LOCK_TRAIL_PCT</code> / <code>PROFIT_LOCK_TRAIL_TIERS</code></td><td>70 / 20:85,40:80</td><td>How much of the best gain the floor keeps as it rises.</td></tr>
 <tr><td><code>BREAKEVEN_STOP_ENABLED</code> / <code>BREAKEVEN_ARM_PCT</code></td><td>true / 5</td><td>App-wide breakeven stop: after +5% premium, never sell below entry.</td></tr>
-<tr><td><code>BB_RSI_SLIPPAGE_PTS</code></td><td>1.5</td><td>Backtest only: slippage per side, in points.</td></tr>
 </table>
 <h3>Safety limits and pause</h3>
 <table>
@@ -399,7 +398,6 @@
 <tr><td><code>BACKTEST_CAPITAL</code></td><td>100000</td><td>Starting money for a backtest (₹).</td></tr>
 <tr><td><code>BACKTEST_DELTA</code></td><td>0.55</td><td>Estimated option move per NIFTY point (backtest; also Paper's fallback when the option price is stale).</td></tr>
 <tr><td><code>BACKTEST_THETA_DAY</code></td><td>10</td><td>Estimated daily time decay, in points (backtest).</td></tr>
-<tr><td><code>BACKTEST_SLIPPAGE_PTS</code></td><td>0</td><td>Shared backtest slippage. The BB_RSI backtest uses <code>BB_RSI_SLIPPAGE_PTS</code> instead.</td></tr>
 </table>
 <div class="card bad">
   <strong>Settings that no longer exist.</strong> These were removed and do nothing now: <code>BB_RSI_PSAR_STEP</code> / <code>BB_RSI_PSAR_MAX</code> and every <code>BB_RSI_SUPERTREND_*</code> key (V8 has no trend tool), <code>BB_RSI_BB_REENTRY_EXIT</code> / <code>BB_RSI_BB_REENTRY_ARM_PTS</code>, <code>BB_RSI_ADX_MIN</code> (now <code>BB_RSI_ADX_MAX</code>, a ceiling) and <code>BB_RSI_CONFIRM_OUTSIDE_BAND</code> (now <code>BB_RSI_CONFIRM_ON_CLOSE</code>).

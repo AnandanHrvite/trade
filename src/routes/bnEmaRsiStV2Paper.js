@@ -31,7 +31,7 @@
  *            signal exit or early square-off — deleted, not disabled. Otherwise
  *            a trade closes only on a manual exit or the session-end
  *            (TRADE_STOP_TIME) square-off.
- *   GUARDS : entry filters only — window 10:30–13:00, opposite-side cooldown,
+ *   GUARDS : entry filters only — window 10:30–13:00,
  *            re-entry cooldown, VIX / OI / spread / capital. No loss-based
  *            day limits.
  *
@@ -102,8 +102,6 @@ let TRADE_RES;            // candle resolution in minutes
 // TRADE_ENTRY_END; V2 must not, or tuning one strategy would silently retune
 // the other.
 let _STOP_MINS;
-let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
-let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RESOLUTION → minutes)
 let _WARMUP_DAYS;              // calendar days of history to preload (engine needs >1 session)
 // Session bounds — declared HERE (not further down as const) so _refreshConfig()
 // can keep them in step with _STOP_MINS. See the note there.
@@ -117,8 +115,6 @@ function _refreshConfig() {
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
-  _OPP_COOLDOWN_ENABLED = (process.env.BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
-  _OPP_COOLDOWN_CANDLES = parseInt(process.env.BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES || "2", 10);
   // The engine refuses below EMA_SLOW+5 candles (55 at defaults ≈ 4.6 hours), i.e.
   // MORE than one session — the preload must therefore span previous DAYS.
   _WARMUP_DAYS = parseInt(process.env.BN_EMA_RSI_ST_V2_WARMUP_DAYS || "5", 10);
@@ -138,19 +134,6 @@ _refreshConfig();
 // onCandleClose (and from the preload), read on every tick. On 15-min bars the
 // intra-tick entry path only runs once this is set (5-min bars bypass it).
 let _closedCandleHasSignal = false;
-
-// ── Opposite-side (flip) cooldown ───────────────────────────────────────────
-// After any non-flip exit, block entries on the OPPOSITE side for
-// BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
-// Skipped for opposite-signal / EOD / manual exits.
-function _setOppositeCooldown(exitedSide, reason) {
-  if (!_OPP_COOLDOWN_ENABLED || !_OPP_COOLDOWN_CANDLES || _OPP_COOLDOWN_CANDLES <= 0) return;
-  if (reason && /opposite signal|eod|day close|market closed|auto-stop|manual|session restart|simulation ended/i.test(reason)) return;
-  ptState._oppositeCooldownUntilTs   = simNow() + _OPP_COOLDOWN_CANDLES * getTradeResolution() * 60 * 1000;
-  ptState._oppositeCooldownLastSide  = exitedSide;
-  const opp = exitedSide === "CE" ? "PE" : "CE";
-  log(`🔁 [PAPER] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * getTradeResolution()} min)`);
-}
 
 // _STOP_MINS declared and populated by _refreshConfig() above
 
@@ -865,14 +848,6 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
     ptState._entryPending = false;
     return;
   }
-  // Opposite-side cooldown: reject opposite-side entry within cooldown window after a recent exit.
-  if (_OPP_COOLDOWN_ENABLED && ptState._oppositeCooldownLastSide
-      && ptState._oppositeCooldownLastSide !== side
-      && ptState._oppositeCooldownUntilTs > simNow()) {
-    log(`⏸️ [PAPER] Opposite-side cooldown active — entry rejected (last exit ${ptState._oppositeCooldownLastSide}, new ${side} @ ₹${price})`);
-    ptState._entryPending = false;
-    return;
-  }
   const optDetails = parseOptionDetails(symbol);
 
   const _entrySpot = spotAtEntry || price;
@@ -1145,8 +1120,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
   capitalPool.release("bn_ema_rsi_st_v2", netPnl, { sim: (ptState._simMode || ptState._simSession) });
 
-  // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
-  _setOppositeCooldown(side, reason);
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
 
@@ -1998,8 +1971,6 @@ router.get("/start", async (req, res) => {
   ptState._cachedPE            = null;
   ptState._slHitCandleTime     = null;
   ptState._reentryBlockUntil   = 0;
-  ptState._oppositeCooldownUntilTs  = 0;
-  ptState._oppositeCooldownLastSide = null;
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._sessionWins         = 0;
@@ -2040,7 +2011,7 @@ router.get("/start", async (req, res) => {
     log(`   Window      : ${process.env.BN_EMA_RSI_ST_V2_ENTRY_START||"10:30"} → ${process.env.BN_EMA_RSI_ST_V2_ENTRY_END||"13:00"} IST | confirmation candle ${confirmCandle.enabled("BN_EMA_RSI_ST_V2") ? "ON" : "OFF"}`);
     log(`   Exit        : global profit lock only (no SL / trail / target / signal exit) | session end ${process.env.TRADE_STOP_TIME||"15:30"}`);
   }
-  log(`   Entry guards: opposite-side cooldown ${_OPP_COOLDOWN_ENABLED ? _OPP_COOLDOWN_CANDLES + " candles" : "off"} | VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
+  log(`   Entry guards: VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
   // Telegram: session started + checklist (same as live trade)
@@ -4433,8 +4404,6 @@ router.post("/simulate/start", async (req, res) => {
     ptState._cachedPE            = null;
     ptState._slHitCandleTime     = null;
     ptState._reentryBlockUntil   = 0;
-    ptState._oppositeCooldownUntilTs  = 0;
-    ptState._oppositeCooldownLastSide = null;
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;
       ptState._sessionWins         = 0;

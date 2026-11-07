@@ -25,6 +25,7 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const backtestJobs = require("../utils/backtestJobManager");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -82,8 +83,8 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
 
   // Slippage simulation (pts added against you on entry & exit)
   // Realistic default (was 0 = frictionless, which overstated edge). 1.5pt each
-  // way. Set PA_SLIPPAGE_PTS=0 to restore the old frictionless fills.
-  const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "1.5");
+  // way. Set BACKTEST_SLIPPAGE_PTS=0 to restore the old frictionless fills.
+  const SLIPPAGE_PTS = backtestCosts.slippagePts();
 
   // Common profit lock — the only automatic exit, as in paper. In spot points because
   // a backtest has no live premium — the same conversion backtestEngine uses (200

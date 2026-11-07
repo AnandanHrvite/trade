@@ -258,7 +258,7 @@ check("warms up instead of guessing on short history", () => {
 async function backtestAfter(extraRows, env) {
   return withEnv(Object.assign({
     PROFIT_LOCK_ENABLED: "false",
-    PA_SLIPPAGE_PTS: "0", EXIT_REENTRY_COOLDOWN_ENABLED: "false", PA_VIX_ENABLED: "false",
+    BACKTEST_SLIPPAGE_PTS: "0", EXIT_REENTRY_COOLDOWN_ENABLED: "false", PA_VIX_ENABLED: "false",
     BACKTEST_OPTION_SIM: "false", INSTRUMENT: "NIFTY_OPTIONS",
   }, env || {}), async () => {
     const log = console.log; console.log = () => {};
@@ -297,7 +297,7 @@ check("backtest: an armed lock fills at its floor, not at the candle's low", asy
 });
 
 check("backtest: slippage works against the entry and the lock fill", async () => {
-  const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 980, 985]], Object.assign({ PA_SLIPPAGE_PTS: "2" }, LOCK_ENV));
+  const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 980, 985]], Object.assign({ BACKTEST_SLIPPAGE_PTS: "2" }, LOCK_ENV));
   assert.strictEqual(trades[0].entryPrice, 1010);
   assert.strictEqual(trades[0].exitPrice, 1015.27, "floor 1017.27 less 2 pts");
 });

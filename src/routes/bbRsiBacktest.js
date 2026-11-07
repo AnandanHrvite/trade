@@ -33,6 +33,7 @@ function _deriveBbRsiStrength(result) {
   return bbRsiStrategy.signalStrength(result);
 }
 const backtestJobs = require("../utils/backtestJobManager");
+const backtestCosts = require("../config/backtestCosts");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -109,8 +110,8 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
 
   // Slippage simulation (pts added against you on entry & exit)
   // Realistic default (was 0 = frictionless, which overstated edge). 1.5pt each
-  // way. Set BB_RSI_SLIPPAGE_PTS=0 to restore the old frictionless fills.
-  const SLIPPAGE_PTS = parseFloat(process.env.BB_RSI_SLIPPAGE_PTS || "1.5");
+  // way. Set BACKTEST_SLIPPAGE_PTS=0 to restore the old frictionless fills.
+  const SLIPPAGE_PTS = backtestCosts.slippagePts();
 
   // ── Profit-lock price model ─────────────────────────────────────────────────
   // The global profit lock (tradeGuards.checkProfitLock) is the ONLY automatic exit,
@@ -297,7 +298,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       if (exitReason) {
         // Exit-side slippage — options fill worse than the spot-implied exit.
         // Applied on every exit fill (was previously entry-only despite the
-        // BB_RSI_SLIPPAGE_PTS comment claiming "entry & SL exit").
+        // BACKTEST_SLIPPAGE_PTS comment claiming "entry & SL exit").
         if (SLIPPAGE_PTS > 0) exitPrice = parseFloat((exitPrice - SLIPPAGE_PTS * (position.side === "CE" ? 1 : -1)).toFixed(2));
         const spotPnlPts = (exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1);
         let pnl;

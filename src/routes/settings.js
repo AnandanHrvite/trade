@@ -99,8 +99,6 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "SuperTrend ATR period.", default: "10" },
       { key: "EMA_RSI_ST_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "SuperTrend band width multiplier.", default: "3" },
       // ── Stops & exits ──
-      { key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true", subheader: "Exits & Cooldowns" },
-      { key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Opposite-side cooldown length in candles.", default: "2" },
     ],
   },
   {
@@ -144,7 +142,6 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_DIV_LOOKBACK", label: "Divergence Lookback (candles)", type: "number", min: 5, max: 60, step: 1, effect: EFFECT.SESSION, desc: "How far back to hunt for the prior swing to compare against.", default: "20" },
       { key: "BB_RSI_DIV_PIVOT_BARS", label: "Divergence Pivot Bars", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Bars either side needed to confirm a swing pivot (higher = stricter, slower).", default: "2" },
       // ── Risk management ──
-      { key: "BB_RSI_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage per side, in points.", default: "1.5", subheader: "Risk & Pauses" },
     ],
   },
   {
@@ -169,7 +166,6 @@ const SETTINGS_SCHEMA = [
       { key: "PA_SL_BUFFER_PTS", label: "Stop Buffer (pts)", type: "number", min: 0, max: 20, step: 0.5, effect: EFFECT.INSTANT, desc: "Stop sits this far beyond the block, in spot points.", default: "3", subheader: "Exits & Risk" },
       { key: "PA_MIN_SL_PTS", label: "Min Stop (pts)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "The stop is never closer than this, in spot points.", default: "8" },
       { key: "PA_MAX_SL_PTS", label: "Max Stop (pts)", type: "number", min: 5, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Skip the trade when the stop would be wider than this, in spot points.", default: "25" },
-      { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest, in points.", default: "0" },
     ],
   },
   {
@@ -219,11 +215,9 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_VIX_STRONG_ONLY", label: "ORB VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX, allow only strong signals.", default: "18" },
 
       // ── Backtest-only sim knobs (mirrors TREND_PB_BT_*) ──────────────
-      { key: "ORB_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Backtest cost per side, in points.", default: "1.5", subheader: "Backtest & Debug" },
-      { key: "ORB_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.INSTANT, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
 
       // ── Debug ────────────────────────────────────────────────────────
-      { key: "ORB_DEBUG_TRACE", label: "Debug — Per-Candle Gate Trace", type: "toggle", effect: EFFECT.INSTANT, desc: "Log why entries did or didn't fire (verbose).", default: "false" },
+      { key: "ORB_DEBUG_TRACE", label: "Debug — Per-Candle Gate Trace", type: "toggle", effect: EFFECT.INSTANT, desc: "Log why entries did or didn't fire (verbose).", default: "false", subheader: "Debug" },
     ],
   },
   {
@@ -235,7 +229,6 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_VWAP_SESSION_START", label: "VWAP Session Anchor", type: "time", effect: EFFECT.SESSION, desc: "Time VWAP resets each day (IST).", default: "09:15", subheader: "Mode & Session" },
       { key: "EMA9VWAP_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST).", default: "10:30" },
       { key: "EMA9VWAP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
-      { key: "EMA9VWAP_STOP_TIME", label: "Engine Auto-Stop", type: "time", effect: EFFECT.SESSION, desc: "Time the engine stops for the day (IST).", default: "15:30" },
       // ── Entry signal ──
       { key: "EMA9VWAP_BAND_MULT", label: "VWAP Band σ Multiplier", type: "number", min: 0, max: 4, step: 0.5, effect: EFFECT.INSTANT, desc: "VWAP band width (σ multiplier).", default: "1", subheader: "Entry Signal" },
       { key: "EMA9VWAP_EMA_PERIOD", label: "EMA Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "EMA period.", default: "9" },
@@ -249,8 +242,6 @@ const SETTINGS_SCHEMA = [
       // Settings save writes nothing that changes behaviour.
       { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "VIX filter (blank = use the global setting).", default: "", subheader: "Risk & Filters" },
       { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block entries above this VIX (blank = use global).", default: "" },
-      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true" },
-      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Opposite-side cooldown length in candles.", default: "3" },
     ],
   },
   {
@@ -278,8 +269,6 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_VIX_ENABLED", label: "VIX Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is out of range.", default: "false" },
       { key: "TREND_PB_VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 8, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "22" },
       { key: "TREND_PB_OI_ENABLED", label: "OI Buildup Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries fighting an OI buildup.", default: "false" },
-      { key: "TREND_PB_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Backtest cost per side, in points.", default: "1.5", subheader: "Backtest" },
-      { key: "TREND_PB_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.INSTANT, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
     ],
   },
   {
@@ -313,8 +302,6 @@ const SETTINGS_SCHEMA = [
       { key: "TDS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1", subheader: "Sizing & Day Breakers" },
 
       // ── Backtest ──
-      { key: "TDS_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
-      { key: "TDS_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
     ],
   },
   {
@@ -359,8 +346,6 @@ const SETTINGS_SCHEMA = [
       { key: "HA_SCALP_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, which delays every decision by a whole candle.", default: "5000" },
 
       // ── Backtest ──
-      { key: "HA_SCALP_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
-      { key: "HA_SCALP_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
     ],
   },
   {
@@ -389,8 +374,6 @@ const SETTINGS_SCHEMA = [
       { key: "PREV_ORB_SCALP_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, which delays every decision by a whole candle.", default: "5000" },
 
       // ── Backtest ──
-      { key: "PREV_ORB_SCALP_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
-      { key: "PREV_ORB_SCALP_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "260" },
     ],
   },
   {
@@ -449,13 +432,6 @@ const SETTINGS_SCHEMA = [
       { leg: "stock", key: "EARLYBIRD_STAMP_PCT", label: "Stamp Duty — Buy Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.SESSION, desc: "Stamp duty on the BUY leg only.", default: "0.003" },
 
       // ── Backtest ──
-      { key: "EARLYBIRD_BT_SLIPPAGE_PTS", label: "Backtest Slippage Haircut (₹ each way)", type: "number", min: 0, max: 20, step: 0.05, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in rupees of stock price. Applied to both entry and exit. Without it a breakout backtest always flatters.", default: "0.05", subheader: "Backtest" },
-      { key: "EARLYBIRD_BT_CONCURRENCY", label: "Backtest Fetch Concurrency", type: "number", min: 1, max: 16, step: 1, effect: EFFECT.BACKTEST, desc: "How many symbols' history are fetched in parallel during a backtest. Higher is faster but risks Fyers rate limits.", default: "4" },
-      { key: "EARLYBIRD_BT_RPS", label: "Backtest Fetch Rate (per second)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Fyers meters history requests per second. Lower this if a wide-range run starts failing.", default: "8" },
-      { key: "EARLYBIRD_BT_RPM", label: "Backtest Fetch Rate (per minute)", type: "number", min: 1, max: 2000, step: 10, effect: EFFECT.BACKTEST, desc: "The second Fyers history window. Both this and the per-second cap are honoured.", default: "180" },
-      { key: "EARLYBIRD_BT_MAX_SYMBOL_DAYS", label: "Backtest Memory Ceiling (symbol-days)", type: "number", min: 100, max: 2000000, step: 1000, effect: EFFECT.BACKTEST, desc: "Largest run allowed, measured as symbols × trading days. The backtest holds every symbol's candles in memory at once, and this process runs with a 620 MB heap shared with running sessions — an oversized run would make PM2 restart the whole bot. 60000 ≈ one year of the full FNO universe (~186 MB of candles) or ~4 years of NIFTY50. Raise it only on a larger machine.", default: "60000" },
-      { key: "EARLYBIRD_BT_CACHE_DAYS", label: "Backtest Cache Retention (days)", type: "number", min: 1, max: 365, step: 1, effect: EFFECT.BACKTEST, desc: "How long a cached history file survives before it is re-fetched.", default: "30" },
-      { key: "EARLYBIRD_BT_DAILY_LOOKBACK_DAYS", label: "Backtest prevClose Lookback (days)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.BACKTEST, desc: "How far back the daily series is pulled so every simulated day has a previous close for the gap rule, even after a long holiday.", default: "10" },
 
       // ── Equity-intraday cost model ──
       // charges.js has only an options and a futures path, so these rates are
@@ -498,7 +474,6 @@ const SETTINGS_SCHEMA = [
       { key: "SIMPLE930_LTP_STALE_MS", label: "Max Quote Age for an Entry (ms)", type: "number", min: 1000, max: 120000, step: 1000, effect: EFFECT.SESSION, desc: "Refuse an entry when the last premium is older than this. A stalled quote feed would otherwise buy a break that happened minutes ago, at a price that no longer exists.", default: "15000" },
 
       // ── Backtest ──
-      { key: "SIMPLE930_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 50, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
     ],
   },
   {
@@ -533,8 +508,6 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_PIVOT_ST_ST_SIDES", label: "SuperTrend Stop Applies To", type: "select", options: [{ value: "CE", label: "CE only (original rule)" }, { value: "BOTH", label: "Both CE and PE" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no SuperTrend stop)" }], effect: EFFECT.SESSION, desc: "Which side uses the SuperTrend line as its stop and trail, on top of the premium stop. CE is the original rule. On PE the line is mirrored: it sits ABOVE price and a flip to bullish is the exit. A side that uses it also gains the \"SuperTrend must be on the right side of price\" entry check, so it takes FEWER trades; a side without it relies on the premium stop alone.", default: "CE" },
 
       // ── Backtest ──
-      { key: "RSI_PIVOT_ST_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "2", subheader: "Backtest" },
-      { key: "RSI_PIVOT_ST_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.BACKTEST, desc: "Starting option price the backtest assumes, since there is no historical option chain. The 25% stop is measured against this simulated premium, so it is the weakest number in any backtest result.", default: "180" },
     ],
   },
   {
@@ -575,8 +548,6 @@ const SETTINGS_SCHEMA = [
       { key: "BN_PIVOT_RSI_ST_ST_SIDES", label: "SuperTrend Stop Applies To", type: "select", options: [{ value: "CE", label: "CE only (original rule)" }, { value: "BOTH", label: "Both CE and PE" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no SuperTrend stop)" }], effect: EFFECT.SESSION, desc: "Which side uses the SuperTrend line as its stop and trail, on top of the premium stop. CE is the original rule. On PE the line is mirrored: it sits ABOVE price and a flip to bullish is the exit. A side that uses it also gains the \"SuperTrend must be on the right side of price\" entry check, so it takes FEWER trades; a side without it relies on the premium stop alone.", default: "CE" },
 
       // ── Backtest ──
-      { key: "BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "2", subheader: "Backtest" },
-      { key: "BN_PIVOT_RSI_ST_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.BACKTEST, desc: "Starting option price the backtest assumes, since there is no historical option chain. The 25% stop is measured against this simulated premium, so it is the weakest number in any backtest result.", default: "180" },
     ],
   },
   {
@@ -617,12 +588,8 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_V2_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so the EMAs, RSI and SuperTrend start the day already settled. Too few and the first signals are computed from half-formed indicators.", default: "5" },
 
       // ── Day-level guards ──
-      { key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.", default: "true", subheader: "Day guards" },
-      { key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "How many candles the opposite-side pause lasts. Longer means a genuine reversal is missed; shorter means whipsaw flips get through. Ignored when the toggle above is off.", default: "2" },
 
       // ── Backtest ──
-      { key: "EMA_RSI_ST_V2_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Cost the backtest charges per side, in points, to stand in for the bid-ask spread you really pay. Set it to 0 and every option-buying backtest flatters itself.", default: "2", subheader: "Backtest" },
-      { key: "EMA_RSI_ST_V2_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.BACKTEST, desc: "The option price the backtest starts each trade from, since no historical option chain exists here. It is a guess, and it is the weakest number in any V2 backtest result.", default: "180" },
     ],
   },
   {
@@ -692,12 +659,6 @@ const SETTINGS_SCHEMA = [
       // ── Size & day guards ──
       { key: "SAIL_VWAP_ST_LOTS", label: "Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.", default: "1", subheader: "Size & day guards" },
 
-      // ── Backtest ── SAIL-scaled on purpose: the global BACKTEST_DELTA /
-      // BACKTEST_THETA_DAY are sized for NIFTY and are nonsense on a ₹5 SAIL option.
-      { key: "SAIL_VWAP_ST_BT_SLIPPAGE_PTS", label: "Backtest Slippage (₹ of SAIL spot, each way)", type: "number", min: 0, max: 5, step: 0.05, effect: EFFECT.BACKTEST, desc: "Cost the backtest charges on both the entry and the exit fill, in rupees of the SAIL share price, to stand in for the spread you really pay. Example: at 0.05, a CE signalled at ₹170.00 fills at ₹170.05. Set it to 0 and the backtest flatters itself.", default: "0.05", subheader: "Backtest" },
-      { key: "SAIL_VWAP_ST_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹ / share)", type: "number", min: 0.05, max: 1000, step: 0.05, effect: EFFECT.BACKTEST, desc: "The option price the backtest starts each trade from, since no historical SAIL option chain exists here. Example: 5 = every trade is assumed bought at ₹5.00. It is a guess, and the weakest number in any SAIL backtest result.", default: "5" },
-      { key: "SAIL_VWAP_ST_BT_DELTA", label: "Backtest Delta", type: "number", min: 0.05, max: 1, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option moves per ₹1 move in SAIL. Example: at 0.5, SAIL rising ₹1.00 adds ₹0.50 to a CE's simulated premium. 0.5 is roughly an at-the-money option.", default: "0.5" },
-      { key: "SAIL_VWAP_ST_BT_THETA_DAY", label: "Backtest Time Decay (₹ / share / day)", type: "number", min: 0, max: 100, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option loses per full trading day just from time passing. Example: at 0.1, a trade held half the day loses about ₹0.05 per share to decay.", default: "0.1" },
     ],
   },
   {
@@ -893,12 +854,8 @@ const SETTINGS_SCHEMA = [
       { key: "BN_EMA_RSI_ST_V2_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so the EMAs, RSI and SuperTrend start the day already settled. Too few and the first signals are computed from half-formed indicators.", default: "5" },
 
       // ── Day-level guards ──
-      { key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.", default: "true", subheader: "Day guards" },
-      { key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "How many candles the opposite-side pause lasts. Longer means a genuine reversal is missed; shorter means whipsaw flips get through. Ignored when the toggle above is off.", default: "2" },
 
       // ── Backtest ──
-      { key: "BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Cost the backtest charges per side, in points, to stand in for the bid-ask spread you really pay. Set it to 0 and every option-buying backtest flatters itself. BANKNIFTY monthlies are usually wider than NIFTY weeklies, so 2 is if anything optimistic here.", default: "2", subheader: "Backtest" },
-      { key: "BN_EMA_RSI_ST_V2_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.BACKTEST, desc: "The option price the backtest starts each trade from, since no historical option chain exists here. It is a guess, and it is the weakest number in any backtest result — more so on BANKNIFTY, where a monthly ATM premium is typically well above a NIFTY weekly's.", default: "180" },
     ],
   },
   {
@@ -1094,7 +1051,19 @@ const SETTINGS_SCHEMA = [
       { key: "BACKTEST_OPTION_SIM", label: "Option Simulation (legacy bar-based BT only)", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L in the legacy backtest.", subheader: "Backtest Simulation" },
       { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation." },
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees." },
-      { key: "BACKTEST_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Simulated slippage per side, in points.", default: "0" },
+      { key: "BACKTEST_SLIPPAGE_PTS", label: "Slippage (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Spread + slippage charged on entry AND exit, in points. One value for every NIFTY / BANK NIFTY backtest — no strategy has its own.", default: "1.5" },
+      { key: "BACKTEST_SEED_PREMIUM", label: "Seed Premium (₹)", type: "number", min: 10, max: 2000, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed option premium at entry for the simulated-premium backtests. One value for every NIFTY / BANK NIFTY backtest. Note: a BANK NIFTY monthly premium is usually higher than this NIFTY-weekly figure.", default: "240" },
+      { key: "SAIL_VWAP_ST_BT_SLIPPAGE_PTS", label: "SAIL — Slippage (₹ of SAIL spot, each way)", type: "number", min: 0, max: 5, step: 0.05, effect: EFFECT.BACKTEST, desc: "Cost the backtest charges on both the entry and the exit fill, in rupees of the SAIL share price, to stand in for the spread you really pay. Example: at 0.05, a CE signalled at ₹170.00 fills at ₹170.05. Set it to 0 and the backtest flatters itself.", default: "0.05", subheader: "SAIL Backtest (₹ per share)" },
+      { key: "SAIL_VWAP_ST_BT_SEED_PREMIUM", label: "SAIL — Seed Premium (₹ / share)", type: "number", min: 0.05, max: 1000, step: 0.05, effect: EFFECT.BACKTEST, desc: "The option price the backtest starts each trade from, since no historical SAIL option chain exists here. Example: 5 = every trade is assumed bought at ₹5.00. It is a guess, and the weakest number in any SAIL backtest result.", default: "5" },
+      { key: "SAIL_VWAP_ST_BT_DELTA", label: "SAIL — Delta", type: "number", min: 0.05, max: 1, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option moves per ₹1 move in SAIL. Example: at 0.5, SAIL rising ₹1.00 adds ₹0.50 to a CE's simulated premium. 0.5 is roughly an at-the-money option.", default: "0.5" },
+      { key: "SAIL_VWAP_ST_BT_THETA_DAY", label: "SAIL — Time Decay (₹ / share / day)", type: "number", min: 0, max: 100, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option loses per full trading day just from time passing. Example: at 0.1, a trade held half the day loses about ₹0.05 per share to decay.", default: "0.1" },
+      { key: "EARLYBIRD_BT_SLIPPAGE_PTS", label: "EarlyBird — Slippage Haircut (₹ each way)", type: "number", min: 0, max: 20, step: 0.05, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in rupees of stock price. Applied to both entry and exit. Without it a breakout backtest always flatters.", default: "0.05", subheader: "Stock Backtest (EarlyBird)" },
+      { key: "EARLYBIRD_BT_CONCURRENCY", label: "EarlyBird — Fetch Concurrency", type: "number", min: 1, max: 16, step: 1, effect: EFFECT.BACKTEST, desc: "How many symbols' history are fetched in parallel during a backtest. Higher is faster but risks Fyers rate limits.", default: "4" },
+      { key: "EARLYBIRD_BT_RPS", label: "EarlyBird — Fetch Rate (per second)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Fyers meters history requests per second. Lower this if a wide-range run starts failing.", default: "8" },
+      { key: "EARLYBIRD_BT_RPM", label: "EarlyBird — Fetch Rate (per minute)", type: "number", min: 1, max: 2000, step: 10, effect: EFFECT.BACKTEST, desc: "The second Fyers history window. Both this and the per-second cap are honoured.", default: "180" },
+      { key: "EARLYBIRD_BT_MAX_SYMBOL_DAYS", label: "EarlyBird — Memory Ceiling (symbol-days)", type: "number", min: 100, max: 2000000, step: 1000, effect: EFFECT.BACKTEST, desc: "Largest run allowed, measured as symbols × trading days. The backtest holds every symbol's candles in memory at once, and this process runs with a 620 MB heap shared with running sessions — an oversized run would make PM2 restart the whole bot. 60000 ≈ one year of the full FNO universe (~186 MB of candles) or ~4 years of NIFTY50. Raise it only on a larger machine.", default: "60000" },
+      { key: "EARLYBIRD_BT_CACHE_DAYS", label: "EarlyBird — Cache Retention (days)", type: "number", min: 1, max: 365, step: 1, effect: EFFECT.BACKTEST, desc: "How long a cached history file survives before it is re-fetched.", default: "30" },
+      { key: "EARLYBIRD_BT_DAILY_LOOKBACK_DAYS", label: "EarlyBird — PrevClose Lookback (days)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.BACKTEST, desc: "How far back the daily series is pulled so every simulated day has a previous close for the gap rule, even after a long holiday.", default: "10" },
       { key: "LTP_STALE_THRESHOLD_SEC", label: "LTP Stale Alert (sec)", type: "number", min: 5, max: 60, step: 5, effect: EFFECT.INSTANT, desc: "Warn if the option price hasn't updated for this long (sec).", default: "15", subheader: "Execution Guards" },
       { key: "LTP_STALE_FALLBACK_SEC", label: "LTP Stale Fallback (sec)", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Use candle close if the option price is older than this (sec).", default: "5" },
       { key: "VIX_LOG_ENABLED", label: "Record VIX on every trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Keep polling India VIX purely so each trade record carries the VIX at entry and exit, even when no strategy filters on it. Changes no decision. Off = vixAtEntry/vixAtExit are blank, and you cannot ask afterwards whether a strategy only works in a calm market.", default: "true" },
@@ -1686,7 +1655,6 @@ const IMMEDIATE_KEYS = new Set([
 
 // These are cached as const at module load — need session stop+start
 const SESSION_RESTART_KEYS = new Set([
-  "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES",
   
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
@@ -1701,7 +1669,6 @@ const SESSION_RESTART_KEYS = new Set([
   "BB_RSI_RSI_RANGE_ENABLED", "BB_RSI_RSI_RANGE_LOOKBACK", "BB_RSI_RSI_RANGE_MIN",
   "BB_RSI_ADX_ENABLED", "BB_RSI_ADX_MAX",
   "BB_RSI_DIVERGENCE_ENABLED", "BB_RSI_DIV_LOOKBACK", "BB_RSI_DIV_PIVOT_BARS",
-  "BB_RSI_SLIPPAGE_PTS",
   // Execution guards — constants in tradeGuards are cached at require()
   "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
 ]);

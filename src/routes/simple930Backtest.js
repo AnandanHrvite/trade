@@ -40,7 +40,7 @@
  *     The adverse test always runs before the favourable one. On the entry bar
  *     the open printed BEFORE the fill, so the fill stands in for it. A trade the
  *     lock never closes is closed on the day's last printed bar.
- *  6. SIMPLE930_BT_SLIPPAGE_PTS is charged EACH way (paid up on entry, given up
+ *  6. BACKTEST_SLIPPAGE_PTS is charged EACH way (paid up on entry, given up
  *     on exit). Without it a backtest of option BUYING always flatters.
  *     Statutory charges come from the repo's own charges.js on the ZERODHA
  *     schedule, because that is where these orders would go.
@@ -66,6 +66,7 @@ const backtestJobs     = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards      = require("../utils/tradeGuards");
 const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require("../utils/nseHolidays");
+const backtestCosts = require("../config/backtestCosts");
 
 const ACCENT      = "#f59e0b";
 const ENDPOINT    = "/simple930-backtest";
@@ -101,10 +102,7 @@ function _sessionEndMin() {
 }
 
 /** Backtest slippage, charged on BOTH sides. */
-function _slippagePts() {
-  const v = parseFloat(process.env.SIMPLE930_BT_SLIPPAGE_PTS);
-  return Number.isFinite(v) && v >= 0 && v <= 50 ? v : 1.5;
-}
+function _slippagePts() { return backtestCosts.slippagePts(); }
 
 /**
  * The weekly-expiry DATE on or after an IST calendar day, holiday-preponed.

@@ -89,11 +89,6 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const _tradeGuards   = require("../utils/tradeGuards");
 
   // ── Guards mirrored from paper ───────────────────────────────────────────────
-  // Opposite-side (flip) cooldown — same keys/defaults as ema9vwapPaper._refreshConfig.
-  const oppCooldownEnabled = (process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
-  const oppCooldownCandles = parseInt(process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
-  // Reason patterns that do NOT arm the opposite cooldown (mirror paper _setOppositeCooldown).
-  const OPP_EXEMPT_RE = /opposite signal|eod|day close|market closed|auto-stop|manual|session restart|simulation ended/i;
   // Candle resolution in minutes (from spacing) — drives the cooldown windows.
   const resMins = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : 5;
   // VIX gate: paper calls checkLiveVix("STRONG") with the default (EMA_RSI_ST) thresholds;
@@ -133,8 +128,6 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const _istDateStr = (sec) => new Date((sec + 19800) * 1000).toISOString().slice(0, 10);
 
   let curDay = null;
-  let oppCooldownUntilTs = 0;      // block opposite-side entries until this candle.time (seconds)
-  let oppCooldownLastSide = null;  // side that was last exited
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper measures it from the exit's clock time: a tick exit (the profit lock)
   // fires INSIDE the bar (≈ bar open here), a candle-close exit at the bar's CLOSE.
@@ -224,12 +217,6 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       signalStrength:  position.signalStrength || "STRONG",
     });
 
-    // Opposite-side (flip) cooldown: arm unless the exit reason is exempt.
-    if (oppCooldownEnabled && oppCooldownCandles > 0 && !OPP_EXEMPT_RE.test(exitReason)) {
-      oppCooldownUntilTs  = candle.time + oppCooldownCandles * resMins * 60;
-      oppCooldownLastSide = position.side;
-    }
-
     position = null;
   }
 
@@ -243,7 +230,6 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     if (day !== curDay) {
       curDay = day;
       // Per-session state resets each trading day (paper starts each session fresh).
-      oppCooldownUntilTs = 0; oppCooldownLastSide = null;
       reentryBlockUntilTs = 0;
     }
     // Last bar of this day's session in the data → paper's session teardown.
@@ -314,11 +300,9 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         && strategy.isEntryWindowOpen(candle.time, resMins)
         && (!expiryOnly || expiryDates.has(_istDateStr(candle.time)))) {
       const side = sig.signal === "BUY_CE" ? "CE" : "PE";
-      // Opposite-side cooldown + wait-after-any-exit cooldown (both mirrored from paper).
-      const _oppBlocked = oppCooldownEnabled && oppCooldownLastSide
-        && oppCooldownLastSide !== side && candle.time < oppCooldownUntilTs;
+      // Wait-after-any-exit cooldown (mirrored from paper).
       const _reentryBlocked = candle.time < reentryBlockUntilTs;
-      if (!_oppBlocked && !_reentryBlocked) {
+      if (!_reentryBlocked) {
         // VIX gate — evaluated only when we would otherwise enter, like paper.
         const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: "ema9vwap" });
         if (_vc.allowed) {

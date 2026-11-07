@@ -27,7 +27,7 @@ for (const k of Object.keys(process.env)) if (k.startsWith("SIMPLE930_")) delete
 Object.assign(process.env, {
   NIFTY_LOT_SIZE: "75", LOT_MULTIPLIER: "1", MAX_LOT_MULTIPLIER: "10",
   INSTRUMENT: "NIFTY_OPTIONS", STRIKE_OFFSET_CE: "0", STRIKE_OFFSET_PE: "0",
-  SIMPLE930_BT_SLIPPAGE_PTS: "0",     // the guide teaches the RULE; costs get their own section
+  BACKTEST_SLIPPAGE_PTS: "0",     // the guide teaches the RULE; costs get their own section
 });
 
 const S  = require("../src/strategies/simple930");

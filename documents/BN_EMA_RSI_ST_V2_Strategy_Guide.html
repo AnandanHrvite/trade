@@ -367,14 +367,10 @@
   <tr><td><code>BN_EMA_RSI_ST_V2_MAX_DAILY_LOSS</code></td><td><code>1000</code></td><td>Stop for the day after this loss in ₹ (0 = off). About 67 NIFTY BANK points on 1 lot &mdash; see section 13.</td></tr>
   <tr><td><code>BN_EMA_RSI_ST_V2_MAX_CONSEC_LOSSES</code></td><td><code>2</code></td><td>Stop for the day after this many losses in a row (0 = off).</td></tr>
   <tr><td><code>BN_EMA_RSI_ST_V2_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>After a stop-out, block the same side for this many candles (0 = off).</td></tr>
-  <tr><td><code>BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED</code></td><td><code>true</code></td><td>After an exit, also pause the other side briefly.</td></tr>
-  <tr><td><code>BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td>How long that pause lasts.</td></tr>
 </table>
 <h3>Backtest</h3>
 <table>
   <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-  <tr><td><code>BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS</code></td><td><code>2</code></td><td>Cost charged per side, in points, for the bid-ask spread.</td></tr>
-  <tr><td><code>BN_EMA_RSI_ST_V2_BT_SEED_PREMIUM</code></td><td><code>180</code></td><td>Starting option price in the backtest. A guess, and too low for a BANKNIFTY monthly.</td></tr>
 </table>
 <h3>Shared settings that also apply (not BN-only)</h3>
 <table>

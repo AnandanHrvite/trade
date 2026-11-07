@@ -92,7 +92,7 @@ function renderInline(raw) {
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   // Single-asterisk emphasis only. Underscore emphasis is NOT supported on
   // purpose: this repo's prose is full of bare env keys such as
-  // EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED, and _..._ would italicise their
+  // EXIT_REENTRY_COOLDOWN_ENABLED, and _..._ would italicise their
   // middle and swallow the underscores.
   s = s.replace(/(^|[^\w*])\*([^*\s](?:[^*]*[^*\s])?)\*(?!\*)/g, "$1<em>$2</em>");
   s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");

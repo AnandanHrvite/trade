@@ -171,8 +171,6 @@ const ADAPTERS = {
     signal(candles) {
       return require("../strategies/strategy1_sar_ema_rsi").getSignal(candles, { silent: true, skipTimeCheck: true, maxEmaDistPts: 0 });
     },
-    oppCooldownOn:  () => _bool(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED, "true"),
-    oppCooldownCandles: () => _int(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES, 3),
     // Chart overlays — the same periods the V1 rules read.
     chartCfg: () => ({
       emaFast: _int(process.env.EMA_RSI_ST_EMA_FAST, 20), emaSlow: _int(process.env.EMA_RSI_ST_EMA_SLOW, 50),
@@ -186,8 +184,6 @@ const ADAPTERS = {
     signal(candles) {
       return require("../strategies/ema_rsi_st_v2").getSignal(candles, { prefix: "EMA_RSI_ST_V2", silent: true, skipTimeCheck: true });
     },
-    oppCooldownOn:  () => _bool(process.env.EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED, "true"),
-    oppCooldownCandles: () => _int(process.env.EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES, 2),
     chartCfg: () => {
       const k = require("../strategies/ema_rsi_st_v2").getConfig("EMA_RSI_ST_V2");
       return { emaFast: k.EMA_FAST, emaSlow: k.EMA_SLOW, stPeriod: k.ST_PERIOD, stMult: k.ST_MULT, rsiCeMin: k.RSI_CE_MIN, rsiPeMax: k.RSI_PE_MAX };
@@ -221,8 +217,6 @@ const ADAPTERS = {
     },
     // The opposite-side cooldown is a V1/V2 rule key (EMA_RSI_ST_*), not
     // commodity-wide — PIVOT_EMA_ST has none.
-    oppCooldownOn:  () => false,
-    oppCooldownCandles: () => 0,
     // Chart overlays come from engine.computeSeries — the exact numbers the signal read.
     chartCfg: () => {
       const k = require("../strategies/pivot_ema_st").getConfig("PIVOT_EMA_ST");
@@ -283,7 +277,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   const state = {
     running: false, starting: false, res: null, day: null, series: null, candles: [], lastBarTime: null,
     futLtp: null, optLtp: null, lastQuoteAt: null, nextCandleAt: 0, formingBar: null,
-    position: null, armed: null, trades: [], sessionPnl: 0, oppCooldown: null,
+    position: null, armed: null, trades: [], sessionPnl: 0,
     lastSignal: null, lastError: null, logs: [], seenQuoteAt: 0, manualStopDay: null,
     pivots: null, pivotsError: null, pivotsTryAt: 0, lastChecks: null,   // PIVOT adapter only
   };
@@ -334,7 +328,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const today = loadBook().days?.[d];
     state.trades = today ? today.trades : [];
     state.sessionPnl = r2(state.trades.reduce((s, t) => s + (t.pnl || 0), 0));
-    state.oppCooldown = null; state.armed = null;
+    state.armed = null;
     state._reentryBlockUntil = 0;
   }
 
@@ -420,11 +414,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   }
 
   // ── guards ─────────────────────────────────────────────────────────────────
-  function entryBlock(side) {
-    const oc = state.oppCooldown;
-    if (oc && oc.side !== side && oc.until > Date.now()) return `opposite-side cooldown after ${oc.side} exit`;
-    return null;
-  }
   // Trend filter — refuses the two kinds of signal that lost most on MCX
   // (Oct 2026 paper, 111 trades): EMA20 and EMA50 almost touching, i.e. no
   // real trend (27 trades, 4 wins, −₹17.9k), and an RSI that has already run
@@ -453,8 +442,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   // ── entry / exit ───────────────────────────────────────────────────────────
   async function enter(side, spot, sig, entryBarTime, how) {
     const c = cfg();
-    const block = entryBlock(side);
-    if (block) { log(`⏸️ ${side} skipped — ${block}`); return; }
     // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
     // entries are the user's own call and bypass it. Logged once per cooldown.
     if (how !== "manual entry" && state._reentryBlockUntil > Date.now()) {
@@ -533,11 +520,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     // The day book already holds this P&L, so only the reservation is freed.
     capitalPool.release(id);
 
-    const resMs = c.res * 60000;
-    if (A.oppCooldownOn() && A.oppCooldownCandles() > 0
-        && !/market closed|auto-stop|manual|session/i.test(reason)) {
-      state.oppCooldown = { side: pos.side, until: Date.now() + A.oppCooldownCandles() * resMs };
-    }
     // Global wait-after-any-exit cooldown — no entry on either side for N candles.
     state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), c.res);
     log(`${pnl >= 0 ? "💰" : "🔻"} EXIT ${pos.side} ${pos.symbol} @ ₹${prem} | ${reason} | P&L ₹${pnl} (gross ₹${gross}) | day ₹${state.sessionPnl}`);
@@ -579,8 +561,6 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
     if (!state.position && winOk && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")) {
       const side = sig.signal === "BUY_CE" ? "CE" : "PE";
-      const block = entryBlock(side);
-      if (block) { log(`⏸️ ${sig.signal} on ${bar.close} — skipped: ${block}`); return; }
       const weak = A.noTrendFilter ? null : trendBlock(side, sig, bar.close);
       if (weak) { log(`🚫 ${sig.signal} on ${bar.close} — skipped: ${weak}`); return; }
       if (c.confirm) {
@@ -616,7 +596,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     // Only where onBarClose would check it anyway.
     const sigSide = sig.signal === "BUY_CE" ? "CE" : "PE";
     const blockNote = winOk && !state.position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
-      ? (entryBlock(sigSide) || (A.noTrendFilter ? null : trendBlock(sigSide, sig, bar.close)) || "") : "";
+      ? ((A.noTrendFilter ? null : trendBlock(sigSide, sig, bar.close)) || "") : "";
     log(`   Signal: ${sig.signal || "NONE"}${winOk ? "" : " | outside entry window"}${blockNote ? " | blocked: " + blockNote : ""} | ${sig.reason || "—"}`);
     const pos = state.position;
     if (pos) {
