@@ -172,36 +172,43 @@ function _lockFloorLtp(entryLtp, bestLtp, { armPct, floorPct, enabled, trailPct,
 }
 
 // ── Premium stop-loss (all strategies) ──────────────────────────────────────
-// One stop for every strategy, on the option premium, checked in the same
-// per-tick call as the profit lock (checkProfitLock), so every engine that
-// runs the lock runs this too. Three steps:
-//   1. Start: sell if premium falls PREMIUM_SL_PCT % below entry.
-//   2. Once premium has touched +PREMIUM_SL_BE_PCT %, the stop moves up to entry.
-//   3. From then on it also trails PREMIUM_SL_TRAIL_PTS rupees below the peak
-//      (0 = stay at entry). It only ever moves up.
-// Example (20 / 20 / 15): buy 100 → stop 80. Peak 120 → stop 105. Peak 150 → stop 135.
+// One trailing stop for every strategy, on the option premium, checked in the
+// same per-tick call as the profit lock (checkProfitLock), so every engine that
+// runs the lock runs this too. ONE number, PREMIUM_SL_PCT: sell if premium falls
+// that % below the best premium since entry (at entry that is the first stop).
+// It only ever moves up.
+// Example (20): buy 100 → stop 80. Peak 150 → stop 120. Peak 200 → stop 160.
 // Default OFF: unset = no strategy uses it. Turn it on from Settings → Common Rules.
 function livePremiumSlEnabled()  { return String(process.env.PREMIUM_SL_ENABLED ?? "false").toLowerCase() === "true"; }
 function livePremiumSlPct()      { return parseFloat(process.env.PREMIUM_SL_PCT ?? "20"); }
-function livePremiumSlBePct()    { return parseFloat(process.env.PREMIUM_SL_BE_PCT ?? "20"); }
-function livePremiumSlTrailPts() { return parseFloat(process.env.PREMIUM_SL_TRAIL_PTS ?? "15"); }
 
 // The stop premium for a position, or null when off or misconfigured.
+//   base — the premium the % is taken of (default the entry). Futures pass a
+//          fixed ₹200 so the stop behaves like a ₹200 option with delta 1.
+//   bePct / trailPts — stock legs only (stockStopOpts): the older three-step
+//          stop (−slPct %, to entry at +bePct %, then trailPts behind the best).
 function premiumStopLtp(entryLtp, bestLtp, {
-  enabled  = livePremiumSlEnabled(),
-  slPct    = livePremiumSlPct(),
-  bePct    = livePremiumSlBePct(),
-  trailPts = livePremiumSlTrailPts(),
+  enabled = livePremiumSlEnabled(),
+  slPct   = livePremiumSlPct(),
+  base,
+  bePct,
+  trailPts,
 } = {}) {
   if (!enabled) return null;
   if (!Number.isFinite(entryLtp) || entryLtp <= 0) return null;
   if (!Number.isFinite(slPct) || slPct <= 0 || slPct >= 100) return null;
-  if (!Number.isFinite(bePct) || bePct <= 0) return null;
-  if (!Number.isFinite(trailPts) || trailPts < 0) return null;
-  let stop = entryLtp * (1 - slPct / 100);
-  if (Number.isFinite(bestLtp) && bestLtp >= entryLtp * (1 + bePct / 100)) {
-    stop = Math.max(entryLtp, trailPts > 0 ? bestLtp - trailPts : entryLtp);
+  if (bePct !== undefined || trailPts !== undefined) {
+    if (!Number.isFinite(bePct) || bePct <= 0) return null;
+    if (!Number.isFinite(trailPts) || trailPts < 0) return null;
+    let stop = entryLtp * (1 - slPct / 100);
+    if (Number.isFinite(bestLtp) && bestLtp >= entryLtp * (1 + bePct / 100)) {
+      stop = Math.max(entryLtp, trailPts > 0 ? bestLtp - trailPts : entryLtp);
+    }
+    return parseFloat(stop.toFixed(2));
   }
+  const b    = Number.isFinite(base) && base > 0 ? base : entryLtp;
+  const gain = Number.isFinite(bestLtp) && bestLtp > entryLtp ? bestLtp - entryLtp : 0;
+  const stop = entryLtp - b + (b + gain) * (1 - slPct / 100);
   return parseFloat(stop.toFixed(2));
 }
 
@@ -209,7 +216,8 @@ function premiumStopLtp(entryLtp, bestLtp, {
 // (they model premium as seed + spot × delta). bestFavPts = best favourable spot
 // move so far. Returns the stop's favourable distance from entry in spot points
 // (negative = below entry), or null when the stop is off.
-// Example: seed 200, delta 0.5, SL 20% → −80 pts until the peak reaches +80 pts.
+// Example: seed 200, delta 0.5, SL 20% → −80 pts at entry; best +80 pts
+// (premium 240) → stop premium 192 → −16 pts.
 function premiumStopSpotPts(bestFavPts, delta, seed = 200) {
   if (!Number.isFinite(delta) || delta <= 0) return null;
   const fav = Number.isFinite(bestFavPts) && bestFavPts > 0 ? bestFavPts : 0;
@@ -219,18 +227,19 @@ function premiumStopSpotPts(bestFavPts, delta, seed = 200) {
 
 // Exit reason for a spot-point premium stop (see premiumStopSpotPts).
 function premiumStopSpotReason(stopPts, bestFavPts) {
-  if (stopPts < 0) return `Stop-loss -${livePremiumSlPct()}% (≈${(-stopPts).toFixed(0)}pt spot below entry)`;
-  if (stopPts === 0) return `Stop-loss breakeven (peak ≈${(bestFavPts || 0).toFixed(0)}pt spot)`;
-  return `Stop-loss trail (≈${stopPts.toFixed(0)}pt spot kept of ${(bestFavPts || 0).toFixed(0)}pt best)`;
+  const pct  = livePremiumSlPct();
+  const best = Number.isFinite(bestFavPts) && bestFavPts > 0 ? bestFavPts : 0;
+  if (best <= 0) return `Stop-loss -${pct}% (≈${Math.abs(stopPts).toFixed(0)}pt spot against entry)`;
+  return `Stop-loss trail ${pct}% (stop ≈${stopPts.toFixed(0)}pt from entry, best ${best.toFixed(0)}pt)`;
 }
 
 // ── Futures stop (all strategies) ───────────────────────────────────────────
 // A futures position has no premium, so the premium stop above is applied in
 // INDEX POINTS with the same mapping the backtests use for futures (seed 200,
-// delta 1): at 20 / 20 / 15 → stop 40pt against entry, moved to entry once the
-// best move reaches +40pt, then trailed 15pt behind the best move.
+// delta 1): at 20% → stop 40pt against entry; after that it trails 20% of
+// (200 + best move) behind the best move, like a ₹200 option.
 // side: "CE" = LONG, "PE" = SHORT. bestFavPts = best favourable move so far (pts).
-// Example: long at 24000 → stop 23960; best 24060 → stop 24045.
+// Example: long at 24000 → stop 23960; best 24060 → stop 24008.
 // Returns an exit reason, or null (stop off, or not hit).
 function futuresStopLevel(side, entrySpot, bestFavPts) {
   if (!Number.isFinite(entrySpot) || entrySpot <= 0) return null;
@@ -251,10 +260,9 @@ function checkFuturesStop(side, entrySpot, spot, bestFavPts) {
 
 // The same futures stop as checkProfitLock / exitLevelLtp options, for engines
 // that run the lock on the index level itself (entry = the futures fill): the %
-// are rescaled so the stop lands at the same 40pt / +40pt / 15pt as above.
-function futuresStopOpts(entryLevel) {
-  const k = Number.isFinite(entryLevel) && entryLevel > 0 ? 200 / entryLevel : NaN;
-  return { slPct: livePremiumSlPct() * k, slBePct: livePremiumSlBePct() * k, slTrailPts: livePremiumSlTrailPts() };
+// is taken of a fixed ₹200 base so the stop lands exactly where it does above.
+function futuresStopOpts(_entryLevel) {
+  return { slPct: livePremiumSlPct(), slBase: 200 };
 }
 
 // ── Stock stop (cash-equity legs: EarlyBird stock, GAP_RUNAWAY_STK) ─────────
@@ -277,7 +285,7 @@ function stockStopOpts(entryPrice) {
 }
 
 function _premiumStopOpts(o) {
-  return { enabled: o.slEnabled, slPct: o.slPct, bePct: o.slBePct, trailPts: o.slTrailPts };
+  return { enabled: o.slEnabled, slPct: o.slPct, base: o.slBase, bePct: o.slBePct, trailPts: o.slTrailPts };
 }
 
 function _lockOpts(o) {
@@ -304,14 +312,15 @@ function exitLevelLtp(entryLtp, bestLtp, opts = {}) {
 }
 
 // Options: armPct / floorPct / enabled / trailPct / tiers for the profit lock,
-// slEnabled / slPct / slBePct / slTrailPts for the premium stop. Any key left
+// slEnabled / slPct / slBase (+ slBePct / slTrailPts for stocks) for the premium stop. Any key left
 // out falls back to its live env value.
 function checkProfitLock(entryLtp, currentLtp, bestLtp, opts = {}) {
   if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
   if (!Number.isFinite(currentLtp) || currentLtp <= 0) return null;
   const lo = _lockOpts(opts);
+  const so = _premiumStopOpts(opts);
   const floorLtp = _lockFloorLtp(entryLtp, bestLtp, lo);
-  const stopLtp  = premiumStopLtp(entryLtp, bestLtp, _premiumStopOpts(opts));
+  const stopLtp  = premiumStopLtp(entryLtp, bestLtp, so);
   if (floorLtp == null && stopLtp == null) return null;
 
   const entryR = parseFloat(entryLtp.toFixed(2));
@@ -328,6 +337,14 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, opts = {}) {
   }
 
   if (currentLtp > stopLtp) return null;             // still above the stop
+  if (so.bePct === undefined && so.trailPts === undefined) {   // one trailing %
+    const pct = Number.isFinite(so.slPct) ? so.slPct : livePremiumSlPct();
+    if (!(Number.isFinite(bestLtp) && bestLtp > entryLtp)) {
+      return `Stop-loss -${pct}% — premium Rs${currentLtp} fell to the stop Rs${stopLtp} (entry Rs${entryR})`;
+    }
+    return `Stop-loss trail ${pct}% — premium Rs${currentLtp} fell to the trailed stop Rs${stopLtp} (peak Rs${peakR}, entry Rs${entryR})`;
+  }
+  // Stock legs (stockStopOpts): the three-step stop.
   if (stopLtp < entryLtp) {
     const pct = Math.round((1 - stopLtp / entryLtp) * 100);
     return `Stop-loss -${pct}% — premium Rs${currentLtp} fell to the stop Rs${stopLtp} (entry Rs${entryR})`;
@@ -392,7 +409,5 @@ module.exports = {
   get PROFIT_LOCK_TRAIL_TIERS()    { return liveProfitLockTrailTiers(); },
   get PREMIUM_SL_ENABLED()         { return livePremiumSlEnabled(); },
   get PREMIUM_SL_PCT()             { return livePremiumSlPct(); },
-  get PREMIUM_SL_BE_PCT()          { return livePremiumSlBePct(); },
-  get PREMIUM_SL_TRAIL_PTS()       { return livePremiumSlTrailPts(); },
   get EXIT_REENTRY_COOLDOWN_CANDLES() { return liveReentryCooldownCandles(); },
 };

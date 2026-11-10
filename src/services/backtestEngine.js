@@ -278,7 +278,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BACKTEST — ${strategy.NAME}`);
   console.log(`   Entry : signal from strategy at candle close`);
-  console.log(`   Exit  : global profit lock (${_PL_VALID ? `arm +${_PL_ARM_PCT}% / floor +${_PL_FLOOR_PCT}%` : "OFF"}) + stop-loss (${tradeGuards.PREMIUM_SL_ENABLED ? `-${tradeGuards.PREMIUM_SL_PCT}%` : "OFF"}) + session-end square-off each day`);
+  console.log(`   Exit  : global profit lock (${_PL_VALID ? `arm +${_PL_ARM_PCT}% / floor +${_PL_FLOOR_PCT}%` : "OFF"}) + trailing stop (${tradeGuards.PREMIUM_SL_ENABLED ? `${tradeGuards.PREMIUM_SL_PCT}% below best` : "OFF"}) + session-end square-off each day`);
   console.log(`   Charges : dynamic (STT + exchange + GST + stamp + ₹40 brok) — see Settings`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
   console.log(`   VIX filter : ${vixFilter.VIX_ENABLED ? `ON (max=${vixFilter.VIX_MAX_ENTRY}, strong-only=${vixFilter.VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);

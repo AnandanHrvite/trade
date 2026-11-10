@@ -444,41 +444,41 @@ check("off by default — unset PREMIUM_SL_ENABLED never exits", () => withSl({}
   assert.strictEqual(guards.premiumStopLtp(100, 100), null);
 }));
 
-check("20 / 20 / 15: buy 100 → stop 80; peak 120 → 105; peak 150 → 135", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
+check("one trailing 20%: buy 100 → stop 80; peak 110 → 88; peak 150 → 120", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
   assert.strictEqual(guards.premiumStopLtp(100, 100), 80);
-  assert.strictEqual(guards.premiumStopLtp(100, 119.9), 80);
-  assert.strictEqual(guards.premiumStopLtp(100, 120), 105);
-  assert.strictEqual(guards.premiumStopLtp(100, 150), 135);
+  assert.strictEqual(guards.premiumStopLtp(100, 110), 88);
+  assert.strictEqual(guards.premiumStopLtp(100, 150), 120);
   assert.strictEqual(guards.checkProfitLock(100, 81, 100), null);
   assert.ok(/^Stop-loss -20%/.test(guards.checkProfitLock(100, 80, 100)));
-  assert.ok(/^Stop-loss trail/.test(guards.checkProfitLock(100, 135, 150)));
-  assert.strictEqual(guards.checkProfitLock(100, 136, 150), null);
+  assert.ok(/^Stop-loss trail 20%/.test(guards.checkProfitLock(100, 120, 150)));
+  assert.strictEqual(guards.checkProfitLock(100, 121, 150), null);
 }));
 
-check("trail 0 = breakeven only", () => withSl({ PREMIUM_SL_ENABLED: "true", PREMIUM_SL_TRAIL_PTS: "0" }, () => {
-  assert.strictEqual(guards.premiumStopLtp(100, 200), 100);
-  assert.ok(/^Stop-loss breakeven/.test(guards.checkProfitLock(100, 100, 200)));
+check("the stop only moves up — a peak below entry leaves it at the first stop", () => withSl({ PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "10" }, () => {
+  assert.strictEqual(guards.premiumStopLtp(100, 90), 90);
+  assert.strictEqual(guards.premiumStopLtp(100, undefined), 90);
+  assert.strictEqual(guards.premiumStopLtp(100, 200), 180);
 }));
 
 check("bad config never becomes a stop", () => {
-  for (const env of [{ PREMIUM_SL_PCT: "0" }, { PREMIUM_SL_PCT: "100" }, { PREMIUM_SL_PCT: "x" }, { PREMIUM_SL_BE_PCT: "0" }, { PREMIUM_SL_TRAIL_PTS: "-1" }]) {
+  for (const env of [{ PREMIUM_SL_PCT: "0" }, { PREMIUM_SL_PCT: "100" }, { PREMIUM_SL_PCT: "x" }]) {
     withSl({ PREMIUM_SL_ENABLED: "true", ...env }, () => {
       assert.strictEqual(guards.checkProfitLock(100, 1, 100), null, JSON.stringify(env));
     });
   }
 });
 
-check("futures: the stop in index points — 40 / +40 / 15", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
+check("futures: the stop in index points — 20% of a ₹200 base", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
   assert.strictEqual(guards.checkFuturesStop("CE", 24000, 23961, 0), null);
   assert.ok(/^Stop-loss -20%/.test(guards.checkFuturesStop("CE", 24000, 23960, 0)));
   assert.ok(/^Stop-loss -20%/.test(guards.checkFuturesStop("PE", 24000, 24040, 0)));        // short
-  assert.strictEqual(guards.futuresStopLevel("CE", 24000, 60), 24045);                     // best +60 → trail 15
-  assert.strictEqual(guards.futuresStopLevel("PE", 24000, 60), 23955);
-  assert.ok(/^Stop-loss trail/.test(guards.checkFuturesStop("CE", 24000, 24025, 40)));       // best +40 → stop +25
-  assert.strictEqual(guards.checkFuturesStop("CE", 24000, 24026, 40), null);
-  // The rescaled options give the same level on the index itself.
+  assert.strictEqual(guards.futuresStopLevel("CE", 24000, 60), 24008);                     // 260 × 0.8 − 200
+  assert.strictEqual(guards.futuresStopLevel("PE", 24000, 60), 23992);
+  assert.ok(/^Stop-loss trail/.test(guards.checkFuturesStop("CE", 24000, 23992, 40)));       // best +40 → stop −8
+  assert.strictEqual(guards.checkFuturesStop("CE", 24000, 23993, 40), null);
+  // The futures options give the same level on the index itself.
   assert.strictEqual(guards.exitLevelLtp(24000, 24000, guards.futuresStopOpts(24000)), 23960);
-  assert.strictEqual(guards.exitLevelLtp(24000, 24060, guards.futuresStopOpts(24000)), 24045);
+  assert.strictEqual(guards.exitLevelLtp(24000, 24060, guards.futuresStopOpts(24000)), 24008);
 }));
 
 check("futures + stock stops stay off with the switch off", () => withSl({}, () => {
@@ -500,21 +500,21 @@ check("next to the profit lock, the higher level wins (and is the fill level)", 
   // peak 110: lock floor 108.5 (tier 85%), stop still 80 → the lock decides.
   assert.strictEqual(guards.exitLevelLtp(100, 110), 108.5);
   assert.ok(/^Profit lock/.test(guards.checkProfitLock(100, 108, 110)));
-  // peak 200: lock floor 170 (70% trail), stop 185 → the stop decides.
-  assert.strictEqual(guards.exitLevelLtp(100, 200), 185);
-  assert.ok(/^Stop-loss trail/.test(guards.checkProfitLock(100, 184, 200)));
+  // peak 400: lock floor 310 (70% trail), stop 320 → the stop decides.
+  assert.strictEqual(guards.exitLevelLtp(100, 400), 320);
+  assert.ok(/^Stop-loss trail/.test(guards.checkProfitLock(100, 319, 400)));
 }));
 
 check("spot-point form matches the premium form (seed 200, delta 0.5)", () => withSl({ PREMIUM_SL_ENABLED: "true" }, () => {
   assert.strictEqual(guards.premiumStopSpotPts(0, 0.5), -80);      // 40 premium / 0.5
-  assert.strictEqual(guards.premiumStopSpotPts(80, 0.5), (240 - 15 - 200) / 0.5);
+  assert.strictEqual(guards.premiumStopSpotPts(80, 0.5), (240 * 0.8 - 200) / 0.5);
   assert.strictEqual(guards.premiumStopSpotPts(0, 0), null);
 }));
 
 check("Settings exposes every PREMIUM_SL_ key, and replay snapshots capture them", () => {
   const settings = read("routes/settings.js");
   const keys = new Set(read("utils/tradeGuards.js").match(/PREMIUM_SL_[A-Z0-9_]+/g) || []);
-  assert.ok(keys.size >= 4, `expected four PREMIUM_SL_ keys, found ${[...keys].join(", ")}`);
+  assert.ok(keys.size >= 2, `expected two PREMIUM_SL_ keys, found ${[...keys].join(", ")}`);
   const missing = [...keys].filter(k => !settings.includes(`"${k}"`));
   assert.deepStrictEqual(missing, [], `absent from Settings: ${missing.join(", ")}`);
   assert.ok(/\^PREMIUM_SL_/.test(read("utils/tickRecorder.js")), "tickRecorder does not snapshot PREMIUM_SL_*");

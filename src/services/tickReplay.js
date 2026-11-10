@@ -216,7 +216,8 @@ function requestCancel() {
 //      Trend_PB VWAP is equal-weighted, ORB hunts a fresh breakout after an RSI/ST
 //      block, PREV_ORB_SCALP spends a setup broken before the entry start.
 // v24: EMA_RSI_ST fresh-signal gate; ORB entry cut-off no longer forced to 14:00.
-const REPLAY_CACHE_VERSION = 25;   // 25: INSTRUMENT no longer pinned/keyed (global toggle removed)
+const REPLAY_CACHE_VERSION = 26;   // 25: INSTRUMENT no longer pinned/keyed (global toggle removed)
+                                   // 26: premium stop is one trailing % (PREMIUM_SL_BE_PCT / _TRAIL_PTS removed)
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
