@@ -1,9 +1,11 @@
 /**
  * realtime.js — Unified real-time monitor for PAPER trades
  * ─────────────────────────────────────────────────────────────────────────────
- * Read-only single screen that shows current state for every strategy that is
- * enabled in Settings (EMA_RSI_ST / BB_RSI / PA / ORB), side-by-side,
- * with a common rollup P&L table below. Every 4s the page polls each strategy's existing
+ * Read-only single screen for every strategy (and every running strategy ×
+ * market pair) enabled in Settings: today's P&L with one chip per market, a
+ * market filter, open-position cards grouped by market, and a summary table
+ * grouped by market with subtotals. Also the Dashboard ("/") while any session
+ * runs. Every 4s the page polls each strategy's existing
  * /status/data endpoint — the same source the dedicated pages use — plus this
  * router's own /capital, the one piece that cannot come from a per-strategy
  * page because it is cross-strategy by nature (see utils/capitalPool.js). The
@@ -20,59 +22,25 @@ const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
 // modalCSS/modalJS carry secretFetch + the API-secret prompt: /stop requires
 // API_SECRET (only the read-only /status/data paths are in app.js OPEN_PATHS),
-// so Stop NIFTY would 403 on every engine without them.
+// so Stop All would 403 on every engine without them.
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 
-// hasDayLog: only strategies that expose /download/{trades,skips}/:date show
-// the Copy Day Log button. TREND_PB still exposes cumulative JSONL only.
-const STRATEGY_DEFS = [
-  { key:'EMA_RSI_ST',    label:'EMA_RSI_ST',        accentClass:'ema_rsi_st',    accent:'#3b82f6', paperPrefix:'/ema_rsi_st-paper',    hasDayLog:true,  modeFlag:'EMA_RSI_ST_MODE_ENABLED'    },
-  // EMA_RSI_ST_V2: a clone of EMA_RSI_ST with its own rules and its own
-  // EMA_RSI_ST_V2_* settings.
-  // defaultOff: unlike every other row it stays hidden until explicitly enabled.
-  { key:'EMA_RSI_ST_V2', label:'EMA_RSI_ST_V2', accentClass:'emarsistv2', accent:'#38bdf8', paperPrefix:'/ema_rsi_st_v2-paper', hasDayLog:true, modeFlag:'EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
-  { key:'BB_RSI',    label:'BB_RSI',        accentClass:'bb_rsi',    accent:'#f59e0b', paperPrefix:'/bb_rsi-paper',    hasDayLog:true,  modeFlag:'BB_RSI_MODE_ENABLED'    },
-  { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
-  { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      hasDayLog:true,  modeFlag:'ORB_MODE_ENABLED'      },
-  { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
-  { key:'TREND_PB', label:'TREND PB',     accentClass:'trendpb',  accent:'#ec4899', paperPrefix:'/trend-pb-paper', hasDayLog:false, modeFlag:'TREND_PB_MODE_ENABLED' },
-  { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
-  { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
-  { key:'PREV_ORB_SCALP', label:'PREV ORB SCALP', accentClass:'prevorb', accent:'#e879f9', paperPrefix:'/prev-orb-scalp-paper', hasDayLog:true, modeFlag:'PREV_ORB_SCALP_MODE_ENABLED' },
-  { key:'ITM20_SCALP', label:'ITM20 SCALP', accentClass:'itm20scalp', accent:'#22d3ee', paperPrefix:'/itm20-scalp-paper', hasDayLog:true, modeFlag:'ITM20_SCALP_MODE_ENABLED' },
-  { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
-  // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. defaultOff like V2.
-  { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
-  // SAIL_VWAP_ST: SAIL stock options (VWAP cross + breakout, SuperTrend stop).
-  // Its Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
-  // defaultOff like V2.
-  { key:'SAIL_VWAP_ST', label:'SAIL VWAP+ST', accentClass:'sailvwapst', accent:'#fda4af', paperPrefix:'/sail_vwap_st-paper', hasDayLog:true, modeFlag:'SAIL_VWAP_ST_MODE_ENABLED', defaultOff:true },
-  // PIVOT_EMA_ST family: pivot zone + EMA20/50 cross + SuperTrend. Default ON (no defaultOff).
-  { key:'PIVOT_EMA_ST', label:'PIVOT_EMA_ST', accentClass:'pivotemast', accent:'#38bdf8', paperPrefix:'/pivot_ema_st-paper', hasDayLog:true, modeFlag:'PIVOT_EMA_ST_MODE_ENABLED' },
-  // GAP_RUNAWAY (GAP_runAway__Kirubakaran): NIFTY options.
-  { key:'GAP_RUNAWAY', label:'GAP_runAway__Kirubakaran', accentClass:'gaprunaway', accent:'#a78bfa', paperPrefix:'/gap_runaway-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_MODE_ENABLED' },
-  // Its stock scanner — intraday shares, an NSE-session strategy in the NIFTY start/stop roster.
-  // Its /status/data returns positions[] in the cash-equity row shape (like EarlyBird).
-  { key:'GAP_RUNAWAY_STK', label:'GAP_runAway Stocks', accentClass:'gaprunawaystk', accent:'#c084fc', paperPrefix:'/gap_runaway_stk-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_STK_MODE_ENABLED' },
-  { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
-  // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
-  // returns `positions[]`, not a single `position`, so renderColumn below
-  // draws an aggregate block for it instead of the option-shaped one.
-  { key:'EARLYBIRD', label:'EarlyBird', accentClass:'earlybird', accent:'#14b8a6', paperPrefix:'/early-bird-paper', hasDayLog:true, modeFlag:'EARLYBIRD_MODE_ENABLED' },
-];
-
-// Running (strategy, market) pairs (config/pairs.js runnable): one column each,
-// gated by the pair's own <PAIR>_MODE_ENABLED (default OFF). Generated, never hand-typed.
-const PAIR_DEFS = require("../config/pairs").runnable().map(p => ({
-  key: p.envPrefix, label: require("../utils/pairRuntime").forPair(p).title,
-  accentClass: 'pairmk', accent: '#2dd4bf', paperPrefix: p.paperPath, hasDayLog: true,
-  modeFlag: p.enabledKey, defaultOff: true,
+// Every row comes from the registry × running pairs (utils/dashboardModel.js),
+// so a strategy converted to pairs appears here under each market it runs on
+// with no edit to this file. label = short name inside its market group;
+// title = full name used in confirmations and copied logs.
+// hasDayLog: only routes that expose /download/{trades,skips}/:date show the
+// Copy Day Log button (TREND_PB has cumulative JSONL only).
+const dashboardModel = require("../utils/dashboardModel");
+const dashboardUI    = require("../utils/dashboardUI");
+const STRATEGY_DEFS = dashboardModel.allRows().map(r => ({
+  key: r.key, label: r.label, title: r.title, market: r.market, accent: r.accent,
+  paperPrefix: r.paperPrefix, hasDayLog: r.hasDayLog, modeFlag: r.modeFlag, defaultOff: !r.defaultOn,
 }));
 
 function enabledStrategies() {
-  return STRATEGY_DEFS.concat(PAIR_DEFS).filter(s => (process.env[s.modeFlag] || (s.defaultOff ? 'false' : 'true')).toLowerCase() !== 'false')
-;
+  return dashboardModel.sortByMarket(STRATEGY_DEFS.filter(s => dashboardModel.isOn({ modeFlag: s.modeFlag, defaultOn: !s.defaultOff })));
 }
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
@@ -91,7 +59,7 @@ function brokerPools(strategies) {
   // sub = the enabled strategies actually routed to that broker, never a
   // hardcoded list (it went stale every time a strategy was added).
   const subOf = (broker) => strategies.filter(s => brokerOfKey(s.key) === broker)
-                                      .map(s => s.label).join(' \u00b7 ');
+                                      .map(s => s.title).join(' \u00b7 ');
   const zSub = subOf('ZERODHA');
   const fSub = subOf('FYERS');
   if (zSub) pools.push({ id:'ZERODHA', label:'ZERODHA', sub:zSub, inv:z });
@@ -121,7 +89,7 @@ router.get("/", (req, res) => {
 function renderPage({ sidebarKey = "realtime", autoFlipBack = false } = {}) {
   const sidebar = buildSidebar(sidebarKey, false);
   const strategies = enabledStrategies();
-  // When nothing runs this page can still start the NIFTY paper roster (the
+  // When nothing runs this page can still start the paper roster (the
   // Dashboard's button is not reachable from here).
   const nseActive     = sharedSocketState.isAnyActive();
 
@@ -135,8 +103,13 @@ function renderPage({ sidebarKey = "realtime", autoFlipBack = false } = {}) {
   const exitUrlsJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/exit'])),
   });
-  const labelsJson      = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.label])));
-  const accentsJson     = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.accentClass])));
+  // Full names for confirmations / copied logs; short names inside a market group.
+  const labelsJson      = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.title])));
+  const shortJson       = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.label])));
+  const accentsJson     = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.accent])));
+  const marketOfJson    = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.market])));
+  const marketGroups    = dashboardModel.marketsOf(strategies);
+  const marketsJson     = JSON.stringify(marketGroups);
   const dayLogPrefixes  = JSON.stringify(Object.fromEntries(strategies.filter(s => s.hasDayLog).map(s => [s.key, s.paperPrefix])));
   const strategyOrder   = JSON.stringify(strategies.map(s => s.key));
   // Stop-all hits every strategy's paper prefix.
@@ -178,50 +151,60 @@ function renderPage({ sidebarKey = "realtime", autoFlipBack = false } = {}) {
     </div>`;
   }).join('\n');
 
-  const cardsHtml = strategies.map(s => `
-    <div class="card ${s.accentClass}" id="card-${s.key}" hidden>
-      <div class="card-header">
-        <div class="card-title">${s.label}</div>
-        <div class="badge stop" id="badge-${s.key}">—</div>
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  // One card per strategy, grouped under its market. A card is shown only while
+  // that strategy holds a position (or its endpoint is dead) — see showCard().
+  // Exit Trade sits right under the position, ahead of the less urgent details.
+  const cardHtml = s => `
+      <article class="card" id="card-${s.key}" style="--acc:${esc(s.accent)}" hidden>
+        <div class="card-header">
+          <div class="card-title">${esc(s.label)}</div>
+          <div class="badge stop" id="badge-${s.key}">—</div>
+        </div>
+        <div id="body-${s.key}"><div class="flat-block">Loading…</div></div>
+        <button type="button" class="act-btn exit-btn" id="exit-${s.key}" onclick="exitPosition('${s.key}', this)" hidden>🚪 Exit Trade</button>
+        <div class="stats-row" id="stats-${s.key}"></div>
+        <details class="act-wrap">
+          <summary>Recent activity</summary>
+          <div class="activity" id="activity-${s.key}"><div class="empty">Waiting for activity…</div></div>
+        </details>
+        <div class="footer-meta" id="meta-${s.key}"><span>—</span><span>—</span></div>
+        <div class="actions">
+          ${s.hasDayLog
+            ? `<button type="button" class="act-btn" id="copy-${s.key}" onclick="copyDayLog('${s.key}', this)">📋 Copy Day Log</button>`
+            : `<span class="act-btn act-btn-disabled" title="Per-date JSONL not exposed for this strategy">— No Day Log —</span>`}
+          <a class="act-btn" id="open-${s.key}" href="${s.paperPrefix}/status">Open Status →</a>
+        </div>
+      </article>`;
+  // Market sections stay hidden until one of their cards is (renderCardsEmpty).
+  const cardsHtml = marketGroups.map(g => `
+    <section class="rt-mkt" id="rt-mkt-${g.key}" data-dh-market="${g.key}" hidden>
+      <div class="dh-mhead">${esc(g.label)}</div>
+      <div class="cols">${strategies.filter(s => s.market === g.key).map(cardHtml).join('')}
       </div>
-      <div id="body-${s.key}"><div class="flat-block">Loading…</div></div>
-      <div class="activity" id="activity-${s.key}"><div class="empty">Waiting for activity…</div></div>
-      <div class="stats-row" id="stats-${s.key}"></div>
-      <div class="footer-meta" id="meta-${s.key}"><span>—</span><span>—</span></div>
-      <div class="actions">
-        ${s.hasDayLog
-          ? `<button type="button" class="act-btn" id="copy-${s.key}" onclick="copyDayLog('${s.key}', this)">📋 Copy Day Log</button>`
-          : `<span class="act-btn act-btn-disabled" title="Per-date JSONL not exposed for this strategy">— No Day Log —</span>`}
-        <a class="act-btn" id="open-${s.key}" href="${s.paperPrefix}/status">Open Status →</a>
-      </div>
-      <button type="button" class="act-btn exit-btn" id="exit-${s.key}" onclick="exitPosition('${s.key}', this)" hidden>🚪 Exit Trade</button>
-    </div>`).join('\n');
-
-  // Rows arrive with the first poll (≤4s), which is also what decides which
-  // strategies have earned one — pre-rendering all of them would flash a full
-  // table that then collapses.
-  const rollupRowsHtml =
-    `<tr class="quiet"><td colspan="7">Loading…</td></tr>\n      `
-    + `<tr class="total"><td>TOTAL</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+    </section>`).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Real-Time Monitor</title>
 ${faviconLink()}
 <script>(function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
   ${sidebarCSS()}
   ${modalCSS()}
+  ${dashboardUI.dashCSS()}
   body { margin:0; background:#040c18; color:#e0eaf8; font-family:'Segoe UI',-apple-system,sans-serif; }
-  .main-content { padding:20px 24px; }
+  :root[data-theme="light"] body { background:#f4f6f9; color:#1e293b; }
+  .main-content { padding:20px max(24px, env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
+  @media(max-width:768px){ .main-content { padding:12px max(16px, env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); } }
   .top-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
   .top-bar h1 { margin:0; font-size:1.4rem; font-weight:600; letter-spacing:0.2px; }
   .top-bar .sub { color:#7d8aa3; font-size:0.78rem; margin-top:2px; }
 
-  /* Stop NIFTY — the panic button. */
+  /* Stop All — the panic button. */
   .top-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .stop-all { background:#7f1d1d; border:1px solid #b91c1c; color:#fee2e2; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
   .stop-all:hover:not(:disabled) { background:#b91c1c; color:#fff; }
@@ -260,239 +243,101 @@ ${faviconLink()}
   .cap-alert-list li { font-size:0.72rem; color:#e6d9a8; font-variant-numeric:tabular-nums; }
   .cap-alert-list .t { color:#9a8a55; }
 
-  .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%), 1fr)); gap:14px; margin-bottom:18px; }
-  .cards-empty { background:#0a1628; border:1px dashed #1c2c47; border-radius:10px; padding:22px 16px; margin-bottom:18px; text-align:center; color:#7d8aa3; font-size:0.85rem; }
+  .cols { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(300px,100%), 1fr)); gap:12px; }
+  .rt-mkt { margin-bottom:6px; }
+  .rt-mkt[hidden] { display:none; }
+  .cards-empty { background:var(--dh-card); border:1px dashed var(--dh-border); border-radius:10px; padding:18px 16px; text-align:center; color:var(--dh-dim); font-size:0.84rem; }
 
-  .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  /* Strategy card — accent from --acc (set inline per strategy). */
+  .card { background:var(--dh-card); border:1px solid var(--dh-border); border-top:3px solid var(--acc,#3b82f6); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:10px; min-width:0; color:var(--dh-text); }
   .card[hidden] { display:none; }   /* display:flex above would beat the UA [hidden] rule */
-  .card.ema_rsi_st    { border-top-color:#3b82f6; }
-  .card.bb_rsi    { border-top-color:#f59e0b; }
-  .card.pa       { border-top-color:#a855f7; }
-  .card.orb      { border-top-color:#10b981; }
-  .card.ema9vwap { border-top-color:#06b6d4; }
-  .card.trendpb  { border-top-color:#ec4899; }
-  .card.tds      { border-top-color:#a855f7; }
-.card.hascalp  { border-top-color:#f97316; }
-.card.prevorb  { border-top-color:#e879f9; }
-.card.itm20scalp { border-top-color:#22d3ee; }
-  .card.rsipivotst { border-top-color:#facc15; }
-  .card.emarsistv2 { border-top-color:#38bdf8; }
-  .card.pairmk { border-top-color:#2dd4bf; }
-  .card.strsipivbb { border-top-color:#a3e635; }
-  .card.sailvwapst { border-top-color:#fda4af; }
-  .card.pivotemast { border-top-color:#38bdf8; }
-  .card.gaprunaway { border-top-color:#a78bfa; }
-  .card.gaprunawaystk { border-top-color:#c084fc; }
-  .card.simple930 { border-top-color:#fb923c; }
-  .card.earlybird { border-top-color:#14b8a6; }
+  .card-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .card-title { font-size:0.95rem; font-weight:700; letter-spacing:0.3px; min-width:0; overflow-wrap:anywhere; }
 
-  .card-header { display:flex; align-items:center; justify-content:space-between; }
-  .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
-  .card.ema_rsi_st    .card-title { color:#60a5fa; }
-  .card.bb_rsi    .card-title { color:#fbbf24; }
-  .card.pa       .card-title { color:#c084fc; }
-  .card.orb      .card-title { color:#34d399; }
-  .card.ema9vwap .card-title { color:#22d3ee; }
-  .card.trendpb  .card-title { color:#f472b6; }
-  .card.tds      .card-title { color:#c084fc; }
-.card.hascalp  .card-title { color:#fdba74; }
-.card.prevorb  .card-title { color:#f0abfc; }
-.card.itm20scalp .card-title { color:#67e8f9; }
-  .card.rsipivotst .card-title { color:#fde047; }
-  .card.emarsistv2 .card-title { color:#7dd3fc; }
-  .card.pairmk .card-title { color:#5eead4; }
-  .card.simple930 .card-title { color:#fdba74; }
-  .card.earlybird .card-title { color:#5eead4; }
+  .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:700; letter-spacing:0.4px; white-space:nowrap; }
+  .badge.run  { background:rgba(16,185,129,0.12); color:var(--dh-pos); border-color:rgba(16,185,129,0.35); }
+  .badge.stop { background:rgba(148,163,184,0.10); color:var(--dh-zero); border-color:rgba(148,163,184,0.30); }
+  .badge.err  { background:rgba(239,68,68,0.12);  color:var(--dh-neg); border-color:rgba(239,68,68,0.35); }
 
-  .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
-  .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
-  .badge.stop { background:rgba(148,163,184,0.10); color:#94a3b8; border-color:rgba(148,163,184,0.30); }
-  .badge.err  { background:rgba(239,68,68,0.12);  color:#ef4444; border-color:rgba(239,68,68,0.35); }
-
-  .pos-block, .flat-block { background:#040c18; border:1px solid #15243d; border-radius:8px; padding:10px 12px; }
-  .pos-side { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; letter-spacing:0.5px; margin-right:6px; }
-  .pos-side.CE { background:rgba(16,185,129,0.18); color:#10b981; }
-  .pos-side.PE { background:rgba(239,68,68,0.18);  color:#ef4444; }
-  .pos-symbol { font-size:0.78rem; color:#cbd5e1; word-break:break-all; }
-  .pos-symbol-line { display:block; }
+  .pos-block, .flat-block { background:var(--dh-inset); border:1px solid var(--dh-line); border-radius:8px; padding:10px 12px; }
+  .pos-top { display:flex; align-items:center; gap:6px; min-width:0; }
+  .pos-side { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; letter-spacing:0.5px; flex-shrink:0; }
+  .pos-side.CE { background:rgba(16,185,129,0.18); color:var(--dh-pos); }
+  .pos-side.PE { background:rgba(239,68,68,0.18);  color:var(--dh-neg); }
+  .pos-symbol { font-size:0.76rem; color:var(--dh-muted); overflow-wrap:anywhere; min-width:0; }
+  .pnl-big { font-size:1.6rem; font-weight:700; line-height:1.15; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .pnl-big .pct { font-size:0.8rem; font-weight:600; color:var(--dh-muted); margin-left:6px; }
+  .pos-kv { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:6px; margin-top:8px; }
+  .pos-kv .kv { background:var(--dh-card); border:1px solid var(--dh-line); border-radius:6px; padding:5px 7px; min-width:0; }
+  .pos-kv .k { font-size:0.6rem; color:var(--dh-dim); text-transform:uppercase; letter-spacing:0.4px; }
+  .pos-kv .v { font-size:0.84rem; font-weight:600; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pos-more { display:flex; flex-wrap:wrap; justify-content:space-between; gap:2px 12px; margin-top:7px; font-size:0.72rem; color:var(--dh-dim); font-variant-numeric:tabular-nums; }
+  @media(max-width:400px){ .pos-kv { grid-template-columns:repeat(2, minmax(0,1fr)); } }
   /* EarlyBird aggregate block — several cash-equity positions in one card. */
   .eb-head { margin-bottom:2px; }
   .eb-list { margin-top:8px; display:flex; flex-direction:column; gap:5px; }
-  .eb-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto auto auto auto; gap:8px; align-items:center; font-size:0.74rem; color:#cbd5e1; font-variant-numeric:tabular-nums; }
+  .eb-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto auto auto auto; gap:8px; align-items:center; font-size:0.74rem; color:var(--dh-text); font-variant-numeric:tabular-nums; }
   .eb-sym { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .eb-qty, .eb-px, .eb-pts, .eb-pnl { white-space:nowrap; text-align:right; }
   .eb-pnl { font-weight:600; }
-  /* Per-leg square-off. 44px tall on touch so it clears the tap-target floor
-     without stretching the row on desktop. */
+  /* Per-leg square-off — 44px tall on touch. */
   .eb-exit { background:transparent; border:1px solid #7f1d1d; color:#f87171; border-radius:5px; font-size:0.68rem; font-weight:700; padding:3px 7px; cursor:pointer; font-family:inherit; line-height:1.2; white-space:nowrap; }
   .eb-exit:hover { background:rgba(239,68,68,0.16); border-color:#ef4444; color:#fca5a5; }
   .eb-exit:disabled { opacity:0.5; cursor:default; }
   @media(max-width:768px){
     .eb-row { grid-template-columns:auto minmax(0,1fr) auto auto; row-gap:2px; }
-    .eb-px { grid-column:2 / 4; text-align:left; color:#7d8aa3; }
-    .eb-exit { min-height:32px; padding:6px 10px; }
+    .eb-px { grid-column:2 / 4; text-align:left; color:var(--dh-dim); }
+    .eb-exit { min-height:44px; padding:6px 12px; }
   }
-  :root[data-theme="light"] .eb-row { color:#475569; }
-  :root[data-theme="light"] .eb-px { color:#5c6b7f; }
+  :root[data-theme="light"] .eb-exit { border-color:#fecaca; color:#b91c1c; }
 
-  .pnl-big { font-size:1.5rem; font-weight:700; line-height:1.1; margin-top:4px; }
-  .pnl-big .pct { font-size:0.78rem; font-weight:500; color:#94a3b8; margin-left:6px; }
-  .pos-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px 12px; margin-top:8px; font-size:0.75rem; }
-  .pos-grid .lbl { color:#7d8aa3; }
-  .pos-grid .val { color:#e0eaf8; text-align:right; font-variant-numeric:tabular-nums; }
+  .flat-block { text-align:center; color:var(--dh-dim); font-size:0.86rem; padding:16px 12px; }
 
-  .flat-block { text-align:center; color:#94a3b8; font-size:0.86rem; padding:18px 12px; }
-
-  /* Recent activity mini-log */
-  .activity { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:6px 8px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:0.68rem; line-height:1.45; color:#9aa9c2; max-height:110px; overflow:hidden; min-width:0; }
-  .activity .ahead { display:flex; justify-content:space-between; align-items:center; color:#7d8aa3; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; font-family:inherit; }
+  /* Recent activity — folded away; the position and the Exit button come first. */
+  .act-wrap > summary { cursor:pointer; list-style:none; font-size:0.72rem; font-weight:600; color:var(--dh-muted); min-height:32px; display:flex; align-items:center; }
+  .act-wrap > summary::-webkit-details-marker { display:none; }
+  .act-wrap > summary::before { content:"▸"; margin-right:6px; }
+  .act-wrap[open] > summary::before { content:"▾"; }
+  .activity { background:var(--dh-inset); border:1px solid var(--dh-line); border-radius:6px; padding:6px 8px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:0.68rem; line-height:1.45; color:var(--dh-muted); max-height:120px; overflow:hidden; min-width:0; }
+  .activity .ahead { display:flex; justify-content:space-between; align-items:center; color:var(--dh-dim); font-size:0.62rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; font-family:inherit; }
   .activity .arow { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .activity .empty { color:var(--muted-1,#8ba1c2); font-style:italic; padding:6px 0; text-align:center; }
+  .activity .empty { color:var(--dh-dim); font-style:italic; padding:6px 0; text-align:center; }
 
-  .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:auto; }
-  .stat { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:7px 8px; text-align:center; }
-  .stat .lbl { font-size:0.62rem; color:#7d8aa3; text-transform:uppercase; letter-spacing:0.5px; }
-  .stat .val { font-size:0.95rem; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .stat { background:var(--dh-inset); border:1px solid var(--dh-line); border-radius:6px; padding:6px 8px; }
+  .stat .lbl { font-size:0.6rem; color:var(--dh-dim); text-transform:uppercase; letter-spacing:0.4px; }
+  .stat .val { font-size:0.9rem; font-weight:700; margin-top:2px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
 
-  .pos-pos { color:#10b981 !important; }
-  .pos-neg { color:#ef4444 !important; }
-  .pos-zero { color:#94a3b8 !important; }
+  .pos-pos { color:var(--dh-pos) !important; }
+  .pos-neg { color:var(--dh-neg) !important; }
+  .pos-zero { color:var(--dh-zero) !important; }
 
-  .footer-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #15243d; }
+  .footer-meta { font-size:0.68rem; color:var(--dh-dim); display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; padding-top:6px; border-top:1px solid var(--dh-line); }
 
-  .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
-  .act-btn { display:inline-flex; align-items:center; justify-content:center; background:#040c18; border:1px solid #1c2c47; color:#cbd5e1; font-size:0.74rem; font-weight:600; padding:8px 10px; border-radius:6px; cursor:pointer; text-align:center; text-decoration:none; transition:all 0.15s; letter-spacing:0.3px; line-height:1.2; font-family:inherit; }
-  .act-btn:hover { background:#0e1c33; border-color:#3b82f6; color:#fff; }
-  .act-btn.copied { background:rgba(16,185,129,0.18); border-color:#10b981; color:#10b981; }
-  .act-btn-disabled { background:#040c18; border-style:dashed; color:var(--muted-1,#8ba1c2); cursor:default; }
-  .act-btn-disabled:hover { background:#040c18; color:var(--muted-1,#8ba1c2); border-color:#1c2c47; }
-  /* Manual square-off. Sits below the actions grid, full width, and only while
-     the strategy actually holds something — a live Exit button on a flat card
-     is an invitation to a misclick. */
-  .exit-btn { width:100%; margin-top:8px; min-height:44px; background:rgba(239,68,68,0.10); border-color:#7f1d1d; color:#f87171; }
-  /* Specificity must match the per-strategy accent rules below
-     (.card.<accent> .act-btn:not(.act-btn-disabled):hover), or the card's accent
-     colour would repaint this button's hover border blue/green/orange. */
-  .card .act-btn.exit-btn:not(.act-btn-disabled):hover { background:rgba(239,68,68,0.20); border-color:#ef4444; color:#fca5a5; }
+  .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .act-btn { display:inline-flex; align-items:center; justify-content:center; min-height:44px; background:var(--dh-inset); border:1px solid var(--dh-border); color:var(--dh-text); font-size:0.76rem; font-weight:600; padding:8px 10px; border-radius:8px; cursor:pointer; text-align:center; text-decoration:none; transition:border-color 0.15s, background 0.15s; letter-spacing:0.2px; line-height:1.2; font-family:inherit; }
+  .act-btn:hover { border-color:var(--acc,#3b82f6); }
+  .act-btn.copied { background:rgba(16,185,129,0.15); border-color:var(--dh-pos); color:var(--dh-pos); }
+  .act-btn-disabled { border-style:dashed; color:var(--dh-dim); cursor:default; }
+  .act-btn-disabled:hover { border-color:var(--dh-border); }
+  /* Manual square-off — full width, only while the strategy holds something:
+     a live Exit button on a flat card is an invitation to a misclick. */
+  .exit-btn { width:100%; background:rgba(239,68,68,0.12); border-color:#b91c1c; color:#f87171; font-size:0.86rem; font-weight:700; }
+  .card .act-btn.exit-btn:hover { background:rgba(239,68,68,0.22); border-color:#ef4444; color:#fca5a5; }
   .exit-btn:disabled { opacity:0.55; cursor:default; }
-  .card.ema_rsi_st    .act-btn:not(.act-btn-disabled):hover { border-color:#3b82f6; }
-  .card.bb_rsi    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
-  .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
-  .card.orb      .act-btn:not(.act-btn-disabled):hover { border-color:#10b981; }
-  .card.ema9vwap .act-btn:not(.act-btn-disabled):hover { border-color:#06b6d4; }
-  .card.trendpb  .act-btn:not(.act-btn-disabled):hover { border-color:#ec4899; }
-  .card.tds      .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
-.card.hascalp  .act-btn:not(.act-btn-disabled):hover { border-color:#f97316; }
-.card.prevorb  .act-btn:not(.act-btn-disabled):hover { border-color:#e879f9; }
-.card.itm20scalp .act-btn:not(.act-btn-disabled):hover { border-color:#22d3ee; }
-  .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
-  .card.emarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
-  .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
-  .card.earlybird .act-btn:not(.act-btn-disabled):hover { border-color:#14b8a6; }
+  .exit-btn[hidden] { display:none; }
+  :root[data-theme="light"] .exit-btn { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
+  :root[data-theme="light"] .card .act-btn.exit-btn:hover { background:#fee2e2; border-color:#dc2626; color:#991b1b; }
 
-  /* Rollup table */
-  .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
-  .rollup th { background:#0e1c33; color:#9aa9c2; font-size:0.72rem; font-weight:600; letter-spacing:0.5px; padding:10px 12px; text-align:right; border-bottom:1px solid #1c2c47; }
-  .rollup th:first-child { text-align:left; }
-  .rollup td { padding:10px 12px; font-size:0.85rem; text-align:right; border-bottom:1px solid #15243d; font-variant-numeric:tabular-nums; }
-  .rollup td:first-child { text-align:left; font-weight:600; }
-  .rollup tr:last-child td { border-bottom:none; background:#0e1c33; font-weight:700; }
-  .rollup tr.ema_rsi_st    td:first-child { color:#60a5fa; }
-  .rollup tr.bb_rsi    td:first-child { color:#fbbf24; }
-  .rollup tr.pa       td:first-child { color:#c084fc; }
-  .rollup tr.orb      td:first-child { color:#34d399; }
-  .rollup tr.ema9vwap td:first-child { color:#22d3ee; }
-  .rollup tr.trendpb  td:first-child { color:#f472b6; }
-  .rollup tr.tds      td:first-child { color:#c084fc; }
-.rollup tr.hascalp  td:first-child { color:#fdba74; }
-.rollup tr.prevorb  td:first-child { color:#f0abfc; }
-.rollup tr.itm20scalp td:first-child { color:#67e8f9; }
-  .rollup tr.rsipivotst td:first-child { color:#fde047; }
-  .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
-  .rollup tr.pairmk td:first-child { color:#5eead4; }
-  .rollup tr.simple930 td:first-child { color:#fdba74; }
-  .rollup tr.earlybird td:first-child { color:#5eead4; }
-  .rollup tr.total    td:first-child { color:#e0eaf8; }
-  /* Strategy name links to that strategy's own paper status page.
-     Colour is inherited so the per-strategy accent
-     rules above keep working in both themes. */
-  .rollup td:first-child a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
-  .rollup td:first-child a:hover { border-bottom-style:solid; }
-  .rollup tr.quiet td { color:#7d8aa3; font-weight:400; font-size:0.8rem; text-align:left; }
+  #rollup-body { margin-bottom:6px; }
 
   .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; animation:pulse 1.5s ease-in-out infinite; vertical-align:middle; }
+  .pulse.stale { background:#f59e0b; animation:none; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 
-  /* ── Light-theme overrides ── */
+  /* ── Light-theme overrides (top bar + wallets; cards and tables use --dh-*) ── */
   :root[data-theme="light"] .top-bar h1 { color:#1e293b; }
   :root[data-theme="light"] .top-bar .sub { color:#4b5769; }
-  :root[data-theme="light"] .toggle { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .toggle button:not(.active) { color:#4b5769; }
-  :root[data-theme="light"] .card { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .cards-empty { background:#fff; border-color:#d7dce4; color:#4b5769; }
-  :root[data-theme="light"] .card.ema_rsi_st    .card-title { color:#1d4ed8; }
-  :root[data-theme="light"] .card.bb_rsi    .card-title { color:#b45309; }
-  :root[data-theme="light"] .card.pa       .card-title { color:#7e22ce; }
-  :root[data-theme="light"] .card.orb      .card-title { color:#047857; }
-  :root[data-theme="light"] .card.ema9vwap .card-title { color:#0e7490; }
-  :root[data-theme="light"] .card.trendpb  .card-title { color:#be185d; }
-  :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
-:root[data-theme="light"] .card.hascalp  .card-title { color:#c2410c; }
-:root[data-theme="light"] .card.prevorb  .card-title { color:#a21caf; }
-:root[data-theme="light"] .card.itm20scalp .card-title { color:#0e7490; }
-  :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
-  :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
-  :root[data-theme="light"] .card.pairmk .card-title { color:#0f766e; }
-  :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
-  :root[data-theme="light"] .card.earlybird .card-title { color:#0f766e; }
-  :root[data-theme="light"] .pos-block,
-  :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
-  :root[data-theme="light"] .flat-block { color:#4b5769; }
-  :root[data-theme="light"] .pos-symbol { color:#475569; }
-  :root[data-theme="light"] .pos-grid .lbl { color:#4b5769; }
-  :root[data-theme="light"] .pos-grid .val { color:#1e293b; }
-  :root[data-theme="light"] .activity { background:#f8fafc !important; border-color:#e0e4ea !important; color:#475569; }
-  :root[data-theme="light"] .activity .ahead { color:#5c6b7f; }
-  :root[data-theme="light"] .activity .empty { color:#5c6b7f; }
-  :root[data-theme="light"] .stat { background:#f8fafc !important; border-color:#e0e4ea !important; }
-  :root[data-theme="light"] .stat .lbl { color:#4b5769; }
-  :root[data-theme="light"] .stat .val { color:#1e293b; }
-  :root[data-theme="light"] .footer-meta { color:#5c6b7f; border-top-color:#e0e4ea; }
-  .rollup-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; }
-  @media(max-width:768px){
-    /* .rollup sets overflow:hidden for its rounded corners, which outranks the
-       shared table rule and clipped the last three columns. The wrapper scrolls
-       instead, and the table keeps a readable minimum width. */
-    .rollup { min-width:620px; }
-    .rollup th, .rollup td { padding:9px 10px; white-space:nowrap; }
-  }
-  :root[data-theme="light"] .rollup { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .rollup th { background:#f1f5f9 !important; color:#4b5769 !important; border-bottom-color:#e0e4ea !important; }
-  :root[data-theme="light"] .rollup td { color:#334155; border-bottom-color:#e0e4ea; }
-  :root[data-theme="light"] .rollup tr:last-child td { background:#f8fafc !important; color:#1e293b; }
-  /* Needs the theme prefix: the plain .rollup td rule above outranks tr.quiet. */
-  :root[data-theme="light"] .rollup tr.quiet td { color:#64748b; }
-  :root[data-theme="light"] .rollup tr.ema_rsi_st    td:first-child { color:#1d4ed8; }
-  :root[data-theme="light"] .rollup tr.bb_rsi    td:first-child { color:#b45309; }
-  :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#7e22ce; }
-  :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#047857; }
-  :root[data-theme="light"] .rollup tr.ema9vwap td:first-child { color:#0e7490; }
-  :root[data-theme="light"] .rollup tr.trendpb  td:first-child { color:#be185d; }
-  :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
-:root[data-theme="light"] .rollup tr.hascalp  td:first-child { color:#c2410c; }
-:root[data-theme="light"] .rollup tr.prevorb  td:first-child { color:#a21caf; }
-:root[data-theme="light"] .rollup tr.itm20scalp td:first-child { color:#0e7490; }
-  :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
-  :root[data-theme="light"] .rollup tr.emarsistv2 td:first-child { color:#0369a1; }
-  :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }
-  :root[data-theme="light"] .rollup tr.earlybird td:first-child { color:#0f766e; }
-  :root[data-theme="light"] .pos-zero { color:#4b5769 !important; }
-  :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
-  :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
-  :root[data-theme="light"] .act-btn { background:#f8fafc !important; border-color:#e0e4ea !important; color:#475569; }
-  :root[data-theme="light"] .act-btn:hover { background:#fff !important; color:#1e293b; }
-  :root[data-theme="light"] .act-btn.copied { background:rgba(16,185,129,0.10) !important; border-color:#10b981 !important; color:#059669; }
-  :root[data-theme="light"] .act-btn-disabled { color:#5c6b7f !important; }
   :root[data-theme="light"] .wallet { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   :root[data-theme="light"] .w-broker { color:#1e293b; }
   :root[data-theme="light"] .w-sub { color:#5c6b7f; }
@@ -504,12 +349,12 @@ ${sidebar}
 <main class="main-content">
   <div class="top-bar">
     <div>
-      <h1>📡 Real-Time Monitor</h1>
-      <div class="sub">Live view of all enabled strategies — polls every 4s <span id="pulse" class="pulse"></span></div>
+      <h1>${autoFlipBack ? '⌂ Dashboard' : '📡 Real-Time Monitor'}</h1>
+      <div class="sub">Paper trading · live · updates every 4s <span id="pulse" class="pulse" title="Last update"></span></div>
     </div>
     <div class="top-actions">
-      ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled NIFTY paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
-      ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every NIFTY paper strategy">🛑 Stop NIFTY</button>` : ''}
+      ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
+      ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every paper strategy on every market and square off open positions">🛑 Stop All</button>` : ''}
     </div>
   </div>
   <div class="stop-all-note" id="stop-all-note" hidden></div>
@@ -518,53 +363,45 @@ ${sidebar}
        when the pool runs dry; this is how you find out that one was. -->
   <div class="cap-alert" id="cap-alert" hidden></div>
 
-  <!-- Shown during a running session too: while trading is exactly when "how much
-       is left" matters. Numbers come from /realtime/capital, not from the
-       per-strategy pages, so they include what open positions are holding. -->
-  ${pools.length ? `<div class="wallets" id="wallets">\n${walletsHtml}\n  </div>` : ''}
+  <!-- ① Today's P&L — open + closed, every enabled strategy; one chip per market. -->
+  ${dashboardUI.heroHTML(marketGroups, { sub: 'Waiting for the first update…' })}
+  ${dashboardUI.filterHTML(marketGroups)}
 
-  <div class="cols">
+  <!-- ② Open positions, grouped by market. A card is shown only while that
+       strategy holds a position (or its endpoint is dead); a strategy that
+       traded and is flat again is in the summary below. -->
+  <div class="dh-h"><h2>Open positions</h2><span class="dh-h-note" id="open-count"></span></div>
 ${cardsHtml}
-  </div>
-  <!-- A card is shown only while that strategy is holding an open position (or
-       its endpoint is dead). With ten strategies the wall of identical FLAT
-       boxes — and, later in the day, cards for trades already closed — buried
-       the one card that mattered. The rollup table below still lists every
-       strategy, open and closed. -->
-  <div class="cards-empty" id="cards-empty" hidden>No open positions right now — a card appears here while a strategy is holding one. Today's trades are in the table below.</div>
+  <div class="cards-empty" id="cards-empty" hidden>No open positions right now — a card appears here while a strategy is holding one. Today's trades are in the summary below.</div>
 
-  <div class="rollup-wrap">
-  <table class="rollup">
-    <thead>
-      <tr>
-        <th>Strategy</th>
-        <th>Status</th>
-        <th>Open P&amp;L</th>
-        <th>Closed P&amp;L (Today)</th>
-        <th>Trades</th>
-        <th>W / L</th>
-        <th>Today Total (Open + Closed)</th>
-      </tr>
-    </thead>
-    <tbody id="rollup-body">
-      ${rollupRowsHtml}
-    </tbody>
-  </table>
-  </div>
+  <!-- ③ Today by market — every strategy with a position or a trade today, a
+       subtotal on each market row and the grand TOTAL at the bottom. -->
+  <div class="dh-h"><h2>Today by market</h2><span class="dh-h-note">Open + closed P&amp;L</span></div>
+  <div id="rollup-body"><div class="dh-sum-empty">Loading…</div></div>
+
+  <!-- ④ Broker money — after the close (hidden during market hours). Numbers
+       come from /realtime/capital, so they include what open positions hold. -->
+  ${pools.length ? `<div class="dh-h" id="wallets-h"><h2>Broker money (paper)</h2></div>\n  <div class="wallets" id="wallets">\n${walletsHtml}\n  </div>` : ''}
+
+  ${dashboardUI.quickLinksHTML({ skip: ['realtime'], demo: require("../utils/demoMode").isDemo() })}
 </main>
 
 <script>
 ${modalJS()}
+${dashboardUI.dashClientJS()}
 const STRATEGY_KEYS    = ${strategyOrder};
 const ENDPOINTS        = ${endpointsJson};
 const STATUS_PAGES     = ${statusPagesJson};
 const EXIT_URLS        = ${exitUrlsJson};
-const STRATEGY_LABELS  = ${labelsJson};
+const STRATEGY_LABELS  = ${labelsJson};    // full names (confirmations, copied logs)
+const SHORT_LABELS     = ${shortJson};     // names inside a market group
 const STRATEGY_ACCENTS = ${accentsJson};
+const MARKET_OF        = ${marketOfJson};  // strategy key → market group
+const MARKETS          = ${marketsJson};   // [{ key, label }] — markets with an enabled strategy
 const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
 const STOP_URLS        = ${stopUrlsJson};
-const PAPER_ONLY       = ${paperOnlyJson};   // paperOnly strategies — outside the NIFTY start/stop roster
+const PAPER_ONLY       = ${paperOnlyJson};   // paperOnly strategies — outside the start/stop roster
 const FUTURES_KEYS     = ${futuresJson};     // futures:true strategies — futures legs, no premium
 const mode = 'PAPER';
 let timer = null;
@@ -663,21 +500,26 @@ function renderPositionStandard(d, pos, futuresStrategy) {
     : (optionEntry && optionCurrent ? ((optionCurrent - optionEntry) / optionEntry) * 100 : null);
   const sideClass = pos.side === 'CE' || pos.side === 'PE' ? pos.side : '';
   const sideTxt = isFut ? (pos.side === 'CE' ? 'LONG' : pos.side === 'PE' ? 'SHORT' : (pos.side || '')) : (pos.side || '');
+  // Entry / Current are what the P&L is priced on: the option premium for an
+  // option, the contract itself for a future. The underlying's spot move sits
+  // on the line below for options, so nothing the old grid showed is lost.
+  const kv = (k, v, klass) => '<div class="kv"><div class="k">' + k + '</div><div class="v' + (klass ? ' ' + klass : '') + '">' + v + '</div></div>';
   return \`
     <div class="pos-block">
-      <div>
-        <span class="pos-side \${sideClass}">\${sideTxt}</span>
-        <span class="pos-symbol">\${pos.symbol || ''}</span>
+      <div class="pos-top">
+        <span class="pos-side \${sideClass}">\${escapeHtml(sideTxt)}</span>
+        <span class="pos-symbol">\${escapeHtml(pos.symbol || '')}</span>
       </div>
       <div class="pnl-big \${cls(upnl)}">\${fmtINR(upnl)}\${pct !== null ? '<span class="pct">' + (pct >= 0 ? '+' : '') + Number(pct).toFixed(2) + '%</span>' : ''}</div>
-      <div class="pos-grid">
-        <div class="lbl">Qty</div><div class="val">\${pos.qty ?? '—'}</div>
-        <div class="lbl">Entry Spot</div><div class="val">\${fmtNum(entryPrice)}</div>
-        \${isFut ? '' : \`<div class="lbl">Entry Opt</div><div class="val">\${fmtNum(optionEntry)}</div>
-        <div class="lbl">Curr Opt</div><div class="val">\${fmtNum(optionCurrent)}</div>\`}
-        <div class="lbl">Live Spot</div><div class="val">\${fmtNum(liveClose)}</div>
-        <div class="lbl">Pts Moved</div><div class="val \${cls(pointsMoved)}">\${fmtNum(pointsMoved)}</div>
-        <div class="lbl">Entry Time</div><div class="val">\${pos.entryTime || '—'}</div>
+      <div class="pos-kv">
+        \${kv('Entry', fmtNum(isFut ? entryPrice : optionEntry))}
+        \${kv('Current', fmtNum(isFut ? liveClose : optionCurrent))}
+        \${kv('Points', fmtNum(pointsMoved), cls(pointsMoved))}
+        \${kv('Qty', pos.qty ?? '—')}
+      </div>
+      <div class="pos-more">
+        \${isFut ? '' : '<span>Spot ' + fmtNum(entryPrice) + ' → ' + fmtNum(liveClose) + '</span>'}
+        <span>Entered \${escapeHtml(pos.entryTime || '—')}</span>
       </div>
     </div>\`;
 }
@@ -801,9 +643,9 @@ function renderColumn(strategy, d) {
 
   const sessPnl = todayClosed(d);
   statsEl.innerHTML = \`
-    <div class="stat"><div class="lbl">Trades</div><div class="val">\${todayTrades(d)}</div></div>
+    <div class="stat"><div class="lbl">Closed today</div><div class="val \${cls(sessPnl)}">\${fmtINR(sessPnl)}</div></div>
     <div class="stat"><div class="lbl">W / L</div><div class="val">\${todayWins(d)} / \${todayLosses(d)}</div></div>
-    <div class="stat"><div class="lbl">Session P&amp;L</div><div class="val \${cls(sessPnl)}">\${fmtINR(sessPnl)}</div></div>\`;
+    <div class="stat"><div class="lbl">Trades</div><div class="val">\${todayTrades(d)}</div></div>\`;
 
   const ltp = d.lastTickPrice ? fmtNum(d.lastTickPrice) : '—';
   const tickTime = d.lastTickTime || '';
@@ -840,87 +682,78 @@ function showCard(strategy, visible) {
   if (card) card.hidden = !visible;
 }
 
+// A market section shows only while one of its cards does; the empty note and
+// the count follow the market filter, so "no open positions" never hides one
+// that is open in a market the filter is not showing.
 function renderCardsEmpty() {
+  const cur = dhMarket();
+  let open = 0, openHere = 0;
+  for (const m of MARKETS) {
+    const sec = document.getElementById('rt-mkt-' + m.key);
+    const n = STRATEGY_KEYS.filter(k => MARKET_OF[k] === m.key).filter(k => {
+      const card = document.getElementById('card-' + k);
+      return card && !card.hidden;
+    }).length;
+    if (sec) sec.hidden = n === 0;
+    open += n;
+    if (cur === 'ALL' || cur === m.key) openHere += n;
+  }
   const box = document.getElementById('cards-empty');
-  if (!box) return;
-  const anyVisible = STRATEGY_KEYS.some(k => {
-    const card = document.getElementById('card-' + k);
-    return card && !card.hidden;
-  });
-  box.hidden = anyVisible;
+  if (box) {
+    box.hidden = openHere > 0;
+    const where = cur === 'ALL' ? '' : ' in ' + ((MARKETS.find(m => m.key === cur) || {}).label || cur);
+    box.textContent = 'No open positions' + where + ' right now'
+      + (cur !== 'ALL' && open > openHere ? ' — ' + (open - openHere) + ' open in other markets (tap All markets).' : ' — a card appears here while a strategy is holding one.');
+  }
+  const cnt = document.getElementById('open-count');
+  if (cnt) cnt.textContent = openHere ? openHere + ' open' : '';
 }
 
-// Strategy name in the rollup doubles as a link to that strategy's status page,
-// same target as the card's "Open Status".
-// Falls back to plain text if the strategy has no page for the current source.
-function nameCell(key, label) {
-  const href = (STATUS_PAGES[mode] || {})[key];
-  return href ? '<a href="' + href + '">' + label + '</a>' : label;
-}
-
-function renderRollup(all) {
-  let totalOpen = 0, totalClosed = 0, totalTrades = 0, totalW = 0, totalL = 0;
-  let anyRunning = false, anyData = false;
-  let rows = 0, quiet = 0;   // rows drawn vs strategies hidden for having nothing yet
-
-  const tbody = document.getElementById('rollup-body');
-  let html = '';
-  for (const key of STRATEGY_KEYS) {
+// Rows for the shared summary table (utils/dashboardUI.js dhSummary). A
+// strategy earns a line once it has money at risk or a trade today; the rest are
+// "quiet" — still counted in their market's subtotal and the TOTAL, just not
+// drawn. openPositionsOf (not d.position) decides "at risk": EarlyBird reports
+// positions[] plus an option leg and never sets d.position.
+function rollupRows(all) {
+  return STRATEGY_KEYS.map(key => {
     const d = all[key];
-    const accent = STRATEGY_ACCENTS[key] || key.toLowerCase();
-    const label = STRATEGY_LABELS[key];
-    if (!d) {
-      html += \`<tr class="\${accent}" data-key="\${key}"><td>\${nameCell(key, label)}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;
-      continue;
-    }
-    anyData = true;
-    const open = +openPnl(d) || 0;
-    const closed = todayClosed(d);
-    const dayTotal = open + closed;
+    const base = { key, label: SHORT_LABELS[key] || key, market: MARKET_OF[key], accent: STRATEGY_ACCENTS[key],
+                   href: (STATUS_PAGES[mode] || {})[key] };
+    if (!d) return Object.assign(base, { offline: true });
     const trades = todayTrades(d);
-    const w = todayWins(d);
-    const l = todayLosses(d);
-    if (d.running) anyRunning = true;
-    totalOpen += open;
-    totalClosed += closed;
-    totalTrades += +trades || 0;
-    totalW += +w || 0;
-    totalL += +l || 0;
-    // A strategy earns a row once it has money at risk or a trade today. Unlike
-    // the cards above, a CLOSED trade keeps its row — the table is the record of
-    // the day, the cards are the live view. openPositionsOf (not d.position) is
-    // what decides "at risk": EarlyBird reports positions[] plus an option leg
-    // and never sets d.position, so testing that field alone dropped its row
-    // while its open P&L still counted toward TOTAL.
-    // Only the row is dropped — the numbers above are already in the totals, so
-    // TOTAL still speaks for every strategy.
-    if (!openPositionsOf(d).length && !(trades > 0)) { quiet++; continue; }
-    rows++;
-    html += \`<tr class="\${accent}" data-key="\${key}">
-      <td>\${nameCell(key, label)}</td>
-      <td>\${d.running ? 'RUNNING' : 'STOPPED'}</td>
-      <td class="\${cls(open)}">\${fmtINR(open)}</td>
-      <td class="\${cls(closed)}">\${fmtINR(closed)}</td>
-      <td>\${trades}</td>
-      <td>\${w} / \${l}</td>
-      <td class="\${cls(dayTotal)}">\${fmtINR(dayTotal)}</td>
-    </tr>\`;
+    return Object.assign(base, {
+      running: !!d.running, open: +openPnl(d) || 0, closed: todayClosed(d),
+      trades: +trades || 0, w: +todayWins(d) || 0, l: +todayLosses(d) || 0,
+      quiet: !openPositionsOf(d).length && !(trades > 0),
+    });
+  });
+}
+
+let lastAll = null;
+function renderRollup(all) {
+  if (!all) return;
+  const box = document.getElementById('rollup-body');
+  const out = dhSummary(rollupRows(all), MARKETS, { market: dhMarket() });
+  if (box) box.innerHTML = out.html || '<div class="dh-sum-empty">No strategy is enabled for this market.</div>';
+}
+
+// Today's P&L hero — open + closed of every enabled strategy, split by market.
+// A dead endpoint adds nothing (its numbers are unknown, not zero, so the sub
+// line says how many are missing).
+function renderHero(all) {
+  const byMarket = {};
+  let open = 0, trades = 0, offline = 0;
+  for (const k of STRATEGY_KEYS) {
+    const d = all[k];
+    if (!d) { offline++; continue; }
+    const m = MARKET_OF[k];
+    byMarket[m] = (byMarket[m] || 0) + (+openPnl(d) || 0) + todayClosed(d);
+    open += openPositionsOf(d).length;
+    trades += +todayTrades(d) || 0;
   }
-  // A lone TOTAL row reads like a broken table — say why it is alone.
-  if (!rows && quiet) {
-    html += \`<tr class="quiet"><td colspan="7">\${quiet} \${quiet === 1 ? 'strategy is' : 'strategies are'} running with no trade yet today</td></tr>\`;
-  }
-  const grandDayTotal = totalOpen + totalClosed;
-  html += \`<tr class="total">
-    <td>TOTAL</td>
-    <td>\${anyData ? (anyRunning ? 'RUNNING' : 'STOPPED') : '—'}</td>
-    <td class="\${cls(totalOpen)}">\${fmtINR(totalOpen)}</td>
-    <td class="\${cls(totalClosed)}">\${fmtINR(totalClosed)}</td>
-    <td>\${totalTrades}</td>
-    <td>\${totalW} / \${totalL}</td>
-    <td class="\${cls(grandDayTotal)}">\${fmtINR(grandDayTotal)}</td>
-  </tr>\`;
-  tbody.innerHTML = html;
+  const t = new Date().toLocaleTimeString('en-IN', { hourCycle:'h23', timeZone:'Asia/Kolkata' });
+  dhHero(byMarket, open + ' open position' + (open === 1 ? '' : 's') + ' · ' + trades + ' trade' + (trades === 1 ? '' : 's') + ' today'
+    + (offline ? ' · ' + offline + ' not responding' : '') + ' · updated ' + t);
 }
 
 // IST weekday, 09:15–15:30 — same window the trading engines run in.
@@ -941,6 +774,8 @@ function isMarketRunning() {
 function renderPools(d) {
   const box = document.getElementById('wallets');
   if (box) box.style.display = isMarketRunning() ? 'none' : '';
+  const head = document.getElementById('wallets-h');
+  if (head) head.style.display = isMarketRunning() ? 'none' : '';
   const pools = (d && d.pools) || null;
   if (!pools) return;   // failed poll — keep the last good numbers on screen
   const set = (id, text, klass) => {
@@ -1006,23 +841,28 @@ async function poll() {
   const capital = results.pop();
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
+  lastAll = all;
+  // The pulse goes amber when nothing answered — a stale screen must look stale.
+  const pulse = document.getElementById('pulse');
+  if (pulse) pulse.classList.toggle('stale', STRATEGY_KEYS.length > 0 && STRATEGY_KEYS.every(k => !all[k]));
   renderNseStart(all);
   renderCardsEmpty();
+  renderHero(all);
   renderRollup(all);
   renderPools(capital);
   renderCapitalAlert(capital);
 }
 
-// ── Stop NIFTY ──────────────────────────────────────────────────────────────
+// ── Stop All ────────────────────────────────────────────────────────────────
 // Fans out GET /stop across its own paper strategies. Each engine's own /stop is reused verbatim, so
 // an open position is squared off by the same code path its Stop button uses.
 //
 // Two clicks: the first arms, the second fires — a stray click on a phone must
 // not be able to flatten the book.
 const STOP_SCOPES = {
-  nse: { btnId: 'stop-nse', label: '🛑 Stop NIFTY',     name: 'Stop NIFTY',
-         what: 'every <b>NIFTY</b> paper strategy',
-         none: 'no NIFTY strategy is running',
+  nse: { btnId: 'stop-nse', label: '🛑 Stop All',     name: 'Stop All',
+         what: 'every paper strategy on <b>every market</b>',
+         none: 'no paper strategy is running',
          has: t => PAPER_ONLY.indexOf(t.key) === -1 },
 };
 let stopArmed = null;   // the scope waiting for its confirming second click
@@ -1130,7 +970,7 @@ async function stopScope(scope) {
 
 document.getElementById('stop-nse')?.addEventListener('click', () => stopScope('nse'));
 
-// ── Start All (Paper) — NIFTY ───────────────────────────────────────────────
+// ── Start All (Paper) ───────────────────────────────────────────────────────
 // Only rendered while no NSE session is up. Offered on weekdays until 15:30 IST,
 // and hidden again once any NSE strategy reports running.
 let nseBusy = false;
@@ -1142,8 +982,8 @@ function nseStartWindow() {
 function renderNseStart(all) {
   const btn = document.getElementById('nse-start');
   const nseRunning = STRATEGY_KEYS.some(k => PAPER_ONLY.indexOf(k) === -1 && all[k] && all[k].running);
-  // Stop NIFTY stays up all through market hours (it is the panic button). After the 15:30 close it hides once
-  // nothing NSE runs here.
+  // Stop All stays up all through market hours (it is the panic button). After the 15:30 close it hides once
+  // nothing runs here.
   const stop = document.getElementById('stop-nse');
   if (stop && !stopBusy) stop.hidden = !nseRunning && !nseStartWindow();
   if (!btn || nseBusy) return;
@@ -1159,7 +999,7 @@ async function startAllNse() {
     // The same roster the Dashboard's button starts from.
     const r = await fetch('/api/start-all-roster', { cache:'no-store' });
     const modes = r.ok ? ((await r.json()).modes || []) : [];
-    if (!modes.length) { await showAlert({ icon:'⚠️', title:'Nothing to start', message:'No NIFTY strategy is enabled in Settings.' }); return; }
+    if (!modes.length) { await showAlert({ icon:'⚠️', title:'Nothing to start', message:'No strategy is enabled in Settings.' }); return; }
     // Sequential, like the Dashboard: parallel starts race each other for the socket.
     for (const m of modes) {
       if (!m || !m.paper || m.paperOff) continue;   // its Paper toggle is off — /start would refuse
@@ -1306,6 +1146,7 @@ async function copyDayLog(strategy, btn) {
 }
 
 updateOpenLinks();
+dhMarketInit(MARKETS.map(m => m.key), () => { renderCardsEmpty(); renderRollup(lastAll); });
 poll();
 // Background tabs skip the ~16-call fan-out; one catch-up poll when the tab is shown again.
 function pollIfVisible() { if (!document.hidden) poll(); }
@@ -1332,3 +1173,6 @@ if (AUTO_FLIP_BACK) {
 
 module.exports = router;
 module.exports.renderRealtimePage = renderPage;
+// Derived rows (registry × running pairs) — tests compare them to the registry.
+module.exports.STRATEGY_DEFS = STRATEGY_DEFS;
+module.exports.enabledStrategies = enabledStrategies;

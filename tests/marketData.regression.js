@@ -503,7 +503,8 @@ check("the paper routes take their shared calls from marketData, not the broker"
 });
 
 check("Start All runs a bounded pool, not one start after another", () => {
-  const app = fs.readFileSync(path.join(SRC, "app.js"), "utf8");
+  // The Start All button lives on the Dashboard page, rendered by routes/dashboard.js.
+  const app = fs.readFileSync(path.join(SRC, "routes/dashboard.js"), "utf8");
   const i = app.indexOf("async function _startAll(endpoints)");
   assert.ok(i > 0, "_startAll not found");
   const body = app.slice(i, app.indexOf("\n}\n", i));

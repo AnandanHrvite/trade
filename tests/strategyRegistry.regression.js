@@ -226,14 +226,23 @@ check("capitalPool routes every mode key to the registry broker and trades file"
   }
 });
 check("realtime STRATEGY_DEFS: same keys, paper prefixes and mode flags", () => {
+  // Derived from the registry (utils/dashboardModel.js), never hand-typed: every
+  // registry entry once, plus each running non-home pair under its own keys.
   const rt = decomment(read("routes/realtime.js"));
-  const rows = [...rt.matchAll(/\{ key:'([A-Z0-9_]+)',[^\n]*paperPrefix:'([^']+)'[^\n]*modeFlag:'([A-Z0-9_]+)'/g)];
-  assert.deepStrictEqual(rows.map(r => r[1]).sort(), ALL.map(e => e.key).sort());
-  for (const [, key, prefix, flag] of rows) {
-    const e = reg.byKey(key);
-    assert.strictEqual(prefix, e.paper.path, key);
-    assert.strictEqual(flag, e.modeEnabled.key, key);
+  assert.ok(!/\{ key:'[A-Z0-9_]+',[^\n]*paperPrefix:'/.test(rt), "realtime.js has a hand-typed strategy row again");
+  const pairs = require("../src/config/pairs");
+  const { STRATEGY_DEFS } = require("../src/routes/realtime");
+  const home = STRATEGY_DEFS.filter(s => reg.byKey(s.key));
+  assert.deepStrictEqual(home.map(r => r.key).sort(), ALL.map(e => e.key).sort());
+  for (const s of home) {
+    const e = reg.byKey(s.key);
+    assert.strictEqual(s.paperPrefix, e.paper.path, s.key);
+    assert.strictEqual(s.modeFlag, e.modeEnabled.key, s.key);
+    assert.strictEqual(s.defaultOff, e.modeEnabled.default === "false", s.key);
   }
+  const rest = STRATEGY_DEFS.filter(s => !reg.byKey(s.key));
+  assert.deepStrictEqual(rest.map(s => [s.key, s.paperPrefix, s.modeFlag]),
+    pairs.runnable().map(p => [p.envPrefix, p.paperPath, p.enabledKey]));
 });
 check("consolidation SOURCES: same modes and files, in ORDERS.reports order", () => {
   const c = decomment(read("routes/consolidation.js"));
