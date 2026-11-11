@@ -892,6 +892,28 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    // ── MARKETS ─────────────────────────────────────────────────────────────
+    // The market list (src/config/markets.js). The page renders a read-only
+    // table of EVERY market above these fields — lot, strike grid, override and
+    // the next expiry it resolves to. NIFTY 50 / NIFTY BANK / SAIL keep their
+    // editable keys in "Instrument & Backtest"; only the NEW markets' keys live
+    // here. No strategy trades these markets yet, so nothing below changes a
+    // running engine.
+    section: "MARKETS — lot size, strike grid, expiry",
+    icon: "🌐",
+    nav: "Markets",
+    group: "Trading",
+    fields: [
+      { key: "SENSEX_LOT_SIZE", label: "SENSEX — Lot Size (Qty)", type: "number", min: 1, max: 500, step: 1, effect: EFFECT.INSTANT, desc: "Quantity per SENSEX lot. 20 on BSE's Nov/Dec-2026 contracts; Fyers' symbol master already lists Jan-2027 onwards at 25, so raise this to 25 once January is the contract being traded. Example: 1 lot of a ₹200 option = 20 × ₹200 = ₹4,000.", default: "20", subheader: "SENSEX (BSE)" },
+      { key: "SENSEX_STRIKE_STEP", label: "SENSEX — Strike Step (pts)", type: "number", min: 5, max: 1000, step: 5, effect: EFFECT.INSTANT, desc: "SENSEX strikes are listed every 100 points, so the ATM strike is spot rounded to the nearest 100 — e.g. 76,549 → 76,500, 76,550 → 76,600. Change it only if BSE changes the grid.", default: "100" },
+      { key: "SENSEX_OPTION_EXPIRY_OVERRIDE", label: "SENSEX — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual SENSEX expiry (YYYY-MM-DD). Blank = automatic: the weekly Thursday (the month's last Thursday is the monthly contract), moved to the previous trading day (usually the Wednesday) when Thursday is a BSE holiday — e.g. Thu 26-Mar-2026 (Ram Navami) → Wed 25-Mar. A date whose session has closed is ignored." },
+      { key: "FUT_EXPIRY_OVERRIDE", label: "NIFTY Futures — Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual NIFTY futures contract expiry (YYYY-MM-DD) — the month of this date names the contract, e.g. 2026-12-29 → NIFTY26DECFUT. Blank = automatic: this month's contract, rolled to next month two days before it expires. Lot size and margin are NIFTY's own (NIFTY_LOT_SIZE, NIFTY_FUTURES_MARGIN_PCT).", subheader: "NIFTY Futures" },
+      { key: "CRUDE_OPTION_EXPIRY_OVERRIDE", label: "Crude Oil — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual MCX crude option expiry (YYYY-MM-DD). Blank = automatic: the nearest option series after today in Fyers' MCX symbol master (crude options expire a few days before their future — e.g. Nov-2026 options 17-Nov, the future 19-Nov).", subheader: "MCX" },
+      { key: "GOLD_OPTION_EXPIRY_OVERRIDE", label: "Gold — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual MCX gold option expiry (YYYY-MM-DD). Blank = the nearest series after today in Fyers' MCX symbol master." },
+      { key: "SILVER_OPTION_EXPIRY_OVERRIDE", label: "Silver — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual MCX silver option expiry (YYYY-MM-DD). Blank = the nearest series after today in Fyers' MCX symbol master." },
+    ],
+  },
+  {
     section: "Server & Broker",
     icon: "🖥️",
     nav: "Server & Broker",
@@ -1575,6 +1597,24 @@ router.get("/data", (req, res) => {
   res.json({ success: true, data: envData });
 });
 
+// ── GET /settings/markets — next expiry of every market (JSON) ──────────────
+// The page renders NSE/BSE expiries inline (pure rule maths); MCX expiries come
+// from Fyers' MCX symbol master, so the page fetches this once on load to fill
+// those cells — downloading the master at most once per IST day.
+router.get("/markets", async (req, res) => {
+  try {
+    const markets = require("../config/markets");
+    const rows = [];
+    for (const m of markets.list()) {
+      const i = await markets.expiryInfoAsync(m.key);
+      rows.push({ key: m.key, nextExpiry: i.date, source: i.source, overrideStale: i.overrideStale });
+    }
+    res.json({ success: true, markets: rows });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── POST /settings/save — Save updated values ──────────────────────────────
 router.post("/save", (req, res) => {
   const { updates, deletes, note } = req.body;
@@ -2228,6 +2268,43 @@ router.get("/", (req, res) => {
     return grid + rest;
   }
 
+  // ── Markets: one read-only row per market ──────────────────────────────────
+  // Lot, strike grid, the override key + its value, and the NEXT EXPIRY the
+  // market resolves to right now (src/config/markets.js). NSE/BSE expiries are
+  // rule maths and render here; MCX cells are filled by the page from
+  // GET /settings/markets, which reads Fyers' MCX symbol master.
+  function renderMarketsTable() {
+    const markets = require("../config/markets");
+    let list;
+    try { list = markets.list(); }
+    catch (e) { return `<div class="mkt-note">Market list unavailable: ${esc(e.message)}</div>`; }
+    const rows = list.map((m) => {
+      let info;
+      try { info = markets.expiryInfo(m.key); } catch (_) { info = { date: null, source: "unavailable" }; }
+      const next = info.date
+        ? `${esc(info.date)}<span class="mkt-src">${info.source === "override" ? "manual" : info.source === "master" ? "MCX master" : "auto"}</span>`
+        : `<span class="mkt-dim">${m.kind === "mcx" ? "loading…" : "—"}</span>`;
+      const ovVal = m.expiryOverride
+        ? `${esc(m.expiryOverride)}${info.overrideStale ? ` <span class="mkt-stale">expired</span>` : ""}`
+        : `<span class="mkt-dim">auto</span>`;
+      const lot = m.lotUnit ? `${m.lotSize} <span class="mkt-dim">(${esc(m.lotUnit)})</span>` : String(m.lotSize);
+      const traded = m.traded ? "" : ` <span class="mkt-badge" title="Listed, but no strategy trades this market yet">not traded</span>`;
+      return `<tr>
+        <td data-label="Market"><div class="mkt-name">${esc(m.label)}${traded}</div><div class="mkt-dim">${esc(m.key)} · ${esc(m.exchange)}</div></td>
+        <td data-label="Lot"><div>${lot}</div></td>
+        <td data-label="Strike step"><div>${m.strikeStep != null ? esc(m.strikeStep) : `<span class="mkt-dim">—</span>`}</div></td>
+        <td data-label="Expiry rule"><div class="mkt-rule">${esc(m.expiry.rule)}</div></td>
+        <td data-label="Override"><div>${ovVal}<div class="env-key-tag">${esc(m.env.expiryOverride)}</div></div></td>
+        <td data-label="Next expiry"><div data-mkt-next="${esc(m.key)}">${next}</div></td>
+      </tr>`;
+    }).join("");
+    return `<div class="mkt-wrap">
+      <div class="mkt-note">Every market the app knows. Read-only — NIFTY 50, NIFTY BANK and SAIL are edited under <b>Instrument &amp; Backtest</b>, the new markets in the fields below. Next expiry is the contract live right now: holiday-adjusted, and it rolls once its expiry-day session closes.</div>
+      <table class="mkt-table"><thead><tr><th>Market</th><th>Lot</th><th>Strike step</th><th>Expiry rule</th><th>Override</th><th>Next expiry</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+  }
+
   // ── Sub-tabs inside a section ──────────────────────────────────────────────
   // A field carrying `subheader` opens a new tab; fields before the first one
   // fall into an implicit "General" tab. One tab → no tab bar is rendered.
@@ -2334,6 +2411,7 @@ router.get("/", (req, res) => {
         <div class="section-head-title">${s.icon} ${s.section}<span class="sh-count">${fieldCount} settings</span></div>
         <div class="section-head-actions">${allNoneBtns}${defaultsBtn}${eyeBtn}</div>
       </div>
+      ${s.nav === "Markets" ? renderMarketsTable() : ""}
       ${tabBar}
       <div class="section-card">${panels}</div>
     </div>`;
@@ -2637,6 +2715,33 @@ router.get("/", (req, res) => {
     .setting-info { flex: 1; min-width: 0; }
     .setting-label { font-size: 0.84rem; font-weight: 600; color: var(--text2); }
     .field-desc { font-size: 0.68rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+
+    /* ── Markets table (read-only) — reflows to cards on a phone ── */
+    .mkt-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+    .mkt-note { padding: 12px 18px; font-size: 0.7rem; color: var(--muted); line-height: 1.45; border-bottom: 1px solid var(--border); }
+    .mkt-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+    .mkt-table th { text-align: left; padding: 9px 12px; font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--border); }
+    .mkt-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text); }
+    .mkt-table tr:last-child td { border-bottom: none; }
+    .mkt-name { font-weight: 600; color: var(--text2); }
+    .mkt-dim { color: var(--muted); font-size: 0.68rem; }
+    .mkt-rule { font-size: 0.68rem; color: var(--muted); }
+    .mkt-src { margin-left: 6px; font-size: 0.62rem; color: var(--muted); }
+    .mkt-badge { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: 0.6rem; font-weight: 600; color: var(--yellow); border: 1px solid var(--yellow); }
+    .mkt-stale { color: var(--red); font-size: 0.64rem; font-weight: 600; }
+    .mkt-table .env-key-tag { margin: 4px 0 0 0; }
+    @media (max-width: 640px) {
+      .mkt-note { padding: 10px 12px; }
+      .mkt-table thead { display: none; }
+      .mkt-table, .mkt-table tbody, .mkt-table tr, .mkt-table td { display: block; width: 100%; }
+      .mkt-table tr { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+      .mkt-table tr:last-child { border-bottom: none; }
+      .mkt-table td { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: none; text-align: right; overflow-wrap: anywhere; }
+      .mkt-table td > div { min-width: 0; }
+      .mkt-table td::before { content: attr(data-label); flex: none; color: var(--muted); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; }
+      .mkt-table td[data-label="Market"] { display: block; text-align: left; padding-bottom: 6px; }
+      .mkt-table td[data-label="Market"]::before { content: none; }
+    }
 
     /* ── Inputs ──────────────────────────────────────────── */
     input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="password"], select {
@@ -4801,6 +4906,23 @@ async function loadSettingsSchedulePills(){
   } catch(_){}
 }
 loadSettingsSchedulePills();
+
+// Markets table: MCX expiries come from Fyers' MCX symbol master, which the
+// server reads on demand — fill the "Next expiry" cells once the page is up.
+(function loadMarketExpiries(){
+  if (!document.querySelector('[data-mkt-next]')) return;
+  fetch('/settings/markets').then(function(r){ return r.json(); }).then(function(j){
+    if (!j || !j.success) return;
+    (j.markets || []).forEach(function(m){
+      var el = document.querySelector('[data-mkt-next="' + m.key + '"]');
+      if (!el) return;
+      if (!m.nextExpiry) { el.innerHTML = '<span class="mkt-dim">unavailable</span>'; return; }
+      var src = m.source === 'override' ? 'manual' : m.source === 'master' ? 'MCX master' : 'auto';
+      el.textContent = m.nextExpiry;
+      var s = document.createElement('span'); s.className = 'mkt-src'; s.textContent = src; el.appendChild(s);
+    });
+  }).catch(function(){});
+})();
 </script>
 <!-- Section summary modal -->
 <div id="sectionSummaryModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
