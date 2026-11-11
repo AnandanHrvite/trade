@@ -4,6 +4,8 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — `emaRsiStPaper.js` (V1) is a `create(pair)` builder like V2: the default export is the NIFTY instance (same path, files, keys, logs, "PAPER" notify tag — golden byte-identical); every other offered market (`/sensex_ema_rsi_st-paper`, `/bn_…`, `/fut_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`), has its own spread limit / expiry-day switch and crash snapshot. `forPrefix()` reads pair keys (and the pair's entry window) with NIFTY inheritance (`pairs.envGet`; legacy `TRADE_ENTRY_*` included).
+
 - 2026-11-11 — `emaRsiStV2Paper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same path, files, keys, logs — golden byte-identical); every other market's V2 pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`) and has its own spread limit / expiry-day switch. Engine reads pair keys with NIFTY inheritance (`pairs.envGet`).
 
 - 2026-11-08 — Engine env prefix: `forPrefix("FUT_EMA_RSI_ST")` returns the same `getSignal`/`isInTradingWindow` reading `FUT_EMA_RSI_ST_*` own keys (default exports unchanged, literal `EMA_RSI_ST_*` reads kept); `backtestEngine.runBacktest` gains an optional trailing `{ isFutures, prefix }`. For the NIFTY FUTURES twin `futEmaRsiStPaper.js` / `futEmaRsiStBacktest.js` (same rules, futures forced).

@@ -15,10 +15,9 @@
 
 const express = require("express");
 const { trackPath, pathFields } = require("../utils/tradePath");
-const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { getActiveStrategy, ACTIVE } = require("../strategies");
+const { getActiveStrategy, ACTIVE: STRATEGY_ACTIVE } = require("../strategies");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -45,6 +44,47 @@ const optionChart  = require("../utils/optionChart");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA, RSI } = require("technicalindicators");
+const pairs         = require("../config/pairs");
+const pairRuntime   = require("../utils/pairRuntime");
+const strategy1     = require("../strategies/strategy1_sar_ema_rsi");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUILDER — one paper engine per (strategy, market) pair.
+// create(pair) returns an Express router holding ALL of that pair's state; the
+// module's default export is the NIFTY instance (/ema_rsi_st-paper, the same
+// files, keys, logs and notify tags as before). Every per-market fact — spot,
+// option symbol build/parse, strike grid, lot, expiry, futures, session hours,
+// fills, slots, files — comes from utils/pairRuntime.js; the rules below never
+// branch on the market. Pattern: routes/emaRsiStV2Paper.js.
+// ═══════════════════════════════════════════════════════════════════════════════
+function create(pair) {
+const rt     = pairRuntime.forPair(pair);
+const router = express.Router();
+// The NIFTY instance keeps the strategies/index.js name its records always carried.
+const ACTIVE = rt.home ? STRATEGY_ACTIVE : rt.tag;
+const MODE   = rt.modeKey;                // logger / capital / skip key — MODE on NIFTY
+const PREFIX = rt.envPrefix;              // this pair's env prefix — "EMA_RSI_ST" on NIFTY
+const ROUTE  = rt.paperPath;              // "/ema_rsi_st-paper" on NIFTY
+const OWNER  = rt.ownerId;                // socket callback + option-feed owner + recorder tag
+const TAG    = `[${rt.tag}-PAPER]`;
+// NIFTY's alerts have always gone out under the shared "PAPER" tag.
+const NOTIFY_MODE = rt.home ? "PAPER" : rt.notifyMode;
+const TITLE  = rt.home ? "EMA_RSI_ST" : rt.title;
+const SPOT_LABEL = rt.spotLabel;          // "NIFTY" on NIFTY
+const _env = (k) => pairs.envGet(k);
+// A strategy-own key (EMA_RSI_ST_<k>): NIFTY reads it exactly as before; another
+// market its own <PAIR>_<k>, else NIFTY's (config/pairs.js envGet).
+const _own = (k) => (rt.home ? process.env[`EMA_RSI_ST_${k}`] : _env(`${PREFIX}_${k}`));
+// The engine: NIFTY keeps _engine() (strategies/index.js); another
+// market the same rules reading its own keys (strategy1.forPrefix).
+const _pairEngine = rt.home ? null : strategy1.forPrefix(PREFIX);
+function _engine() { return rt.home ? getActiveStrategy() : _pairEngine; }
+// Paper capital pool of this pair's broker (NIFTY: Zerodha; other markets: Fyers).
+const CAP_ENV = (rt.home ? rt.strategy.broker : pair.broker) === "fyers" ? "FYERS_INV_AMOUNT" : "ZERODHA_INV_AMOUNT";
+// Spot symbol the candles are built from — resolved at /start (MCX: the series' future).
+let _spotSym = null;
+const SPOT = () => _spotSym || rt.spotSymbol();
+rt.registerCapital();
 
 // ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
 // Declared with `let` so _refreshConfig() can update them. Without this, the
@@ -71,6 +111,8 @@ function _refreshConfig() {
   // _STOP_MINS − 10). Replay hit the same split, since it mutates process.env and
   // then calls /start. Refreshed here so one value governs both.
   _START_MINS      = parseMins("TRADE_START_TIME", "09:15");
+  // MCX runs its own session (09:00–23:30): TRADE_START/STOP_TIME are NSE hours.
+  if (rt.isMcx) { _START_MINS = rt.startMins(); _STOP_MINS = rt.stopMins(); }
   _ENTRY_STOP_MINS = _STOP_MINS - 10;   // entry cutoff sits 10 min before session end
   _mktHoursCacheMin = -1;               // invalidate the cached market-hours verdict
 }
@@ -84,7 +126,10 @@ let _closedCandleHadSignal = false;
 // flips against it at a candle close — the next entry must belong to a fresh
 // move. Added 2026-10-28: three PEs in one down move; the third was bought at
 // the low and lost Rs2,980 on the bounce.
-function _moveLockOn() { return (process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED || "true").toLowerCase() === "true"; }
+function _moveLockOn() {
+  const v = rt.home ? process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED : _env(`${PREFIX}_ONE_TRADE_PER_MOVE_ENABLED`);
+  return (v || "true").toLowerCase() === "true";
+}
 function _clearMoveLockOnFlip(stTrendInt) {
   const s = ptState._moveLockSide;
   if (s && ((s === "CE" && stTrendInt === -1) || (s === "PE" && stTrendInt === 1))) {
@@ -107,11 +152,12 @@ function _clearMoveLockOnFlip(stTrendInt) {
 // Old path was ./data/ inside project — wiped on every deploy.
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const PT_FILE  = path.join(DATA_DIR, "ema_rsi_st_paper_trades.json");
+const PT_FILE  = path.join(DATA_DIR, rt.tradesFile);
 
 // One-time silent migration: copy old ./data/ema_rsi_st_paper_trades.json to new path on first boot.
 const _OLD_PT_FILE = path.join(__dirname, "../../data/ema_rsi_st_paper_trades.json");
 (function migrateOnce() {
+  if (!rt.home) return;   // only NIFTY's file ever lived in ./data/
   try {
     if (!fs.existsSync(PT_FILE) && fs.existsSync(_OLD_PT_FILE)) {
       if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -136,7 +182,7 @@ function loadPaperData() {
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
     const initial = {
-      capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"),
+      capital: parseFloat(process.env[CAP_ENV] || "100000"),
       totalPnl: 0,
       sessions: [],
     };
@@ -148,7 +194,7 @@ function loadPaperData() {
     _paperDataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8"));
   } catch (e) {
     console.error("[paperTrade] paper_trades.json corrupt — resetting:", e.message);
-    _paperDataCache = { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
+    _paperDataCache = { capital: parseFloat(process.env[CAP_ENV] || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_paperDataCache, null, 2));
   }
   return _paperDataCache;
@@ -238,7 +284,7 @@ function rehydrateSessionFromJsonl() {
     //    session a restart would wipe). Day files interleave settings_snapshot/meta
     //    lines with trades — keep only real trade records.
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades("ema_rsi_st", today)
+    const all = tradeLogger.readDailyTrades(MODE, today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) {
@@ -273,18 +319,18 @@ function rehydrateSessionFromJsonl() {
     ptState._sessionWins   = trades.filter(t => Number(t.pnl) > 0).length;
     ptState._sessionLosses = trades.filter(t => Number(t.pnl) < 0).length;
     if (!ptState.sessionStart) ptState.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ [EMA_RSI_ST-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${ptState.sessionPnl})`);
+    console.log(`♻️ ${TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${ptState.sessionPnl})`);
   } catch (err) {
-    console.warn(`[EMA_RSI_ST-PAPER] session rehydrate failed: ${err.message}`);
+    console.warn(`${TAG} session rehydrate failed: ${err.message}`);
   }
 }
 rehydrateSessionFromJsonl();
 // Capital pool: realized P&L = file totalPnl + this session's closed trades not yet
 // saved there (rehydrated above after a restart). Sim sessions never reach the file.
-capitalPool.trackSession("ema_rsi_st", () =>
+capitalPool.trackSession(MODE, () =>
   (ptState._simMode || ptState._simSession || ptState._pnlSaved) ? 0 : (Number(ptState.sessionPnl) || 0));
 // A previous day's session may only stay on screen while the market is shut.
-require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => ptState, "[EMA_RSI_ST-PAPER]");
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => ptState, TAG);
 
 // ── Simulation clock ────────────────────────────────────────────────────────
 let _simClockMs = 0;
@@ -377,7 +423,7 @@ function getISTMinutes() {
 // regardless of TRADE_START_TIME. Pre-open auction (09:00–09:08) prints a wild
 // wide-range bar and pre-market ticks are stale/flat; both corrupt path-dependent
 // indicators (SuperTrend, SAR) and make trend flips diverge from Kite/TradingView.
-const _MKT_OPEN_MINS = 9 * 60 + 15;
+const _MKT_OPEN_MINS = rt.sessionOpenMin();
 
 // Trade EXECUTION gate. Keyed on the IST MINUTE, not a 60s wall-clock TTL: the
 // old TTL was anchored to whenever the last miss happened, so a verdict computed
@@ -442,9 +488,16 @@ function scheduleAutoStop(stopFn) {
   if (!late) log("⏰ [PAPER] Auto-stop scheduled in " + minUntil + " min (at " + stopLabel + ")");
 }
 
+// Free THIS engine's socket slot. Another market also drops its addCallback
+// fan-out (NIFTY owns the primary handler, which socketManager.stop() releases).
+function _releaseSocketSlot() {
+  if (!rt.home) socketManager.removeCallback(OWNER);
+  rt.socketSlot.clear();
+}
+
 function getCapitalFromEnv() {
   // EMA_RSI_ST trades through Zerodha — its paper capital is the shared Zerodha investment pool.
-  return parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
+  return parseFloat(process.env[CAP_ENV] || "100000");
 }
 
 // ── Option LTP via REST polling ──────────────────────────────────────────────
@@ -458,11 +511,11 @@ const NIFTY_INDEX_SYMBOL = 'NSE:NIFTY50-INDEX';
 
 // ── Pre-fetch option symbols in background after each candle close ──────────
 async function prefetchOptionSymbols(spot) {
-  if (instrumentConfig.INSTRUMENT === 'NIFTY_FUTURES') return;
+  if (rt.instrumentName() === 'NIFTY_FUTURES') return;
   try {
     const [ce, pe] = await Promise.all([
-      validateAndGetOptionSymbol(spot, 'CE', 'ema_rsi_st'),
-      validateAndGetOptionSymbol(spot, 'PE', 'ema_rsi_st'),
+      rt.resolveEntrySymbol(spot, 'CE'),
+      rt.resolveEntrySymbol(spot, 'PE'),
     ]);
     
     // Only cache valid symbols (reject invalid ones to force live lookup at entry)
@@ -494,7 +547,7 @@ async function prefetchOptionSymbols(spot) {
 function getCachedSymbol(side, currentSpot) {
   const cached = side === 'CE' ? ptState._cachedCE : ptState._cachedPE;
   if (!cached || cached.invalid) return null;
-  if (Math.abs(cached.spot - currentSpot) > 25) return null;
+  if (Math.abs(cached.spot - currentSpot) > rt.cacheTolerance()) return null;
   return cached;
 }
 
@@ -502,7 +555,7 @@ let _optionPollTimer = null;
 let _optionPollBusy  = false; // guard: prevents overlapping getQuotes calls if network is slow
 let _entryLtpProxyTimer = null; // 10s entry-premium fallback timer — owned by one position
 let _rateLimitSkipCycles = 0; // skip N poll cycles after a rate-limit hit
-const OPTION_FEED_OWNER = "ema_rsi_st-paper";
+const OPTION_FEED_OWNER = OWNER;
 // Rebound per position in startOptionPolling so the closure captures the symbol
 // actually held; null while flat.
 let _onStreamedOptionLtp = null;
@@ -529,7 +582,13 @@ async function fetchOptionLtp(symbol) {
           _rateLimitSkipCycles = 0;
         }
         const _ltp = parseFloat(ltp);
-        try { tickRecorder.recordOptionLtp(symbol, _ltp, "ema_rsi_st-paper"); } catch (_) {}
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, OWNER); } catch (_) {}
+        // Non-NIFTY markets fill at the quote (pairRuntime.fillAtQuote): keep the
+        // latest bid/ask of the held contract. NIFTY never reads it.
+        if (!rt.home) {
+          const _b = Number(v.bid || v.bid_price || 0), _a = Number(v.ask || v.ask_price || 0);
+          if (_b > 0 && _a > 0 && ptState.optionSymbol === symbol) ptState.optionQuote = { symbol, bid: _b, ask: _a, ltp: _ltp, at: Date.now() };
+        }
         return _ltp;
       }
       log(`[DEBUG] All LTP fields null/zero for ${symbol} | v=${JSON.stringify(v).slice(0, 200)}`);
@@ -583,7 +642,7 @@ function _publishOptionLtp(symbol, ltp, at) {
     ptState.position.optionEntryLtp = ltp;
     ptState.position.optionEntryLtpTime = istNow();
     // Real premium known — replace the estimate blocked at entry.
-    capitalPool.updateBlock("ema_rsi_st", (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
+    capitalPool.updateBlock(MODE, (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
     log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry})`);
   }
 }
@@ -601,8 +660,17 @@ async function _optionPollTick(symbol, gen) {
     // track() below is what renews the lease keeping it subscribed.
     optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamedOptionLtp);
     const streamed = optionFeed.getFresh(symbol);
-    const ltp   = streamed ? streamed.ltp : await fetchOptionLtp(symbol);
-    const ltpAt = streamed ? streamed.at  : Date.now();
+    // A fill-at-quote pair also needs a fresh bid/ask for its exit, which the
+    // stream does not carry — so it keeps one REST quote at most ~5 s old.
+    const _q = ptState.optionQuote;
+    const _needQuote = !rt.home && rt.fillAtQuote() && !(_q && _q.symbol === symbol && Date.now() - _q.at <= 5000);
+    let ltp, ltpAt;
+    if (streamed && !_needQuote) { ltp = streamed.ltp; ltpAt = streamed.at; }
+    else {
+      ltp = await fetchOptionLtp(symbol);
+      ltpAt = Date.now();
+      if (!ltp && streamed) { ltp = streamed.ltp; ltpAt = streamed.at; }
+    }
     if (gen !== _optionPollGen) return; // position changed while in flight
     if (!ltp) {
       // ── Staleness alert ────────────────────────────────────────────────────
@@ -711,7 +779,13 @@ function stopOptionPolling() {
 
 // ── Simulated order (NO real API call) ──────────────────────────────────────
 
+// Other markets parse with pairRuntime (their exchange, stem and expiry cadence);
+// NIFTY keeps the parser below, unchanged.
 function parseOptionDetails(symbol) {
+  return rt.home ? _parseNiftyOptionDetails(symbol) : rt.parseOptionSymbol(symbol);
+}
+
+function _parseNiftyOptionDetails(symbol) {
   // Fyers weekly option symbol formats:
   //
   // Format A (numeric/special month code): NSE:NIFTY{YY}{M}{DD}{Strike}{CE|PE}
@@ -812,11 +886,11 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
   //    The real premium is stamped by the first option poll (~1s from now), so
   //    the gate uses the assumed premium and the block is trued up there.
   const _estCost = qty * capitalPool.estimatedPremium();
-  const _cap = capitalPool.gate("ema_rsi_st", _estCost, { side, symbol, qty }, { sim: (ptState._simMode || ptState._simSession) });
+  const _cap = capitalPool.gate(MODE, _estCost, { side, symbol, qty }, { sim: (ptState._simMode || ptState._simSession) });
   if (!_cap.ok) {
     if (!_cap.muted) {
       log(`❌ [PAPER] Entry REFUSED — ${_cap.reason}`);
-      skipLogger.appendSkipLog("ema_rsi_st", { gate: "capital", reason: _cap.reason, spot: price, side, symbol, qty, cost: _cap.cost, available: _cap.available });
+      skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _cap.reason, spot: price, side, symbol, qty, cost: _cap.cost, available: _cap.available });
     }
     ptState._entryPending = false;
     return;
@@ -877,16 +951,44 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
     stTrendAtEntry:    entryMeta.stTrendAtEntry    || null,
     trendSource:       entryMeta.trendSource       || null,
   };
+  // Other markets: the position names its market and instrument, and — when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (the default there) — is BOUGHT AT THE ASK
+  // of the quote the spread guard just fetched, instead of at the first LTP.
+  // NIFTY's position is exactly as above.
+  let _askFill = null;
+  if (!rt.home) {
+    ptState.optionQuote = null;
+    Object.assign(ptState.position, { market: rt.marketKey, instrument: rt.instrumentName(), isFutures: rt.isFutures });
+    const _eq = entryMeta.entryQuote;
+    if (!rt.isFutures && _eq) {
+      const f = rt.entryFill(null, _eq, Date.now());
+      if (f.source === "ask") {
+        _askFill = f.price;
+        ptState.position.optionEntryLtp     = f.price;
+        ptState.position.optionEntryFill    = "ask";
+        ptState.position.optionEntryLtpTime = istNow();
+        ptState.position.entryQuote         = { bid: _eq.bid, ask: _eq.ask, ltp: _eq.ltp };
+      }
+    }
+    // Crash-recovery snapshot of a non-NIFTY pair (one file per pair); cleared on exit.
+    if (!ptState._simMode && !ptState._simSession) {
+      try { rt.persist.save(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+    }
+  }
 
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
   ptState.optionSymbol = symbol;
-  capitalPool.block("ema_rsi_st", _estCost, { side, symbol, qty, premium: null }, { sim: (ptState._simMode || ptState._simSession) });
+  capitalPool.block(MODE, _estCost, { side, symbol, qty, premium: null }, { sim: (ptState._simMode || ptState._simSession) });
+  if (_askFill) {
+    capitalPool.updateBlock(MODE, qty * _askFill, { sim: (ptState._simMode || ptState._simSession) });
+    log(`📌 [PAPER] Entry filled at the ASK ₹${_askFill} (bid ₹${entryMeta.entryQuote.bid}) — ${rt.fillAtQuoteKey}`);
+  }
   // Explicit reset: this contract's premium must come from this contract's poll.
   ptState.optionLtp = null;
   if (ptState._simMode) {
     log(`📊 [PAPER] Simulation mode — skipping option LTP polling`);
-  } else if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
+  } else if (rt.instrumentName() !== "NIFTY_FUTURES") {
     log(`📊 [PAPER] Starting option LTP polling (REST/3s): ${symbol}`);
     startOptionPolling(symbol);
   } else {
@@ -898,15 +1000,16 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
   // ── Telegram notification (skip in simulation mode) ───────────────────────
   if (!ptState._simMode) {
     notifyEntry({
-      mode:           'PAPER',
+      mode:           NOTIFY_MODE,
       side,
       symbol,
       strike:         ptState.position.optionStrike,
       expiry:         ptState.position.optionExpiry,
       spotAtEntry:    price,
-      optionEntryLtp: ptState.optionLtp || null,
+      optionEntryLtp: ptState.optionLtp || _askFill || null,
       qty,
       reason,
+      ...(rt.home ? {} : { isFutures: rt.isFutures, instrument: rt.instrumentName() }),
     });
   }
 }
@@ -918,13 +1021,22 @@ function simulateSell(exitPrice, reason, spotAtExit) {
           optionEntryLtp, optionCurrentLtp,
           signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = ptState.position;
 
-  const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
+  const INSTR = rt.instrumentName(); // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
   // ── PnL Calculation ─────────────────────────────────────────────────────────
   let rawPnl;
   let pnlMode;
-  const exitOptionLtp = ptState.optionLtp || optionCurrentLtp;
+  let exitOptionLtp = ptState.optionLtp || optionCurrentLtp;
+  // Other markets: SOLD AT THE BID of a fresh quote of the held contract when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (pairRuntime.exitFill); NIFTY unchanged.
+  let _exitFill = null;
+  if (!rt.home && !isFutures) {
+    const _q = ptState.optionQuote && ptState.optionQuote.symbol === symbol ? ptState.optionQuote : null;
+    const f = rt.exitFill(exitOptionLtp, _q, Date.now());
+    _exitFill = f.source;
+    if (f.source === "bid") exitOptionLtp = f.price;
+  }
 
   if (isFutures) {
     // Futures: PnL = price difference × qty. CE=LONG (+1), PE=SHORT (-1)
@@ -947,7 +1059,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   // Charges: STT + exchange + GST + stamp duty + brokerage (configurable via Settings)
-  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  // A futures leg is charged on its traded price (the index level it was priced at).
+  const charges = getCharges({ isFutures, exitPremium: isFutures ? exitPrice : exitOptionLtp, entryPremium: isFutures ? entryPrice : optionEntryLtp, qty });
   const netPnl  = parseFloat((rawPnl - charges).toFixed(2));
 
   // Derived metadata for the trade record — computed here so the JSONL log captures the full picture.
@@ -960,7 +1073,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // Indicator snapshot AT EXIT — recompute silently so the JSONL log carries the
   // full indicator picture at exit, not just at entry.
   let _exitInd = {};
-  try { _exitInd = getActiveStrategy().getSignal(ptState.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+  try { _exitInd = _engine().getSignal(ptState.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
 
   const trade = {
     side,
@@ -1024,10 +1137,23 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     isManual:         _isManualEntry,
     instrument:       INSTR,
   };
+  // Other markets: the record names its market, strategy and spot (consolidation,
+  // post-exit tracking and the MCP read them) and how each leg was filled.
+  if (!rt.home) {
+    Object.assign(trade, {
+      market:         rt.marketKey,
+      strategyId:     rt.strategy.key,
+      spotSymbol:     SPOT(),
+      optionEntryFill: isFutures ? null : (ptState.position.optionEntryFill || "ltp"),
+      optionExitFill:  isFutures ? null : _exitFill,
+      entryQuote:     ptState.position.entryQuote || null,
+      exitQuote:      (_exitFill === "bid" && ptState.optionQuote) ? { bid: ptState.optionQuote.bid, ask: ptState.optionQuote.ask, ltp: ptState.optionQuote.ltp } : null,
+    });
+  }
 
   ptState.sessionTrades.push(trade);
   if (!ptState._simMode && !ptState._simSession) {
-    tradeLogger.appendTradeLog("ema_rsi_st", trade); // crash-safe per-trade JSONL
+    tradeLogger.appendTradeLog(MODE, trade); // crash-safe per-trade JSONL
   }
   ptState.sessionPnl = parseFloat((ptState.sessionPnl + netPnl).toFixed(2));
   // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
@@ -1046,7 +1172,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // ── Telegram notification (skip in simulation mode) ───────────────────────
   if (!ptState._simMode) {
     notifyExit({
-      mode:           'PAPER',
+      mode:           NOTIFY_MODE,
       side,
       symbol,
       strike:         trade.optionStrike,
@@ -1065,11 +1191,16 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       peakPremium:    trade.bestOptionLtp,
       heldMs:         trade.durationMs,
       candlesHeld:    trade.candlesHeld,
+      ...(rt.home ? {} : { isFutures, instrument: INSTR }),
     });
   }
 
   ptState.position = null;
-  capitalPool.release("ema_rsi_st", netPnl, { sim: (ptState._simMode || ptState._simSession) });
+  if (!rt.home) {
+    ptState.optionQuote = null;
+    if (!ptState._simMode && !ptState._simSession) { try { rt.persist.clear(); } catch (_) {} }
+  }
+  capitalPool.release(MODE, netPnl, { sim: (ptState._simMode || ptState._simSession) });
 
   // One trade per move — this side waits for a SuperTrend flip.
   ptState._moveLockSide = side;
@@ -1077,7 +1208,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
 
   // Notify active strategy (optional callbacks for strategy-level state tracking)
-  const activeStrat = getActiveStrategy();
+  const activeStrat = _engine();
   if (typeof activeStrat.onTradeClosed === "function") activeStrat.onTradeClosed();
 }
 
@@ -1094,7 +1225,7 @@ async function onCandleClose(candle) {
   // growing; it does not trim the pre-loaded depth.
   if (ptState.candles.length > tradeGuards.INDICATOR_HISTORY_CANDLES) ptState.candles.shift();
 
-  const strategy = getActiveStrategy();
+  const strategy = _engine();
   const { signal, reason, stopLoss: _seedStop, signalStrength, ...indicators } = strategy.getSignal(ptState.candles); // stop seed unused — the profit lock is the only exit
 
   // Readiness flag for the 15-min intra-candle entry path (see onTick).
@@ -1105,7 +1236,7 @@ async function onCandleClose(candle) {
   //    intra-bar on the NEXT candle once price crosses this candle's close (onTick).
   //    Runs BEFORE the first await so the arm is set in time for the same tick's
   //    intra-candle entry check (sim mode hits no await at all). ──
-  if (confirmCandle.enabled("EMA_RSI_ST")) {
+  if (confirmCandle.enabled(PREFIX)) {
     // Expire an armed signal whose confirmation window (the next candle) has passed.
     if (ptState._armedSignal && ptState._armedSignal.armedBarTime !== candle.time) {
       ptState._armedSignal = null;
@@ -1144,7 +1275,7 @@ async function onCandleClose(candle) {
   // (e.g. candlesHeld incremented for a bar it was never held in).
   const _posAtClose = ptState.position;
   const _sid = _entrySessionGen;
-  if (!ptState._simMode) await oiFilter.recordOiSample(candle.close);
+  if (!ptState._simMode) await (rt.oiApplies ? oiFilter.recordOiSample(candle.close) : null);
   // True only when the position open at this bar's close is still the one we hold.
   const _ownsClose = !!_posAtClose && ptState.position === _posAtClose;
   const _vixDisplay = (vixFilter.VIX_ENABLED && !ptState._simMode) ? getCachedVix() : null;
@@ -1154,7 +1285,7 @@ async function onCandleClose(candle) {
   log(`   ${indicators.ema9!=null?`EMA9=${indicators.ema9} `:""}EMA20=${indicators.ema20!==undefined?indicators.ema20:"?"} EMA50=${indicators.ema50!==undefined?indicators.ema50:"?"} | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | ST=${indicators.supertrend!=null?indicators.supertrend:"?"}(${indicators.stTrend||"?"})`);
   log(`   Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
   if (signal === "NONE" && !ptState.position) {
-    skipLogger.appendSkipLog("ema_rsi_st", {
+    skipLogger.appendSkipLog(MODE, {
       gate: "strategy",
       reason: reason || null,
       spot: candle.close,
@@ -1168,10 +1299,12 @@ async function onCandleClose(candle) {
   }
 
   // Telegram: candle close signal update (only when flat — no position open; skip in sim mode)
+  // NIFTY sends it under the shared "PAPER" tag as it always did; another market
+  // under its own tag (gated by its own switch + TG_EMA_RSI_ST_SIGNALS).
   if (!ptState._simMode && !ptState.position && signal !== null) {
     const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
     notifySignal({
-      mode: "PAPER",
+      mode: NOTIFY_MODE,
       signal,
       reason: reason ? reason.slice(0, 200) : "—",
       strength: signalStrength,
@@ -1186,7 +1319,7 @@ async function onCandleClose(candle) {
     const _optEntry = _p.optionEntryLtp ? `₹${_p.optionEntryLtp}` : "—";
     const _optNow   = ptState.optionLtp  ? `₹${ptState.optionLtp}`  : "—";
     const _optPnl   = (_p.optionEntryLtp && ptState.optionLtp)
-      ? ` (Δ₹${(ptState.optionLtp - _p.optionEntryLtp).toFixed(2)} × ${_p.qty || getLotQty()})`
+      ? ` (Δ₹${(ptState.optionLtp - _p.optionEntryLtp).toFixed(2)} × ${_p.qty || rt.lotQty()})`
       : "";
     log(`   Open ${_p.side} @ ₹${_p.spotAtEntry} | best=₹${_p.bestPrice||"—"} | est.PnL≈${_est}pt`);
     log(`   Option: entry=${_optEntry} now=${_optNow}${_optPnl}`);
@@ -1223,7 +1356,7 @@ async function onCandleClose(candle) {
       // EMA9_VWAP only, so an EMA_RSI_ST EOD stop tore the shared Fyers feed out
       // from under a running PA / ORB / Trend_PB engine — their candles, per-tick
       // stops and EOD square-off all went dead. Same guard /stop already uses.
-      sharedSocketState.clear();
+      _releaseSocketSlot();
       if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
         socketManager.stop();
       } else if (sharedSocketState.isAnyActive()) {
@@ -1241,7 +1374,7 @@ async function onCandleClose(candle) {
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
   // Skipped entirely when confirmation candle is ON — entry then waits for the
   // next-candle intra-bar cross (handled in onTick), never on this candle's close.
-  if (!confirmCandle.enabled("EMA_RSI_ST") && !ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+  if (!confirmCandle.enabled(PREFIX) && !ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // Candle-close entry — fallback when an intra-candle tick didn't already enter.
     log(`📋 [PAPER] Signal — candle-close entry @ ₹${candle.close} | ${reason}`);
     let _oiTag = ""; // appended to the entry reason so the trade records its OI context
@@ -1249,7 +1382,7 @@ async function onCandleClose(candle) {
     const _vixCheck = await checkLiveVix("STRONG");
     if (!_vixCheck.allowed) {
       log(`🌡️ [PAPER] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
-      skipLogger.appendSkipLog("ema_rsi_st", {
+      skipLogger.appendSkipLog(MODE, {
         gate: "vix",
         reason: _vixCheck.reason || null,
         spot: candle.close,
@@ -1259,12 +1392,12 @@ async function onCandleClose(candle) {
       return;
     }
     // ── OI + price buildup gate (live only) — block entries fighting a buildup ─
-    if (!ptState._simMode && oiFilter.getOiEnabled("ema_rsi_st")) {
+    if (!ptState._simMode && rt.oiApplies && oiFilter.getOiEnabled(MODE)) {
       const _oiSide = signal === "BUY_CE" ? "CE" : "PE";
-      const _oi = await oiFilter.checkLiveOi(_oiSide, candle.close, { mode: "ema_rsi_st" });
+      const _oi = await oiFilter.checkLiveOi(_oiSide, candle.close, { mode: MODE });
       if (!_oi.allowed) {
         log(`📊 [PAPER] OI BLOCK — ${_oi.reason} | Signal: ${signal}`);
-        skipLogger.appendSkipLog("ema_rsi_st", {
+        skipLogger.appendSkipLog(MODE, {
           gate: "oi", reason: _oi.reason || null, spot: candle.close, signal,
           side: _oiSide, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
           path: "candle-close",
@@ -1276,7 +1409,7 @@ async function onCandleClose(candle) {
     // ── Portfolio-wide cap — must mirror intra-tick path exactly ──────────────
     { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [PAPER] ${_pf.reason} — candle-close entry blocked (${signal})`); return; } }
     const side = signal === "BUY_CE" ? "CE" : "PE";
-    const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
+    const INSTR = rt.instrumentName(); // top-level constant
 
     // Set _entryPending BEFORE the async call so that ticks arriving while symbol lookup
     // is in-flight do not fire a second entry.
@@ -1285,7 +1418,7 @@ async function onCandleClose(candle) {
 
     let symbolPromise;
     if (INSTR === "NIFTY_FUTURES") {
-      symbolPromise = getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }));
+      symbolPromise = rt.resolveEntrySymbol(candle.close, side);
     } else {
       const cachedCs = getCachedSymbol(side, candle.close);
       if (cachedCs) {
@@ -1293,7 +1426,7 @@ async function onCandleClose(candle) {
         symbolPromise = Promise.resolve(cachedCs);
       } else {
         log(`🔍 [PAPER] Cache miss — live symbol lookup`);
-        symbolPromise = validateAndGetOptionSymbol(candle.close, side, 'ema_rsi_st');
+        symbolPromise = rt.resolveEntrySymbol(candle.close, side);
       }
     }
 
@@ -1303,7 +1436,7 @@ async function onCandleClose(candle) {
         log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${candle.close} | ${reason}`);
         log(`📌 Futures symbol: ${symbol}`);
       } else {
-        const strikeType = Math.abs(strike - Math.round(candle.close / 50) * 50) === 0 ? "ATM" : "ITM";
+        const strikeType = Math.abs(strike - rt.atmOf(candle.close)) === 0 ? "ATM" : "ITM";
         log(`🎯 [PAPER] ENTRY ${side} @ ₹${candle.close} | ${reason}`);
         log(`📌 ${strikeType} Option: ${symbol} (Spot: ${candle.close} → Strike: ${strike} | Expiry: ${expiry})`);
       }
@@ -1314,13 +1447,15 @@ async function onCandleClose(candle) {
         return;
       }
 
+      let _entryQuote = null;   // the quote another market fills its entry at (pairRuntime.entryFill)
+
       // ── Bid-ask spread guard (options only, live mode only) ──
       if (!ptState._simMode && INSTR !== "NIFTY_FUTURES") {
         const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
-        const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+        const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask, rt.maxSpreadPts());
         if (!_sp.ok) {
           log(`⏭️ [PAPER] SKIP entry — spread too wide (${_sp.reason})`);
-          skipLogger.appendSkipLog("ema_rsi_st", {
+          skipLogger.appendSkipLog(MODE, {
             gate: "spread",
             reason: _sp.reason || null,
             spot: candle.close,
@@ -1334,11 +1469,12 @@ async function onCandleClose(candle) {
           clearTimeout(_ptEntryTimer);
           return;
         }
+        if (_q) _entryQuote = { ltp: _q.ltp, bid: _q.bid, ask: _q.ask, at: Date.now() };
       }
 
       // /stop (or stop + restart) may have run during the awaits above.
       if (ptState.position || !ptState.running || _entrySessionGen !== _sid) { ptState._entryPending = false; clearTimeout(_ptEntryTimer); return; }
-      simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, candle.close, false, {
+      simulateBuy(symbol, side, rt.lotQty(), candle.close, reason + _oiTag, candle.close, false, {
         signalStrength: "STRONG",
         rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
         ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
@@ -1348,6 +1484,7 @@ async function onCandleClose(candle) {
         supertrendAtEntry: indicators.supertrend != null ? indicators.supertrend : null,
         stTrendAtEntry:    indicators.stTrend     || null,
         trendSource:       indicators.trendSource || null,
+        ...(rt.home ? {} : { entryQuote: _entryQuote }),
       });
       ptState._entryPending = false;
       clearTimeout(_ptEntryTimer);
@@ -1413,7 +1550,7 @@ function onTick(tick) {
 
   const ltp = tick.ltp;
   const bar = ptState.currentBar;
-  const strategy = getActiveStrategy(); // must be declared here for intra-tick entry + exits below
+  const strategy = _engine(); // must be declared here for intra-tick entry + exits below
 
   // ── Intra-candle entry: fires on both 5-min AND 15-min resolution ──────────
   // For 15-min: we MUST check intra-candle because a 15-min window is too wide to wait
@@ -1467,7 +1604,7 @@ function onTick(tick) {
     //    signal and instead enter only when this (the candle AFTER a signal candle)
     //    crosses the armed signal candle's close. Carries the signal candle's
     //    reason/indicators into the trade record. ──
-    if (confirmCandle.enabled("EMA_RSI_ST")) {
+    if (confirmCandle.enabled(PREFIX)) {
       const _a = ptState._armedSignal;
       // ── Entry-window enforcement on the CONFIRMATION bar ────────────────────
       // getSignal() blocks bars outside TRADE_ENTRY_START/END, but the branch
@@ -1481,7 +1618,7 @@ function onTick(tick) {
       const _confirmWin   = _isConfirmBar ? strategy.isInTradingWindow(bar.time) : null;
       if (_isConfirmBar && !_confirmWin.ok) {
         log(`⏰ [PAPER] Armed ${_a.side} dropped — its confirmation bar is outside the entry window (${_confirmWin.reason})`);
-        skipLogger.appendSkipLog("ema_rsi_st", {
+        skipLogger.appendSkipLog(MODE, {
           gate: "strategy",
           reason: _confirmWin.reason,
           spot: ltp,
@@ -1510,7 +1647,7 @@ function onTick(tick) {
         if (!ptState._vixBlockLoggedCandle || ptState._vixBlockLoggedCandle !== currentBarTime) {
           ptState._vixBlockLoggedCandle = currentBarTime;
           log(`🌡️ [PAPER] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal}`);
-          skipLogger.appendSkipLog("ema_rsi_st", {
+          skipLogger.appendSkipLog(MODE, {
             gate: "vix",
             reason: `VIX ${_vixIntraVal.toFixed(1)} too high`,
             spot: ltp,
@@ -1525,14 +1662,14 @@ function onTick(tick) {
       //    handler; relies on the per-candle background recordOiSample to keep fresh. ──
       let _oiTag = "";
       let _oiIntraBlocked = false;
-      if (!ptState._simMode && oiFilter.getOiEnabled("ema_rsi_st")) {
-        const _oiIntra = oiFilter.checkCachedOi(side, { mode: "ema_rsi_st" });
+      if (!ptState._simMode && rt.oiApplies && oiFilter.getOiEnabled(MODE)) {
+        const _oiIntra = oiFilter.checkCachedOi(side, { mode: MODE });
         if (!_oiIntra.allowed) {
           _oiIntraBlocked = true;
           if (!ptState._oiBlockLoggedCandle || ptState._oiBlockLoggedCandle !== currentBarTime) {
             ptState._oiBlockLoggedCandle = currentBarTime;
             log(`📊 [PAPER] OI BLOCK (intra) — ${_oiIntra.reason} | Signal: ${signal}`);
-            skipLogger.appendSkipLog("ema_rsi_st", {
+            skipLogger.appendSkipLog(MODE, {
               gate: "oi", reason: _oiIntra.reason || null, spot: ltp, side,
               oi: _oiIntra.oi ?? null, deltaOi: _oiIntra.deltaOi ?? null, regime: _oiIntra.regime ?? null,
               signal, path: "intra-candle",
@@ -1545,26 +1682,27 @@ function onTick(tick) {
       // Capital pre-check — a refused entry must not pay for a symbol lookup and a
       // Fyers quote on every tick of the bar. Same gate simulateBuy runs; muted
       // repeats stay refused without re-logging.
-      const _capIntra = capitalPool.gate("ema_rsi_st", getLotQty() * capitalPool.estimatedPremium(), { side, qty: getLotQty() }, { sim: (ptState._simMode || ptState._simSession) });
+      const _capIntra = capitalPool.gate(MODE, rt.lotQty() * capitalPool.estimatedPremium(), { side, qty: rt.lotQty() }, { sim: (ptState._simMode || ptState._simSession) });
       if (!_capIntra.ok && !_capIntra.muted) {
         log(`❌ [PAPER] Intra-candle entry REFUSED — ${_capIntra.reason}`);
-        skipLogger.appendSkipLog("ema_rsi_st", { gate: "capital", reason: _capIntra.reason, spot: ltp, side, signal, path: "intra-candle", cost: _capIntra.cost, available: _capIntra.available });
+        skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _capIntra.reason, spot: ltp, side, signal, path: "intra-candle", cost: _capIntra.cost, available: _capIntra.available });
       }
       if (!_oiIntraBlocked && _capIntra.ok) {
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
       // Safety: auto-reset after 4s in case of any unhandled error path
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
       log(`⚡ [PAPER] Intra-candle ${TRADE_RES >= 15 ? "STRONG " : ""}entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
-      const INSTR = instrumentConfig.INSTRUMENT; // top-level constant — no inline require needed
+      const INSTR = rt.instrumentName(); // top-level constant — no inline require needed
 
       const _sidIntra = _entrySessionGen;
       let symbolPromise;
       if (ptState._simMode) {
         // In simulation mode, use a dummy option symbol (no broker API needed)
-        const strike = Math.round(ltp / 50) * 50;
-        symbolPromise = Promise.resolve({ symbol: `NSE:NIFTY-SIM-${strike}${side}`, expiry: "SIM", strike, invalid: false });
+        const strike = rt.atmOf(ltp);
+        const _simStem = rt.home ? "NSE:NIFTY" : (rt.isMcx ? `MCX:${rt.market().contract}` : `${rt.U().exchange}:${rt.U().optPrefix}`);
+        symbolPromise = Promise.resolve({ symbol: `${_simStem}-SIM-${strike}${side}`, expiry: "SIM", strike, invalid: false });
       } else if (INSTR === "NIFTY_FUTURES") {
-        symbolPromise = getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }));
+        symbolPromise = rt.resolveEntrySymbol(ltp, side);
       } else {
         const cached = getCachedSymbol(side, ltp);
         if (cached) {
@@ -1572,7 +1710,7 @@ function onTick(tick) {
           symbolPromise = Promise.resolve(cached);
         } else {
           log(`🔍 [PAPER] Cache miss — live symbol lookup (spot moved or first trade of session)`);
-          symbolPromise = validateAndGetOptionSymbol(ltp, side, 'ema_rsi_st');
+          symbolPromise = rt.resolveEntrySymbol(ltp, side);
         }
       }
 
@@ -1582,7 +1720,7 @@ function onTick(tick) {
           log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${ltp} | ${reason}`);
           log(`📌 Futures symbol: ${symbol}`);
         } else {
-          const strikeType = Math.abs(strike - Math.round(ltp / 50) * 50) === 0 ? "ATM" : "ITM";
+          const strikeType = Math.abs(strike - rt.atmOf(ltp)) === 0 ? "ATM" : "ITM";
           log(`🎯 [PAPER] ENTRY ${side} @ ₹${ltp} | ${reason}`);
           log(`📌 ${strikeType} Option: ${symbol} (Spot: ${ltp} → Strike: ${strike} | Expiry: ${expiry})`);
         }
@@ -1593,13 +1731,15 @@ function onTick(tick) {
           return;
         }
 
+        let _entryQuote = null;   // the quote another market fills its entry at (pairRuntime.entryFill)
+
         // ── Bid-ask spread guard (options only, live mode only) ──
         if (!ptState._simMode && INSTR !== "NIFTY_FUTURES") {
           const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
-          const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+          const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask, rt.maxSpreadPts());
           if (!_sp.ok) {
             log(`⏭️ [PAPER] SKIP intra-candle entry — spread too wide (${_sp.reason})`);
-            skipLogger.appendSkipLog("ema_rsi_st", {
+            skipLogger.appendSkipLog(MODE, {
               gate: "spread",
               reason: _sp.reason || null,
               spot: ltp,
@@ -1613,11 +1753,12 @@ function onTick(tick) {
             clearTimeout(_ptIntraTimer);
             return;
           }
+          if (_q) _entryQuote = { ltp: _q.ltp, bid: _q.bid, ask: _q.ask, at: Date.now() };
         }
 
         // /stop (or stop + restart) may have run during the awaits above.
         if (ptState.position || !ptState.running || _entrySessionGen !== _sidIntra) { ptState._entryPending = false; clearTimeout(_ptIntraTimer); return; }
-        simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, ltp, true, {
+        simulateBuy(symbol, side, rt.lotQty(), ltp, reason + _oiTag, ltp, true, {
           signalStrength: "STRONG",
           rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
           ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
@@ -1627,6 +1768,7 @@ function onTick(tick) {
           supertrendAtEntry: indicators.supertrend != null ? indicators.supertrend : null,
           stTrendAtEntry:    indicators.stTrend     || null,
           trendSource:       indicators.trendSource || null,
+          ...(rt.home ? {} : { entryQuote: _entryQuote }),
         }); // isIntraCandle=true
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);
@@ -1673,7 +1815,7 @@ function onTick(tick) {
   }
   // Futures: no option premium, so the same stop runs on the index move
   // (tradeGuards.checkFuturesStop). Entry/exit are index levels (see simulateSell).
-  if (ptState.position && instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" && ltp > 0) {
+  if (ptState.position && rt.instrumentName() === "NIFTY_FUTURES" && ltp > 0) {
     const _fsPos = ptState.position;
     const _fsMsg = tradeGuards.checkFuturesStop(_fsPos.side, _fsPos.entryPrice, ltp, _fsPos.mfeSpotPts);
     if (_fsMsg) {
@@ -1700,7 +1842,7 @@ function saveSession() {
     // so it has to be the same calendar the rest of the engine reasons in.
     date:        new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     strategy:    ACTIVE,
-    instrument:  instrumentConfig.INSTRUMENT,
+    instrument:  rt.instrumentName(),
     startTime:   ptState.sessionStart,
     endTime:     istNow(),
     trades:      ptState.sessionTrades,
@@ -1730,7 +1872,7 @@ function saveSession() {
 
   savePaperData(data);
   ptState._pnlSaved = true;   // same step the file's totalPnl gained it
-  capitalPool.sessionSaved("ema_rsi_st");
+  capitalPool.sessionSaved(MODE);
   log(`💾 Session saved. Running capital: ₹${data.capital} | Total PnL: ₹${data.totalPnl}`);
 
   // ── Daily Report + Telegram EOD ──────────────────────────────────────────────
@@ -1739,12 +1881,19 @@ function saveSession() {
   return session;
 }
 
+// TG_EMA_RSI_ST_DAYREPORT gates every market's report; a non-home pair also
+// needs its own <PAIR>_MODE_ENABLED on (a pair has no Telegram keys of its own).
+function _canSendDayReport() {
+  if (!rt.home && !rt.enabled()) return false;
+  return canSend(`TG_${rt.strategy.key}_DAYREPORT`);
+}
+
 function generatePaperDailyReport(trades, sessionPnl) {
   try {
     if (!trades || trades.length === 0) {
-      if (canSend("TG_EMA_RSI_ST_DAYREPORT")) {
+      if (_canSendDayReport()) {
         sendTelegram([
-          `📄 EMA_RSI_ST PAPER — DAY REPORT`,
+          `📄 ${TITLE} PAPER — DAY REPORT`,
           `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })}`,
           ``,
           `No trades taken today.`,
@@ -1800,9 +1949,9 @@ function generatePaperDailyReport(trades, sessionPnl) {
       .map(([label, g]) => `  ${label}: ${g.count}x WR${((g.wins/g.count)*100).toFixed(0)}% ₹${g.pnl.toFixed(0)}`)
       .join("\n");
 
-    if (canSend("TG_EMA_RSI_ST_DAYREPORT")) {
+    if (_canSendDayReport()) {
       sendTelegram([
-        `📄 EMA_RSI_ST PAPER — DAY REPORT`,
+        `📄 ${TITLE} PAPER — DAY REPORT`,
         `📅 ${dateStr}`,
         ``,
         `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
@@ -1848,15 +1997,27 @@ router.get("/start", async (req, res) => {
     return res.status(400).json({ success: false, error: "Paper trading already running." });
   }
 
-  if (sharedSocketState.isActive()) {
-    return res.status(400).json({
-      success: false,
-      error: "Cannot start paper trading — another EMA_RSI_ST session is already active.",
-    });
+  if (rt.home) {
+    if (sharedSocketState.isActive()) {
+      return res.status(400).json({
+        success: false,
+        error: "Cannot start paper trading — another EMA_RSI_ST session is already active.",
+      });
+    }
+  } else {
+    // Every non-home pair ships OFF: its own switch first, then its own socket slot.
+    if (!rt.enabled()) {
+      return res.status(403).json({ success: false, error: `${TITLE} is switched off. Turn on ${pair.enabledKey} in Settings → ${rt.market().label} first.` });
+    }
+    const _gate = rt.socketSlot.canStart();
+    if (!_gate.allowed) {
+      return res.status(400).json({ success: false, error: `Cannot start ${TITLE} paper trading — ${_gate.reason}` });
+    }
   }
 
   // ── NEW: Trading session validation (holidays + time check) ────────────────
-  const tradingCheck = await isTradingAllowed();
+  // This market's exchange calendar (NSE / BSE holidays; MCX weekends).
+  const tradingCheck = rt.home ? await isTradingAllowed() : await rt.isTradingAllowed();
   if (!tradingCheck.allowed) {
     return res.status(400).json({
       success: false,
@@ -1876,11 +2037,19 @@ router.get("/start", async (req, res) => {
     });
   }
 
-  const strategy    = getActiveStrategy();
+  const strategy    = _engine();
   // Reset strategy module-level state if it has a reset hook
   if (typeof strategy.reset === "function") strategy.reset();
   const accessToken = `${process.env.APP_ID}:${process.env.ACCESS_TOKEN}`;
-  const subscribeSymbol = "NSE:NIFTY50-INDEX";
+  let subscribeSymbol = SPOT();
+  if (rt.isMcx) {
+    // MCX has no index: the candles are the series' future, read from the
+    // Fyers MCX symbol master (downloaded at most once a day).
+    try { subscribeSymbol = await rt.resolveSpotSymbol(); }
+    catch (e) { return res.status(400).json({ success: false, error: `${TITLE}: no ${rt.market().label} future resolved — ${e.message}` }); }
+  }
+  if (!subscribeSymbol) return res.status(400).json({ success: false, error: `${TITLE}: no spot symbol for ${rt.market().label}` });
+  _spotSym = subscribeSymbol;
   const data        = loadPaperData();
   // IST date — toISOString() gives UTC which is 5:30 behind IST and returns wrong date before 5:30 AM UTC
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // "YYYY-MM-DD" in IST
@@ -1891,7 +2060,7 @@ router.get("/start", async (req, res) => {
   // strategy's warmed series. Stale series is auto-discarded by STALE_GAP_MS.
   _entrySessionGen++;
   // Safety net: drop any reservation a previous session of THIS strategy leaked.
-  capitalPool.clear("ema_rsi_st");
+  capitalPool.clear(MODE);
   ptState.running       = true;
   ptState.candles       = [];
   ptState.currentBar    = null;
@@ -1930,30 +2099,38 @@ router.get("/start", async (req, res) => {
   _tradesMapCache = []; _tradesMapCount = 0; // clear cached trades for poll
   stopOptionPolling();
 
-  // Expiry day check
-  if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-    const { isExpiryDay } = require("../services/marketData");
-    const isExpiry = await isExpiryDay();
+  // Expiry day check. NIFTY keeps the shared TRADE_EXPIRY_DAY_ONLY switch;
+  // another market reads its own <PAIR>_EXPIRY_DAY_ONLY (else NIFTY's
+  // EMA_RSI_ST_EXPIRY_DAY_ONLY) against THAT market's expiry calendar.
+  if (rt.home) {
+    if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      const { isExpiryDay } = require("../services/marketData");
+      const isExpiry = await isExpiryDay();
+      if (!isExpiry) ptState._expiryDayBlocked = true;
+      log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+    }
+  } else if (rt.expiryDayOnly()) {
+    const isExpiry = rt.isExpiryDay();
     if (!isExpiry) ptState._expiryDayBlocked = true;
-    log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+    log(`📅 [PAPER] Expiry-only mode (${rt.market().label}): ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not this market's expiry day — entries blocked"}`);
   }
 
   log(`\n════════════════════════════════════════════════════════════════════`);
   log(`🟡 [PAPER] Paper trading started`);
   log(`   Resolution : ${getTradeResolution()}-min candles (TRADE_RESOLUTION in .env)`);
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
-  log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
+  log(`   Instrument : ${rt.instrumentName()}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
   {
-    const _tripleOn = (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true";
-    const _emaUp   = _tripleOn ? `EMA${process.env.EMA_RSI_ST_EMA_FASTEST||9}>EMA${process.env.EMA_RSI_ST_EMA_FAST||20}>EMA${process.env.EMA_RSI_ST_EMA_SLOW||50}` : `EMA${process.env.EMA_RSI_ST_EMA_FAST||20}>EMA${process.env.EMA_RSI_ST_EMA_SLOW||50}`;
-    const _emaDn   = _tripleOn ? `EMA${process.env.EMA_RSI_ST_EMA_FASTEST||9}<EMA${process.env.EMA_RSI_ST_EMA_FAST||20}<EMA${process.env.EMA_RSI_ST_EMA_SLOW||50}` : `EMA${process.env.EMA_RSI_ST_EMA_FAST||20}<EMA${process.env.EMA_RSI_ST_EMA_SLOW||50}`;
-    const _baseEmaLbl = `EMA${_tripleOn ? (process.env.EMA_RSI_ST_EMA_FASTEST||9) : (process.env.EMA_RSI_ST_EMA_FAST||20)}`;
-    const _ceGate  = (process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED||"true").toLowerCase()==="true" ? ` + C>${_baseEmaLbl}` : "";
-    const _peGate  = (process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED||"true").toLowerCase()==="true" ? ` + C<${_baseEmaLbl}` : "";
+    const _tripleOn = (_own("EMA_TRIPLE_STACK_ENABLED")||"false").toLowerCase()==="true";
+    const _emaUp   = _tripleOn ? `EMA${_own("EMA_FASTEST")||9}>EMA${_own("EMA_FAST")||20}>EMA${_own("EMA_SLOW")||50}` : `EMA${_own("EMA_FAST")||20}>EMA${_own("EMA_SLOW")||50}`;
+    const _emaDn   = _tripleOn ? `EMA${_own("EMA_FASTEST")||9}<EMA${_own("EMA_FAST")||20}<EMA${_own("EMA_SLOW")||50}` : `EMA${_own("EMA_FAST")||20}<EMA${_own("EMA_SLOW")||50}`;
+    const _baseEmaLbl = `EMA${_tripleOn ? (_own("EMA_FASTEST")||9) : (_own("EMA_FAST")||20)}`;
+    const _ceGate  = (_own("CLOSE_BEYOND_EMA_ENABLED")||"true").toLowerCase()==="true" ? ` + C>${_baseEmaLbl}` : "";
+    const _peGate  = (_own("CLOSE_BEYOND_EMA_ENABLED")||"true").toLowerCase()==="true" ? ` + C<${_baseEmaLbl}` : "";
     log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN${_ceGate} | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED${_peGate} (intra-candle)`);
   }
-  log(`   Exit        : global profit lock only | session square-off ${process.env.TRADE_STOP_TIME||"15:30"}`);
+  log(`   Exit        : global profit lock only | session square-off ${rt.isMcx ? rt.stopTimeLabel() : (process.env.TRADE_STOP_TIME||"15:30")}`);
   log(`   Entry guards: VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
@@ -1961,18 +2138,23 @@ router.get("/start", async (req, res) => {
   const _ptChecks = { fyers: { ok: false, msg: "" }, symbol: { ok: false, msg: "" } };
   try {
     const { getLiveSpot, validateAndGetOptionSymbol } = require("../services/marketData");
+    // MCX has no index quote for getLiveSpot — its checklist reads the future.
+    const _spotP = rt.home ? getLiveSpot()
+      : rt.isMcx
+        ? require("../services/marketData").getQuotes([subscribeSymbol]).then(r => (r && r.d && r.d[0] && r.d[0].v && r.d[0].v.lp) || 0)
+        : getLiveSpot(rt.underlyingKey);
     const [spotResult] = await Promise.allSettled([
-      getLiveSpot().then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
+      _spotP.then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
     ]);
     if (spotResult.status === "fulfilled") {
       const spot = spotResult.value;
-      const atm  = Math.round(spot / 50) * 50;
-      _ptChecks.fyers = { ok: true, msg: `NIFTY ₹${spot} | ATM ${atm}` };
+      const atm  = rt.atmOf(spot);
+      _ptChecks.fyers = { ok: true, msg: rt.isFutures ? `${SPOT_LABEL} ₹${spot}` : `${SPOT_LABEL} ₹${spot} | ATM ${atm}` };
       try {
-        const [ce, pe] = await Promise.all([
+        const [ce, pe] = await Promise.all(rt.home ? [
           validateAndGetOptionSymbol(spot, "CE", 'ema_rsi_st'),
           validateAndGetOptionSymbol(spot, "PE", 'ema_rsi_st'),
-        ]);
+        ] : [rt.resolveEntrySymbol(spot, "CE"), rt.resolveEntrySymbol(spot, "PE")]);
         if (!ce.invalid && ce.symbol) {
           _ptChecks.symbol = { ok: true, msg: `${ce.symbol.split(":")[1]} / ${pe.symbol.split(":")[1]}` };
         } else {
@@ -1986,17 +2168,17 @@ router.get("/start", async (req, res) => {
 
   const _ptAllOk = _ptChecks.fyers.ok && _ptChecks.symbol.ok;
   notifyStarted({
-    mode: "PAPER",
+    mode: NOTIFY_MODE,
     text: [
-      `${_ptAllOk ? "✅" : "⚠️"} EMA_RSI_ST PAPER — STARTED`,
+      `${_ptAllOk ? "✅" : "⚠️"} ${TITLE} PAPER — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
       ``,
       `Strategy  : ${ACTIVE}`,
-      `Instrument: ${instrumentConfig.INSTRUMENT}`,
+      `Instrument: ${rt.instrumentName()}`,
       `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
-      `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
+      `Window    : ${rt.isMcx ? `${String(Math.floor(_START_MINS / 60)).padStart(2, "0")}:${String(_START_MINS % 60).padStart(2, "0")}` : (process.env.TRADE_START_TIME || "09:15")} → ${rt.isMcx ? rt.stopTimeLabel() : (process.env.TRADE_STOP_TIME || "15:30")} IST`,
       ``,
       `Pre-Market Checklist:`,
       `${_ptChecks.fyers.ok  ? "✅" : "❌"} Fyers   : ${_ptChecks.fyers.msg}`,
@@ -2051,16 +2233,16 @@ router.get("/start", async (req, res) => {
   }
 
   // Tick-recorder session-start snapshot
-  ptState._sessionId = `ema_rsi_st-paper:${Date.now()}`;
+  ptState._sessionId = `${rt.replayMode}:${Date.now()}`;
   try {
     tickRecorder.recordSessionStart({
-      mode: "ema_rsi_st-paper",
+      mode: rt.replayMode,
       sessionId: ptState._sessionId,
       settings: tickRecorder.snapshotSettings(),
       warmup:   ptState.candles.map(c => ({ ...c })),
       vix:      getCachedVix(),
       meta: {
-        instrument:       instrumentConfig.INSTRUMENT,
+        instrument:       rt.instrumentName(),
         resolutionMin:    getTradeResolution(),
         spotSymbol:       subscribeSymbol,
         sessionStartISO:  ptState.sessionStart,
@@ -2086,16 +2268,18 @@ router.get("/start", async (req, res) => {
   const _stopLabelAtStart = String(Math.floor(_stopMinsAtStart/60)).padStart(2,"0") + ":" + String(_stopMinsAtStart%60).padStart(2,"0");
   scheduleAutoStop((msg) => {
     log(msg);
-    if (ptState.position && ptState.lastTickPrice) {
-      simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
+    // Another market also squares off on the last bar's close when no tick is on hand.
+    const _asPx = ptState.lastTickPrice || (!rt.home && ptState.currentBar ? ptState.currentBar.close : null);
+    if (ptState.position && _asPx) {
+      simulateSell(_asPx, "Auto-stop " + _stopLabelAtStart, _asPx);
     }
     ptState.running = false;
     // Square-off above needs lastTickPrice; never let a reservation outlive the session.
-    capitalPool.clear("ema_rsi_st");
+    capitalPool.clear(MODE);
     stopOptionPolling();
     try {
       tickRecorder.recordSessionStop({
-        mode: "ema_rsi_st-paper",
+        mode: rt.replayMode,
         sessionId: ptState._sessionId || null,
         reason: "auto_stop_eod",
       });
@@ -2103,7 +2287,7 @@ router.get("/start", async (req, res) => {
     // Clear THIS slot first, then stop the shared socket only if nothing else is
     // subscribed — see the EOD note in onCandleClose. The old BB_RSI+EMA9_VWAP-only
     // guard killed the feed for a running PA / ORB / Trend_PB engine.
-    sharedSocketState.clear();
+    _releaseSocketSlot();
     if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
       socketManager.stop();
     } else if (sharedSocketState.isAnyActive()) {
@@ -2114,18 +2298,26 @@ router.get("/start", async (req, res) => {
 
   log(`📡 Subscribing to ${subscribeSymbol} for live tick data...`);
 
-  // Start the socket manager — single socket, spot-only to begin
-  socketManager.start(subscribeSymbol, onTick, log);
-  sharedSocketState.setActive("EMA_RSI_ST_PAPER");
+  if (rt.home) {
+    // Start the socket manager — single socket, spot-only to begin. NIFTY's
+    // EMA_RSI_ST owns the PRIMARY handler, as it always did.
+    socketManager.start(subscribeSymbol, onTick, log);
+  } else {
+    // Another market fans out through addCallback on its own spot: start() on a
+    // running socket would REPLACE the primary handler NIFTY's engine reads.
+    if (!socketManager.isRunning()) socketManager.start(subscribeSymbol, () => {}, log);
+    socketManager.addCallback(OWNER, onTick, log, subscribeSymbol);
+  }
+  rt.socketSlot.set();
 
   return res.json({
     success:     true,
     message:     "Paper trading started! No real orders will be placed.",
     strategy:    { key: ACTIVE, name: strategy.NAME },
-    instrument:  instrumentConfig.INSTRUMENT,
-    lotQty:      getLotQty(),
+    instrument:  rt.instrumentName(),
+    lotQty:      rt.lotQty(),
     capital:     data.capital,
-    monitorAt:   "GET /ema_rsi_st-paper/status",
+    monitorAt:   `GET ${ROUTE}/status`,
   });
 });
 
@@ -2149,7 +2341,7 @@ router.get("/stop", async (req, res) => {
   // strategy (ORB/PA/BB_RSI/Trend_PB/EMA9_VWAP) is still subscribed. The old guard
   // only checked BB_RSI + EMA9_VWAP, so stopping EMA_RSI_ST could tear the shared
   // socket out from under a live ORB / PA / Trend_PB position.
-  sharedSocketState.clear();
+  _releaseSocketSlot();
   if (ptState._simMode) {
     tickSimulator.stop();
     ptState._simMode = false;
@@ -2159,11 +2351,11 @@ router.get("/stop", async (req, res) => {
   }
   ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
   // Square-off above needs currentBar; never let a reservation outlive the session.
-  capitalPool.clear("ema_rsi_st");
+  capitalPool.clear(MODE);
 
   try {
     tickRecorder.recordSessionStop({
-      mode: "ema_rsi_st-paper",
+      mode: rt.replayMode,
       sessionId: ptState._sessionId || null,
       reason: "user_stop",
     });
@@ -2177,7 +2369,7 @@ router.get("/stop", async (req, res) => {
     success:  true,
     message:  "Paper trading stopped. Session saved.",
     session,
-    viewHistory: "GET /ema_rsi_st-paper/history",
+    viewHistory: `GET ${ROUTE}/history`,
   });
 });
 
@@ -2200,7 +2392,7 @@ router.get("/exit", (req, res) => {
 
   const exitSpot   = ptState.currentBar ? ptState.currentBar.close : (ptState.lastTickPrice || 0);
   const exitOption = ptState.optionLtp || null;
-  log(`🖐️ [PAPER] MANUAL EXIT triggered by user | NIFTY spot: ₹${exitSpot} | Option LTP: ${exitOption ? "₹" + exitOption : "N/A"}`);
+  log(`🖐️ [PAPER] MANUAL EXIT triggered by user | ${SPOT_LABEL} spot: ₹${exitSpot} | Option LTP: ${exitOption ? "₹" + exitOption : "N/A"}`);
 
   // ── Block re-entry for 1 full candle after manual exit ──────────────────────
   ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
@@ -2239,7 +2431,7 @@ router.post("/manualEntry", async (req, res) => {
   const _sidManual = _entrySessionGen;
   try {
     const { validateAndGetOptionSymbol } = require("../config/instrument");
-    const optResult = await validateAndGetOptionSymbol(spot, side, 'ema_rsi_st');
+    const optResult = rt.home ? await validateAndGetOptionSymbol(spot, side, 'ema_rsi_st') : await rt.resolveEntrySymbol(spot, side);
     // Both automatic entry paths already refuse an unresolvable symbol; this
     // manual route did not, so it would have entered on symbol=null (no premium
     // → "spot proxy" P&L with the profit lock inert). Same refusal, stated.
@@ -2257,7 +2449,7 @@ router.post("/manualEntry", async (req, res) => {
       return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
     }
     const symbol = optResult.symbol;
-    const qty = getLotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
+    const qty = rt.lotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
 
     log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | Symbol: ${symbol}`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user`, spot, true);
@@ -2302,7 +2494,7 @@ function buildSessionTradeRows(trades, inr) {
     const entryNifty  = t.spotAtEntry  || t.entryPrice;
     const entryOption = t.optionEntryLtp;
     const entryCell   =
-      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
+      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">" + SPOT_LABEL + "</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(entryNifty) + "</div>" +
       "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
       "<div style=\"font-weight:700;color:#60a5fa;\">" + (entryOption ? inr(entryOption) : "—") + "</div>";
@@ -2315,7 +2507,7 @@ function buildSessionTradeRows(trades, inr) {
       : null;
     const ptColor    = optPtsDiff === null ? "#8ba1c2" : optPtsDiff >= 0 ? "#10b981" : "#ef4444";
     const exitCell   =
-      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
+      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">" + SPOT_LABEL + "</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(exitNifty) + "</div>" +
       "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
       "<div style=\"font-weight:700;color:#60a5fa;\">" + (exitOption ? inr(exitOption) : "—") + "</div>" +
@@ -2376,7 +2568,7 @@ router.get("/status/chart-data", async (req, res) => {
     // candles for the trades' day so the chart draws them with their markers.
     let srcCandles = ptState.candles;
     if (!ptState.running && srcCandles.length === 0 && (ptState.sessionTrades || []).length > 0) {
-      srcCandles = await chartBackfill.candlesForRestoredTrades("NSE:NIFTY50-INDEX", TRADE_RES, ptState.sessionTrades);
+      srcCandles = await chartBackfill.candlesForRestoredTrades(SPOT(), TRADE_RES, ptState.sessionTrades);
     }
     // Closed candles + the currently forming bar
     const candles = srcCandles.map(c => ({
@@ -2400,9 +2592,9 @@ router.get("/status/chart-data", async (req, res) => {
 
     // EMA20 + EMA50 overlays (close) — the fast/slow pair the strategy decides on.
     // EMA9 (fastest) is also drawn — it's the entry input when the triple-stack is ON.
-    const EMA_FAST    = parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20;
-    const EMA_SLOW    = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
-    const EMA_FASTEST = parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9;
+    const EMA_FAST    = parseInt(_own("EMA_FAST") || "20", 10) || 20;
+    const EMA_SLOW    = parseInt(_own("EMA_SLOW") || "50", 10) || 50;
+    const EMA_FASTEST = parseInt(_own("EMA_FASTEST") || "9", 10) || 9;
     let ema9Series = [], ema20Series = [], ema50Series = [];
     const _emaLine = (period, values) => {
       const out = [];
@@ -2436,8 +2628,8 @@ router.get("/status/chart-data", async (req, res) => {
     let supertrend = [];
     {
       const { computeSuperTrend } = require("../utils/supertrend");
-      const ST_PERIOD = parseInt(process.env.EMA_RSI_ST_SUPERTREND_PERIOD || "10", 10);
-      const ST_MULT   = parseFloat(process.env.EMA_RSI_ST_SUPERTREND_MULT || "3");
+      const ST_PERIOD = parseInt(_own("SUPERTREND_PERIOD") || "10", 10);
+      const ST_MULT   = parseFloat(_own("SUPERTREND_MULT") || "3");
       try {
         const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
         for (let i = 0; i < stArr.length; i++) {
@@ -2485,7 +2677,7 @@ router.get("/status/chart-data", async (req, res) => {
       ema9: ema9Series, ema20: ema20Series, ema50: ema50Series,
       supertrend, trendSource: "SUPERTREND", rsi: rsiSeries,
       emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
-      tripleStack: (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
+      tripleStack: (_own("EMA_TRIPLE_STACK_ENABLED") || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2502,7 +2694,7 @@ router.get("/status/data", (req, res) => {
     const data     = loadPaperData();
 
     // Unrealised PnL (mirrors /status logic, minus charges)
-    const _isFutPt = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    const _isFutPt = rt.instrumentName() === "NIFTY_FUTURES";
     let unrealisedPnl = 0;
     let pnlSource     = "spot proxy";
     if (ptState.position && ptState.currentBar) {
@@ -2595,11 +2787,11 @@ router.get("/status/data", (req, res) => {
 
 router.get("/status", (req, res) => {
   try {
-  const strategy = getActiveStrategy();
+  const strategy = _engine();
   const data     = loadPaperData();
 
   // Unrealised PnL if position is open — use OPTION LTP if available, else spot proxy (minus charges)
-  const _isFutPtPg = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const _isFutPtPg = rt.instrumentName() === "NIFTY_FUTURES";
   let unrealisedPnl = 0;
   let pnlSource = "spot proxy";
   if (ptState.position && ptState.currentBar) {
@@ -2640,7 +2832,7 @@ router.get("/status", (req, res) => {
     : 0;
 
   // ATM/ITM badge
-  const atmStrike = pos ? Math.round(pos.entryPrice / 50) * 50 : null;
+  const atmStrike = pos ? rt.atmOf(pos.entryPrice) : null;
   const strikeLabel = pos && pos.optionStrike
     ? (pos.optionStrike === atmStrike ? "ATM" : pos.optionStrike < atmStrike ? (pos.side === "CE" ? "ITM" : "OTM") : (pos.side === "PE" ? "ITM" : "OTM"))
     : "—";
@@ -2712,7 +2904,7 @@ router.get("/status", (req, res) => {
 
       <!-- ★ OPTION PREMIUM SECTION — most important block ★ -->
       <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
-        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? `📊 Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `📊 Option Premium (${pos.optionType} Price)`}</div>
+        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${rt.instrumentName() === "NIFTY_FUTURES" ? `📊 Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `📊 Option Premium (${pos.optionType} Price)`}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
 
           <!-- Entry Premium -->
@@ -2724,7 +2916,7 @@ router.get("/status", (req, res) => {
             <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">
               ${optEntryLtp
                 ? `captured at ${fmtT(pos.optionEntryLtpTime || pos.entryTime)}`
-                : `⏳ first REST poll in ~3s<br><span style='color:#c8d8f0;'>NIFTY entry: ${inr(pos.entryPrice)}</span>`}
+                : `⏳ first REST poll in ~3s<br><span style='color:#c8d8f0;'>${SPOT_LABEL} entry: ${inr(pos.entryPrice)}</span>`}
             </div>
           </div>
 
@@ -2762,12 +2954,12 @@ router.get("/status", (req, res) => {
       <!-- Secondary grid: NIFTY spot + best price -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${SPOT_LABEL} Spot @ Entry</div>
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
           <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">candle close</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${SPOT_LABEL} LTP</div>
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
@@ -2860,7 +3052,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('emaRsiStPaper', false, ptState.running, {
+${buildSidebar(rt.sidebarKey, false, ptState.running, {
   showExitBtn:  !!ptState.position,
   showStopBtn:  ptState.running,
   showStartBtn: !ptState.running,
@@ -2882,7 +3074,7 @@ ${buildSidebar('emaRsiStPaper', false, ptState.running, {
         ? '<span class="top-bar-badge paper-active"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>RUNNING</span>'
         : '<span class="top-bar-badge">● IDLE</span>'}
       ${_vixEnabled ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix > _vixMaxEntry ? '#ef4444' : _vix > _vixStrongOnly ? '#eab308' : '#10b981'};">🌡️ VIX ${_vix != null ? _vix.toFixed(1) : 'n/a'}${_vix != null ? (_vix > _vixMaxEntry ? ' · BLOCKED' : _vix > _vixStrongOnly ? ' · STRONG ONLY' : ' · NORMAL') : ''}</span>` : ''}
-      <a href="/ema_rsi_st-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
+      <a href="${ROUTE}/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
       <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
     </div>
   </div>
@@ -2969,7 +3161,7 @@ ${buildSidebar('emaRsiStPaper', false, ptState.running, {
 
   ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div style="margin-bottom:24px;">
-    <div class="section-title">NIFTY ${getTradeResolution()}-Min Chart</div>
+    <div class="section-title">${SPOT_LABEL} ${getTradeResolution()}-Min Chart</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
       <div id="chart-legend" style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
@@ -3001,7 +3193,7 @@ ${buildSidebar('emaRsiStPaper', false, ptState.running, {
       </select>
       <span id="ptCount" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);"></span>
       <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
-      <a class="copy-btn" href="/ema_rsi_st-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
+      <a class="copy-btn" href="${ROUTE}/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
     </div>
     <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
@@ -3170,7 +3362,7 @@ ${buildSidebar('emaRsiStPaper', false, ptState.running, {
       + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#60a5fa;margin-bottom:8px;font-weight:700;">🟢 Entry</div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
       + cell('Entry Time', t.entry || '—', '#c8d8f0')
-      + cell('NIFTY Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
+      + cell('${SPOT_LABEL} Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
       + cell('Option LTP @ Entry', fmt(t.eOpt), '#60a5fa', 'Option premium paid')
       + cell('Entry Signal', t.entryReason || '—', '#a0b8d0')
       + '</div></div>';
@@ -3180,9 +3372,9 @@ ${buildSidebar('emaRsiStPaper', false, ptState.running, {
       + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#f87171;margin-bottom:8px;font-weight:700;">🔴 Exit</div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
       + cell('Exit Time', t.exit || '—', '#c8d8f0')
-      + cell('NIFTY Spot @ Exit', fmt(t.xSpot), '#fff', 'Index price at exit')
+      + cell('${SPOT_LABEL} Spot @ Exit', fmt(t.xSpot), '#fff', 'Index price at exit')
       + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
-      + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '—', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry−Exit (PE profits on fall)' : 'Exit−Entry (CE profits on rise)')
+      + cell('${SPOT_LABEL} Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '—', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry−Exit (PE profits on fall)' : 'Exit−Entry (CE profits on rise)')
       + cell('Option Δ (pts)', optDiff != null ? (optDiff >= 0 ? '▲ +' : '▼ ') + optDiff + ' pts' : '—', dc, 'Exit prem − Entry prem')
       + (function(){
           if (t.peakOpt == null) return cell('Peak Premium', '—', '#c8d8f0', 'Highest premium in trade');
@@ -3311,7 +3503,7 @@ logFilter();
 <script>
 ${modalJS()}
 </script>
-<script src="/ema_rsi_st-paper/client.js"></script>
+<script src="${ROUTE}/client.js"></script>
 <script>
 // ── NIFTY Chart (Lightweight Charts by TradingView) ─────────────────────────
 (function() {
@@ -3378,7 +3570,7 @@ ${modalJS()}
 
   async function fetchChart() {
     try {
-      const res = await fetch('/ema_rsi_st-paper/status/chart-data', { cache: 'no-store' });
+      const res = await fetch('${ROUTE}/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
 
@@ -3484,7 +3676,7 @@ ${modalJS()}
   });
 })();
 </script>
-${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-paper/status/chart-data', id: 'ers-opt-chart' })}
+${optionChart.optionChartScript({ dataUrl: ROUTE + '/status/chart-data', id: 'ers-opt-chart' })}
 <script>
 // ── AJAX live refresh — replaces meta http-equiv="refresh" ──────────────────
 // Polls /ema_rsi_st-paper/status/data every 2 s when trading is active.
@@ -3517,7 +3709,7 @@ ${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-paper/status/chart-data'
 
   async function fetchAndUpdate() {
     try {
-      const res = await fetch('/ema_rsi_st-paper/status/data', { cache: 'no-store' });
+      const res = await fetch('${ROUTE}/status/data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
 
@@ -3733,17 +3925,17 @@ router.get("/history", (req, res) => {
   const liveActive = false;
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
-    routePrefix: "/ema_rsi_st-paper",
-    sidebarKey: "emaRsiStHistory",
-    pageTitle: "📉 EMA_RSI_ST Paper Trade History",
-    pageDocTitle: "EMA_RSI_ST Paper — History",
-    modalLabel: "EMA_RSI_ST Paper",
+    routePrefix: ROUTE,
+    sidebarKey: rt.historySidebarKey,
+    pageTitle: `📉 ${TITLE} Paper Trade History`,
+    pageDocTitle: `${TITLE} Paper — History`,
+    modalLabel: `${TITLE} Paper`,
     liveActive,
     sessions: data.sessions || [],
     capital: data.capital,
     totalPnl: data.totalPnl,
     startCap: getCapitalFromEnv(),
-    emptyLabel: "Start EMA_RSI_ST paper trading to record your first session.",
+    emptyLabel: `Start ${TITLE} paper trading to record your first session.`,
   }));
 });
 
@@ -3752,15 +3944,15 @@ router.get("/history", (req, res) => {
  * Stream the crash-safe per-trade JSONL log as a file download.
  */
 router.get("/download/trades.jsonl", (req, res) => {
-  const logPath = tradeLogger.filePathFor("ema_rsi_st");
+  const logPath = tradeLogger.filePathFor(MODE);
   const today   = new Date().toISOString().slice(0, 10);
-  const dlName  = `ema_rsi_st_paper_trades_log_${today}.txt`;
+  const dlName  = `${MODE}_paper_trades_log_${today}.txt`;
   const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
   if (ai) {
     let text = ""; try { text = fs.readFileSync(logPath, "utf8"); } catch (_) {}
-    const md = aiExport.jsonlToMarkdown(text, { title: "EMA_RSI_ST paper trades (full log)", source: "ema_rsi_st-paper" });
+    const md = aiExport.jsonlToMarkdown(text, { title: `${TITLE} paper trades (full log)`, source: rt.replayMode });
     res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="ema_rsi_st_paper_trades_AI_${today}.md"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_AI_${today}.md"`);
     return res.send(md);
   }
   if (!fs.existsSync(logPath)) {
@@ -3775,8 +3967,8 @@ router.get("/download/trades.jsonl", (req, res) => {
 const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates("ema_rsi_st");
-  const trades = tradeLogger.listDailyDates("ema_rsi_st");
+  const skips  = skipLogger.listDates(MODE);
+  const trades = tradeLogger.listDailyDates(MODE);
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) {
@@ -3790,14 +3982,14 @@ router.get("/download/daily-files", (req, res) => {
 
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
-  const dlName = `ema_rsi_st_paper_skips_all_${today}.txt`;
+  const dlName = `${MODE}_paper_skips_all_${today}.txt`;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
-  const dates = skipLogger.listDates("ema_rsi_st").map(d => d.date).sort();
+  const dates = skipLogger.listDates(MODE).map(d => d.date).sort();
   let body = "";
   for (const d of dates) {
     try {
-      const p = skipLogger.filePathFor("ema_rsi_st", d);
+      const p = skipLogger.filePathFor(MODE, d);
       if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8");
     } catch (_) {}
   }
@@ -3807,23 +3999,23 @@ router.get("/download/skips-all", (req, res) => {
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("ema_rsi_st", date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `ema_rsi_st_paper_skips_${date}.txt`);
+  res.download(p, `${MODE}_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("ema_rsi_st", date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `ema_rsi_st_paper_trades_${date}.txt`);
+  res.download(p, `${MODE}_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("ema_rsi_st", date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -3833,7 +4025,7 @@ router.get("/view/skips/:date", (req, res) => {
 router.get("/view/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("ema_rsi_st", date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -3854,7 +4046,7 @@ router.get("/reset", (req, res) => {
 
   const freshCapital = getCapitalFromEnv();
   savePaperData({ capital: freshCapital, totalPnl: 0, sessions: [] });
-  require("../utils/paperReset").clearTodayFiles("ema_rsi_st"); // else restart rehydrates today's session
+  require("../utils/paperReset").clearTodayFiles(MODE); // else restart rehydrates today's session
 
   log(`🔄 Paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
 
@@ -3912,7 +4104,7 @@ router.post("/restore-session/:date", (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
   }
-  const allTrades = tradeLogger.readDailyTrades("ema_rsi_st", date);
+  const allTrades = tradeLogger.readDailyTrades(MODE, date);
   if (!allTrades.length) {
     return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   }
@@ -3936,8 +4128,8 @@ router.post("/restore-session/:date", (req, res) => {
   const losses = missing.filter(t => (Number(t.pnl) || 0) <= 0).length;
   const session = {
     date,
-    strategy:    missing[0]?.strategy || "STRATEGY_1",
-    instrument:  missing[0]?.instrument || "NIFTY_OPTIONS",
+    strategy:    missing[0]?.strategy || (rt.home ? "STRATEGY_1" : ACTIVE),
+    instrument:  missing[0]?.instrument || (rt.home ? "NIFTY_OPTIONS" : rt.instrumentName()),
     startTime:   missing[0]?.entryTime || date,
     endTime:     missing[missing.length - 1]?.exitTime || date,
     trades:      missing,
@@ -3958,7 +4150,7 @@ router.post("/restore-session/:date", (req, res) => {
   savePaperData(data);
   // Restoring today pulls the rehydrated (unsaved) session's trades into the file.
   if (date === tradeLogger.istDateString(Date.now())) ptState._pnlSaved = true;
-  capitalPool.sessionSaved("ema_rsi_st");
+  capitalPool.sessionSaved(MODE);
   log(`♻️ Restored paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
@@ -3968,12 +4160,11 @@ router.post("/restore-session/:date", (req, res) => {
  * Returns current state info to help diagnose why Start/Reset isn't working
  */
 router.get("/debug", (req, res) => {
-  const { getActiveStrategy, ACTIVE } = require("../strategies");
   res.json({
     running:          ptState.running,
     hasAccessToken:   !!process.env.ACCESS_TOKEN,
     hasAppId:         !!process.env.APP_ID,
-    liveTradeActive:  sharedSocketState.isActive(),
+    liveTradeActive:  rt.socketSlot.isActive(),
     activeStrategy:   ACTIVE,
     tradeResolution:  getTradeResolution(),
     candlesLoaded:    ptState.candles.length,
@@ -3997,7 +4188,7 @@ router.get("/client.js", (req, res) => {
   res.send(`async function handleStart(btn) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema_rsi_st-paper/start');
+    const res = await secretFetch('${ROUTE}/start');
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     let data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (non-JSON response)' }; }
@@ -4016,7 +4207,7 @@ router.get("/client.js", (req, res) => {
 async function handleStop(btn) {
   if (btn) { btn.textContent = '⏳ Stopping...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema_rsi_st-paper/stop');
+    const res = await secretFetch('${ROUTE}/stop');
     if (!res) { if (btn) { btn.textContent = '⏹ Stop'; btn.disabled = false; } return; }
     showToast('⏹ Paper trading stopped.', '#ef4444');
     setTimeout(() => location.reload(), 1000);
@@ -4036,7 +4227,7 @@ async function ptHandleReset(btn) {
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema_rsi_st-paper/reset');
+    const res = await secretFetch('${ROUTE}/reset');
     if (!res) { if (btn) { btn.textContent = '🔄 Reset'; btn.disabled = false; } return; }
     let data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
@@ -4055,7 +4246,7 @@ async function ptHandleReset(btn) {
 function ptExportCSV() {
   var PT = typeof PT_ALL !== 'undefined' ? PT_ALL : [];
   if (!PT.length) { showToast('⚠️ No trades to export', '#f59e0b'); return; }
-  var header = ['Side','Symbol','Entry Time','Exit Time','Entry NIFTY','Entry Option','Exit NIFTY','Exit Option','PnL','Exit Reason'];
+  var header = ['Side','Symbol','Entry Time','Exit Time','Entry ${SPOT_LABEL}','Entry Option','Exit ${SPOT_LABEL}','Exit Option','PnL','Exit Reason'];
   var rows = PT.map(function(t){
     return [
       t.side||'', t.symbol||'',
@@ -4071,14 +4262,14 @@ function ptExportCSV() {
   var d = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
   var a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,\\uFEFF' + encodeURIComponent(csv);
-  a.download = 'ema_rsi_st_paper_trades_' + d + '.csv';
+  a.download = '${MODE}_paper_trades_' + d + '.csv';
   a.click();
   showToast('✅ CSV downloaded — ' + PT.length + ' trades', '#10b981');
 }
 async function ptHandleExit(btn) {
   if (btn) { btn.textContent = '⏳ Exiting...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema_rsi_st-paper/exit');
+    const res = await secretFetch('${ROUTE}/exit');
     if (!res) { if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; } return; }
     const data = await res.json();
     if (!data.success) {
@@ -4109,7 +4300,7 @@ async function manualEntry(side) {
   });
   if (!ok) return;
   try {
-    const res = await secretFetch('/ema_rsi_st-paper/manualEntry', {
+    const res = await secretFetch('${ROUTE}/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -4138,7 +4329,7 @@ async function manualEntry(side) {
 // ── Simulation mode routes ─────────────────────────────────────────────────
 
 router.get("/simulate", (req, res) => {
-  if (ptState.running) return res.redirect("/ema_rsi_st-paper/status");
+  if (ptState.running) return res.redirect(`${ROUTE}/status`);
 
   const scenarios = tickSimulator.getScenarios();
   const cards = Object.entries(scenarios).map(([key, s]) => `
@@ -4151,7 +4342,7 @@ router.get("/simulate", (req, res) => {
     </div>
   `).join("");
 
-  const strategy = getActiveStrategy();
+  const strategy = _engine();
 
   res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -4174,11 +4365,11 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min
 </style>
 </head><body>
 <div class="app-shell">
-${buildSidebar('emaRsiStPaper', false)}
+${buildSidebar(rt.sidebarKey, false)}
 <div class="main-content">
   <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Paper Trade</h1>
   <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:4px;">Run <strong>${strategy.NAME}</strong> against fake ticks — no broker login needed. Works after market hours.</p>
-  <p style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">Resolution: <strong>${TRADE_RES}-min</strong> candles | Instrument: ${instrumentConfig.INSTRUMENT}</p>
+  <p style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">Resolution: <strong>${TRADE_RES}-min</strong> candles | Instrument: ${rt.instrumentName()}</p>
 
   <!-- ── Tab switcher ─────────────────────────────────────────────── -->
   <div style="display:flex;gap:0;margin-top:24px;border-bottom:2px solid #1a2236;">
@@ -4192,7 +4383,7 @@ ${buildSidebar('emaRsiStPaper', false)}
     <div class="sim-grid" id="scenarioGrid">${cards}</div>
     <div class="config-row">
       <div>
-        <div class="config-label">Base Price (NIFTY)</div>
+        <div class="config-label">Base Price (${SPOT_LABEL})</div>
         <input type="number" id="basePrice" value="24500" class="config-input"/>
       </div>
       <div>
@@ -4255,7 +4446,7 @@ function startSim(key) {
 function submitSim() {
   const btn = document.getElementById('startBtn');
   btn.disabled = true; btn.textContent = 'Starting...';
-  _post('/ema_rsi_st-paper/simulate/start', {
+  _post('${ROUTE}/simulate/start', {
     mode: 'scenario', scenario: selectedScenario,
     basePrice: parseFloat(document.getElementById('basePrice').value) || 24500,
     speed: parseInt(document.getElementById('speed').value) || 10,
@@ -4267,7 +4458,7 @@ function submitReplay() {
   const date = document.getElementById('replayDate').value;
   if (!date) { document.getElementById('status').textContent = 'Pick a date first'; return; }
   btn.disabled = true; btn.textContent = 'Fetching candles...';
-  _post('/ema_rsi_st-paper/simulate/start', {
+  _post('${ROUTE}/simulate/start', {
     mode: 'historical', date: date,
     speed: parseInt(document.getElementById('replaySpeed').value) || 10,
   }, btn, 'Replay Selected Date');
@@ -4275,7 +4466,7 @@ function submitReplay() {
 function _post(url, body, btn, resetLabel) {
   fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     .then(r=>r.json()).then(d=>{
-      if(d.success){ window.location.href='/ema_rsi_st-paper/status'; }
+      if(d.success){ window.location.href='${ROUTE}/status'; }
       else { document.getElementById('status').textContent='Error: '+(d.error||'Unknown'); btn.disabled=false; btn.textContent=resetLabel; }
     }).catch(e=>{ document.getElementById('status').textContent='Error: '+e.message; btn.disabled=false; btn.textContent=resetLabel; });
 }
@@ -4288,7 +4479,7 @@ router.post("/simulate/start", async (req, res) => {
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
-  const strategy = getActiveStrategy();
+  const strategy = _engine();
   if (typeof strategy.reset === "function") strategy.reset();
 
   // Common state reset
@@ -4391,11 +4582,11 @@ router.post("/simulate/start", async (req, res) => {
       const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
       // Clear cache to avoid stale partial data from a previous live session
-      clearCache("NSE:NIFTY50-INDEX", String(TRADE_RES));
+      clearCache(SPOT(), String(TRADE_RES));
 
       log(`📥 [SIM] Fetching ${TRADE_RES}-min candles from ${fromStr} to ${date}...`);
       const allCandles = await fetchCandlesCached(
-        "NSE:NIFTY50-INDEX", String(TRADE_RES), fromStr, date, fetchCandles
+        SPOT(), String(TRADE_RES), fromStr, date, fetchCandles
       );
 
       if (!allCandles || allCandles.length < 35) {
@@ -4406,9 +4597,9 @@ router.post("/simulate/start", async (req, res) => {
       // Fetch 1-min candles for high-fidelity tick replay
       let tickCandles1m = [];
       try {
-        clearCache("NSE:NIFTY50-INDEX", "1");
+        clearCache(SPOT(), "1");
         const allTick = await fetchCandlesCached(
-          "NSE:NIFTY50-INDEX", "1", date, date, fetchCandles
+          SPOT(), "1", date, date, fetchCandles
         );
         if (allTick && allTick.length > 0) {
           tickCandles1m = allTick.filter(c => {
@@ -4511,10 +4702,10 @@ function stopSession(reason = "Shutdown square-off") {
   // The square-off above is conditional on currentBar and can throw, so a
   // position may survive it. Free its capital reservation either way — a leaked
   // block would keep shrinking the broker pool for the rest of the process.
-  capitalPool.clear("ema_rsi_st");
+  capitalPool.clear(MODE);
   try { stopOptionPolling(); } catch (_) {}
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-  sharedSocketState.clear();
+  _releaseSocketSlot();
   if (!ptState._simMode && !sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
   }
@@ -4522,5 +4713,22 @@ function stopSession(reason = "Shutdown square-off") {
   try { saveSession(); } catch (_) {}
 }
 router.stopSession = stopSession;
+router.pairRuntime = rt;
+return router;
+}   // ── end create(pair) ──
 
-module.exports = router;
+// One instance per pair, built on first use — the NIFTY one at load.
+const _instances = new Map();
+function forPairInstance(p) {
+  if (!p) return null;
+  if (!_instances.has(p.id)) _instances.set(p.id, create(p));
+  return _instances.get(p.id);
+}
+/** The router of this strategy on `marketKey` ("BANKNIFTY", "SENSEX", …), or null when not offered. */
+function forMarket(marketKey) { return forPairInstance(pairs.get("emaRsiSt", marketKey)); }
+
+const nifty = forMarket("NIFTY");
+nifty.create    = create;
+nifty.forMarket = forMarket;
+nifty.forPair   = forPairInstance;
+module.exports  = nifty;
