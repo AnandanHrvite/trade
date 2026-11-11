@@ -32,13 +32,16 @@ const CACHE_FILE = path.join(CACHE_DIR, "MCX_COM.csv");
 // Units per 1 lot, in the unit the price is quoted in. The master's "lot"
 // column is 1 (MCX quotes in lots), so P&L per lot = premium move × multiplier.
 //   crude: price per barrel · gold: price per 10 g · silver: price per kg
+// `strikeStep`: the listed option strike grid, for display only — the ATM pick
+// below always uses the strikes the master actually lists. Verified against
+// MCX_COM.csv on 2026-11-11 (Nov/Dec-2026 series): crude 50, gold 500, silver 1000.
 const UNDERLYINGS = {
-  CRUDEOIL:  { label: "Crude Oil",      multiplier: 100, unit: "100 barrels" },
-  CRUDEOILM: { label: "Crude Oil Mini", multiplier: 10,  unit: "10 barrels"  },
-  GOLD:      { label: "Gold",           multiplier: 100, unit: "1 kg"        },
-  GOLDM:     { label: "Gold Mini",      multiplier: 10,  unit: "100 g"       },
-  SILVER:    { label: "Silver",         multiplier: 30,  unit: "30 kg"       },
-  SILVERM:   { label: "Silver Mini",    multiplier: 5,   unit: "5 kg"        },
+  CRUDEOIL:  { label: "Crude Oil",      multiplier: 100, unit: "100 barrels", strikeStep: 50   },
+  CRUDEOILM: { label: "Crude Oil Mini", multiplier: 10,  unit: "10 barrels",  strikeStep: 50   },
+  GOLD:      { label: "Gold",           multiplier: 100, unit: "1 kg",        strikeStep: 500  },
+  GOLDM:     { label: "Gold Mini",      multiplier: 10,  unit: "100 g",       strikeStep: 500  },
+  SILVER:    { label: "Silver",         multiplier: 30,  unit: "30 kg",       strikeStep: 1000 },
+  SILVERM:   { label: "Silver Mini",    multiplier: 5,   unit: "5 kg",        strikeStep: 1000 },
 };
 
 // Each commodity menu trades one contract size, picked in Settings.
@@ -95,6 +98,13 @@ async function _rows() {
     }
   }
 
+  const rows = _parse(text);
+  _rowsCache = { day: today, rows };
+  return rows;
+}
+
+/** The master CSV text → rows for the UNDERLYINGS we know. */
+function _parse(text) {
   const rows = [];
   for (const line of text.split("\n")) {
     const c = line.split(",");
@@ -111,7 +121,6 @@ async function _rows() {
       undScrip: c[14],                        // option → its future's scrip code
     });
   }
-  _rowsCache = { day: today, rows };
   return rows;
 }
 
@@ -126,8 +135,12 @@ async function _rows() {
  */
 async function resolveSeries(U, { rollDays = 0 } = {}) {
   if (!UNDERLYINGS[U]) throw new Error(`unknown MCX contract ${U}`);
-  const rows = (await _rows()).filter((r) => r.und === U);
-  const today = _istDateStr(Date.now());
+  return _pick(await _rows(), U, _istDateStr(Date.now()), rollDays);
+}
+
+/** resolveSeries' selection over already-loaded rows, as of IST day `today`. */
+function _pick(allRows, U, today, rollDays) {
+  const rows = allRows.filter((r) => r.und === U);
 
   const opts = rows.filter((r) => (r.type === "CE" || r.type === "PE") && _istDateStr(r.expiry * 1000) > today);
   if (!opts.length) throw new Error(`no ${U} options listed after today in the Fyers symbol master`);
@@ -150,6 +163,32 @@ async function resolveSeries(U, { rollDays = 0 } = {}) {
   };
 }
 
+/**
+ * resolveSeries() WITHOUT any I/O beyond today's already-downloaded copy of the
+ * master: the in-memory rows, else ~/trading-data/cmx/MCX_COM.csv when it was
+ * written today. Never downloads and never throws — null when nothing usable is
+ * on hand. For synchronous readers (Settings, src/config/markets.js); anything
+ * that trades awaits resolveSeries() instead.
+ *   nowMs  judge "after today" as of this instant (default: now)
+ */
+function peekSeries(U, { rollDays = 0, nowMs = Date.now() } = {}) {
+  if (!UNDERLYINGS[U]) return null;
+  const today = _istDateStr(Date.now());
+  let rows = _rowsCache && _rowsCache.day === today ? _rowsCache.rows : null;
+  if (!rows) {
+    try {
+      const st = fs.statSync(CACHE_FILE);
+      if (_istDateStr(st.mtimeMs) === today) {
+        rows = _parse(fs.readFileSync(CACHE_FILE, "utf-8"));
+        _rowsCache = { day: today, rows };
+      }
+    } catch (_) { /* no copy on disk yet */ }
+  }
+  if (!rows) return null;
+  try { return _pick(rows, U, _istDateStr(nowMs), rollDays); }
+  catch (_) { return null; }
+}
+
 /** The listed option of `side` whose strike is nearest `price` in this series. */
 function atmOption(seriesInfo, side, price) {
   const list = seriesInfo.series.filter((r) => r.type === side);
@@ -159,4 +198,4 @@ function atmOption(seriesInfo, side, price) {
   return { symbol: best.symbol, strike: best.strike, expiry: seriesInfo.optionExpiry };
 }
 
-module.exports = { COMMODITIES, UNDERLYINGS, contractFor, underlyingInfo, resolveSeries, atmOption };
+module.exports = { COMMODITIES, UNDERLYINGS, contractFor, underlyingInfo, resolveSeries, peekSeries, atmOption };

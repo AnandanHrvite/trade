@@ -61,6 +61,10 @@ function getStrikeOffsetPE(underlying) { return underlyingOf(underlying).offsetP
  *   lotEnv/lotDefault   contract size, overridable from Settings
  *   chainSymbol URL-encoded `symbol` for the option-chain REST endpoint
  *   fallbackEnv env key holding a last-resort spot level
+ *   exchange    "NSE" (default) | "BSE" — the symbol prefix markets.js builds with
+ *   expiryDow   expiry weekday, 0=Sun … 6=Sat (default 2 = Tuesday; SENSEX 4)
+ *   marketOnly  listed by src/config/markets.js but traded by no strategy yet —
+ *               excluded from listUnderlyings() / isUnderlyingEnabled()
  */
 const UNDERLYING_DEFS = {
   NIFTY: {
@@ -113,39 +117,115 @@ const UNDERLYING_DEFS = {
       marginPct:      "BANKNIFTY_FUTURES_MARGIN_PCT",
     },
   },
-  // SAIL — a STOCK, not an index (SAIL_VWAP_ST). Stock options are monthly-only
-  // (last Tuesday, like the index monthlies) and struck on a ₹2.5 grid at
-  // today's ~₹170 price, so the grid and the offsets are fractional. Verified
-  // against Fyers' symbol master (public.fyers.in/sym_details/NSE_FO.csv,
-  // 2026-10-20): SAIL26OCT167.5CE / SAIL26OCT170CE, lot 4700, expiry 27-Oct-2026.
-  // `enabledEnv`: the always-on spot recorder and the expiry health check only
-  // carry SAIL while its strategy is switched on.
-  SAIL: {
-    key:         "SAIL",
-    label:       "SAIL",
-    spot:        "NSE:SAIL-EQ",
-    optPrefix:   "SAIL",
-    futPrefix:   "SAIL",
-    chainSymbol: "NSE%3ASAIL-EQ",
-    strikeStep:  2.5,
-    lotSize:     4700,
+  // SAIL (and every other stock) is built from STOCK_DEFS below.
+};
+
+/**
+ * ── STOCKS ───────────────────────────────────────────────────────────────────
+ * NSE stock options all share one shape — monthly only (last Tuesday, like the
+ * index monthlies), `NSE:{SYM}-EQ` spot, `{KEY}_`-prefixed Settings keys — so a
+ * stock is ONE entry here and its UNDERLYING_DEFS row is built by _stockRow().
+ *
+ *   symbol      NSE trading symbol, also the option/futures stem (default: key)
+ *   strikeStep  the listed strike grid in ₹, at today's price
+ *   lotSize     shares per lot (NSE contract list / Fyers' symbol master)
+ *   marginPct   futures SPAN+exposure % (advisory; default 20)
+ *   spotDefault display-only fallback price — never fills a trade
+ *   enabledEnv  the strategy toggle that switches its spot recorder + expiry
+ *               roll on. A stock with NO strategy leaves it out and becomes
+ *               `marketOnly`: listed by src/config/markets.js, touched by
+ *               nothing that runs.
+ *
+ * SAIL (SAIL_VWAP_ST) — verified against Fyers' symbol master
+ * (public.fyers.in/sym_details/NSE_FO.csv, 2026-10-20): SAIL26OCT167.5CE /
+ * SAIL26OCT170CE, lot 4700, expiry 27-Oct-2026; re-checked 2026-11-11
+ * (SAIL26NOVFUT lot 4700, expiry 23-Nov-2026 — 24-Nov is a holiday). Struck on
+ * a ₹2.5 grid at ~₹170, so the grid and the offsets are fractional.
+ */
+const STOCK_DEFS = {
+  SAIL: { label: "SAIL", strikeStep: 2.5, lotSize: 4700, marginPct: 20, spotDefault: 170, enabledEnv: "SAIL_VWAP_ST_MODE_ENABLED" },
+};
+
+/** The full UNDERLYING_DEFS row for one STOCK_DEFS entry. */
+function _stockRow(key, s) {
+  const sym = s.symbol || key;
+  const row = {
+    key,
+    label:       s.label || sym,
+    spot:        `NSE:${sym}-EQ`,
+    optPrefix:   sym,
+    futPrefix:   sym,
+    chainSymbol: `NSE%3A${sym}-EQ`,
+    strikeStep:  s.strikeStep,
+    lotSize:     s.lotSize,
     weekly:      false,   // NSE stock options have no weekly contracts
-    marginPct:   20,
+    marginPct:   s.marginPct != null ? s.marginPct : 20,
     fractionalStrikes: true,
-    spotDefault: 170,
-    enabledEnv:  "SAIL_VWAP_ST_MODE_ENABLED",
+    spotDefault: s.spotDefault,
     env: {
-      strikeStep:     "SAIL_STRIKE_STEP",
-      lotSize:        "SAIL_LOT_SIZE",
-      weekly:         "SAIL_WEEKLY_EXPIRY_ENABLED",
-      offsetCE:       "SAIL_STRIKE_OFFSET_CE",
-      offsetPE:       "SAIL_STRIKE_OFFSET_PE",
-      offsetBoth:     "SAIL_STRIKE_OFFSET",
-      expiryOverride: "SAIL_OPTION_EXPIRY_OVERRIDE",
-      expiryType:     "SAIL_OPTION_EXPIRY_TYPE",
-      spotFallback:   "SAIL_SPOT_FALLBACK",
-      marginPct:      "SAIL_FUTURES_MARGIN_PCT",
+      strikeStep:     `${key}_STRIKE_STEP`,
+      lotSize:        `${key}_LOT_SIZE`,
+      weekly:         `${key}_WEEKLY_EXPIRY_ENABLED`,
+      offsetCE:       `${key}_STRIKE_OFFSET_CE`,
+      offsetPE:       `${key}_STRIKE_OFFSET_PE`,
+      offsetBoth:     `${key}_STRIKE_OFFSET`,
+      expiryOverride: `${key}_OPTION_EXPIRY_OVERRIDE`,
+      expiryType:     `${key}_OPTION_EXPIRY_TYPE`,
+      spotFallback:   `${key}_SPOT_FALLBACK`,
+      marginPct:      `${key}_FUTURES_MARGIN_PCT`,
     },
+  };
+  if (s.enabledEnv) row.enabledEnv = s.enabledEnv;
+  else row.marketOnly = true;
+  return row;
+}
+for (const [k, s] of Object.entries(STOCK_DEFS)) UNDERLYING_DEFS[k] = _stockRow(k, s);
+
+/**
+ * SENSEX — BSE's index. Registered for the market list (src/config/markets.js)
+ * but `marketOnly`: no strategy trades it yet, so listUnderlyings() and
+ * isUnderlyingEnabled() leave it out, and the spot recorder, the expiry health
+ * roll and the market-context snapshot never touch it. The order builders in
+ * this file (validateAndGetOptionSymbol, getSymbol) still spell `NSE:` and must
+ * not be handed SENSEX until a strategy is wired to it — markets.optionSymbol()
+ * is the exchange-aware builder.
+ *
+ * VERIFIED 2026-11-11 against Fyers' symbol master (public.fyers.in/sym_details/
+ * BSE_FO.csv and BSE_CM.csv):
+ *   spot     BSE:SENSEX-INDEX
+ *   weekly   BSE:SENSEX26N1269200CE  (Thu 12-Nov-2026 — the same YY+M+DD code as NIFTY)
+ *   monthly  BSE:SENSEX26NOV64600CE  (Thu 26-Nov-2026 — the month's LAST Thursday)
+ *   futures  BSE:SENSEX26NOVFUT
+ *   strikes  every 100 points; every listed expiry is a Thursday
+ *   lot      20 on the Nov/Dec-2026 contracts — the master already lists Jan-2027
+ *            onwards at 25 (a lot revision), so SENSEX_LOT_SIZE must be raised
+ *            to 25 once January is the traded contract.
+ */
+UNDERLYING_DEFS.SENSEX = {
+  key:         "SENSEX",
+  label:       "SENSEX",
+  exchange:    "BSE",
+  spot:        "BSE:SENSEX-INDEX",
+  optPrefix:   "SENSEX",
+  futPrefix:   "SENSEX",
+  chainSymbol: "BSE%3ASENSEX-INDEX",
+  strikeStep:  100,
+  lotSize:     20,
+  weekly:      true,
+  expiryDow:   4,       // Thursday
+  marginPct:   11,
+  marketOnly:  true,
+  env: {
+    strikeStep:     "SENSEX_STRIKE_STEP",
+    lotSize:        "SENSEX_LOT_SIZE",
+    weekly:         "SENSEX_WEEKLY_EXPIRY_ENABLED",
+    offsetCE:       "SENSEX_STRIKE_OFFSET_CE",
+    offsetPE:       "SENSEX_STRIKE_OFFSET_PE",
+    offsetBoth:     "SENSEX_STRIKE_OFFSET",
+    expiryOverride: "SENSEX_OPTION_EXPIRY_OVERRIDE",
+    expiryType:     "SENSEX_OPTION_EXPIRY_TYPE",
+    spotFallback:   "SENSEX_SPOT_FALLBACK",
+    marginPct:      "SENSEX_FUTURES_MARGIN_PCT",
   },
 };
 
@@ -180,17 +260,22 @@ function underlyingOf(u) {
   if (u && typeof u === "object" && u.key && UNDERLYING_DEFS[u.key]) {
     def = UNDERLYING_DEFS[u.key];
   } else {
-    const raw = String(u == null ? "" : u).trim().toUpperCase().replace(/[\s_-]/g, "");
+    const up  = String(u == null ? "" : u).trim().toUpperCase();
+    const raw = up.replace(/[\s_-]/g, "");
     def = (raw === "BANKNIFTY" || raw === "NIFTYBANK" || raw === "BN")
       ? UNDERLYING_DEFS.BANKNIFTY
-      : raw === "SAIL" ? UNDERLYING_DEFS.SAIL
-      : UNDERLYING_DEFS.NIFTY;
+      // Any other registered row by its own key (SAIL, SENSEX, a STOCK_DEFS
+      // stock); everything unrecognised is NIFTY, as it always was.
+      : UNDERLYING_DEFS[up] || UNDERLYING_DEFS[raw] || UNDERLYING_DEFS.NIFTY;
   }
   const E = def.env;
   return {
     __resolved:  true,
     key:         def.key,
     label:       def.label,
+    exchange:    def.exchange || "NSE",
+    expiryDow:   def.expiryDow != null ? def.expiryDow : WEEKLY_EXPIRY_DOW,
+    marketOnly:  !!def.marketOnly,
     spot:        def.spot,
     optPrefix:   def.optPrefix,
     futPrefix:   def.futPrefix,
@@ -230,6 +315,9 @@ function _offsetOf(raw, fractional) {
  */
 function isUnderlyingEnabled(u) {
   const r = underlyingOf(u);
+  // Registered for the market list only (SENSEX, a stock with no strategy) —
+  // nothing that runs may stream, roll or alert on it yet.
+  if (r.marketOnly) return false;
   if (!r.enabledEnv) return true;
   // Optional extra [key, default-when-unset] toggles that also enable it.
   for (const [k, dflt] of r.alsoEnabledEnv || []) {
@@ -238,8 +326,17 @@ function isUnderlyingEnabled(u) {
   return String(process.env[r.enabledEnv] || "false").trim().toLowerCase() === "true";
 }
 
-/** The underlyings the app knows about — used by Settings to render one block each. */
-function listUnderlyings() { return Object.keys(UNDERLYING_DEFS).map((k) => underlyingOf(k)); }
+/**
+ * The underlyings the app trades — the spot recorder and the market-context
+ * snapshot iterate this. `marketOnly` rows (SENSEX, a stock no strategy uses)
+ * are left out unless `{ includeMarketOnly: true }` asks for the full registry
+ * (src/config/markets.js does).
+ */
+function listUnderlyings({ includeMarketOnly = false } = {}) {
+  return Object.keys(UNDERLYING_DEFS)
+    .filter((k) => includeMarketOnly || !UNDERLYING_DEFS[k].marketOnly)
+    .map((k) => underlyingOf(k));
+}
 
 const LOT_SIZE_DEFAULT = 65;
 function getLotSize(underlying) {
@@ -268,9 +365,11 @@ function nowIST() {
  * The month's last weekly-expiry weekday (last Tuesday) — the scheduled MONTHLY
  * expiry date, before any holiday prepone.
  */
-function lastExpiryWeekdayOf(year, month) {
+function lastExpiryWeekdayOf(year, month, dow = WEEKLY_EXPIRY_DOW) {
+  // `dow` is the underlying's expiry weekday — Tuesday (2) for every NSE row,
+  // Thursday (4) for SENSEX. Omitted → Tuesday, exactly as before.
   const d = new Date(year, month + 1, 0);                        // day 0 of next month = last day of this one
-  d.setDate(d.getDate() - ((d.getDay() - WEEKLY_EXPIRY_DOW + 7) % 7));
+  d.setDate(d.getDate() - ((d.getDay() - dow + 7) % 7));
   return d;
 }
 
@@ -282,8 +381,10 @@ function lastExpiryWeekdayOf(year, month) {
  * Tuesday of a month is always on the 22nd or later, so that cutoff never spills
  * into the previous month and a plain day-of-month compare is safe.
  */
-function isMonthlyExpiryDate(date) {
-  const lastTue = lastExpiryWeekdayOf(date.getFullYear(), date.getMonth());
+function isMonthlyExpiryDate(date, dow = WEEKLY_EXPIRY_DOW) {
+  // Same argument for SENSEX's Thursday (dow 4): its last Thursday is also
+  // always the 22nd or later.
+  const lastTue = lastExpiryWeekdayOf(date.getFullYear(), date.getMonth(), dow);
   return date.getDate() > lastTue.getDate() - 7;
 }
 
@@ -304,8 +405,9 @@ function expiryCodeFor(date, underlying) {
   // all — every one of its expiries is the monthly code, whichever week the
   // date falls in. Emitting a weekly code for it builds a symbol that does not
   // exist, which every validation step below would then reject in turn.
-  if (!underlyingOf(underlying).weekly) return `${String(date.getFullYear()).slice(2)}${MONTHS[date.getMonth()]}`;
-  if (isMonthlyExpiryDate(date)) return `${String(date.getFullYear()).slice(2)}${MONTHS[date.getMonth()]}`;
+  const U = underlyingOf(underlying);
+  if (!U.weekly) return `${String(date.getFullYear()).slice(2)}${MONTHS[date.getMonth()]}`;
+  if (isMonthlyExpiryDate(date, U.expiryDow)) return `${String(date.getFullYear()).slice(2)}${MONTHS[date.getMonth()]}`;
   return dateToExpiryCode(date);
 }
 
@@ -337,13 +439,23 @@ function _expirySessionOver(scheduled, ist) {
  * next month's once this month's (possibly preponed) expiry session has closed.
  * Like getNearestWeeklyExpiryDate, the SCHEDULED date is returned (not preponed).
  */
-function getNearestMonthlyExpiryDate() {
-  const ist = nowIST();
-  let m = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
+function getNearestMonthlyExpiryDate(underlying) {
+  return monthlyExpiryAt(nowIST(), underlying);
+}
+
+/**
+ * getNearestMonthlyExpiryDate() evaluated at an explicit IST wall-clock `ist`
+ * instead of "now" — the pure form markets.nextExpiry() and the tests use.
+ * The underlying only picks the expiry weekday (Tuesday for every NSE row).
+ */
+function monthlyExpiryAt(ist, underlying) {
+  const dow = underlyingOf(underlying).expiryDow;
+  let m = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth(), dow);
   if (_expirySessionOver(m, ist)) {
     m = lastExpiryWeekdayOf(
       ist.getMonth() === 11 ? ist.getFullYear() + 1 : ist.getFullYear(),
-      ist.getMonth() === 11 ? 0 : ist.getMonth() + 1
+      ist.getMonth() === 11 ? 0 : ist.getMonth() + 1,
+      dow
     );
   }
   m.setHours(12, 0, 0, 0);
@@ -361,13 +473,22 @@ function getNearestMonthlyExpiryDate() {
  * fallback and the recorded market context can never disagree about it.
  */
 function getNearestWeeklyExpiryDate(underlying) {
+  return weeklyExpiryAt(nowIST(), underlying);
+}
+
+/**
+ * getNearestWeeklyExpiryDate() evaluated at an explicit IST wall-clock `ist` —
+ * the pure form. The underlying's `expiryDow` picks the weekday: Tuesday for
+ * NIFTY, Thursday for SENSEX.
+ */
+function weeklyExpiryAt(ist, underlying) {
+  const U = underlyingOf(underlying);
   // Monthly-only index: "the nearest expiry" IS this month's last Tuesday,
   // rolling to next month's once that session has ended.
-  if (!underlyingOf(underlying).weekly) return getNearestMonthlyExpiryDate();
+  if (!U.weekly) return monthlyExpiryAt(ist, U);
 
-  const ist = nowIST();
   const expiry = new Date(ist);
-  expiry.setDate(ist.getDate() + (WEEKLY_EXPIRY_DOW - ist.getDay() + 7) % 7);
+  expiry.setDate(ist.getDate() + (U.expiryDow - ist.getDay() + 7) % 7);
   expiry.setHours(12, 0, 0, 0);   // midday — immune to DST/offset arithmetic
   if (_expirySessionOver(expiry, ist)) expiry.setDate(expiry.getDate() + 7);
   return expiry;
@@ -414,12 +535,20 @@ function getNearestThursdayExpiry(underlying) {
  * 27-Oct-2026 (Tue) — every one a Tuesday, none a Thursday.
  */
 function getFuturesExpiry() {
-  const ist = nowIST();
+  return futuresContractAt(nowIST()).code; // e.g. "25JUN" for Fyers futures format
+}
 
+/**
+ * The futures contract getFuturesExpiry() picks, evaluated at an explicit IST
+ * wall-clock `ist`: `{ date, code }` — `date` is the contract's SCHEDULED
+ * expiry (last expiry weekday, not holiday-preponed), `code` its Fyers YYMMM.
+ */
+function futuresContractAt(ist, underlying) {
+  const dow   = underlyingOf(underlying).expiryDow;
   const year  = ist.getFullYear();
   const month = ist.getMonth();
 
-  let expiry = lastExpiryWeekdayOf(year, month);
+  let expiry = lastExpiryWeekdayOf(year, month, dow);
 
   // Expiry two days away or nearer → roll to next month
   const diffDays = Math.floor((expiry - ist) / (1000 * 60 * 60 * 24));
@@ -427,12 +556,12 @@ function getFuturesExpiry() {
     // Roll to next month
     const nextMonth = month === 11 ? 0 : month + 1;
     const nextYear  = month === 11 ? year + 1 : year;
-    expiry = lastExpiryWeekdayOf(nextYear, nextMonth);
+    expiry = lastExpiryWeekdayOf(nextYear, nextMonth, dow);
   }
 
   const mon = MONTHS[expiry.getMonth()];
   const yy  = String(expiry.getFullYear()).slice(2);
-  return `${yy}${mon}`; // e.g. "25JUN" for Fyers futures format
+  return { date: expiry, code: `${yy}${mon}` };
 }
 
 // ── Live spot price fetch ─────────────────────────────────────────────────────
@@ -1107,6 +1236,10 @@ module.exports = {
   getNearestWeeklyExpiryDate,  // the single definition of "which week are we trading"
   getNearestMonthlyExpiryDate, // the live monthly contract's scheduled date (rolls after its close)
   getFuturesExpiry,
+  weeklyExpiryAt,              // pure (ist, underlying) forms of the three above —
+  monthlyExpiryAt,             //   src/config/markets.js evaluates them at any date
+  futuresContractAt,
+  lastExpiryWeekdayOf,         // (year, month, dow) → the month's last expiry weekday
   getProductType,
   getMarketContext,            // async — resolve the day's immutable Market Context Snapshot
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
@@ -1115,5 +1248,6 @@ module.exports = {
   listUnderlyings,             // every index the app knows, for the Settings UI
   isUnderlyingEnabled,         // false for SAIL while SAIL_VWAP_ST is switched off
   UNDERLYING_DEFS,             // static table (env key names) — Settings reads this
+  STOCK_DEFS,                  // one line per stock — its UNDERLYING_DEFS row is built from it
 };
 
