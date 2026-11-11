@@ -859,7 +859,6 @@ const SETTINGS_SCHEMA = [
       { key: "SAIL_FUTURES_MARGIN_PCT", label: "SAIL — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, for completeness of the SAIL contract definition. SAIL_VWAP_ST trades options only, so this is advisory and never blocks a trade.", default: "20" },
 
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true", subheader: "Recording & Replay" },
-      { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Delete tick recordings older than this.", default: "30" },
       { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the option chain for replay. Uses most of the Fyers 5,000/day request limit — keep off unless you replay.", default: "false" },
       { key: "OPTION_CHAIN_RECORD_INTERVAL_SEC", label: "Option-Chain Record Interval (sec)", type: "number", min: 2, max: 60, step: 1, effect: EFFECT.INSTANT, desc: "How often to record the option chain (sec).", default: "5" },
       { key: "OPTION_CHAIN_RECORD_STRIKES", label: "Option-Chain Strikes (ATM±N)", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.INSTANT, desc: "Strikes each side of ATM to record.", default: "5" },
@@ -936,6 +935,21 @@ const SETTINGS_SCHEMA = [
       { key: "TOKEN_SYNC_ALLOW_SELF_SIGNED", label: "Token Sync: Allow Self-Signed Cert", type: "toggle",  effect: EFFECT.INSTANT, desc: "LIVE serves its own certificate, so keep this on unless a real certificate is installed there.", default: "true" },
 
       { key: "MANUAL_TRADES_AUTO_SYNC_ENABLED", label: "Manual Trades Auto-Sync (Kite + Fyers)", type: "toggle", effect: EFFECT.SESSION, desc: "Daily 15:35 IST auto-pull of today's manual Kite and Fyers fills into P&L History → Manual Trading Analytics. Neither broker has a historical-trade API, so this only ever captures today going forward — past trades still need a one-time tradebook CSV import.", default: "true", subheader: "Manual Trades" },
+    ],
+  },
+  {
+    section: "Disk & Retention",
+    icon: "💽",
+    nav: "Disk & Retention",
+    group: "System",
+    fields: [
+      { key: "DISK_AUTO_CLEANUP_ENABLED", label: "Daily Disk Clean-up", type: "toggle", effect: EFFECT.INSTANT, desc: "Once a day after 16:30 IST, delete files older than the keep-days below. It never runs between 09:00 and 15:30 IST on weekdays, never in the first 30 minutes after a restart, and never touches trade logs, paper trade books, post-exit data, backups, tokens or anything from today. See sizes and delete by hand on the Monitor page.", default: "true", subheader: "Automatic clean-up" },
+      { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings — keep (days)", type: "number", min: 7, max: 365, step: 1, effect: EFFECT.INSTANT, desc: "How many days of recorded market ticks to keep for /replay. Older days are deleted and can never be replayed again. Example: 30 on 11 Nov keeps 12 Oct onwards. Roughly 5–10 MB per day.", default: "30", subheader: "Keep-days per folder" },
+      { key: "BACKTEST_CACHE_KEEP_DAYS", label: "Backtest Cache — keep (days)", type: "number", min: 7, max: 3650, step: 1, effect: EFFECT.INSTANT, desc: "Delete downloaded backtest history not used for this many days. Safe: the next backtest that needs it downloads it again from Fyers (slower first run). Using a file resets its clock.", default: "90" },
+      { key: "CANDLE_CACHE_KEEP_DAYS", label: "Candle Cache — keep (days)", type: "number", min: 0, max: 3650, step: 1, effect: EFFECT.INSTANT, desc: "Delete cached candle files not updated for this many days (for example a symbol you no longer trade). 0 = never delete. Safe: they are re-downloaded when needed.", default: "0" },
+      { key: "REPLAY_OUTPUT_KEEP_DAYS", label: "Replay Outputs — keep (days)", type: "number", min: 0, max: 3650, step: 1, effect: EFFECT.INSTANT, desc: "Delete results of past /replay runs older than this. 0 = never delete. Safe: re-run the replay to get them back (as long as that day's ticks are still kept).", default: "0" },
+      { key: "SERVER_LOG_RETAIN_DAYS", label: "Server Logs — keep (days)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "Days of the daily server-console copy (Logs → Server Logs) to keep, counting today. Example: 7 keeps today and the six days before.", default: "7" },
+      { key: "PM2_LOG_MAX_MB", label: "PM2 Log — max size (MB)", type: "number", min: 0, max: 2000, step: 10, effect: EFFECT.INSTANT, desc: "When one of PM2's own log files (~/.pm2/logs) grows past this, the daily clean-up cuts it back to its most recent 2 MB. The same lines are also in Server Logs. 0 = no limit.", default: "0" },
     ],
   },
   {

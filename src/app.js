@@ -1027,6 +1027,7 @@ const OPEN_PATHS = [
   "/docs",                // guide viewer — file/pdf reads are covered by OPEN_PREFIXES
   "/monitor",             // EC2 health monitor — /monitor/action/* stays protected
   "/monitor/data",
+  "/monitor/disk",        // read-only folder sizes — the preview and /monitor/action/disk-delete stay protected
   "/api/session-active",  // liveness probe — dashboard auto-swaps views on it
   "/auth/socket-health",  // sidebar socket badge poll
   "/backup/status",       // sidebar backup-nag poll
@@ -4474,9 +4475,11 @@ server.listen(PORT, HOST, () => {
   // Default retention 30 days (~300 MB). Tunable via TICK_RECORDER_RETAIN_DAYS.
   try {
     const tickRecorder = require("./utils/tickRecorder");
-    const r = tickRecorder.pruneOldRecordings();
+    // Read the keep-days live so a Settings save applies without a restart.
+    const tickRetainDays = () => parseInt(process.env.TICK_RECORDER_RETAIN_DAYS || "30", 10);
+    const r = tickRecorder.pruneOldRecordings(tickRetainDays());
     if (r.deleted > 0) console.log(`   Tick recordings  : pruned ${r.deleted} day(s) older than ${r.retainDays}d (kept ${r.kept})`);
-    setInterval(() => { try { tickRecorder.pruneOldRecordings(); } catch (_) {} }, 24 * 3600_000).unref();
+    setInterval(() => { try { tickRecorder.pruneOldRecordings(tickRetainDays()); } catch (_) {} }, 24 * 3600_000).unref();
   } catch (err) {
     console.warn(`   Tick recordings  : prune skipped — ${err.message}`);
   }
@@ -4616,6 +4619,13 @@ server.listen(PORT, HOST, () => {
   // ── Daily downloadable data backup snapshot ────────────────────────────────
   try { require("./utils/backupManager").start(); }
   catch (err) { console.warn(`[backup] scheduler start failed: ${err.message}`); }
+
+  // ── Daily disk clean-up (after 16:30 IST, never in market hours or at boot) ─
+  // Applies the Settings → Disk & Retention keep-days. Gated by DISK_AUTO_CLEANUP_ENABLED.
+  try {
+    const backtestJobs = require("./utils/backtestJobManager");
+    require("./utils/diskRetention").startAutoCleanup({ isBacktestBusy: () => !backtestJobs.isIdle() });
+  } catch (err) { console.warn(`[disk] clean-up scheduler start failed: ${err.message}`); }
 
   // ── Weekly settings-advisor snapshot (Sunday 08:00 IST, offline) ───────────
   try { require("./utils/settingsAdvisor").start(); }

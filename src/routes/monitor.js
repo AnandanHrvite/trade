@@ -3,6 +3,9 @@
  * ────────────────────────────────────────────────────────────
  * GET  /monitor       → Real-time system metrics dashboard
  * GET  /monitor/data  → JSON snapshot of CPU, memory, disk, process stats
+ * GET  /monitor/disk  → per-folder disk usage + free space + retention settings (open, read-only)
+ * GET  /monitor/disk/preview?folder=&days= → dry run of "delete older than N days" (API_SECRET)
+ * POST /monitor/action/disk-delete {planId} → deletes exactly what that preview listed (API_SECRET)
  */
 
 const express = require("express");
@@ -13,6 +16,8 @@ const { resolveTheme } = require("../utils/theme");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
 const backtestCache = require("../utils/backtestCache");
 const backtestJobs  = require("../utils/backtestJobManager");
+const path          = require("path");
+const diskRetention = require("../utils/diskRetention");
 
 // ── CPU snapshot helper ─────────────────────────────────────────────────────
 let _prevCpus = os.cpus();
@@ -122,6 +127,55 @@ router.get("/data", (_req, res) => {
   });
 });
 
+// ── Disk usage by folder ────────────────────────────────────────────────────
+// The walk is async and cached ~60s inside diskRetention; a forced rescan is
+// rate-limited so a stuck refresh button cannot keep the disk busy.
+let _lastForcedScan = 0;
+router.get("/disk", async (req, res) => {
+  try {
+    let force = req.query.force === "1";
+    if (force && Date.now() - _lastForcedScan < 10_000) force = false;
+    if (force) _lastForcedScan = Date.now();
+    const report = await diskRetention.getDiskReport({ force });
+    res.json({
+      ok: true,
+      free: diskUsage(),
+      report,
+      auto: diskRetention.autoStatus(),
+      blocked: diskRetention.isMarketHoursBlocked(Date.now()),
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+function _relName(def, p) {
+  const base = def.bases.find(b => p.startsWith(b + path.sep)) || def.bases[0];
+  return path.relative(path.dirname(base), p);
+}
+
+// Dry run. Not in OPEN_PATHS — it lists file names and is step one of a delete.
+router.get("/disk/preview", async (req, res) => {
+  try {
+    const key  = String(req.query.folder || "");
+    const days = parseInt(req.query.days, 10);
+    const plan = await diskRetention.planCleanup(key, days);
+    const def  = diskRetention.folderByKey(key);
+    const planId = plan.items.length ? diskRetention.storePlan(plan) : null;
+    res.json({
+      ok: true, planId,
+      key: plan.key, label: plan.label, keepDays: plan.keepDays,
+      cutoffDate: plan.cutoffDate, today: plan.today,
+      items: plan.items.length, files: plan.files, bytes: plan.bytes, truncated: plan.truncated,
+      sample: plan.items.slice(0, 15).map(it => ({ name: _relName(def, it.path), date: it.date, bytes: it.bytes, files: it.files, action: it.action })),
+      blocked: diskRetention.isMarketHoursBlocked(Date.now()),
+      backtestBusy: !!def.busyOnBacktest && !backtestJobs.isIdle(),
+    });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
 // ── Main UI page ────────────────────────────────────────────────────────────
 router.get("/", (_req, res) => {
   res.send(`<!DOCTYPE html><html lang="en"><head>
@@ -220,6 +274,35 @@ canvas { width:100%!important; height:220px!important; }
 :root[data-theme="light"] .proc-title { color:#4b5769; }
 :root[data-theme="light"] .proc-item .pi-label { color:#4b5769; }
 :root[data-theme="light"] .proc-item .pi-val { color:#1e293b; }
+
+/* ── disk usage by folder ── */
+.disk-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:14px 18px; margin-bottom:22px; }
+.disk-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+.disk-head .action-title { margin-bottom:0; }
+.disk-free { font-size:0.82rem; font-weight:600; color:#c0d8b0; font-family:'IBM Plex Mono',monospace; margin-bottom:4px; overflow-wrap:anywhere; }
+.disk-auto { font-size:0.68rem; color:#7f9b5c; margin-bottom:12px; line-height:1.5; }
+.disk-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr)); gap:10px; }
+.disk-row { border:0.5px solid #162416; border-radius:8px; padding:12px 14px; min-width:0; }
+.dr-top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.dr-name { font-size:0.8rem; font-weight:700; color:#e0eaf8; }
+.dr-size { font-size:0.9rem; font-weight:700; color:#c0d8b0; font-family:'IBM Plex Mono',monospace; white-space:nowrap; }
+.dr-meta { font-size:0.66rem; color:#7f9b5c; font-family:'IBM Plex Mono',monospace; margin-top:3px; overflow-wrap:anywhere; }
+.dr-note { font-size:0.66rem; color:#6d85a8; margin-top:4px; line-height:1.45; }
+.dr-keep { font-size:0.66rem; color:#a3b8d0; margin-top:4px; }
+.dr-keep.prot { color:#34d399; }
+.dr-act { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+.dr-act label { font-size:0.72rem; color:#a3b8d0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.dr-act input { width:76px; min-height:44px; font-size:16px; padding:6px 8px; border-radius:6px; border:0.5px solid #24402a; background:#0a120a; color:#e0eaf8; font-family:'IBM Plex Mono',monospace; }
+.dr-act .act-btn, .disk-head .act-btn { min-height:44px; }
+.modal-msg { overflow-wrap:anywhere; max-height:55vh; overflow-y:auto; }
+@media(max-width:768px){ .act-btn { min-height:44px; } }
+:root[data-theme="light"] .disk-card { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+:root[data-theme="light"] .disk-row { border-color:#e0e4ea; }
+:root[data-theme="light"] .disk-free, :root[data-theme="light"] .dr-size, :root[data-theme="light"] .dr-name { color:#1e293b; }
+:root[data-theme="light"] .disk-auto, :root[data-theme="light"] .dr-meta, :root[data-theme="light"] .dr-note { color:#5c6b7f; }
+:root[data-theme="light"] .dr-keep, :root[data-theme="light"] .dr-act label { color:#334155; }
+:root[data-theme="light"] .dr-keep.prot { color:#047857; }
+:root[data-theme="light"] .dr-act input { background:#f8fafc; border-color:#cbd5e1; color:#1e293b; }
 </style>
 </head><body>
 <div class="app-shell">
@@ -247,6 +330,17 @@ ${buildSidebar("monitor", false)}
     <button class="act-btn act-red"    onclick="doAction('restart','Restart Node','Restart the Node.js process? Any running backtest will be killed.',true)" title="Restart the bot via PM2 — blocked when LIVE mode is active">⟳ Restart Node</button>
   </div>
   <div class="action-note">Tip: most memory growth comes from backtest trade arrays. Force GC + Clear Finished Jobs is the safest combo.</div>
+</div>
+
+<!-- ── Disk usage by folder ── -->
+<div class="disk-card" id="diskCard">
+  <div class="disk-head">
+    <div class="action-title">Disk Usage by Folder</div>
+    <button class="act-btn act-blue" onclick="loadDisk(true)" title="Re-measure every folder now">↻ Re-scan</button>
+  </div>
+  <div class="disk-free" id="diskFree">Measuring folders…</div>
+  <div class="disk-auto" id="diskAuto"></div>
+  <div class="disk-list" id="diskList"></div>
 </div>
 
 <!-- ── Top stat cards ── -->
@@ -467,6 +561,117 @@ async function poll() {
   } catch(e) { console.warn('Monitor poll error:', e); }
 }
 
+/* ── Disk usage by folder ── */
+function escH(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; });
+}
+function fmtBytes(b) {
+  b = Number(b) || 0;
+  if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+  return b + ' B';
+}
+function diskToast(msg, ok) {
+  if (typeof window.showToast === 'function') window.showToast(msg, ok ? '#10b981' : '#ef4444');
+  else alert(msg);
+}
+var _diskFolders = {};
+
+async function loadDisk(force) {
+  try {
+    var r = await fetch('/monitor/disk' + (force ? '?force=1' : ''));
+    var d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'scan failed');
+    var f = d.free || {};
+    var total = d.report.folders.reduce(function(s, x){ return s + x.bytes; }, 0);
+    document.getElementById('diskFree').textContent =
+      'Free: ' + (f.availGB != null ? f.availGB : '–') + ' GB of ' + (f.totalGB != null ? f.totalGB : '–') + ' GB (' + (f.pct != null ? f.pct : '–') + '% used) · these folders: ' + fmtBytes(total);
+    var a = d.auto || {};
+    var last = a.last ? (a.last.error ? 'last run failed: ' + a.last.error
+      : 'last run ' + new Date(a.last.at).toLocaleString('en-IN') + ', freed ' + fmtBytes(a.last.results.reduce(function(s, x){ return s + (x.bytesFreed || 0); }, 0)))
+      : 'not run yet since the server started';
+    document.getElementById('diskAuto').textContent =
+      'Daily auto-clean-up: ' + (a.enabled ? 'ON, runs once a day after ' + a.runsAfterIst + ' IST (' + last + ')' : 'OFF (Settings → Disk & Retention)')
+      + '. Deleting is never allowed 09:00–15:30 IST on weekdays' + (d.blocked ? ' — blocked right now.' : '.')
+      + ' Measured ' + new Date(d.report.at).toLocaleTimeString('en-IN') + '.';
+    var html = '';
+    _diskFolders = {};
+    d.report.folders.forEach(function(x) {
+      _diskFolders[x.key] = x;
+      var range = x.oldest ? (x.oldest === x.newest ? x.oldest : x.oldest + ' → ' + x.newest) : 'no files';
+      var keep;
+      if (x.protected) keep = '<div class="dr-keep prot">🔒 Protected — never deleted automatically or from here.</div>';
+      else if (x.key === 'pm2_logs') keep = '<div class="dr-keep">Auto: ' + (x.maxMB > 0 ? 'a log over ' + x.maxMB + ' MB is cut back to its last 2 MB' : 'off (no size limit set)') + '</div>';
+      else keep = '<div class="dr-keep">Auto: ' + (x.keepDays > 0 ? 'keeps the last ' + x.keepDays + ' days' : 'off — nothing deleted automatically') + '</div>';
+      var act = '';
+      if (!x.protected) {
+        var def = x.keepDays > 0 ? x.keepDays : Math.max(x.minKeep, 30);
+        act = '<div class="dr-act"><label for="keep_' + x.key + '">Delete older than'
+          + ' <input type="number" inputmode="numeric" id="keep_' + x.key + '" min="' + x.minKeep + '" max="3650" step="1" value="' + def + '"> days</label>'
+          + '<button class="act-btn act-red" onclick="diskDelete(\\'' + x.key + '\\')">🗑 Delete…</button></div>';
+      }
+      html += '<div class="disk-row">'
+        + '<div class="dr-top"><span class="dr-name">' + escH(x.label) + '</span><span class="dr-size">' + (x.exists ? fmtBytes(x.bytes) : '—') + '</span></div>'
+        + '<div class="dr-meta">' + (x.exists ? x.files.toLocaleString('en-IN') + ' files · ' + escH(range) + (x.truncated ? ' · (partial count)' : '') : 'folder not created yet') + '</div>'
+        + '<div class="dr-note">' + escH(x.note) + '</div>' + keep + act + '</div>';
+    });
+    document.getElementById('diskList').innerHTML = html;
+  } catch (e) {
+    document.getElementById('diskFree').textContent = 'Could not measure folders: ' + e.message;
+  }
+}
+
+async function diskDelete(key) {
+  var x = _diskFolders[key];
+  if (!x) return;
+  var days = parseInt(document.getElementById('keep_' + key).value, 10);
+  if (!Number.isInteger(days) || days < x.minKeep || days > 3650) {
+    await showAlert({ icon: '⚠️', title: 'Check the number of days', message: escH(x.label) + ': enter a whole number of days from ' + x.minKeep + ' to 3650.' });
+    return;
+  }
+  var r = await secretFetch('/monitor/disk/preview?folder=' + encodeURIComponent(key) + '&days=' + days, { timeoutMs: 60000 });
+  if (!r) return;
+  var p = await r.json();
+  if (!p.ok) { await showAlert({ icon: '⚠️', title: 'Cannot preview', message: escH(p.error || 'Preview failed') }); return; }
+  if (!p.items) {
+    await showAlert({ icon: '✅', title: 'Nothing to delete', message: escH(p.label) + ' has nothing dated before ' + p.cutoffDate + ' (older than ' + days + ' days).' });
+    return;
+  }
+  var lines = p.sample.map(function(s){
+    return s.date + '  ' + s.name + (s.files > 1 ? ' (' + s.files + ' files)' : '') + '  ' + fmtBytes(s.bytes) + (s.action === 'empty' ? '  [emptied, not removed]' : '');
+  });
+  if (p.items > p.sample.length) lines.push('…and ' + (p.items - p.sample.length) + ' more');
+  var summary = p.files.toLocaleString('en-IN') + ' file(s), ' + fmtBytes(p.bytes);
+  if (p.blocked) {
+    await showAlert({ icon: '⏰', title: 'Blocked during market hours', message: 'This would delete ' + summary + ' from ' + escH(p.label) + ', but deleting is not allowed 09:00–15:30 IST on weekdays. Try again after 15:30.' });
+    return;
+  }
+  if (p.backtestBusy) {
+    await showAlert({ icon: '⏳', title: 'Backtest running', message: 'A backtest is reading ' + escH(p.label) + ' right now. Try again when it finishes.' });
+    return;
+  }
+  var ok = await showDoubleConfirm({
+    icon: '🗑', title: 'Delete from ' + escH(p.label) + '?',
+    message: 'This will delete ' + summary + ' dated before ' + p.cutoffDate + '. Today and the last ' + days + ' days are kept.\\n\\n' + escH(lines.join('\\n')),
+    confirmText: 'Delete ' + fmtBytes(p.bytes), confirmClass: 'modal-btn-danger',
+    subject: escH(p.label) + ' · ' + summary, secondConfirmText: 'Yes, delete'
+  });
+  if (!ok) return;
+  var r2 = await secretFetch('/monitor/action/disk-delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planId: p.planId }), timeoutMs: 120000
+  });
+  if (!r2) return;
+  var d2 = await r2.json();
+  diskToast(d2.ok ? d2.message : (d2.error || 'Delete failed'), !!d2.ok);
+  loadDisk(true);
+  setTimeout(poll, 300);
+}
+
+loadDisk(false);
+setInterval(function(){ if (!document.hidden) loadDisk(false); }, 60000);
+
 poll();
 // Background tabs skip the fetch; one catch-up refresh when the tab is shown again.
 setInterval(function(){ if (!document.hidden) poll(); }, 5000);
@@ -548,6 +753,31 @@ router.post("/action/restart", (_req, res) => {
       if (err) console.error(`[MONITOR] pm2 restart failed: ${err.message}. Not exiting — restart manually via SSH.`);
     });
   }, 300);
+});
+
+// Deletes exactly the files of an earlier preview (each re-checked first), so the
+// confirm dialog's count and size are what actually goes. Protected by API_SECRET
+// like every /monitor/action/* route.
+router.post("/action/disk-delete", async (req, res) => {
+  try {
+    const plan = diskRetention.takePlan(req.body && req.body.planId);
+    if (!plan) return res.status(410).json({ ok: false, error: "That preview has expired. Press the delete button again to see a fresh list." });
+    const def = diskRetention.folderByKey(plan.key);
+    if (def && def.busyOnBacktest && !backtestJobs.isIdle()) {
+      return res.status(409).json({ ok: false, error: "A backtest is running and reads this cache. Try again when it finishes." });
+    }
+    const r = await diskRetention.applyPlan(plan);
+    if (!r.ok) return res.status(r.blocked ? 423 : 400).json({ ok: false, error: r.error });
+    const mb = (r.bytesFreed / 1048576).toFixed(1);
+    console.log(`[disk] ${plan.label}: deleted ${r.deleted.length} item(s) older than ${plan.keepDays}d (before ${plan.cutoffDate}), freed ${mb} MB${r.skipped.length ? `, skipped ${r.skipped.length}` : ""}`);
+    res.json({
+      ok: true,
+      message: `${plan.label}: deleted ${r.deleted.length} item(s), freed ${mb} MB` + (r.skipped.length ? ` (${r.skipped.length} skipped, changed since the preview)` : ""),
+      deleted: r.deleted.length, skipped: r.skipped.length, bytesFreed: r.bytesFreed,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 module.exports = router;

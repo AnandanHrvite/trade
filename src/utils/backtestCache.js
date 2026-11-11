@@ -19,7 +19,13 @@ const path = require("path");
 const os   = require("os");
 
 const CACHE_DIR = path.join(os.homedir(), "trading-data", "backtest_cache");
-const MAX_AGE_DAYS = 90; // auto-prune cache files not used for this long
+// Auto-prune cache files not used for this long. Read live so the Settings
+// "Backtest cache keep-days" value (also applied by the /monitor daily clean-up)
+// governs this built-in prune too.
+function maxAgeDays() {
+  const n = parseInt(process.env.BACKTEST_CACHE_KEEP_DAYS || "90", 10);
+  return Number.isFinite(n) && n >= 1 ? n : 90;
+}
 const MAX_TOTAL_BYTES = 500 * 1024 * 1024; // evict oldest-mtime first above this
 
 function ensureDir() {
@@ -111,12 +117,12 @@ async function fetchCandlesWithCache(symbol, resolution, from, to, rawFetcher, s
 }
 
 /**
- * Pick the files to delete: anything unused for MAX_AGE_DAYS, then the
+ * Pick the files to delete: anything unused for maxAgeDays(), then the
  * least-recently-used of the rest until the total fits under MAX_TOTAL_BYTES.
  * entries: [{ fp, size, mtimeMs }]
  */
 function _selectEvictions(entries, now = Date.now()) {
-  const cutoff = now - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const cutoff = now - maxAgeDays() * 24 * 60 * 60 * 1000;
   const evict = [];
   const keep = [];
   for (const e of entries) (e.mtimeMs < cutoff ? evict : keep).push(e);
@@ -133,7 +139,7 @@ function _selectEvictions(entries, now = Date.now()) {
 }
 
 function _logPruned(n) {
-  if (n > 0) console.log(`[backtestCache] 🧹 Pruned ${n} cache files (age > ${MAX_AGE_DAYS}d or over ${MAX_TOTAL_BYTES / (1024 * 1024)} MB cap)`);
+  if (n > 0) console.log(`[backtestCache] 🧹 Pruned ${n} cache files (age > ${maxAgeDays()}d or over ${MAX_TOTAL_BYTES / (1024 * 1024)} MB cap)`);
 }
 
 /**
