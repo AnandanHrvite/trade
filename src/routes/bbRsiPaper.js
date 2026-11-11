@@ -48,6 +48,7 @@ const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const pairs         = require("../config/pairs");
 const pairRuntime   = require("../utils/pairRuntime");
+const tradeJournal  = require("../utils/tradeJournal");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUILDER — one paper engine per (strategy, market) pair.
@@ -544,6 +545,26 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, entryMeta = 
       }
     }
   }
+  _journalStopLvl = null;
+  tradeJournal.onEntry(state.position, {
+    reason, signal: side === "CE" ? "BUY_CE" : "BUY_PE",
+    indicators: {
+      rsi: entryMeta.rsiAtEntry, bbUpper: entryMeta.bbUpperAtEntry, bbMiddle: entryMeta.bbMiddleAtEntry,
+      bbLower: entryMeta.bbLowerAtEntry, adx: entryMeta.adxAtEntry, bandWidth: entryMeta.bandWidthAtEntry,
+      rsiRange: entryMeta.rsiRangeAtEntry, ptsFromBB: entryMeta.ptsFromBB, divergence: entryMeta.divergenceAtEntry,
+      strength: _signalStrength,
+    },
+    spot: price, optionLtp: state.position.optionEntryLtp,
+    bid: entryMeta.entryQuote ? entryMeta.entryQuote.bid : null,
+    ask: entryMeta.entryQuote ? entryMeta.entryQuote.ask : null,
+    vix: _vixAtEntry, expiry: optDetails ? optDetails.expiry : null,
+    market: rt.marketKey, strategy: rt.strategy.key,
+    isFutures: rt.isFutures, qty, sl: null,
+    // The price the signal wanted, in the fill's own units: the quote's LTP for an
+    // ask fill, else the spot level (the premium is not known until the first poll).
+    expectedPrice: _askFill ? entryMeta.entryQuote.ltp : (state.position.optionEntryLtp ? null : price),
+    candles: state.candles, nowMs: simNow(),
+  });
 
   state.optionSymbol = symbol;
   capitalPool.block(MODE, _estCost, { side, symbol, qty, premium: null }, { sim: (state._simMode || state._simSession) });
@@ -566,6 +587,38 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, entryMeta = 
     stopLoss: null, qty, reason,
     ...(rt.home ? {} : { isFutures: rt.isFutures, instrument: rt.instrumentName() }),
   });
+}
+
+// ── Trade journal: the effective exit level (observer only) ─────────────────
+// BB_RSI keeps no stop field: its exits are the global profit lock / premium stop
+// (options) and the futures stop (index level), recomputed per tick. The journal
+// gets that level whenever it moves; nothing reads it back into a decision.
+let _journalStopLvl = null;
+function _journalStop(pos, spot, isFut) {
+  try {
+    let lvl = null, kind, why;
+    if (isFut) {
+      lvl = tradeGuards.futuresStopLevel(pos.side, pos.entryPrice, pos.mfeSpotPts);
+      kind = _journalStopLvl == null ? "initial" : "trail";
+      why = "futures stop (premium stop in index points)";
+    } else if (pos.optionEntryLtp) {
+      lvl = tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.bestOptionLtp);
+      kind = "lock";
+      why = "profit lock / premium stop level";
+    }
+    if (lvl == null || lvl === _journalStopLvl) return;
+    const from = _journalStopLvl;
+    _journalStopLvl = lvl;
+    tradeJournal.onStopChange(pos, { from, to: lvl, kind, reason: why, spot, ltp: state.optionLtp, nowMs: simNow() });
+  } catch (_) {}
+}
+// The journal's exit kind for a BB_RSI exit reason.
+function _journalExitKind(reason) {
+  const r = String(reason || "");
+  if (/^Manual/i.test(r)) return "manual";
+  if (/Profit lock/i.test(r)) return "trail";
+  if (/Stop-loss|futures .* hit the stop/i.test(r)) return "sl";
+  return "eod";   // session stop / auto-stop / simulation end
 }
 
 function simulateSell(exitPrice, reason, spotAtExit) {
@@ -622,6 +675,28 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // full indicator picture at exit, not just at entry.
   let _exitInd = {};
   try { _exitInd = bbRsiStrategy.getSignal(state.candles, ENG({ silent: true, skipTimeCheck: true })) || {}; } catch (_) {}
+
+  {
+    const _p = state.position;
+    const _xq = _exitFill === "bid" && state.optionQuote ? state.optionQuote : null;
+    let _aim = null;
+    try {
+      _aim = isFutures ? tradeGuards.futuresStopLevel(side, entryPrice, _p.mfeSpotPts)
+        : (optionEntryLtp ? tradeGuards.exitLevelLtp(optionEntryLtp, _p.bestOptionLtp) : null);
+    } catch (_) {}
+    const _kind = _journalExitKind(reason);
+    tradeJournal.onExit(_p, {
+      reason, kind: _kind,
+      indicators: { rsi: _exitInd.rsi, bbUpper: _exitInd.bbUpper, bbMiddle: _exitInd.bbMiddle, bbLower: _exitInd.bbLower, adx: _exitInd.adx, bandWidth: _exitInd.bbWidth },
+      spot: spotAtExit || exitPrice, optionLtp: isFutures ? null : (exitOptionLtp || null),
+      bid: _xq ? _xq.bid : null, ask: _xq ? _xq.ask : null,
+      // The level the exit aimed at (a stop / lock exit); a manual or session exit takes what it gets.
+      expectedPrice: (_kind === "sl" || _kind === "trail") ? _aim : null,
+      fillPrice: isFutures ? exitPrice : (exitOptionLtp || null),
+      favPts: _pnlPointsBbRsi, pnlRs: netPnl, candlesHeld: _p.candlesHeld || 0,
+      nowMs: simNow(),
+    });
+  }
 
   const trade = {
     side, symbol, qty, entryPrice, exitPrice,
@@ -696,6 +771,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       exitQuote:       (_exitFill === "bid" && state.optionQuote) ? { bid: state.optionQuote.bid, ask: state.optionQuote.ask, ltp: state.optionQuote.ltp } : null,
     });
   }
+  // Trade journal (observer — the golden harness ignores this one key).
+  try { Object.assign(trade, tradeJournal.fields(state.position)); } catch (_) {}
   state.sessionTrades.push(trade);
   if (!state._simMode && !state._simSession) {
     tradeLogger.appendTradeLog(MODE, trade); // crash-safe per-trade JSONL
@@ -839,6 +916,9 @@ function onTick(tick) {
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
+    // Trade journal (observer): same favPts as the MFE/MAE above, then the exit level.
+    tradeJournal.onTick(pos, { favPts: _favPts, pnlRs: curPnl, spot: price, ltp: state.optionLtp, nowMs: simNow() });
+    _journalStop(pos, price, isFut);
 
     // GLOBAL PROFIT LOCK (shared across every strategy — see tradeGuards) — the
     // ONLY automatic exit. Manual exit, /stop and the session auto-stop close the rest.
