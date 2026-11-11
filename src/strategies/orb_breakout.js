@@ -194,14 +194,21 @@ const TARGET_OR_MULT  = 1.5;   // informational target only — there is no targ
 // — "BN_ORB", "SENSEX_ORB", "FUT_ORB" …); omitted or "ORB" reads the ORB_* key
 // exactly as before. A pair reads its own key when set, else NIFTY's ORB_* value
 // (pairs.envGet), so an unset BN_ORB_ENTRY_END means ORB_ENTRY_END. Every read
-// below is `_raw(k, prefix) || default`: with no prefix that is the
-// process.env read it always was.
+// below is `pairValue || <the ORB_* env read> || default`: with no prefix the pair
+// value is undefined, so the read is exactly the process.env one it always was
+// (and docs/ENV.md still sees every ORB_* read and its default).
 const DEFAULT_PREFIX = "ORB";
 let _pairsMod = null;
-function _raw(key, prefix) {
-  if (!prefix || prefix === DEFAULT_PREFIX) return process.env[key];
+/** A pair's own (else NIFTY's) value of ORB_<rest>; undefined with no / the home prefix. */
+function _pv(prefix, rest) {
+  if (!prefix || prefix === DEFAULT_PREFIX) return undefined;
   if (!_pairsMod) _pairsMod = require("../config/pairs");
-  return _pairsMod.envGet(prefix + key.slice(DEFAULT_PREFIX.length));
+  return _pairsMod.envGet(`${prefix}_${rest}`);
+}
+// _parseMins' dynamic read: the pair's value, else process.env[key] as before.
+function _raw(key, prefix) {
+  const v = _pv(prefix, key.slice(DEFAULT_PREFIX.length + 1));
+  return v !== undefined ? v : process.env[key];
 }
 
 // ── Time / date helpers (IST, fixed +05:30 — NSE never observes DST) ────────
@@ -418,7 +425,7 @@ function _vwapSideOk(c, side, vwap, on) {
   return side === "CE" ? c.close > vwap : c.close < vwap;
 }
 function _vwapFilterOn(prefix) {
-  return (_raw("ORB_VWAP_FILTER_ENABLED", prefix) || "false").toLowerCase() === "true";
+  return (_pv(prefix, "VWAP_FILTER_ENABLED") || process.env.ORB_VWAP_FILTER_ENABLED || "false").toLowerCase() === "true";
 }
 
 // Does `c` extend the breakout beyond the edge? (higher-high AND higher-close)
@@ -525,7 +532,7 @@ function _tracer(candle, ctx, silent, prefix) {
     info(gate, detail) { rows.push({ gate, status: "INFO", detail: detail || "" }); },
     emit(decision) {
       if (silent) return;
-      if ((_raw("ORB_DEBUG_TRACE", prefix) || "false").toLowerCase() !== "true") return;
+      if ((_pv(prefix, "DEBUG_TRACE") || process.env.ORB_DEBUG_TRACE || "false").toLowerCase() !== "true") return;
       const t = candle ? new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }) : "--:--:--";
       const head = [
         `close=${candle ? candle.close : "n/a"}`,
@@ -584,7 +591,7 @@ function _blank() {
 function getSignal(candles, opts) {
   const silent = !!(opts && opts.silent);
   const prefix = (opts && opts.prefix) || null;
-  const E = (k) => _raw(k, prefix);
+  const P = (k) => _pv(prefix, k);
   const sig = _blank();
 
   // The tracer is created BEFORE the warm-up guard so that `sig.gates` is present
@@ -605,24 +612,24 @@ function getSignal(candles, opts) {
     orEnd:        _parseMins("ORB_RANGE_END", "09:30", prefix),
     // The mirror of ORB_ENTRY_END: no breakout candle is even LOOKED AT before this.
     // Defaults to the OR freeze, so out of the box the window is unchanged.
-    entryStart:   _parseMins("ORB_ENTRY_START", E("ORB_RANGE_END") || "09:30", prefix),
-    orAtrMax:     parseFloat(E("ORB_OR_ATR_MAX")      || "0"),
-    gapOrMult:    parseFloat(E("ORB_GAP_OR_MULT")     || "0"),
-    bodyAtrMult:  parseFloat(E("ORB_BODY_ATR_MULT")   || "0"),
-    bodyOrCap:    parseFloat(E("ORB_BODY_OR_CAP")     || "0"),
-    bufferOrMult: parseFloat(E("ORB_BUFFER_OR_MULT")  || String(BUFFER_OR_DFLT)),
-    bufferAtrMult:parseFloat(E("ORB_BUFFER_ATR_MULT") || String(BUFFER_ATR_DFLT)),
-    bufferMinPts: parseFloat(E("ORB_BUFFER_MIN_PTS")  || "0"),
-    confirmMode:  (E("ORB_CONFIRM_MODE") || "close").toLowerCase(),
+    entryStart:   _parseMins("ORB_ENTRY_START", P("RANGE_END") || process.env.ORB_RANGE_END || "09:30", prefix),
+    orAtrMax:     parseFloat(P("OR_ATR_MAX") || process.env.ORB_OR_ATR_MAX      || "0"),
+    gapOrMult:    parseFloat(P("GAP_OR_MULT") || process.env.ORB_GAP_OR_MULT     || "0"),
+    bodyAtrMult:  parseFloat(P("BODY_ATR_MULT") || process.env.ORB_BODY_ATR_MULT   || "0"),
+    bodyOrCap:    parseFloat(P("BODY_OR_CAP") || process.env.ORB_BODY_OR_CAP     || "0"),
+    bufferOrMult: parseFloat(P("BUFFER_OR_MULT") || process.env.ORB_BUFFER_OR_MULT  || String(BUFFER_OR_DFLT)),
+    bufferAtrMult:parseFloat(P("BUFFER_ATR_MULT") || process.env.ORB_BUFFER_ATR_MULT || String(BUFFER_ATR_DFLT)),
+    bufferMinPts: parseFloat(P("BUFFER_MIN_PTS") || process.env.ORB_BUFFER_MIN_PTS  || "0"),
+    confirmMode:  (P("CONFIRM_MODE") || process.env.ORB_CONFIRM_MODE || "close").toLowerCase(),
     vwapOn:       _vwapFilterOn(prefix),
-    rsiOn:        (E("ORB_RSI_ENABLED") || "true").toLowerCase() === "true",
-    rsiPeriod:    Math.max(2, parseInt(E("ORB_RSI_PERIOD") || "14", 10)),
-    rsiCeMin:     parseFloat(E("ORB_RSI_CE_MIN") || "51"),
-    rsiPeMax:     parseFloat(E("ORB_RSI_PE_MAX") || "49"),
-    stOn:         (E("ORB_ST_ENABLED") || "true").toLowerCase() === "true",
-    stPeriod:     Math.max(2, parseInt(E("ORB_ST_PERIOD") || "10", 10)),
-    stMult:       parseFloat(E("ORB_ST_MULT") || "3"),
-    retestWindow: parseInt  (E("ORB_RETEST_MAX_WAIT") || "6", 10),
+    rsiOn:        (P("RSI_ENABLED") || process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
+    rsiPeriod:    Math.max(2, parseInt(P("RSI_PERIOD") || process.env.ORB_RSI_PERIOD || "14", 10)),
+    rsiCeMin:     parseFloat(P("RSI_CE_MIN") || process.env.ORB_RSI_CE_MIN || "51"),
+    rsiPeMax:     parseFloat(P("RSI_PE_MAX") || process.env.ORB_RSI_PE_MAX || "49"),
+    stOn:         (P("ST_ENABLED") || process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
+    stPeriod:     Math.max(2, parseInt(P("ST_PERIOD") || process.env.ORB_ST_PERIOD || "10", 10)),
+    stMult:       parseFloat(P("ST_MULT") || process.env.ORB_ST_MULT || "3"),
+    retestWindow: parseInt  (P("RETEST_MAX_WAIT") || process.env.ORB_RETEST_MAX_WAIT || "6", 10),
     prefix,
   };
 
@@ -639,18 +646,18 @@ function getSignal(candles, opts) {
   const day     = _istDay(last.time);
 
   const _startLabel = cfg.entryStart === cfg.orEnd
-    ? (E("ORB_RANGE_END") || "09:30")
-    : (E("ORB_ENTRY_START") || "");
+    ? (P("RANGE_END") || process.env.ORB_RANGE_END || "09:30")
+    : (P("ENTRY_START") || process.env.ORB_ENTRY_START || "");
 
   // ── 1. Session window ─────────────────────────────────────────────────────
   if (!tr.check("time window", lastIst >= cfg.entryStart && lastIst < cfg.entryEnd,
-                `${_startLabel}–${E("ORB_ENTRY_END") || "10:15"} IST`)) {
+                `${_startLabel}–${P("ENTRY_END") || process.env.ORB_ENTRY_END || "10:15"} IST`)) {
     return done(Object.assign(sig, {
       reason: lastIst < cfg.entryStart
         ? (lastIst < cfg.orEnd
-            ? `Building opening range (waiting for ${E("ORB_RANGE_END") || "09:30"} IST)`
+            ? `Building opening range (waiting for ${P("RANGE_END") || process.env.ORB_RANGE_END || "09:30"} IST)`
             : `Before ${_startLabel} IST — ORB is not hunting breakouts yet`)
-        : `Past ${E("ORB_ENTRY_END") || "10:15"} IST — no new ORB entries (breakout is stale)`,
+        : `Past ${P("ENTRY_END") || process.env.ORB_ENTRY_END || "10:15"} IST — no new ORB entries (breakout is stale)`,
     }));
   }
 
@@ -710,7 +717,7 @@ function getSignal(candles, opts) {
   //       0.35. Two years agreeing and the third reversing is what a fitted rule
   //       looks like, not an edge. The key stays only so the next person can
   //       re-measure it with scripts/orbSweep.js instead of re-deriving it.
-  const orMaxPts = parseFloat(E("ORB_OR_MAX_PTS") || "0");
+  const orMaxPts = parseFloat(P("OR_MAX_PTS") || process.env.ORB_OR_MAX_PTS || "0");
   if (orMaxPts > 0) {
     if (!tr.check("OR max pts", rangePts <= orMaxPts, `${rangePts}pt, max ${orMaxPts}pt`)) {
       return done(Object.assign(sig, { reason: `OR ${rangePts}pt > ${orMaxPts}pt cap — too wide to trade, skip day` }));
@@ -764,7 +771,7 @@ function getSignal(candles, opts) {
   // Selection stays deterministic and repaint-free: every candidate is judged on
   // data available at its own close (frozen ATR5, VWAP up to that bar).
   // ORB_BREAKOUT_RESCAN=false restores the old first-close-is-final behaviour.
-  const rescan = (E("ORB_BREAKOUT_RESCAN") || "true").toLowerCase() === "true";
+  const rescan = (P("BREAKOUT_RESCAN") || process.env.ORB_BREAKOUT_RESCAN || "true").toLowerCase() === "true";
 
   // 2026-11-08: a breakout whose confirmation candle DID extend the move but was
   // refused by the RSI / SuperTrend gate is spent, not the whole day — with rescan
