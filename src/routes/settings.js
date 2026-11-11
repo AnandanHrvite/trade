@@ -1080,6 +1080,8 @@ const SETTINGS_SCHEMA = [
       { key: "STT_FUT_SELL_PCT",       label: "Futures STT (%)",      type: "number", min: 0, max: 1,  step: 0.01,  effect: EFFECT.INSTANT, desc: "STT on futures sells (% of turnover).", default: "0.05" },
       { key: "EXCHANGE_TXN_OPT_PCT",   label: "Exchange Txn Opt (%)",  type: "number", min: 0, max: 0.5,  step: 0.00001, effect: EFFECT.INSTANT, desc: "Exchange fee on options (% of premium).", default: "0.03553" },
       { key: "EXCHANGE_TXN_FUT_PCT",   label: "Exchange Txn Fut (%)",  type: "number", min: 0, max: 0.1,  step: 0.00001, effect: EFFECT.INSTANT, desc: "Exchange fee on futures (% of turnover).", default: "0.00183" },
+      { key: "EXCHANGE_TXN_OPT_PCT_BSE", label: "BSE Exchange Txn Opt (%)", type: "number", min: 0, max: 0.1, step: 0.00001, effect: EFFECT.BACKTEST, desc: "BSE exchange fee on options (% of premium turnover) — SENSEX. Used by backtests on a BSE market; NSE markets use the rate above.", default: "0.0325" },
+      { key: "EXCHANGE_TXN_FUT_PCT_BSE", label: "BSE Exchange Txn Fut (%)", type: "number", min: 0, max: 0.1, step: 0.00001, effect: EFFECT.BACKTEST, desc: "BSE exchange fee on index futures (% of turnover). BSE levies none on index futures today.", default: "0" },
       { key: "SEBI_CHARGES_PER_CRORE", label: "SEBI Charges (₹/Cr)",  type: "number", min: 0, max: 100, step: 1,     effect: EFFECT.INSTANT, desc: "SEBI fee in ₹ per crore traded.", default: "10" },
       { key: "GST_PCT",               label: "GST (%)",               type: "number", min: 0, max: 30,  step: 1,     effect: EFFECT.INSTANT, desc: "GST on brokerage and fees (%).", default: "18" },
       { key: "STAMP_DUTY_PCT",        label: "Stamp Duty (%)",        type: "number", min: 0, max: 0.1, step: 0.001, effect: EFFECT.INSTANT, desc: "Stamp duty on buys (%).", default: "0.003" },
@@ -1146,6 +1148,7 @@ const SETTINGS_SCHEMA = [
     group: "System",
     fields: [
       { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Dashboard menu.", default: "false", subheader: "Top-level menu items" },
+      { key: "UI_SHOW_BACKTEST_PAGE",  label: "Show Backtest",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Backtest menu — the one backtest page: pick any strategy and market, a date range and current or custom settings.", default: "true" },
       { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the all-strategy Backtest menu.", default: "false" },
       { key: "UI_SHOW_REALTIME",       label: "Real-Time on Dashboard",    type: "toggle", effect: EFFECT.INSTANT, desc: "Auto-show the Real-Time monitor while a session runs.", default: "true" },
       { key: "UI_DASHBOARD_ANALYTICS_PANEL", label: "Dashboard analytics panel", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the analytics panel on the Dashboard.", default: "true" },

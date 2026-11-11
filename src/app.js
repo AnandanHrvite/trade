@@ -1015,6 +1015,11 @@ const OPEN_PATHS = [
   "/replay/download-all",
   "/all-backtest",
   "/all-backtest/stats",
+  "/backtest",                 // the ONE backtest page (strategy × market) — runs on GET like the per-strategy pages
+  "/backtest/run",
+  "/backtest/status",
+  "/backtest/idle",
+  "/backtest/options.json",
   "/edge-analytics",
   "/advisor",             // settings advisor — read-only, suggests but never writes
   "/advisor/data",
@@ -1065,6 +1070,7 @@ const OPEN_PATHS = [
 // trades/2026-07-24). Every route under these prefixes is a GET read — the paper
 // routers' write operations (restore-session, delete-session) sit elsewhere.
 const OPEN_PREFIXES = [
+  "/backtest/result/",           // saved /backtest runs (re-open, JSON)
   "/auth/callback",              // broker OAuth redirect — arrives with the broker's own query string
   "/docs/file/",                 // guide HTML
   "/docs/pdf/",                  // guide PDF export
@@ -1302,6 +1308,7 @@ app.use("/oi-monitor",          lazyRouter(() => require("./routes/oiMonitor")))
 app.use("/swing-scanner",       require("./routes/swingScanner"));      // ← stock swing screen over the active strategies + manual Zerodha CNC entry
 app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (paper, all strategies)
 app.use("/replay",              lazyRouter(() => require("./routes/replay")));            // ← deterministic tick-replay backtest (PAPER = REPLAY)
+app.use("/backtest",       lazyRouter(() => require("./routes/backtest")));       // ← the ONE backtest page: pick strategy + market, runs each strategy's own engine
 app.use("/all-backtest",   lazyRouter(() => require("./routes/allBacktest")));    // ← unified backtest dashboard (all 3 strategies, stats only)
 app.use("/pnl-history",    lazyRouter(() => require("./routes/pnlHistory")));    // ← manual year-wise P&L (Kite + Fyers)
 
