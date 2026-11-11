@@ -840,10 +840,13 @@ async function onCandleClose(bar) {
   // VIX gate
   if ((PV("VIX_ENABLED") || process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
     // Another market's own switch decides (else NIFTY's); India VIX and the
-    // ORB_VIX_* thresholds are the same for every market.
+    // ORB_VIX_* thresholds are the same for every market. force: vixFilter's
+    // anyVixEnabled() does not know a pair's switch, so with every NIFTY-side VIX
+    // filter off (and VIX_LOG_ENABLED=false) an unforced fetch returns null and
+    // the fail-closed gate would block every entry of this pair.
     const vixCheck = rt.home
       ? await checkLiveVix(sig.signalStrength, { mode: "orb" })
-      : vixFilter.checkBacktestVix(await fetchLiveVix(), sig.signalStrength, { mode: "orb", force: true });
+      : vixFilter.checkBacktestVix(await fetchLiveVix({ force: true }), sig.signalStrength, { mode: "orb", force: true });
     if (!vixCheck.allowed) {
       log(`⏸️ ${TAG} VIX gate blocked: ${vixCheck.reason}`);
       skipLogger.appendSkipLog(MODE, { gate: "vix", reason: vixCheck.reason, spot: _spot, vix: vixCheck.vix, sig: sig.signal, strength: sig.signalStrength });

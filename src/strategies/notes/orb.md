@@ -4,6 +4,7 @@ Engine: `src/strategies/orb_breakout.js`, `src/strategies/orbExits.js` · Routes
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — Fix: a non-NIFTY pair with its own VIX switch ON fetched VIX unforced, so with every NIFTY-side VIX filter off and `VIX_LOG_ENABLED=false` the read was null and the fail-closed gate blocked every entry. The pair branch now forces the fetch. NIFTY unchanged.
 - 2026-11-11 — Trade journal: a profit-lock / stop exit records the level it aimed at (the lock floor / premium stop / futures stop) as its expected price, so the journal's exit slippage is fill vs that level. Observer only. `tests/orbJournal.regression.js` checks the journal on the NIFTY, SENSEX and NIFTY-futures instances.
 - 2026-11-11 — One file, every market. `orbPaper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same `/orb-paper`, files, keys, logs — golden byte-identical); BANKNIFTY, SENSEX, NIFTY futures and SAIL run from it at `/<modeKey>-paper` (`/bn_orb-paper` …; not MCX — ORB needs the 09:15 index open), ship OFF, fill options at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`), take their own spread limit / expiry-day switch; OI stays NIFTY-only, the VIX switch is per pair with NIFTY thresholds. The engine reads `<PAIR>_ORB_*` keys with NIFTY inheritance (`getSignal(c, { prefix })`, `computeOpeningRange(c, prefix)`, `pairs.envGet`). Slightly-ITM strike steps stay the shared `ORB_ITM_STEPS` (instrument.js reads it by mode). The paper route feeds the trade journal.
 
