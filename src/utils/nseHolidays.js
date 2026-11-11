@@ -796,6 +796,26 @@ async function isExpiryDate(dateStr) {
 }
 
 /**
+ * Synchronous twin of isExpiryDate() for read-only reports: the same weekday +
+ * preponed-holiday rule, answered from the cache-only holiday set
+ * (isNonTradingDaySync — never fetches, never throws). Like isExpiryDay(), a
+ * Monday is the expiry only when the Tuesday after it is a holiday.
+ */
+function isExpiryDateSync(dateStr) {
+  const d = new Date(dateStr + "T12:00:00+05:30");
+  if (isNaN(d)) return false;
+  const day = d.getDay();
+  const expiryDow = expiryWeekdayFor(dateStr);
+  if (day === expiryDow) return !isNonTradingDaySync(d);
+  if (day === expiryDow - 1 && !isNonTradingDaySync(d)) {
+    const nxt = new Date(d);
+    nxt.setDate(nxt.getDate() + 1);
+    return isNonTradingDaySync(nxt);
+  }
+  return false;
+}
+
+/**
  * Which weekday carries the NIFTY weekly expiry on a given date.
  * Thursday (4) before the 1-Sep-2025 cutover, Tuesday (2) from it on.
  * ISO strings compare lexicographically, so no Date parsing is needed.
@@ -876,6 +896,7 @@ module.exports = {
   isTradingAllowed,
   isExpiryDay,
   isExpiryDate,
+  isExpiryDateSync,             // cache-only twin of isExpiryDate — for read-only reports
   refreshHolidayCache
 };
 
