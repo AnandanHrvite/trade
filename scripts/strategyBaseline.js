@@ -143,6 +143,13 @@ const PAIRS = [
   { route: "emaRsiStV2Paper", market: "SENSEX",    mode: "sensex_ema_rsi_st_v2-paper", enabledKey: "SENSEX_EMA_RSI_ST_V2_MODE_ENABLED" },
   { route: "emaRsiStV2Paper", market: "BANKNIFTY", mode: "bn_ema_rsi_st_v2-paper",     enabledKey: "BN_EMA_RSI_ST_V2_MODE_ENABLED" },
   { route: "emaRsiStV2Paper", market: "NIFTY_FUT", mode: "fut_ema_rsi_st_v2-paper",    enabledKey: "FUT_EMA_RSI_ST_V2_MODE_ENABLED" },
+  // TDS_MAX_SL_PTS is in index points, sized for NIFTY (40). A pair inherits it
+  // unless it sets its own, so these two set the cap scaled to their index
+  // (SENSEX ~3.3x, BANKNIFTY ~2.4x NIFTY) through their OWN keys: that is what
+  // lets the synthetic sessions trade there, and it exercises a pair-own key.
+  { route: "trendDayScalpPaper", market: "SENSEX",    mode: "sensex_trend_day_scalp-paper", enabledKey: "SENSEX_TDS_MODE_ENABLED", settings: { SENSEX_TDS_MAX_SL_PTS: "130" } },
+  { route: "trendDayScalpPaper", market: "BANKNIFTY", mode: "bn_trend_day_scalp-paper",     enabledKey: "BN_TDS_MODE_ENABLED",     settings: { BN_TDS_MAX_SL_PTS: "95" } },
+  { route: "trendDayScalpPaper", market: "NIFTY_FUT", mode: "fut_trend_day_scalp-paper",    enabledKey: "FUT_TDS_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {
@@ -309,17 +316,18 @@ async function main() {
     const gen = JSON.parse(fs.readFileSync(genOut, "utf8"));
     console.log(`📼 synthetic recordings: ${gen.summary.map(s => `${s.date} ${s.regime}`).join(" · ")}`);
 
-    // 1b. One recording per pair market, in its own ticks dir.
+    // 1b. One recording per pair, in its own ticks dir: a recording names the
+    //     modes it carries, so two strategies on one market never share one.
     for (const p of pairJobs) {
-      p.ticksDir = path.join(tmpRoot, `ticks-${p.market}`);
+      p.ticksDir = path.join(tmpRoot, `ticks-${p.name}`);
       fs.mkdirSync(p.ticksDir, { recursive: true });
-      const pSpec = path.join(tmpRoot, `recording-spec-${p.market}.json`);
-      fs.writeFileSync(pSpec, JSON.stringify({ ...RECORDING_SPEC, settings: { ...SETTINGS, [p.enabledKey]: "true" }, modes: [p.mode] }));
-      const pOut = path.join(tmpRoot, `generate-${p.market}.json`);
-      const pg = await runWorker(["--generate", "--market", p.market, "--ticks", p.ticksDir, "--settings", pSpec, "--out", pOut], tmpRoot, `generate-${p.market}`);
+      const pSpec = path.join(tmpRoot, `recording-spec-${p.name}.json`);
+      fs.writeFileSync(pSpec, JSON.stringify({ ...RECORDING_SPEC, settings: { ...SETTINGS, ...(p.settings || {}), [p.enabledKey]: "true" }, modes: [p.mode] }));
+      const pOut = path.join(tmpRoot, `generate-${p.name}.json`);
+      const pg = await runWorker(["--generate", "--market", p.market, "--ticks", p.ticksDir, "--settings", pSpec, "--out", pOut], tmpRoot, `generate-${p.name}`);
       if (pg.code !== 0) throw new Error(`${p.market} recording generation failed (exit ${pg.code}) — see ${pg.log}\n${pg.stderr}`);
       const pr = JSON.parse(fs.readFileSync(pOut, "utf8"));
-      console.log(`📼 ${p.market}: ${pr.summary.map(s => `${s.date.slice(5)}→${s.expiry.slice(5)}`).join(" ")}`);
+      console.log(`📼 ${p.name}: ${pr.summary.map(s => `${s.date.slice(5)}→${s.expiry.slice(5)}`).join(" ")}`);
     }
 
     // 2. One child per (strategy, session).
