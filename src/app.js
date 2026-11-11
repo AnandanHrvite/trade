@@ -4599,6 +4599,10 @@ server.listen(PORT, HOST, () => {
     for (const s of _persist.getStaleSnapshots()) _persist.clearStaleSnapshot(s.file);
   } catch (e) { console.error(`[STARTUP] snapshot cleanup failed: ${e.message}`); }
 
+  // ── Boot: resume post-exit watches a restart interrupted (observer only) ───
+  try { require("./utils/postExitTracker").resume(); }
+  catch (e) { console.error(`[STARTUP] post-exit resume failed: ${e.message}`); }
+
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();
 
