@@ -12,6 +12,8 @@
  *   • pair inheritance of strategy keys (envGet), generic socket slots, pair
  *     crash snapshots, pair log files, market tags, marketOnly lifted while a
  *     running pair is on
+ *   • EMA_RSI_ST (V1): its pairs' identity, slots, legacy TRADE_* inheritance,
+ *     the forPrefix engine window and the one builder route file
  *
  *   node tests/pairRuntime.regression.js
  */
@@ -75,10 +77,12 @@ check("BANKNIFTY / NIFTY_FUT keep the old twins' paths and data files", () => {
   assert.deepStrictEqual([fut.paperPath, fut.tradesFile, fut.modeKey], ["/fut_ema_rsi_st_v2-paper", "fut_ema_rsi_st_v2_paper_trades.json", "fut_ema_rsi_st_v2"]);
   assert.strictEqual(rtOf("SENSEX").paperPath, "/sensex_ema_rsi_st_v2-paper");
 });
-check("running pairs = every offered non-home V2 pair; none other runs", () => {
-  const ids = pairs.runnable().map(p => p.marketKey);
-  assert.deepStrictEqual(ids, ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"]);
-  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2"));
+check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; none other runs", () => {
+  const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
+  for (const id of ["emaRsiStV2", "emaRsiSt"]) {
+    assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), MK, id);
+  }
+  assert.ok(pairs.all().filter(p => p.runs).every(p => pairs.RUNS_AS_PAIR.has(p.strategyId)));
   assert.strictEqual(pairs.byReplayMode("bn_ema_rsi_st_v2-paper").marketKey, "BANKNIFTY");
   assert.strictEqual(pairs.byReplayMode("ema_rsi_st_v2-paper"), null, "the home mode is the registry's");
 });
@@ -273,6 +277,83 @@ check("SENSEX stays marketOnly until a running SENSEX pair is switched on", () =
   withEnv({ SENSEX_ORB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+section("EMA_RSI_ST (V1) pairs");
+
+const v1Of = (mk) => pairRuntime.forStrategy("emaRsiSt", mk);
+check("V1 NIFTY is the home pair: registry keys, path, file, primary slot, sidebar", () => {
+  const rt = v1Of("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.isNiftyHome, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey],
+    [true, true, "ema_rsi_st", "EMA_RSI_ST", "/ema_rsi_st-paper", "ema_rsi_st-paper", "ema_rsi_st_paper_trades.json", "EMA_RSI_ST_PAPER", "emaRsiStPaper", "emaRsiStHistory"]);
+  assert.strictEqual(rt.oiApplies, true);
+});
+check("V1 pairs: own path, file, mode key, slot, tag per market (never V2's)", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "CRUDE", "SAIL"].map(mk => {
+    const r = v1Of(mk);
+    return [mk, r.paperPath, r.tradesFile, r.modeKey, r.socketSlot.mode, r.notifyMode, r.oiApplies];
+  });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "/sensex_ema_rsi_st-paper", "sensex_ema_rsi_st_paper_trades.json", "sensex_ema_rsi_st", "SENSEX_EMA_RSI_ST_PAPER", "SENSEX_EMA_RSI_ST-PAPER", false],
+    ["BANKNIFTY", "/bn_ema_rsi_st-paper", "bn_ema_rsi_st_paper_trades.json", "bn_ema_rsi_st", "BN_EMA_RSI_ST_PAPER", "BN_EMA_RSI_ST-PAPER", false],
+    ["NIFTY_FUT", "/fut_ema_rsi_st-paper", "fut_ema_rsi_st_paper_trades.json", "fut_ema_rsi_st", "FUT_EMA_RSI_ST_PAPER", "FUT_EMA_RSI_ST-PAPER", false],
+    ["CRUDE", "/crude_ema_rsi_st-paper", "crude_ema_rsi_st_paper_trades.json", "crude_ema_rsi_st", "CRUDE_EMA_RSI_ST_PAPER", "CRUDE_EMA_RSI_ST-PAPER", false],
+    ["SAIL", "/sail_ema_rsi_st-paper", "sail_ema_rsi_st_paper_trades.json", "sail_ema_rsi_st", "SAIL_EMA_RSI_ST_PAPER", "SAIL_EMA_RSI_ST-PAPER", false],
+  ]);
+  assert.strictEqual(pairs.byReplayMode("bn_ema_rsi_st-paper").strategyId, "emaRsiSt");
+  assert.strictEqual(pairs.byReplayMode("bn_ema_rsi_st_v2-paper").strategyId, "emaRsiStV2");
+  assert.strictEqual(pairs.byReplayMode("ema_rsi_st-paper"), null, "the home mode is the registry's");
+});
+check("V1 slots: NIFTY holds the primary EMA_RSI_ST slot; a V1 pair, V2's pair and NIFTY are independent", () => {
+  const sss = require("../src/utils/sharedSocketState");
+  const home = v1Of("NIFTY").socketSlot, bn = v1Of("BANKNIFTY").socketSlot, bnV2 = rtOf("BANKNIFTY").socketSlot;
+  bn.set();
+  try {
+    assert.ok(bn.isActive() && !bnV2.isActive() && !sss.isActive(), "BN V1 pair slot only");
+    assert.strictEqual(bnV2.canStart({ reserve: false }).allowed, true);
+    assert.strictEqual(home.canStart({ reserve: false }).allowed, true);
+    home.set();
+    assert.ok(sss.isActive() && sss.getMode() === "EMA_RSI_ST_PAPER", "NIFTY's is the registry's primary slot");
+  } finally { bn.clear(); home.clear(); }
+  assert.ok(!sss.isAnyActive());
+});
+check("V1 keys: a pair inherits EMA_RSI_ST_* and the legacy TRADE_* keys; pairKey maps both", () => {
+  const e = { EMA_RSI_ST_EMA_FAST: "33", TRADE_ENTRY_START: "10:00", EMA_RSI_ST_V2_EMA_FAST: "9" };
+  assert.strictEqual(pairs.envGet("SENSEX_EMA_RSI_ST_EMA_FAST", e), "33");
+  assert.strictEqual(pairs.envGet("SENSEX_EMA_RSI_ST_ENTRY_START", e), "10:00", "legacy TRADE_ENTRY_START");
+  assert.strictEqual(pairs.envGet("SENSEX_EMA_RSI_ST_V2_EMA_FAST", e), "9", "the V2 pair still reads V2's key");
+  const p = pairs.get("emaRsiSt", "BANKNIFTY");
+  assert.strictEqual(pairs.pairKey(p, "TRADE_ENTRY_START"), "BN_EMA_RSI_ST_ENTRY_START");
+  assert.strictEqual(pairs.pairKey(p, "TRADE_EXPIRY_DAY_ONLY"), null, "the shared expiry switch is not per pair");
+});
+check("V1 engine: forPrefix reads the pair's own window / keys, NIFTY's when unset", () => {
+  const v1 = require("../src/strategies/strategy1_sar_ema_rsi");
+  const t = Math.floor(istMs("2026-11-10", 9, 50) / 1000);
+  withEnv({ TRADE_ENTRY_START: "10:00", SENSEX_EMA_RSI_ST_ENTRY_START: undefined, EMA_RSI_ST_ENTRY_START: undefined }, () => {
+    assert.strictEqual(v1.isInTradingWindow(t).ok, false, "NIFTY: before 10:00");
+    assert.strictEqual(v1.forPrefix("SENSEX_EMA_RSI_ST").isInTradingWindow(t).ok, false, "unset pair inherits 10:00");
+    process.env.SENSEX_EMA_RSI_ST_ENTRY_START = "09:40";
+    assert.strictEqual(v1.forPrefix("SENSEX_EMA_RSI_ST").isInTradingWindow(t).ok, true, "own 09:40");
+    assert.strictEqual(v1.isInTradingWindow(t).ok, false, "NIFTY unchanged");
+  });
+});
+check("V1 route: one builder file; NIFTY default export, one router per pair with its own runtime", () => {
+  const mod = require("../src/routes/emaRsiStPaper");
+  assert.strictEqual(typeof mod.create, "function");
+  assert.strictEqual(mod.forMarket("NIFTY"), mod, "the default export is the NIFTY instance");
+  assert.strictEqual(mod.pairRuntime.home, true);
+  const sx = mod.forMarket("SENSEX"), bn = mod.forPair(pairs.get("emaRsiSt", "BANKNIFTY"));
+  assert.ok(sx && bn && sx !== bn && sx !== mod);
+  assert.strictEqual(mod.forMarket("SENSEX"), sx, "memoised");
+  assert.deepStrictEqual([sx.pairRuntime.paperPath, bn.pairRuntime.paperPath], ["/sensex_ema_rsi_st-paper", "/bn_ema_rsi_st-paper"]);
+  for (const r of [mod, sx, bn]) assert.strictEqual(typeof r.stopSession, "function");
+  const src = fs.readFileSync(path.join(__dirname, "../src/routes/emaRsiStPaper.js"), "utf8");
+  assert.ok(/if \(rt\.home\) \{[^}]*socketManager\.start\(subscribeSymbol, onTick, log\)/.test(src), "NIFTY keeps the primary socket handler");
+  assert.ok(/socketManager\.addCallback\(OWNER, onTick, log, subscribeSymbol\)/.test(src), "a pair fans out through addCallback");
+  assert.ok(/const NOTIFY_MODE = rt\.home \? "PAPER" : rt\.notifyMode;/.test(src), "NIFTY alerts keep the PAPER tag");
+  assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(src), "the OI gate stays NIFTY-only");
+  assert.ok(/if \(!rt\.enabled\(\)\) \{\s*return res\.status\(403\)/.test(src), "a pair's /start refuses while <PAIR>_MODE_ENABLED is off");
+});
 // ─────────────────────────────────────────────────────────────────────────────
 // Async checks above return promises; wait for them before reporting.
 (async () => {
