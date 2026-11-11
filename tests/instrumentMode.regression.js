@@ -24,7 +24,7 @@
  * used to open.
  *
  * Exemption sets are kept, re-expressed: the strategies they name (premium-
- * denominated, MCX, stock options, cash equity, options-by-rule) each prove
+ * denominated, stock options, cash equity, options-by-rule) each prove
  * their own instrument rule — asserted in the last groups.
  */
 
@@ -112,8 +112,6 @@ const FUT_LIT = /["']NIFTY_FUTURES["']/;
 //
 // Premium-denominated: the trigger, stop and trail are all option-premium levels.
 const PREMIUM_DENOMINATED = new Set(["simple930Paper.js", "itm20ScalpPaper.js", "itm20ScalpBacktest.js"]);
-// COMMODITY (MCX) pages — they never trade NIFTY at all.
-const NOT_NIFTY = { has: (f) => /^cmx[A-Z][A-Za-z0-9]*Paper\.js$/.test(f) };
 // STOCK-option strategies — every contract names its own stock underlying.
 const STOCK_OPTIONS = { SAIL: new Set(["sailVwapStPaper.js", "sailVwapStBacktest.js", "sailPivotEmaStPaper.js"]) };
 const stockUnderlyingOf = (f) => Object.keys(STOCK_OPTIONS).find((k) => STOCK_OPTIONS[k].has(f)) || null;
@@ -507,13 +505,7 @@ for (const file of nonFutRoutes) {
     }
   });
 
-  if (NOT_NIFTY.has(file)) {
-    check(`${file} trades MCX only — never touches the NIFTY instrument code`, () => {
-      assert.ok(!/config\/instrument|instrumentMode|NIFTY_FUTURES/.test(src),
-        `${file} must never build a NIFTY symbol`);
-      assert.ok(/commodityPaper/.test(src), `${file} must run on the commodity engine`);
-    });
-  } else if (stockUnderlyingOf(file)) {
+  if (stockUnderlyingOf(file)) {
     const U = stockUnderlyingOf(file);
     check(`${file} trades ${U} stock options only — never a NIFTY contract`, () => {
       if (/Paper\.js$/.test(file)) {
@@ -552,7 +544,6 @@ check("the never-a-twin sets still name real routes (an empty exemption is a dea
   for (const f of [...PREMIUM_DENOMINATED, ...STOCK_OPTIONS.SAIL, ...OPTIONS_ONLY_BY_RULE, ...CASH_EQUITY_ONLY]) {
     assert.ok(allRoutes.includes(f), `${f} is listed but no longer exists — drop it from the set`);
   }
-  assert.ok(allRoutes.some(f => NOT_NIFTY.has(f)), "no cmx*Paper.js route found — drop NOT_NIFTY");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

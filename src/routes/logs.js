@@ -153,7 +153,6 @@ const STRATEGY_LABELS = new Map();
 for (const m of Object.keys(tradeLogger.FILE_BY_MODE)) {
   STRATEGY_LABELS.set(normSrc(m), m.toUpperCase());
 }
-STRATEGY_LABELS.set("commodity", "COMMODITY (MCX)");
 
 const SCAN_CHUNK  = 5000;
 const SRC_MAX_OUT = 5000;   // newest lines returned for one source

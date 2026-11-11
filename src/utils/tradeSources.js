@@ -13,7 +13,7 @@
  *     Any such prefix tradeLogger does not know is listed from the files alone,
  *     so its history stays readable.
  *   • COMMODITY — every ~/trading-data/cmx/<id>_paper_trades.json book the
- *     commodity engine (services/commodityPaper.js) writes. A book's id is
+ *     (now removed) commodity engine wrote. A book's id is
  *     cmx_<commodity>_<base strategy>, e.g. cmx_gold_ema_rsi_st_v2.
  *
  * Read-only: nothing here writes a file or touches a broker.

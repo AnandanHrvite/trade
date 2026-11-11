@@ -20,7 +20,7 @@ const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
 // modalCSS/modalJS carry secretFetch + the API-secret prompt: /stop requires
 // API_SECRET (only the read-only /status/data paths are in app.js OPEN_PATHS),
-// so Stop NIFTY / Stop Commodity would 403 on every engine without them.
+// so Stop NIFTY would 403 on every engine without them.
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 
@@ -54,8 +54,7 @@ const STRATEGY_DEFS = [
   { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
   // GAP_RUNAWAY (GAP_runAway__Kirubakaran): NIFTY options.
   { key:'GAP_RUNAWAY', label:'GAP_runAway__Kirubakaran', accentClass:'gaprunaway', accent:'#a78bfa', paperPrefix:'/gap_runaway-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_MODE_ENABLED' },
-  // Its stock scanner — intraday shares. Unlike COMMODITY (paperOnly) it is a
-  // NSE-session strategy, so it stays in the NIFTY start/stop roster.
+  // Its stock scanner — intraday shares, an NSE-session strategy in the NIFTY start/stop roster.
   // Its /status/data returns positions[] in the cash-equity row shape (like EarlyBird).
   { key:'GAP_RUNAWAY_STK', label:'GAP_runAway Stocks', accentClass:'gaprunawaystk', accent:'#c084fc', paperPrefix:'/gap_runaway_stk-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_STK_MODE_ENABLED' },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
@@ -65,23 +64,9 @@ const STRATEGY_DEFS = [
   { key:'EARLYBIRD', label:'EarlyBird', accentClass:'earlybird', accent:'#14b8a6', paperPrefix:'/early-bird-paper', hasDayLog:true, modeFlag:'EARLYBIRD_MODE_ENABLED' },
 ];
 
-// COMMODITY (MCX) pages — one row per switched-on commodity engine, read from
-// the engines themselves so a new commodity page appears here with no wiring.
-// paperOnly: MCX keeps its own hours, so they get their own start/stop buttons.
-function commodityStrategies() {
-  const { visibleEngines } = require("../utils/commodityPaperRouter");
-  return visibleEngines().map((e) => {
-    const s = e.snapshot();
-    const strat = s.strategy === 'V2' ? 'EMA_RSI_ST_V2' : s.strategy === 'PIVOT' ? 'PIVOT_EMA_ST' : 'EMA_RSI_ST';
-    return { key: `CMX_${s.commodity}_${strat}`, label: `${s.commodityLabel.toUpperCase()} · ${strat}`,
-             accentClass: 'cmx', accent: '#eab308', paperPrefix: `/${s.id}-paper`, livePrefix: null,
-             hasDayLog: false, modeFlag: s.modeKey, paperOnly: true };
-  });
-}
-
 function enabledStrategies() {
   return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || (s.defaultOff ? 'false' : 'true')).toLowerCase() !== 'false')
-    .concat(commodityStrategies());
+;
 }
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
@@ -92,8 +77,7 @@ BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.GAP_RUNAWAY = 'ZERODHA'; BROKER_OF.GAP_RUNAWAY_STK = 'ZERODHA';
 BROKER_OF.ITM20_SCALP = 'ZERODHA'; // paper only — charges modelled on Zerodha, like PREV_ORB_SCALP
-// COMMODITY pages (CMX_* keys) draw from the Fyers pool — their prices come from Fyers.
-const brokerOfKey = (key) => BROKER_OF[key] || (/^CMX_/.test(key) ? 'FYERS' : undefined);
+const brokerOfKey = (key) => BROKER_OF[key];
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
   const inv = (v) => (n => Number.isFinite(n) && n >= 0 ? n : 100000)(parseFloat(v || '100000'));
@@ -133,10 +117,8 @@ router.get("/", (req, res) => {
 function renderPage({ sidebarKey = "realtime", autoFlipBack = false } = {}) {
   const sidebar = buildSidebar(sidebarKey, false);
   const strategies = enabledStrategies();
-  const hasCommodity  = strategies.some(s => s.paperOnly);
-  // While only COMMODITY runs this page still stands in for the Dashboard, so it
-  // must also be able to start the NIFTY paper roster (the Dashboard's button is
-  // not reachable from here).
+  // When nothing runs this page can still start the NIFTY paper roster (the
+  // Dashboard's button is not reachable from here).
   const nseActive     = sharedSocketState.isAnyActive();
 
   const endpointsJson = JSON.stringify({
@@ -235,17 +217,12 @@ ${faviconLink()}
   .top-bar h1 { margin:0; font-size:1.4rem; font-weight:600; letter-spacing:0.2px; }
   .top-bar .sub { color:#7d8aa3; font-size:0.78rem; margin-top:2px; }
 
-  /* Stop NIFTY / Stop Commodity — the panic buttons. */
+  /* Stop NIFTY — the panic button. */
   .top-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .stop-all { background:#7f1d1d; border:1px solid #b91c1c; color:#fee2e2; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
   .stop-all:hover:not(:disabled) { background:#b91c1c; color:#fff; }
   .stop-all:disabled { opacity:0.6; cursor:default; }
   .stop-all.armed { background:#dc2626; color:#fff; border-color:#ef4444; }
-  .cmx-start { background:#1c1604; border:1px solid #a16207; color:#facc15; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
-  .cmx-start:hover:not(:disabled) { background:#a16207; color:#fff; }
-  .cmx-start:disabled { opacity:0.6; cursor:default; }
-  :root[data-theme="light"] .cmx-start { background:#fefce8 !important; border-color:#a16207 !important; color:#a16207; }
-  :root[data-theme="light"] .cmx-start:hover:not(:disabled) { background:#a16207 !important; color:#fff; }
   .nse-start { background:#0c2a4a; border:1px solid #2563eb; color:#93c5fd; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
   .nse-start:hover:not(:disabled) { background:#2563eb; color:#fff; }
   .nse-start:disabled { opacity:0.6; cursor:default; }
@@ -304,7 +281,6 @@ ${faviconLink()}
   .card.gaprunawaystk { border-top-color:#c084fc; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
-  .card.cmx { border-top-color:#eab308; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
@@ -322,7 +298,6 @@ ${faviconLink()}
   .card.emarsistv2 .card-title { color:#7dd3fc; }
   .card.simple930 .card-title { color:#fdba74; }
   .card.earlybird .card-title { color:#5eead4; }
-  .card.cmx .card-title { color:#fde68a; }
 
   .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
   .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
@@ -409,7 +384,6 @@ ${faviconLink()}
   .card.emarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
   .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
   .card.earlybird .act-btn:not(.act-btn-disabled):hover { border-color:#14b8a6; }
-  .card.cmx .act-btn:not(.act-btn-disabled):hover { border-color:#eab308; }
 
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
@@ -432,7 +406,6 @@ ${faviconLink()}
   .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
   .rollup tr.earlybird td:first-child { color:#5eead4; }
-  .rollup tr.cmx td:first-child { color:#fde68a; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
   /* Strategy name links to that strategy's own paper status page.
      Colour is inherited so the per-strategy accent
@@ -465,7 +438,6 @@ ${faviconLink()}
   :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.earlybird .card-title { color:#0f766e; }
-  :root[data-theme="light"] .card.cmx .card-title { color:#a16207; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .flat-block { color:#4b5769; }
@@ -507,7 +479,6 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.emarsistv2 td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }
   :root[data-theme="light"] .rollup tr.earlybird td:first-child { color:#0f766e; }
-  :root[data-theme="light"] .rollup tr.cmx td:first-child { color:#a16207; }
   :root[data-theme="light"] .pos-zero { color:#4b5769 !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
@@ -530,13 +501,8 @@ ${sidebar}
       <div class="sub">Live view of all enabled strategies — polls every 4s <span id="pulse" class="pulse"></span></div>
     </div>
     <div class="top-actions">
-      ${hasCommodity ? `<!-- MCX keeps its own hours, so it starts on its own button — and it has to be
-           here as well as on the Dashboard: while a NIFTY session runs, this page
-           IS the Dashboard. Hidden by the poll once every commodity page is up. -->
-      <button type="button" class="cmx-start" id="cmx-start" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet" hidden>🛢 Start All (Commodity)</button>` : ''}
-      ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled NIFTY / BANK NIFTY paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
-      ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every NIFTY and BANK NIFTY paper strategy — commodity keeps running">🛑 Stop NIFTY</button>` : ''}
-      ${hasCommodity ? `<button type="button" class="stop-all" id="stop-cmx" title="Stop every COMMODITY (MCX) paper page — NIFTY keeps running">🛑 Stop Commodity</button>` : ''}
+      ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled NIFTY paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
+      ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every NIFTY paper strategy">🛑 Stop NIFTY</button>` : ''}
     </div>
   </div>
   <div class="stop-all-note" id="stop-all-note" hidden></div>
@@ -591,7 +557,7 @@ const STRATEGY_ACCENTS = ${accentsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
 const STOP_URLS        = ${stopUrlsJson};
-const PAPER_ONLY       = ${paperOnlyJson};   // COMMODITY — own MCX start/stop
+const PAPER_ONLY       = ${paperOnlyJson};   // paperOnly strategies — outside the NIFTY start/stop roster
 const FUTURES_KEYS     = ${futuresJson};     // futures:true strategies — futures legs, no premium
 const mode = 'PAPER';
 let timer = null;
@@ -1026,8 +992,6 @@ async function poll() {
     .then(r => r.ok ? r.json() : null)
     .catch(() => null);
   // Capital rides along with the strategy fetches — one round trip, not two.
-  // A COMMODITY page answers with its session under "monitor", already in the
-  // field names the NIFTY strategies use.
   const results = await Promise.all(
     STRATEGY_KEYS.map(k => fetchOne(eps[k]).then(d => (d && d.monitor) ? d.monitor : d))
       .concat(fetchOne('/realtime/capital'))
@@ -1035,7 +999,6 @@ async function poll() {
   const capital = results.pop();
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
-  renderCmxStart(all);
   renderNseStart(all);
   renderCardsEmpty();
   renderRollup(all);
@@ -1043,23 +1006,17 @@ async function poll() {
   renderCapitalAlert(capital);
 }
 
-// ── Stop NIFTY / Stop Commodity ─────────────────────────────────────────────
-// Two buttons, one per market: NSE and MCX keep different hours, so closing
-// NIFTY at 15:30 must not also flatten a commodity session that runs to 23:30.
-// Each fans out GET /stop across its own paper strategies. Each engine's own /stop is reused verbatim, so
+// ── Stop NIFTY ──────────────────────────────────────────────────────────────
+// Fans out GET /stop across its own paper strategies. Each engine's own /stop is reused verbatim, so
 // an open position is squared off by the same code path its Stop button uses.
 //
 // Two clicks: the first arms, the second fires — a stray click on a phone must
 // not be able to flatten the book.
 const STOP_SCOPES = {
   nse: { btnId: 'stop-nse', label: '🛑 Stop NIFTY',     name: 'Stop NIFTY',
-         what: 'every <b>NIFTY and BANK NIFTY</b> paper strategy',
-         none: 'no NIFTY / BANK NIFTY strategy is running',
+         what: 'every <b>NIFTY</b> paper strategy',
+         none: 'no NIFTY strategy is running',
          has: t => PAPER_ONLY.indexOf(t.key) === -1 },
-  cmx: { btnId: 'stop-cmx', label: '🛑 Stop Commodity', name: 'Stop Commodity',
-         what: 'every <b>COMMODITY (MCX)</b> paper page',
-         none: 'no commodity page is running',
-         has: t => PAPER_ONLY.indexOf(t.key) !== -1 },
 };
 let stopArmed = null;   // the scope waiting for its confirming second click
 let stopArmTimer = null;
@@ -1165,56 +1122,10 @@ async function stopScope(scope) {
 }
 
 document.getElementById('stop-nse')?.addEventListener('click', () => stopScope('nse'));
-document.getElementById('stop-cmx')?.addEventListener('click', () => stopScope('cmx'));
 
-// ── Start All (Commodity) ───────────────────────────────────────────────────
-// Offered only while a switched-on commodity page is not running. A page whose
-// endpoint did not answer counts as "not running" — better a button that
-// reports "already running" than no way to start.
-let cmxBusy = false;
-function renderCmxStart(all) {
-  const btn = document.getElementById('cmx-start');
-  // Stop Commodity is the other half: shown only once a commodity page runs, and
-  // never mid-start — Start and Stop side by side reads as "both at once".
-  const stop = document.getElementById('stop-cmx');
-  // Hidden only on a clear "nothing runs": a failed status read proves nothing,
-  // so it may not hide a panic button.
-  if (stop && !stopBusy) {
-    const known = PAPER_ONLY.every(k => all[k]);
-    if (cmxBusy) stop.hidden = true;
-    else if (PAPER_ONLY.some(k => all[k] && all[k].running)) stop.hidden = false;
-    else if (known) stop.hidden = true;
-  }
-  if (!btn || cmxBusy) return;
-  btn.hidden = !PAPER_ONLY.some(k => !(all[k] && all[k].running));
-}
-async function startAllCmx() {
-  const btn = document.getElementById('cmx-start');
-  if (!btn || cmxBusy) return;
-  cmxBusy = true;
-  btn.disabled = true; btn.textContent = '⏳ Starting commodity…';
-  const stop = document.getElementById('stop-cmx');
-  if (stop) stop.hidden = true;
-  try {
-    const r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
-    if (!r) return;   // API-secret prompt cancelled — nothing was sent
-    const body = await r.json();
-    const lines = (body.results || []).map(x => (x.ok ? '✅ ' : '❌ ') + x.label + ' — ' + x.note);
-    await showAlert({ icon: body.success ? '🛢' : '⚠️', title: 'Start All (Commodity)', message: lines.join('\\n') || 'No commodity page is switched on.' });
-  } catch (e) {
-    await showAlert({ icon: '⚠️', title: 'Start All (Commodity)', message: (e && e.message) || 'Request failed' });
-  } finally {
-    cmxBusy = false;
-    btn.disabled = false; btn.textContent = '🛢 Start All (Commodity)';
-    poll();
-  }
-}
-document.getElementById('cmx-start')?.addEventListener('click', startAllCmx);
-
-// ── Start All (Paper) — NIFTY / BANK NIFTY ──────────────────────────────────
-// Only rendered while no NSE session is up (the page is showing because a
-// COMMODITY page runs). Offered on weekdays until 15:30 IST, and hidden again
-// once any NSE strategy reports running.
+// ── Start All (Paper) — NIFTY ───────────────────────────────────────────────
+// Only rendered while no NSE session is up. Offered on weekdays until 15:30 IST,
+// and hidden again once any NSE strategy reports running.
 let nseBusy = false;
 function nseStartWindow() {
   const ist = new Date(Date.now() + 19800000);
@@ -1225,7 +1136,7 @@ function renderNseStart(all) {
   const btn = document.getElementById('nse-start');
   const nseRunning = STRATEGY_KEYS.some(k => PAPER_ONLY.indexOf(k) === -1 && all[k] && all[k].running);
   // Stop NIFTY stays up all through market hours (it is the panic button). After the 15:30 close it hides once
-  // nothing NSE runs here, so a commodity-only evening shows only Stop Commodity.
+  // nothing NSE runs here.
   const stop = document.getElementById('stop-nse');
   if (stop && !stopBusy) stop.hidden = !nseRunning && !nseStartWindow();
   if (!btn || nseBusy) return;
@@ -1241,7 +1152,7 @@ async function startAllNse() {
     // The same roster the Dashboard's button starts from.
     const r = await fetch('/api/start-all-roster', { cache:'no-store' });
     const modes = r.ok ? ((await r.json()).modes || []) : [];
-    if (!modes.length) { await showAlert({ icon:'⚠️', title:'Nothing to start', message:'No NIFTY / BANK NIFTY strategy is enabled in Settings.' }); return; }
+    if (!modes.length) { await showAlert({ icon:'⚠️', title:'Nothing to start', message:'No NIFTY strategy is enabled in Settings.' }); return; }
     // Sequential, like the Dashboard: parallel starts race each other for the socket.
     for (const m of modes) {
       if (!m || !m.paper || m.paperOff) continue;   // its Paper toggle is off — /start would refuse
@@ -1261,8 +1172,8 @@ async function startAllNse() {
   } finally {
     nseBusy = false;
     btn.disabled = false; btn.textContent = '▶ Start All (Paper)';
-    // The page was rendered for a commodity-only session; reload so the NSE
-    // cards, toggle state and this button all reflect the new session.
+    // Reload so the NSE cards, toggle state and this button all reflect the
+    // new session.
     if (ok.length) location.reload(); else poll();
   }
 }

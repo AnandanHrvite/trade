@@ -770,73 +770,6 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "COMMODITY (MCX crude / gold / silver) — shared by every commodity page, paper only",
-    icon: "\u{1F6E2}",
-    nav: "Common (MCX)",
-    group: "COMMODITY",
-    fields: [
-      // Crude copies of EMA_RSI_ST / EMA_RSI_ST_V2. The SIGNAL rules are the
-      // originals and read the EMA_RSI_ST_* / EMA_RSI_ST_V2_* settings above —
-      // only timing, size and day guards are commodity-specific (CMX_*). Prices
-      // come from Fyers REST, so nothing here touches the NIFTY socket, capital
-      // pool or global guards. The Mode toggles live in MENU VISIBILITY.
-      { key: "CMX_CRUDE_CONTRACT", label: "Crude Oil — Contract", type: "select", options: [{ value: "CRUDEOIL", label: "Crude Oil (1 lot = 100 barrels)" }, { value: "CRUDEOILM", label: "Crude Oil Mini (1 lot = 10 barrels)" }], effect: EFFECT.SESSION, desc: "Which crude contract the Crude Oil pages trade. Mini is one-tenth the size — same moves, one-tenth the rupees. Takes effect on the next Start.", default: "CRUDEOIL", subheader: "Market" },
-      { key: "CMX_GOLD_CONTRACT", label: "Gold — Contract", type: "select", options: [{ value: "GOLDM", label: "Gold Mini (1 lot = 100 g)" }, { value: "GOLD", label: "Gold (1 lot = 1 kg)" }], effect: EFFECT.SESSION, desc: "Which gold contract the Gold pages trade. A full Gold lot is 10× a Mini — one option lot can cost lakhs. Takes effect on the next Start.", default: "GOLDM" },
-      { key: "CMX_SILVER_CONTRACT", label: "Silver — Contract", type: "select", options: [{ value: "SILVERM", label: "Silver Mini (1 lot = 5 kg)" }, { value: "SILVER", label: "Silver (1 lot = 30 kg)" }], effect: EFFECT.SESSION, desc: "Which silver contract the Silver pages trade. A full Silver lot is 6× a Mini. Takes effect on the next Start.", default: "SILVERM" },
-      { key: "CMX_AUTO_START", label: "Auto-Start Each Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Start every switched-on commodity page by itself on weekdays once MCX opens. A page you stop by hand stays stopped for the rest of that day.", default: "false" },
-      { key: "CMX_SESSION_START", label: "MCX Session Start", type: "time", effect: EFFECT.SESSION, desc: "When MCX opens (IST). Prices are ignored before this.", default: "09:00" },
-      { key: "CMX_SESSION_END", label: "MCX Session End", type: "time", effect: EFFECT.SESSION, desc: "When MCX closes (IST) — the engine stops itself here. MCX closes at 23:30 in Indian summer and 23:55 when US clocks go back (Nov–Mar); change it then.", default: "23:30" },
-      { key: "CMX_POLL_SECONDS", label: "Price Check Every (sec)", type: "number", min: 2, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "How often the live price is checked while a trade is open or a signal is waiting. Stops are checked at this pace, not on every tick. Lower = closer to real stops, more broker calls.", default: "3" },
-      { key: "CMX_FEED_KILL_SECONDS", label: "Close Trade if No Price For (sec)", type: "number", min: 0, max: 900, step: 10, effect: EFFECT.INSTANT, desc: "Close an open trade at its last price when the future or the option has had no new price for this long — the stops cannot work without prices. 0 = off.", default: "120" },
-      { key: "CMX_CHARGES_PER_TRADE", label: "Charges per Trade (₹)", type: "number", min: 0, max: 1000, step: 5, effect: EFFECT.INSTANT, desc: "Brokerage + taxes taken off each paper trade's P&L (buy + sell together).", default: "60" },
-      { key: "CMX_MIN_EMA_GAP_PCT", label: "Min EMA20–EMA50 Gap (% of price)", type: "number", min: 0, max: 1, step: 0.01, effect: EFFECT.INSTANT, desc: "Skip a signal when EMA20 and EMA50 are closer than this % of the price — they are almost touching, so there is no real trend. 0.03% ≈ 3 points on crude, 45 on gold. In Oct 2026 these trades won 4 of 27 and lost ₹17.9k. 0 = off.", default: "0.03", subheader: "Trend filter (every commodity page)" },
-      { key: "CMX_RSI_CE_MAX", label: "Skip CE when RSI ≥", type: "number", min: 50, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Skip a CE signal when RSI is already this high — the move has run and the entry is late. 100 = off.", default: "63" },
-      { key: "CMX_RSI_PE_MIN", label: "Skip PE when RSI ≤", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Skip a PE signal when RSI is already this low — the move has run and the entry is late. 0 = off.", default: "37" },
-      { key: "CMX_OPT_ROLL_DAYS", label: "Roll to Next Month (days before expiry)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Trade next month's options once this month's expire in this many days or fewer — premium melts fastest in the last days. Example: 2 → crude options expiring 15 Oct are dropped from 13 Oct. 0 = only skip expiry day. Takes effect on the next Start.", default: "2", subheader: "Risk (every commodity page)" },
-    ],
-  },
-  {
-    section: "COMMODITY EMA_RSI_ST (MCX crude / gold / silver) — paper only",
-    icon: "\u{1F6E2}",
-    nav: "EMA_RSI_ST",
-    id: "cmx-ema-rsi-st",
-    group: "COMMODITY",
-    fields: [
-      { key: "CMX_EMA_RSI_ST_RESOLUTION", label: "EMA_RSI_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST rules run on, for every commodity. Takes effect on the next Start.", default: "5" },
-      { key: "CMX_EMA_RSI_ST_LOTS", label: "EMA_RSI_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
-      { key: "CMX_EMA_RSI_ST_ENTRY_START", label: "EMA_RSI_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
-      { key: "CMX_EMA_RSI_ST_ENTRY_END", label: "EMA_RSI_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
-    ],
-  },
-  {
-    section: "COMMODITY EMA_RSI_ST_V2 (MCX crude / gold / silver) — paper only",
-    icon: "\u{1F6E2}",
-    nav: "EMA_RSI_ST_V2",
-    id: "cmx-ema-rsi-st-v2",
-    group: "COMMODITY",
-    fields: [
-      { key: "CMX_EMA_RSI_ST_V2_RESOLUTION", label: "EMA_RSI_ST_V2 — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST_V2 rules run on, for every commodity. Takes effect on the next Start.", default: "5" },
-      { key: "CMX_EMA_RSI_ST_V2_LOTS", label: "EMA_RSI_ST_V2 — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
-      { key: "CMX_EMA_RSI_ST_V2_ENTRY_START", label: "EMA_RSI_ST_V2 — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
-      { key: "CMX_EMA_RSI_ST_V2_ENTRY_END", label: "EMA_RSI_ST_V2 — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
-    ],
-  },
-  {
-    section: "COMMODITY PIVOT_EMA_ST (MCX crude / gold / silver) — paper only",
-    icon: "\u{1F6E2}",
-    nav: "PIVOT_EMA_ST",
-    id: "cmx-pivot-ema-st",
-    group: "COMMODITY",
-    fields: [
-      // PIVOT_EMA_ST on the futures — signal rules read the NIFTY PIVOT_EMA_ST_*
-      // EMA / SuperTrend keys; pivots come from the previous MCX day.
-      { key: "CMX_PIVOT_EMA_ST_RESOLUTION", label: "PIVOT_EMA_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the PIVOT_EMA_ST rules run on, for every commodity (the NIFTY PIVOT_EMA_ST_TF is not used here). Takes effect on the next Start.", default: "3" },
-      { key: "CMX_PIVOT_EMA_ST_LOTS", label: "PIVOT_EMA_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
-      { key: "CMX_PIVOT_EMA_ST_ENTRY_START", label: "PIVOT_EMA_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
-      { key: "CMX_PIVOT_EMA_ST_ENTRY_END", label: "PIVOT_EMA_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
-    ],
-  },
-  {
     // Everything every strategy shares: one on/off box per rule (turning a box
     // off switches that rule off for ALL strategies), then the rules' numbers,
     // the one lot count and the paper capital. Unset toggles count as ON, except the profit lock (OFF).
@@ -849,11 +782,11 @@ const SETTINGS_SCHEMA = [
       { key: "PREMIUM_SL_ENABLED", label: "Stop-loss & trail (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "One trailing stop for EVERY strategy, on the option premium: sell if premium falls the stop % below the highest premium since entry. It only moves up. Example 20: buy 100 → stop 80; peak 150 → stop 120; peak 200 → stop 160. Futures use it as if the premium were ₹200 (20% → 40 index points at entry). Works next to the profit lock — whichever stop is higher wins. Off (the default) = no strategy uses it.", default: "false" },
       { key: "EXIT_REENTRY_COOLDOWN_ENABLED", label: "Wait after any exit (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "After a trade closes, take no new trade for the number of candles set in \"Wait after any exit (candles)\". Off = a new trade can start on the very next signal.", default: "true" },
       { key: "MAX_BID_ASK_SPREAD_ENABLED", label: "Bid-Ask Spread Check (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Skip an entry when the option's bid-ask gap is wider than \"Max Bid-Ask Spread (pts)\". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap.", default: "true" },
-      { key: "COMMON_TRADE_WINDOW_ENABLED", label: "Trade Window 10:00–14:00, exit 15:00 (all strategies)", type: "toggle", effect: EFFECT.SESSION, desc: "Every NIFTY / BANK NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle) and not Commodity (MCX hours). Overrides each strategy's own Entry Start / Entry End (ORB keeps its own, earlier Latest Entry Time); the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.", default: "true" },
+      { key: "COMMON_TRADE_WINDOW_ENABLED", label: "Trade Window 10:00–14:00, exit 15:00 (all strategies)", type: "toggle", effect: EFFECT.SESSION, desc: "Every NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle). Overrides each strategy's own Entry Start / Entry End (ORB keeps its own, earlier Latest Entry Time); the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.", default: "true" },
       { key: "PAPER_CAPITAL_GATE_ENABLED", label: "Track Paper Capital", type: "toggle", effect: EFFECT.INSTANT, desc: "Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. An entry the pool cannot fund is REFUSED — logged as an error, skip-logged, and flagged on the Real-Time dashboard. Off = display only (every entry is taken).", default: "true" },
-      { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade for EVERY NIFTY / BANK NIFTY strategy — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL and Commodity keep their own lots (different contracts).", subheader: "Lots & Capital" },
+      { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade for EVERY NIFTY strategy — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty.", subheader: "Lots & Capital" },
       { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool shared by every Zerodha strategy, GAP_RUNAWAY included (₹).", default: "100000" },
-      { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool shared by every Fyers strategy, COMMODITY pages included (₹).", default: "100000" },
+      { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool shared by every Fyers strategy (₹).", default: "100000" },
       { key: "PAPER_CAPITAL_EST_PREMIUM", label: "Assumed Premium for Capital Check (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.INSTANT, desc: "EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide before their option quote arrives — this premium is assumed for the check, then corrected to the real one a second later.", default: "200" },
       { key: "PROFIT_LOCK_ARM_PCT", label: "Arm at (% premium gain)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "The lock arms once premium touches entry + this %. Must be greater than the floor %, or the lock stays inert.", default: "8", subheader: "Profit Lock" },
       { key: "PROFIT_LOCK_FLOOR_PCT", label: "Locked floor (% premium gain)", type: "number", min: 0, max: 99, step: 1, effect: EFFECT.INSTANT, desc: "Once armed, the trade is closed if premium falls back to entry + this %. Replaying 344 trades at arm 8 / floor 5 changed 72 exits and turned the active book from -Rs6,028 to +Rs32,110 — treat that as a hypothesis to confirm in paper, not a promise.", default: "5" },
@@ -1052,7 +985,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SAIL_PIVOT_EMA_ST_STARTED", label: "SAIL_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_PIVOT_EMA_ST session starts.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STARTED", label: "GAP_RUNAWAY — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAP_runAway__Kirubakaran (NIFTY) session starts.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_STARTED", label: "GAP_RUNAWAY Stocks — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when the GAP_runAway stock scanner starts.", default: "true" },
-      { key: "TG_CMX_STARTED", label: "Commodity (MCX) — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when any Crude / Gold / Silver paper page starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
@@ -1074,7 +1006,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SAIL_PIVOT_EMA_ST_ENTRY", label: "SAIL_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST entry.", default: "true" },
       { key: "TG_GAP_RUNAWAY_ENTRY", label: "GAP_RUNAWAY — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) entry.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_ENTRY", label: "GAP_RUNAWAY Stocks — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner entry.", default: "true" },
-      { key: "TG_CMX_ENTRY", label: "Commodity (MCX) — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
@@ -1096,7 +1027,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SAIL_PIVOT_EMA_ST_EXIT", label: "SAIL_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST exit.", default: "true" },
       { key: "TG_GAP_RUNAWAY_EXIT", label: "GAP_RUNAWAY — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) exit.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_EXIT", label: "GAP_RUNAWAY Stocks — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner exit.", default: "true" },
-      { key: "TG_CMX_EXIT", label: "Commodity (MCX) — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
@@ -1123,7 +1053,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SAIL_PIVOT_EMA_ST_DAYREPORT", label: "SAIL_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_PIVOT_EMA_ST day summary on stop.", default: "true" },
       { key: "TG_GAP_RUNAWAY_DAYREPORT", label: "GAP_RUNAWAY — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a GAP_runAway__Kirubakaran (NIFTY) day summary on stop.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_DAYREPORT", label: "GAP_RUNAWAY Stocks — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the stock-scanner day summary on stop.", default: "true" },
-      { key: "TG_CMX_DAYREPORT", label: "Commodity (MCX) — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a day summary when a Crude / Gold / Silver paper page stops.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
       { key: "TG_EOD_CHARTS", label: "EOD Chart Images (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "At 15:34 IST send one chart image per strategy that took an entry today, with its entry/exit markers. Strategies that did not trade send nothing.", default: "true" },
@@ -1215,7 +1144,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_ADVISOR",        label: "Show Settings Advisor",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Settings Advisor menu.", default: "true" },
       { key: "UI_SHOW_OI_MONITOR",     label: "Show OI Monitor",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show the OI Monitor menu — read-only per-strike Open Interest ladder, walls and PCR. Research page: places no orders.", default: "false" },
       { key: "UI_SHOW_SWING_SCANNER",  label: "Show Swing Scanner",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Swing Scanner menu — screens stocks with your active strategies and can place REAL Zerodha delivery orders. Off by default because it is the one page with no dry-run gate.", default: "false" },
-      { key: "UI_SHOW_COMMODITY",      label: "Show COMMODITY group",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY (MCX crude / gold / silver) parent group in the sidebar. It only appears once one of the commodity pages below is switched on.", default: "true" },
       { key: "UI_SHOW_EDGE_ANALYTICS_BUTTON", label: "Show Edge Analytics button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Edge Analytics button on the Consolidation Report page.", default: "true" },
       { key: "EMA_RSI_ST_MODE_ENABLED",     label: "EMA_RSI_ST Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST menu and settings.", default: "true", subheader: "Strategy master toggles" },
       { key: "BB_RSI_MODE_ENABLED",     label: "BB_RSI Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BB_RSI menu and settings.", default: "true" },
@@ -1237,15 +1165,6 @@ const SETTINGS_SCHEMA = [
       { key: "GAP_RUNAWAY_MODE_ENABLED", label: "GAP_runAway__Kirubakaran Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close.", default: "true" },
       { key: "GAP_RUNAWAY_STK_MODE_ENABLED", label: "GAP_runAway Stock Scanner Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY SCANNER menu (under STOCKS) and its settings, and include it in Start All. Same rules over F&O stocks, paper-traded as intraday shares.", default: "true" },
       { key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_PIVOT_EMA_ST menu (under STOCKS) and its settings, include it in Start All, and start streaming SAIL prices. The PIVOT_EMA_ST rules on SAIL stock options. On by default; unproven — never traded.", default: "true" },
-      { key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
-      { key: "CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
-      { key: "CMX_GOLD_EMA_RSI_ST_MODE_ENABLED", label: "Gold EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX gold, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
-      { key: "CMX_GOLD_EMA_RSI_ST_V2_MODE_ENABLED", label: "Gold EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX gold, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
-      { key: "CMX_SILVER_EMA_RSI_ST_MODE_ENABLED", label: "Silver EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Silver → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX silver, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
-      { key: "CMX_SILVER_EMA_RSI_ST_V2_MODE_ENABLED", label: "Silver EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Silver → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX silver, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
-      { key: "CMX_CRUDE_PIVOT_EMA_ST_MODE_ENABLED", label: "Crude Oil PIVOT_EMA_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. On by default.", default: "true" },
-      { key: "CMX_GOLD_PIVOT_EMA_ST_MODE_ENABLED", label: "Gold PIVOT_EMA_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX gold, paper only, separate from every NIFTY strategy. On by default.", default: "true" },
-      { key: "CMX_SILVER_PIVOT_EMA_ST_MODE_ENABLED", label: "Silver PIVOT_EMA_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Silver → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX silver, paper only, separate from every NIFTY strategy. On by default.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -1458,19 +1377,8 @@ const _KEY_TO_MODES = new Map();
   }
 })();
 
-// Commodity modes (cmx_<commodity>_<base>) run the base strategy's signal rules
-// with the COMMODITY sections' timing/size/guards, so their settings are both.
-// Derived from the id, so a new commodity copy of any strategy works unedited.
-function _cmxModeKeys(mode) {
-  const m = /^cmx_[a-z]+_(.+)$/.exec(mode);
-  if (!m) return null;
-  const keys = new Set(_MODE_KEYS[m[1]] || []);
-  for (const s of SETTINGS_SCHEMA) if (s.group === "COMMODITY") for (const f of s.fields) keys.add(f.key);
-  return keys;
-}
-
 function buildModeSnapshot(mode) {
-  const keys = _MODE_KEYS[mode] || _cmxModeKeys(mode);
+  const keys = _MODE_KEYS[mode];
   if (!keys) return null;
   const settings = {};
   for (const k of keys) {
@@ -2407,15 +2315,6 @@ router.get("/", (req, res) => {
   // GAP_RUNAWAY + its stock scanner — "true" by default (Start All starts them).
   const gapRunawayModeOn     = (envData["GAP_RUNAWAY_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const gapRunawayStkModeOn  = (envData["GAP_RUNAWAY_STK_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_STK_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  // Commodity PIVOT_EMA_ST pages default ON, so they also open the Commodity section.
-  const cmxPivotModeOn = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_ST_MODE_ENABLED`)
-    .some(k => (envData[k] ?? process.env[k] ?? "true").toLowerCase() === "true");
-  // Each commodity strategy's section shows once that strategy is on for any
-  // commodity; the shared section shows once any commodity page is on.
-  const cmxStratOn = (strat) => ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_${strat}_MODE_ENABLED`)
-    .some(k => (envData[k] ?? process.env[k] ?? "false").toLowerCase() === "true");
-  const cmxEmaRsiStOn = cmxStratOn("EMA_RSI_ST");
-  const cmxEmaRsiStV2On = cmxStratOn("EMA_RSI_ST_V2");
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -2439,10 +2338,6 @@ router.get("/", (req, res) => {
     "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha": gapRunawayModeOn,
     "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)": gapRunawayStkModeOn,
     "ITM20 SCALP STRATEGY (15m range break + retest, 1 ITM, +20/−10 premium) — Zerodha": itm20ScalpModeOn,
-    "COMMODITY (MCX crude / gold / silver) — shared by every commodity page, paper only": cmxEmaRsiStOn || cmxEmaRsiStV2On || cmxPivotModeOn,
-    "COMMODITY EMA_RSI_ST (MCX crude / gold / silver) — paper only": cmxEmaRsiStOn,
-    "COMMODITY EMA_RSI_ST_V2 (MCX crude / gold / silver) — paper only": cmxEmaRsiStV2On,
-    "COMMODITY PIVOT_EMA_ST (MCX crude / gold / silver) — paper only": cmxPivotModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
 
@@ -2486,7 +2381,7 @@ router.get("/", (req, res) => {
   // Server Control has no schema fields but still needs an index entry.
   railItems.push({ group: "System", id: "server-control", icon: "🔄", nav: "Server Control", count: 0 });
 
-  const RAIL_GROUP_ORDER = ["NIFTY", "COMMODITY", "STOCKS", "Trading", "System"];
+  const RAIL_GROUP_ORDER = ["NIFTY", "STOCKS", "Trading", "System"];
   const railHtml = RAIL_GROUP_ORDER.map(g => {
     const items = railItems.filter(r => r.group === g);
     if (!items.length) return "";

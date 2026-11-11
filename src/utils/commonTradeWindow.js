@@ -1,8 +1,7 @@
 // Common Trade Rules → "Trade window (all strategies)".
 //
-// One entry window for every NIFTY / BANK NIFTY strategy except SIMPLE_9:30
-// and EarlyBird, whose whole rule is the opening candle. Commodity (MCX) keeps
-// its own evening hours. It only gates ENTRIES — there is no forced exit: the
+// One entry window for every NIFTY strategy except SIMPLE_9:30 and EarlyBird,
+// whose whole rule is the opening candle. It only gates ENTRIES — there is no forced exit: the
 // profit lock is the only automatic exit, and an open trade runs until it
 // fires, the trader exits manually, or the session auto-stops.
 //

@@ -831,52 +831,6 @@ const OPEN_PATHS = [
   "/gap_runaway_stk-paper/history",
   "/gap_runaway_stk-paper/debug",
   "/gap_runaway_stk-paper/logs",            // full activity log for the Copy Log button — read-only
-  // COMMODITY (MCX crude/gold/silver) paper pages — read-only surfaces; start/stop/exit/reset stay protected.
-  "/cmx_crude_ema_rsi_st-paper/status",
-  "/cmx_crude_ema_rsi_st-paper/status/data",
-  "/cmx_crude_ema_rsi_st-paper/status/fragment",
-  "/cmx_crude_ema_rsi_st-paper/status/chart-data",
-  "/cmx_crude_ema_rsi_st-paper/history",
-  "/cmx_crude_ema_rsi_st_v2-paper/status",
-  "/cmx_crude_ema_rsi_st_v2-paper/status/data",
-  "/cmx_crude_ema_rsi_st_v2-paper/status/fragment",
-  "/cmx_crude_ema_rsi_st_v2-paper/status/chart-data",
-  "/cmx_crude_ema_rsi_st_v2-paper/history",
-  "/cmx_gold_ema_rsi_st-paper/status",
-  "/cmx_gold_ema_rsi_st-paper/status/data",
-  "/cmx_gold_ema_rsi_st-paper/status/fragment",
-  "/cmx_gold_ema_rsi_st-paper/status/chart-data",
-  "/cmx_gold_ema_rsi_st-paper/history",
-  "/cmx_gold_ema_rsi_st_v2-paper/status",
-  "/cmx_gold_ema_rsi_st_v2-paper/status/data",
-  "/cmx_gold_ema_rsi_st_v2-paper/status/fragment",
-  "/cmx_gold_ema_rsi_st_v2-paper/status/chart-data",
-  "/cmx_gold_ema_rsi_st_v2-paper/history",
-  "/cmx_silver_ema_rsi_st-paper/status",
-  "/cmx_silver_ema_rsi_st-paper/status/data",
-  "/cmx_silver_ema_rsi_st-paper/status/fragment",
-  "/cmx_silver_ema_rsi_st-paper/status/chart-data",
-  "/cmx_silver_ema_rsi_st-paper/history",
-  "/cmx_silver_ema_rsi_st_v2-paper/status",
-  "/cmx_silver_ema_rsi_st_v2-paper/status/data",
-  "/cmx_silver_ema_rsi_st_v2-paper/status/fragment",
-  "/cmx_silver_ema_rsi_st_v2-paper/status/chart-data",
-  "/cmx_silver_ema_rsi_st_v2-paper/history",
-  "/cmx_crude_pivot_ema_st-paper/status",
-  "/cmx_crude_pivot_ema_st-paper/status/data",
-  "/cmx_crude_pivot_ema_st-paper/status/fragment",
-  "/cmx_crude_pivot_ema_st-paper/status/chart-data",
-  "/cmx_crude_pivot_ema_st-paper/history",
-  "/cmx_gold_pivot_ema_st-paper/status",
-  "/cmx_gold_pivot_ema_st-paper/status/data",
-  "/cmx_gold_pivot_ema_st-paper/status/fragment",
-  "/cmx_gold_pivot_ema_st-paper/status/chart-data",
-  "/cmx_gold_pivot_ema_st-paper/history",
-  "/cmx_silver_pivot_ema_st-paper/status",
-  "/cmx_silver_pivot_ema_st-paper/status/data",
-  "/cmx_silver_pivot_ema_st-paper/status/fragment",
-  "/cmx_silver_pivot_ema_st-paper/status/chart-data",
-  "/cmx_silver_pivot_ema_st-paper/history",
   "/ema9vwap-paper/status",      // read-only status page
   "/ema9vwap-paper/status/data", // dashboard AJAX poll
   "/ema9vwap-paper/history",     // read-only history
@@ -943,7 +897,6 @@ const OPEN_PATHS = [
   "/api/holidays",          // read-only holiday list
   "/api/expiry-dates",      // read-only expiry calendar
   "/api/start-all-roster",  // read-only Start-All roster (dashboard button)
-  "/api/cmx/trades",        // read-only COMMODITY paper trades (dashboard cards)
   "/login-logs",            // login attempts viewer (failed + demo)
   "/login-logs/data",       // login logs JSON data
   "/login-logs/clear",      // reset login logs
@@ -1183,8 +1136,7 @@ app.use((req, res, next) => {
   const isOpen = OPEN_PATHS.includes(req.path)
     || (isReadMethod && OPEN_PREFIXES.some(p => req.path.startsWith(p)))
     || (isReadMethod && OPEN_STATUS_RE.test(req.path))
-    || OPEN_PAPER_CTRL_RE.test(req.path)
-    || req.path === "/api/cmx/start-all";   // commodity paper only
+    || OPEN_PAPER_CTRL_RE.test(req.path);
   if (isOpen) return next();
   const token = req.headers["x-api-secret"] || req.query.secret;
   if (token !== secret) return res.status(403).json({ success: false, error: "Forbidden — missing or wrong secret." });
@@ -1304,20 +1256,6 @@ app.use("/sail_pivot_ema_st-paper",    require("./routes/sailPivotEmaStPaper"));
 // the scanner runs most of them (see gapRunawayStkPaper.js).
 app.use("/gap_runaway-paper",          require("./routes/gapRunawayPaper"));           // ← canonical engine (NIFTY options)
 app.use("/gap_runaway_stk-paper",      require("./routes/gapRunawayStkPaper"));        // ← stock scanner, intraday shares (paper only)
-
-// ── COMMODITY (MCX crude / gold / silver) — paper only ───────────────────────
-// Self-contained engine (src/services/commodityPaper.js): REST prices, own files
-// under ~/trading-data/cmx, no shared socket / capital pool / global guards, so
-// nothing here can move a NIFTY or BANK NIFTY strategy. All six may run at once.
-app.use("/cmx_crude_ema_rsi_st-paper", require("./routes/cmxCrudeEmaRsiStPaper"));
-app.use("/cmx_crude_ema_rsi_st_v2-paper", require("./routes/cmxCrudeEmaRsiStV2Paper"));
-app.use("/cmx_gold_ema_rsi_st-paper", require("./routes/cmxGoldEmaRsiStPaper"));
-app.use("/cmx_gold_ema_rsi_st_v2-paper", require("./routes/cmxGoldEmaRsiStV2Paper"));
-app.use("/cmx_silver_ema_rsi_st-paper", require("./routes/cmxSilverEmaRsiStPaper"));
-app.use("/cmx_silver_ema_rsi_st_v2-paper", require("./routes/cmxSilverEmaRsiStV2Paper"));
-app.use("/cmx_crude_pivot_ema_st-paper", require("./routes/cmxCrudePivotEmaStPaper"));
-app.use("/cmx_gold_pivot_ema_st-paper", require("./routes/cmxGoldPivotEmaStPaper"));
-app.use("/cmx_silver_pivot_ema_st-paper", require("./routes/cmxSilverPivotEmaStPaper"));
 
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    lazyRouter(() => require("./routes/paBacktest")));  // ← PA backtest
@@ -1466,44 +1404,6 @@ app.get("/api/expiry-dates", async (req, res) => {
 // *_MODE_ENABLED toggles, so a strategy added to the app — or enabled in
 // Settings after the page was rendered — is started without a page reload and
 // without editing the button.
-// ── COMMODITY Start All — separate from the NSE Start All, since MCX keeps its
-// own hours. Starts every switched-on commodity page that is not running yet.
-app.post("/api/cmx/start-all", async (req, res) => {
-  const results = [];
-  for (const e of require("./utils/commodityPaperRouter").enabledEngines()) {
-    const s = e.snapshot();
-    if (s.running) { results.push({ label: s.label, ok: true, note: "already running" }); continue; }
-    const r = await e.start();
-    results.push({ label: s.label, ok: r.ok, note: r.ok ? "started" : r.reason });
-  }
-  res.json({ success: results.length > 0 && results.every((r) => r.ok), results });
-});
-
-// COMMODITY paper trades for the Dashboard's per-strategy cards, in the row
-// shape /consolidation/data uses. Kept out of that list on purpose: it also
-// feeds the NSE end-of-day Telegram report.
-app.get("/api/cmx/trades", (req, res) => {
-  // "DD/MM/YYYY, HH:MM:SS" IST — the NSE paper books' format. The charts sort a
-  // day's trades by this string, so any other shape would misplace them.
-  const ist = (iso) => {
-    if (!iso) return "";
-    const x = new Date(new Date(iso).getTime() + 19800000).toISOString();
-    return `${x.slice(8, 10)}/${x.slice(5, 7)}/${x.slice(0, 4)}, ${x.slice(11, 19)}`;
-  };
-  const trades = [];
-  for (const e of require("./utils/commodityPaperRouter").visibleEngines()) {
-    const mode = cmxDashMode(e.snapshot());
-    for (const d of e.historyDays()) {
-      for (const t of d.trades) trades.push({ mode, date: d.day, entryTime: ist(t.entryTime), pnl: Number(t.pnl) || 0 });
-    }
-  }
-  res.json({ success: true, trades });
-});
-// Mode key of a commodity engine on the Dashboard — also the card's data-mode.
-function cmxDashMode(s) { return `CMX_${s.commodity}_${cmxStratName(s)}`; }
-// Strategy name of a commodity engine ("V1" | "V2" | "PIVOT") — PIVOT added for PIVOT_EMA_ST.
-function cmxStratName(s) { return s.strategy === "V2" ? "EMA_RSI_ST_V2" : s.strategy === "PIVOT" ? "PIVOT_EMA_ST" : "EMA_RSI_ST"; }
-
 app.get("/api/start-all-roster", (req, res) => {
   const modes = startAllRoster();
   res.json({
@@ -1516,9 +1416,7 @@ app.get("/api/start-all-roster", (req, res) => {
 // ── Candle Cache Info ─────────────────────────────────────────────────────────
 // Lightweight liveness probe so the dashboard can auto-swap to/from realtime view.
 app.get("/api/session-active", (req, res) => {
-  // COMMODITY engines never touch the shared socket state (they poll quotes), so
-  // they are asked separately — otherwise an MCX-only evening never flips.
-  res.json({ active: !!sharedSocketState.isAnyActive() || require("./utils/commodityPaperRouter").anyRunning() });
+  res.json({ active: !!sharedSocketState.isAnyActive() });
 });
 
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
@@ -1539,16 +1437,12 @@ app.get("/", (req, res) => {
   // When any paper session is active, show the unified Real-Time monitor in place
   // of the normal dashboard (gated by UI_SHOW_REALTIME, default on).
   const showRealtime = (process.env.UI_SHOW_REALTIME || 'true').toLowerCase() === 'true';
-  if (showRealtime && (sharedSocketState.isAnyActive() || require("./utils/commodityPaperRouter").anyRunning())) {
+  if (showRealtime && sharedSocketState.isAnyActive()) {
     const { renderRealtimePage } = require("./routes/realtime");
     return res.send(renderRealtimePage({ sidebarKey: "dashboard", autoFlipBack: true }));
   }
   try {
   const fyersOk     = !!process.env.ACCESS_TOKEN;
-  // COMMODITY: any page switched on, and the MCX close its engines stop taking
-  // starts at (commodityPaper.js cfg().sessEnd).
-  const cmxOn       = require("./utils/commodityPaperRouter").enabledEngines().length > 0;
-  const cmxSessEnd  = /^\d{1,2}:\d{2}$/.test(process.env.CMX_SESSION_END || "") ? process.env.CMX_SESSION_END : "23:30";
   const zerodhaOk   = zerodha.isAuthenticated();
   const zerodhaConf = !!process.env.ZERODHA_API_KEY;
   const bbRsiMode   = sharedSocketState.getBbRsiMode();
@@ -1596,12 +1490,6 @@ app.get("/", (req, res) => {
   const gapRunawayModeOn     = (process.env.GAP_RUNAWAY_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const gapRunawayStkMode    = sharedSocketState.getGapRunawayStkMode ? sharedSocketState.getGapRunawayStkMode() : null;
   const gapRunawayStkModeOn  = (process.env.GAP_RUNAWAY_STK_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  // One chart card per COMMODITY page (switched on, or still running).
-  const { visibleEngines: cmxVisibleEngines, commodityIcon } = require("./utils/commodityPaperRouter");
-  const dashCmxCards = cmxVisibleEngines().map((e) => {
-    const s = e.snapshot();
-    return { mode: cmxDashMode(s), base: `/${s.id}-paper`, icon: commodityIcon(s.commodity), title: `${s.commodityLabel.toUpperCase()} · ${cmxStratName(s)}` };
-  });
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
@@ -1675,10 +1563,6 @@ app.get("/", (req, res) => {
     // extra wiring. `paper` is null when that route is not mounted.
     paper: ((_dashTileRoutes.get(_dashNorm(_dashSlugFor(t.key))) || {}).pages || {}).paper || null,
   }));
-  // COMMODITY pages join the Last Session / Today So Far panel — paper only.
-  for (const c of dashCmxCards) {
-    dashSessionTiles.push({ key: c.mode, cls: 'cmx', label: c.icon + ' ' + c.title, paper: c.base + '/status', statusData: c.base + '/status/data' });
-  }
 
   // ── Start-All roster — the enabled strategies (same helper the sidebar uses)
   // joined to the start routes discovered from the mounted routers. Read per
@@ -1695,8 +1579,7 @@ app.get("/", (req, res) => {
 
   // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
   // top-bar date range, summed over every ENABLED strategy that trades through
-  // that broker (same broker map as utils/capitalPool.js). COMMODITY pages draw
-  // from the Fyers pool.
+  // that broker (same broker map as utils/capitalPool.js).
   //
   // The P&L half is filled in client-side from the same trade list the charts
   // read, not from each file's all-time `totalPnl`: a wallet that ignored the
@@ -1725,7 +1608,7 @@ app.get("/", (req, res) => {
     ['zerodha', 'SIMPLE930',        simple930ModeOn],
     ['zerodha', 'GAP_RUNAWAY',      gapRunawayModeOn],
     ['zerodha', 'GAP_RUNAWAY_STK',  gapRunawayStkModeOn],
-  ].concat(dashCmxCards.map((c) => ['fyers', c.mode, true]));
+  ];
   const _modesOf = (broker) => _poolModes.filter(([b, , on]) => b === broker && on).map(([, m]) => m);
   const brokerPools = {
     fyers:   { inv: fyersInv,   modes: _modesOf('fyers') },
@@ -2329,8 +2212,6 @@ app.get("/", (req, res) => {
     /* Light theme — top-bar pills/buttons + broker expiry pill (shared chrome lacks light variants) */
     :root[data-theme="light"] .top-bar-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
     :root[data-theme="light"] .top-bar-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#166534; }
-    .top-bar-btn.run-cmx { background:#1c1604; border-color:#a16207; color:#facc15; }
-    :root[data-theme="light"] .top-bar-btn.run-cmx { background:#fefce8 !important; border-color:#a16207 !important; color:#a16207; }
     /* Pills that open a popup — the rest of the pills are read-only labels.
        Brightening is invisible on the light theme's near-white pill, so that
        one darkens instead. */
@@ -2395,7 +2276,6 @@ app.get("/", (req, res) => {
     .mm-card.sailpivotemast .mm-dot { background:#fcd34d; }
     .mm-card.gaprunaway .mm-dot { background:#a78bfa; }
     .mm-card.gaprunawaystk .mm-dot { background:#c084fc; }
-    .mm-card.cmx .mm-dot { background:#eab308; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global date-range filter (top-bar) — narrows every chart on the dashboard.
        Same option set as Edge Analytics so the two pages agree on what a range
@@ -2542,9 +2422,8 @@ app.get("/", (req, res) => {
     @media (max-width:1100px){ .da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:repeat(3, 1fr); } }
     @media (max-width:900px){ .da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr 1fr; } }
     @media (max-width:560px){ .da-grid.cols-2,.da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr; } }
-    /* Column flex + a growing header: a label that wraps (the COMMODITY tiles'
-       "CRUDE OIL · EMA_RSI_ST_V2") pushes the row's other headers down with it,
-       so every value in a row stays on one line. */
+    /* Column flex + a growing header: a label that wraps pushes the row's
+       other headers down with it, so every value in a row stays on one line. */
     .da-tile { background:#080e1a; border:1px solid #1a2236; border-radius:7px; padding:9px 11px; min-width:0; display:flex; flex-direction:column; }
     .da-tile > .da-tile-hdr { flex:1 0 auto; align-items:flex-start; }
     .da-tile.ema_rsi_st { border-top:2px solid #3b82f6; }
@@ -2552,7 +2431,6 @@ app.get("/", (req, res) => {
     .da-tile.pa    { border-top:2px solid #a78bfa; }
     .da-tile.orb      { border-top:2px solid #10b981; }
     .da-tile.info  { border-top:2px solid #22d3ee; }
-    .da-tile.cmx   { border-top:2px solid #eab308; }
     /* Clickable tiles: an <a> that must still lay out exactly like the div it
        replaced, so grid sizing and the mobile column count are unchanged. */
     a.da-tile-link { display:flex; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s, background .15s, transform .15s; }
@@ -2677,8 +2555,7 @@ ${buildSidebar('dashboard', false)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
-      ${cmxOn ? `<button id="btn-all-cmx" class="top-bar-btn run-cmx" style="display:none;" onclick="startAllCommodity(this)" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet">🛢 Start All (Commodity)</button>` : ''}`}
+      <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
       <!-- The manual "Reset Token" button was removed: token clearing is now
            automatic (4:00 PM + 7:00 AM IST schedulers, and the login routes
            wipe any DISCONNECTED broker's saved token before starting OAuth).
@@ -2977,16 +2854,6 @@ ${buildSidebar('dashboard', false)}
       <div class="mm-empty" id="mm-empty-GAP_RUNAWAY_STK" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
-    ${dashCmxCards.map((c) => `
-    <div class="mm-card cmx" data-mode="${c.mode}">
-      <div class="mm-hdr">
-        <span class="mm-dot"></span>
-        <span class="mm-title">${c.icon} ${c.title}</span>
-      </div>
-      <div class="mm-stats" id="mm-stats-${c.mode}">—</div>
-      <div class="mm-wrap"><canvas id="mmChart-${c.mode}"></canvas></div>
-      <div class="mm-empty" id="mm-empty-${c.mode}" style="display:none;">No paper trades yet</div>
-    </div>`).join('')}
   </div>
   <div class="mm-card mm-grid-empty" id="mmGridEmpty" style="display:none;">
     <div class="mm-empty" id="mmGridEmptyTxt">No trades yet</div>
@@ -3329,8 +3196,7 @@ function _startAllRow(name, ok, why){
 // Always shown after a Start All. Previously an all-success run just reloaded
 // the page silently, which left no confirmation that every strategy was really
 // up; now every attempted mode is listed by name with its verified state.
-async function _handleStartAllResult(btn, origText, label, endpoints, result, cmxRows){
-  cmxRows = cmxRows || [];
+async function _handleStartAllResult(btn, origText, label, endpoints, result){
   var failByEndpoint = {};
   result.failures.forEach(function(f){ failByEndpoint[f.endpoint] = f; });
 
@@ -3345,12 +3211,9 @@ async function _handleStartAllResult(btn, origText, label, endpoints, result, cm
            || v.error
            || 'started but not running';
     return _startAllRow(_prettyEndpoint(ep), false, why);
-  }).join('') + cmxRows.map(function(x){
-    if (x.ok) okCount++;
-    return _startAllRow(x.label, !!x.ok, x.note);
   }).join('');
 
-  var total  = endpoints.length + cmxRows.length;
+  var total  = endpoints.length;
   var allOk  = okCount === total;
   var header = allOk
     ? ('All ' + total + ' running — verified.')
@@ -3390,19 +3253,17 @@ async function _noModesEnabled(endpoints, what){
 
 // Single entry point for the Start-All buttons, so the busy flag can
 // never be left set (or skipped) by one of them drifting from the others.
-async function _runStartAll(btn, origText, label, endpoints, withCmx){
+async function _runStartAll(btn, origText, label, endpoints){
   _startAllBusy = true;
   try {
     var result = await _startAll(endpoints);
-    var cmxRows = withCmx ? await _startAllCmx() : [];
-    await _handleStartAllResult(btn, origText, label, endpoints, result, cmxRows);
+    await _handleStartAllResult(btn, origText, label, endpoints, result);
   } finally {
     _startAllBusy = false;
     _startAllClickBusy = false;
   }
 }
 
-// NIFTY / BANK NIFTY only — COMMODITY (MCX) has its own button below.
 async function startAllPaper(btn){
   var orig = btn.textContent;
   if (!await _beginStartAll(btn)) return;
@@ -3411,39 +3272,12 @@ async function startAllPaper(btn){
   await _runStartAll(btn, orig, 'All Paper', PAPER_ENDPOINTS);
 }
 
-// MCX keeps its own hours, so it starts on its own button.
-async function startAllCommodity(btn){
-  var orig = btn.textContent;
-  if (!await _beginStartAll(btn)) return;
-  btn.textContent = '⏳ Starting commodity...';
-  await _runStartAll(btn, orig, 'All Commodity', [], true);
-}
-
-// Starts every switched-on commodity page; one result row per page.
-async function _startAllCmx(){
-  try {
-    var r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
-    if (!r) return [{ label: 'Commodity', ok: false, note: 'No response from server' }];
-    var body = await r.json();
-    // Switched off in Settings after this page loaded — otherwise "All 0 running".
-    if (!body.results || !body.results.length) return [{ label: 'Commodity', ok: false, note: 'No commodity page is switched on.' }];
-    return body.results;
-  } catch (e) {
-    return [{ label: 'Commodity', ok: false, note: (e && e.message) || 'Request failed' }];
-  }
-}
-
 function startAll(btn){
   return startAllPaper(btn);
 }
 
 // ── Quick-Action button state ───────────────────────────────────────────────
 var _allBtnState = { paperOn:false };
-var CMX_ON = ${cmxOn ? 'true' : 'false'};
-var CMX_STARTABLE = ${cmxOn && fyersOk ? 'true' : 'false'};
-var _cmxOpen = false;              // set by checkTradingStatus(): MCX open and a commodity page can start
-var CMX_END_MIN = ${Number(cmxSessEnd.split(':')[0]) * 60 + Number(cmxSessEnd.split(':')[1])};
-var CMX_END_LABEL = ${JSON.stringify(cmxSessEnd)};
 var _marketsClosed = false;        // set by checkTradingStatus(): weekend / NSE holiday / pre- or post-market
 // Derived from the same enabled-strategy roster as the Start-All endpoint lists.
 var ALL_BTN_POLL = ${JSON.stringify(startAllPollTargets)};
@@ -3452,9 +3286,6 @@ function _applyAllBtnState(paperOn){
   // _marketsClosed wins: this poll runs every few seconds and would
   // otherwise re-show the buttons that checkTradingStatus() just hid on a
   // weekend / NSE holiday / outside market hours.
-  // Commodity is paper-only and follows MCX hours, not NSE's.
-  var cb = document.getElementById('btn-all-cmx');
-  if(cb) cb.style.display = _cmxOpen ? '' : 'none';
   var b = document.getElementById('btn-all-start');
   if(!b) return;
   if(_marketsClosed){ b.style.display = 'none'; return; }
@@ -3635,9 +3466,7 @@ function _renderDashTotal(){
   var dot = document.getElementById('dashCumDot');
   if (dot) dot.style.background = _pnlColor(total);
   var link = document.getElementById('dashCumLink');
-  // With commodity in the paper total, "View" opens the report that shows both
-  // markets — /consolidation is NSE only.
-  if (link) link.href = (_dcData.cmx && _dcData.cmx.length) ? '/consolidation-report' : '/consolidation';
+  if (link) link.href = '/consolidation';
   // Nothing in the source/range → no card, same as the strategy cards above.
   var card = document.getElementById('dashCumCard');
   if (card) card.style.display = trades.length ? '' : 'none';
@@ -3675,13 +3504,6 @@ async function loadDashCumCharts(){
     if (r.status === 401) _authLost();
     if (r.ok){ var d = await r.json(); _dcData.paper = (d && d.trades) || []; }
   } catch(_){ _dcData.paper = []; }
-  // COMMODITY paper trades count toward the paper total too. Fetched here and
-  // not read from CMX_MM_MODES: that is declared further down this script.
-  try {
-    var rc = await fetch('/api/cmx/trades', { cache: 'no-store' });
-    if (rc.ok){ var dc = await rc.json(); _dcData.cmx = (dc && dc.trades) || []; }
-  } catch(_){}
-  if (_dcData.cmx && _dcData.cmx.length) _dcData.paper = (_dcData.paper || []).concat(_dcData.cmx);
   _renderDashTotal();
 }
 
@@ -3692,7 +3514,7 @@ async function loadDashCumCharts(){
   function refreshRange(){
     _readDashRange();
     _renderDashTotal();
-    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
+    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','EMA_RSI_ST_V2'].forEach(_renderModuleChart);
     _renderModuleChart('ST_RSI_PIV_BB');
     _renderModuleChart('SAIL_VWAP_ST');
     _renderModuleChart('ITM20_SCALP');
@@ -3729,8 +3551,6 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (Range filter) ─────────────────────────────────────
 var _mmData = { paper: null };
 var _mmCharts = {};
-// COMMODITY cards.
-var CMX_MM_MODES = ${JSON.stringify(dashCmxCards.map((c) => c.mode))};
 
 // A strategy with no trades in the selected range has nothing to show,
 // so its whole card is hidden rather than kept as a "0 trades" placeholder —
@@ -3810,15 +3630,7 @@ async function loadModuleCharts(){
     if (r1.status === 401) _authLost();
     if (r1.ok){ var d1 = await r1.json(); _mmData.paper = (d1 && d1.trades) || []; }
   } catch(_){ _mmData.paper = []; }
-  // COMMODITY rows join the paper list; the Fyers wallet counts them. The
-  // cumulative chart does not read this list (it has its own fetch).
-  if (CMX_MM_MODES.length) {
-    try {
-      var r3 = await fetch('/api/cmx/trades', { cache: 'no-store' });
-      if (r3.ok){ var d3 = await r3.json(); _mmData.paper = (_mmData.paper || []).concat((d3 && d3.trades) || []); }
-    } catch(_){}
-  }
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','EMA_RSI_ST_V2'].forEach(_renderModuleChart);
   _renderModuleChart('ST_RSI_PIV_BB');
   _renderModuleChart('SAIL_VWAP_ST');
     _renderModuleChart('ITM20_SCALP');
@@ -4169,10 +3981,7 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     var tW = lastDayAgg ? lastDayAgg.total.w : 0;
     var tL = lastDayAgg ? lastDayAgg.total.l : 0;
     // TOTAL spans every strategy, so it opens the cross-mode history page.
-    // /consolidation is NSE only — a day with commodity in it opens the report
-    // that shows both markets.
-    var dayHasCmx = !!(lastDayAgg && SESSION_TILES.some(function(t){ return t.cls === 'cmx' && lastDayAgg.byStrategy[t.key].t > 0; }));
-    lastHtml += tileWrap(dayHasCmx ? '/consolidation-report' : '/consolidation',
+    lastHtml += tileWrap('/consolidation',
       'info', 'trade history',
       '<div class="da-tile-hdr">TOTAL<span class="da-pill">' + tTrades + 'T</span></div>' +
       '<div class="da-big ' + cls(tNet) + '">' + fmtINR(tNet) + '</div>' +
@@ -4218,8 +4027,6 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
       // setMode writes this through textContent, so it takes the character, not
       // the HTML entity — "&middot;" printed itself verbatim.
       setMode('live', 'Polling every 8s · ' + istDateISO());
-      // A COMMODITY tile carries its own status URL; its session sits under
-      // "monitor" in the same field names as the NSE strategies'.
       var liveResults = await Promise.all(SESSION_TILES.map(function(t){
         return fetchJSON(t.statusData || LIVE_URLS[t.key]).then(function(d){ return (d && d.monitor) ? d.monitor : d; });
       }));
@@ -4231,12 +4038,8 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
       _pollTimer = setInterval(refresh, 8000);
     } else {
       setMode('post', 'Paper · refreshed ' + istDateISO());
-      var [paper, cmx] = await Promise.all([
-        fetchJSON('/consolidation/data?enabledOnly=1'),
-        fetchJSON('/api/cmx/trades'),
-      ]);
-      // COMMODITY rows are paper too.
-      var paperTrades = ((paper && paper.trades) || []).concat((cmx && cmx.trades) || []);
+      var paper = await fetchJSON('/consolidation/data?enabledOnly=1');
+      var paperTrades = (paper && paper.trades) || [];
       body.innerHTML = renderPostMarket(paperTrades);
 
       clearPoll();
@@ -4274,15 +4077,13 @@ async function checkTradingStatus(){
 
     // Holiday check runs first and unconditionally so the Start All button
     // is hidden regardless of weekend/pre/post-market early-returns below.
-    var isHoliday = false, mcxShutAllDay = false;
+    var isHoliday = false;
     try {
       var hres = await fetch('/api/holidays', {cache:'no-store'});
       if(hres.ok){
         var hdata = await hres.json();
         if(hdata && hdata.success && hdata.holidays && hdata.holidays.includes(todayStr)){
           isHoliday = true;
-          var hd = (hdata.details || []).find(function(h){ return h.date === todayStr; });
-          mcxShutAllDay = !!(hd && hd.mcx === 'closed');
         }
       }
     } catch(e){}
@@ -4290,14 +4091,6 @@ async function checkTradingStatus(){
     // below via _applyAllBtnState. Pre/post-market counts as shut too — the same
     // window the pill reports as closed.
     _marketsClosed = isHoliday || day === 0 || day === 6 || hour < 7 || hour >= 16;
-    // COMMODITY keeps MCX hours, not NSE's: startable on a weekday from 7 AM
-    // (the overnight Fyers token is wiped at 7) until the MCX session ends —
-    // the engine refuses a start after that. On an NSE holiday MCX opens at
-    // 5 PM, or stays shut all day (h.mcx from /api/holidays).
-    var mins = hour * 60 + now.getMinutes();
-    var cmxOpen = CMX_ON && day !== 0 && day !== 6 && mins < CMX_END_MIN
-      && !mcxShutAllDay && !(isHoliday && hour < 17);
-    _cmxOpen = CMX_STARTABLE && cmxOpen && hour >= 7;
     _applyAllBtnState(_allBtnState.paperOn);
 
     if(!alertDiv || alertDiv._dismissed) return;
@@ -4312,11 +4105,7 @@ async function checkTradingStatus(){
     if(hour < 7 || hour >= 16){
       // Not dismissible, same reason as weekend/holiday: pre/post-market is a
       // fact the user cannot change, so a ✕ only hides it.
-      // Name the market: with a COMMODITY page on, MCX is still open until
-      // late evening while NSE is shut.
-      var pillTxt = hour < 7
-        ? (CMX_ON ? 'Pre-market — NSE opens 9:15 AM · MCX 9:00 AM IST' : 'Pre-market — opens 9:15 AM IST')
-        : (cmxOpen ? 'NSE closed for the day · MCX open till ' + CMX_END_LABEL + ' IST' : 'Post-market — closed for the day');
+      var pillTxt = hour < 7 ? 'Pre-market — opens 9:15 AM IST' : 'Post-market — closed for the day';
       showStatusPill(alertDiv, '🕐', pillTxt, '#60a5fa', false); return;
     }
     alertDiv.style.display = 'none';
@@ -4593,25 +4382,10 @@ function runEODTokenClear(deadline) {
   }
 
   try {
-    // A switched-on COMMODITY page trades MCX until ~23:30 on the Fyers token, so
-    // on those days only Zerodha is cleared now and Fyers after the MCX close.
-    // (A restart in between drops that timer; the 7:00 AM reset clears it then.)
-    const fyHoldUntil = require("./utils/commodityPaperRouter").fyersTokenHoldUntil();
-    if (fyHoldUntil) {
-      console.log("🔴 [EOD] Auto-clearing Zerodha token — Fyers kept for the MCX session...");
-      zerodha.clearZerodhaToken();
-      const at = new Date(fyHoldUntil + 19800000).toISOString().slice(11, 16);
-      console.log(`⏸️  [EOD] Fyers token clear held for COMMODITY until ${at} IST`);
-      setTimeout(() => {
-        try { clearFyersToken(); console.log("✅ [EOD] Fyers token cleared after the MCX session."); }
-        catch (e) { console.error(`❌ [EOD] Fyers token clear failed: ${e.message}`); }
-      }, fyHoldUntil - Date.now());
-    } else {
-      console.log("🔴 [EOD] Auto-clearing Fyers & Zerodha tokens...");
-      clearFyersToken();
-      zerodha.clearZerodhaToken();
-      console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
-    }
+    console.log("🔴 [EOD] Auto-clearing Fyers & Zerodha tokens...");
+    clearFyersToken();
+    zerodha.clearZerodhaToken();
+    console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
   } catch (err) {
     console.error(`❌ [EOD] Token clear failed: ${err.message}`);
   } finally {

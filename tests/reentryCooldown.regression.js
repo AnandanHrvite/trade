@@ -101,8 +101,6 @@ check("every paper engine", () => {
   const missing = [];
   for (const f of fs.readdirSync(dir).filter(x => /Paper\.js$/.test(x))) {
     const src = decomment(read(`routes/${f}`));
-    // The COMMODITY (MCX) pages are thin wrappers; services/commodityPaper.js owns entries.
-    if (/utils\/commodityPaperRouter/.test(src)) continue;
     // GAP_RUNAWAY (NIFTY): no common rule applies (the user's rule), and it
     // takes one trade a day with no re-entry — asserted below.
     if (f === "gapRunawayPaper.js") continue;
@@ -115,10 +113,6 @@ check("GAP_RUNAWAY (NIFTY) never applies the wait-after-exit cooldown (no common
   for (const f of ["routes/gapRunawayPaper.js"]) {
     assert.ok(!uses(f), `${f} must not apply the common cooldown`);
   }
-});
-
-check("the commodity paper engine", () => {
-  assert.ok(uses("services/commodityPaper.js"), "services/commodityPaper.js does not apply the cooldown");
 });
 
 check("every strategy backtest", () => {

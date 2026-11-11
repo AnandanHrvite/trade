@@ -353,7 +353,7 @@ The only strategy on a **single stock**: SAIL (`NSE:SAIL-EQ`), option buying, in
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. Every number is the user's stated rule, not a fitted value. Ships ON, so Start All starts it.
 
-One rule set on four instruments, each with its own settings and position: **PIVOT_EMA_ST** (NIFTY 50, under NIFTY in the sidebar), **SAIL_PIVOT_EMA_ST** (SAIL stock options, under STOCKS) and three paper-only COMMODITY pages (MCX crude / gold / silver). Option buying, intraday, 1 lot. Fyers data, Zerodha orders. All indicators are read on the spot chart on a **closed** candle.
+One rule set on two instruments, each with its own settings and position: **PIVOT_EMA_ST** (NIFTY 50, under NIFTY in the sidebar) and **SAIL_PIVOT_EMA_ST** (SAIL stock options, under STOCKS). Option buying, intraday, 1 lot. Fyers data, Zerodha orders. All indicators are read on the spot chart on a **closed** candle.
 
 - **BUY CE** when one candle does all three: closes between yesterday's pivot **PP** and **R1**, sees EMA20 cross **above** EMA50 on that very candle (a cross on an earlier candle does not count), and has SuperTrend(10, 3) green. **BUY PE** is the mirror: closes between **S1** and **PP**, EMA20 crosses **below** EMA50, SuperTrend red. A close above R1 or below S1 never enters.
 - **Pivots** are Traditional floor pivots from the previous day's daily high/low/close and do not move during the day.
@@ -620,13 +620,12 @@ log, so each session's trades carry the exact config that produced them.
 | `/sail_vwap_st-paper/status` | Paper trade — SAIL chart with session VWAP and the SuperTrend line |
 | `/sail_vwap_st-paper/history` | Sessions (per-session delete + view modal) |
 
-### PIVOT_EMA_ST (NIFTY / SAIL / COMMODITY)
+### PIVOT_EMA_ST (NIFTY / SAIL)
 | URL | Description |
 |-----|-------------|
 | `/pivot_ema_st-paper/status` | Paper trade — NIFTY chart with EMA20/50, SuperTrend and the PP / R1 / S1 lines |
 | `/pivot_ema_st-paper/history` | Sessions (per-session delete + view modal) |
 | `/sail_pivot_ema_st-paper/status`, `/history` | The same on SAIL stock options |
-| `/cmx_{crude,gold,silver}_pivot_ema_st-paper/status` | COMMODITY paper pages (MCX futures-option paper, no live) |
 
 ### GAP_runAway__Kirubakaran (NIFTY + stock scanner)
 | URL | Description |

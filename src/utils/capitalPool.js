@@ -98,22 +98,6 @@ const STRATEGIES = {
   gap_runaway_stk: { broker: "zerodha", label: "GAP_RUNAWAY_STK", file: "gap_runaway_stk_paper_trades.json" },
 };
 
-// COMMODITY (MCX) paper engines — draw from the FYERS pool (their prices come
-// from Fyers), so a crude loss can refuse a NIFTY entry. `cmx` keeps them gated
-// during a tick replay, which drives the NSE engines only. Keyed by the engine id; the book
-// lives in ~/trading-data/cmx/ as { days: { YYYY-MM-DD: { pnl } } } and is
-// written on every exit, so realized P&L is the sum of its days.
-for (const c of ["crude", "gold", "silver"]) {
-  for (const [v, name] of [["ema_rsi_st", "EMA_RSI_ST"], ["ema_rsi_st_v2", "EMA_RSI_ST_V2"]]) {
-    const id = `cmx_${c}_${v}`;
-    STRATEGIES[id] = { broker: "fyers", label: `${name} (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true, cmx: true };
-  }
-}
-// PIVOT_EMA_ST commodity pages — same shape as the loop above.
-for (const c of ["crude", "gold", "silver"]) {
-  const id = `cmx_${c}_pivot_ema_st`;
-  STRATEGIES[id] = { broker: "fyers", label: `PIVOT_EMA_ST (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true, cmx: true };
-}
 
 const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT" };
 
@@ -277,10 +261,7 @@ function snapshot() {
 
 // ── Gate ─────────────────────────────────────────────────────────────────────
 
-// Tick replay drives the NSE engines only — commodity runs on live MCX quotes
-// alongside it, so a replay must not switch the commodity gate off.
 function _inReplay(strategyKey) {
-  if (STRATEGIES[strategyKey] && STRATEGIES[strategyKey].cmx) return false;
   try { return require("../services/tickReplay").isReplayInProgress(); } catch (_) { return false; }
 }
 
@@ -473,7 +454,7 @@ function release(strategyKey, netPnl, opts = {}) {
       }
     }
 
-    // A book written on every exit (commodity) must be re-read now, not after
+    // The book must be re-read now, not after
     // the memo expires — or a same-candle re-entry is gated without this trade.
     _pnlMemo.delete(strategyKey);
     if (opts.sim || _inReplay(strategyKey)) return;

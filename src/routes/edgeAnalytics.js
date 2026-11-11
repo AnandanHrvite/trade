@@ -17,7 +17,7 @@
  * grid, an R-multiple distribution and an Nth-trade-of-the-day cut — plus day patterns:
  * days by trade count, a daily-cap what-if, W/L day sequences and what follows a winner.
  *
- * Market (NIFTY / BANK NIFTY / COMMODITY) narrows the Strategy list the same way the
+ * Market (NIFTY today) narrows the Strategy list the same way the
  * Consolidation Report does; Exit and Hour options are re-listed from the trades in scope.
  *
  * Layout is a scanning dashboard, not a chart viewer: short chart boxes, cards stepping
@@ -75,30 +75,11 @@ const PAPER_SOURCES = [
   { mode: "EARLYBIRD", file: "early_bird_paper_trades.json" },
 ];
 
-// COMMODITY (MCX) paper engines keep their own book under ~/trading-data/cmx as
-// { days: { YYYY-MM-DD: { trades } } } — same list consolidationReport.js reads.
-const CMX_SOURCES = [];
-for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
-  for (const st of ["EMA_RSI_ST", "EMA_RSI_ST_V2"]) {
-    const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
-    CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`,
-                       file: `cmx/${id}_paper_trades.json`, modeKey: `CMX_${c}_${st}_MODE_ENABLED` });
-  }
-}
-// PIVOT_EMA_ST commodity pages — same shape; their toggle defaults ON (modeDefault).
-for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
-  const st = "PIVOT_EMA_ST";
-  const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
-  CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`,
-                     file: `cmx/${id}_paper_trades.json`, modeKey: `CMX_${c}_${st}_MODE_ENABLED`, modeDefault: "true" });
-}
-
 // Which market a strategy trades — the same split the Consolidation Report tables use.
 function groupOf(mode) {
-  if (mode.startsWith("CMX_")) return "COMMODITY";
   return "NIFTY";
 }
-const MARKETS = ["NIFTY", "COMMODITY"];
+const MARKETS = ["NIFTY"];
 
 // Exit reasons carry the fill price ("Trail SL hit @ ₹22484.08"), so the raw text
 // makes one filter option per trade. Numbers become "#" so the picker and the
@@ -144,8 +125,7 @@ const ISO_RE = /^\d{4}-\d{2}-\d{2}T/;
 function tradeRow(book, mode, date, t) {
   const side = t.side || t.optionType || "";
   // Same formula the engines use for pnlPoints — recomputed only when the
-  // engine did not record it (ORB, MCX), so every strategy can be compared.
-  // MCX records the future's price as spotAtEntry/spotAtExit.
+  // engine did not record it (ORB), so every strategy can be compared.
   // The pair is taken together so an entry premium is never subtracted from an exit spot.
   let pts = round(t.pnlPoints, 2);
   const optPair = num(t.entryPrice) !== null && num(t.exitPrice) !== null;
@@ -156,7 +136,7 @@ function tradeRow(book, mode, date, t) {
     // sale, so it too earns on the way down — both invert the subtraction.
     pts = round((xP - eP) * (side === "PE" || side === "SHORT" ? -1 : 1), 2);
   }
-  // MCX stores ISO stamps and no durationMs. Only ISO is parsed: Date.parse reads
+  // Only ISO stamps are parsed for a missing durationMs: Date.parse reads
   // the engines' "DD/MM/YYYY" stamps as month-first and would invent durations.
   let durMs = num(t.durationMs);
   if (durMs === null && ISO_RE.test(String(t.entryTime)) && ISO_RE.test(String(t.exitTime))) {
@@ -202,17 +182,6 @@ function loadBook(sources, book) {
   return out;
 }
 
-function loadCmxBook() {
-  const out = [];
-  for (const src of CMX_SOURCES) {
-    const data = safeRead(path.join(DATA_DIR, src.file));
-    for (const [date, d] of Object.entries(data.days || {})) {
-      for (const t of (d.trades || [])) out.push(tradeRow("paper", src.mode, date, t));
-    }
-  }
-  return out;
-}
-
 // Cache the flattened+sorted trade list — same approach as consolidation.js.
 // Re-reading + JSON.parsing all 8 (growing) trade files on every page hit is
 // wasteful; invalidate by a cheap mtime+size signature so a new trade is picked
@@ -221,7 +190,7 @@ let _edgeCache = null;
 let _edgeSig   = null;
 function _sourcesSig() {
   let sig = "";
-  for (const src of [...PAPER_SOURCES, ...CMX_SOURCES]) {
+  for (const src of PAPER_SOURCES) {
     try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
     catch (_) { sig += `${src.mode}:0|`; }
   }
@@ -230,7 +199,7 @@ function _sourcesSig() {
 function loadAllTrades() {
   const sig = _sourcesSig();
   if (_edgeCache && sig === _edgeSig) return _edgeCache;
-  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadCmxBook());
+  const trades = loadBook(PAPER_SOURCES, "paper");
   // oldest → newest so the equity curve reads left-to-right
   trades.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   _edgeCache = trades;
@@ -243,21 +212,18 @@ router.get("/", (req, res) => {
   // hidden from the sidebar, so it must not appear in the Strategy dropdown, the
   // per-strategy table, or the "All" totals. Filtered per-request, never cached:
   // Settings saves mutate process.env while the process is running.
-  // COMMODITY engines only count while their own page toggle is on.
-  const cmxOn      = CMX_SOURCES.filter(x => (process.env[x.modeKey] || x.modeDefault || "false").toLowerCase() === "true");
-  const enabled    = [...enabledStrategies().map(x => ({ mode: x.mode, label: x.label })),
-                      ...cmxOn.map(x => ({ mode: x.mode, label: x.label }))];
+  const enabled    = enabledStrategies().map(x => ({ mode: x.mode, label: x.label }));
   const enabledSet = new Set(enabled.map(x => x.mode));
   const trades     = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const modePicker = multiSelectHTML('fMode', enabled.map(x => ({ value: x.mode, label: x.label })), 'All');
   // Market buttons list only markets that have an enabled strategy, so a
-  // NIFTY-only install shows no BANK NIFTY / COMMODITY button that can never match.
+  // market with no enabled strategy shows no button that can never match.
   const marketButtons = MARKETS.filter(g => enabled.some(x => groupOf(x.mode) === g))
     .map(g => `<button data-mkt="${g}">${g}</button>`).join('');
 
   // Exit-reason and entry-hour options are built in the browser from the trades
   // in the current book / market / strategy / range (refreshPickers), so a
-  // COMMODITY view never lists NIFTY exit reasons. The server ships them empty.
+  // narrowed view never lists another market's exit reasons. The server ships them empty.
   const reasonPicker = multiSelectHTML('fReason', [], 'All');
   const hourPicker   = multiSelectHTML('fHour', [], 'All');
 
@@ -576,7 +542,7 @@ function applyFilter(f){
 // The shared multi-select renders a fixed list. Here the Strategy list follows the
 // Market button and the Exit / Hour lists follow the trades in scope, so the menu is
 // rebuilt in place. A box's tick is remembered by value across rebuilds: unticking
-// "EOD" on NIFTY, flipping to COMMODITY and back keeps it unticked. A value never
+// "EOD" on one market, flipping to another and back keeps it unticked. A value never
 // seen before arrives ticked, the same way every list first opens — unless the
 // list was set to None.
 const MS_MEM={};

@@ -117,11 +117,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   // session is live it must read RUNNING whatever page you are on (Dashboard,
   // Logs, Settings... none of which pass isRunning). Pages that own a session
   // still pass it, so their own Start/Stop flips the pill in the same response.
-  // COMMODITY engines sit outside sharedSocketState, so they are asked directly.
-  // Required here, not at the top: commodityPaperRouter itself requires this file.
-  let _cmxRunning = false;
-  try { _cmxRunning = require("./commodityPaperRouter").anyRunning(); } catch (_) {}
-  const sessionRunning = isRunning || _anyTradeActive || _cmxRunning;
+  const sessionRunning = isRunning || _anyTradeActive;
 
   const {
     showStopBtn  = false,
@@ -258,11 +254,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
 
   // ── Top-level underlying groups (NIFTY is implicit — it holds the strategies
   //    that already exist) ──
-  // COMMODITY (MCX) — its own parent, one group per commodity. Every page ships OFF.
-  const showCommodity = (process.env.UI_SHOW_COMMODITY || 'true').toLowerCase() === 'true';
-  const cmxOn = (key) => (process.env[key] || 'false').toLowerCase() === 'true';
-  // The PIVOT_EMA_ST commodity pages ship ON, unlike V1/V2.
-  const cmxOnDefaultTrue = (key) => (process.env[key] || 'true').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -316,8 +307,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
   const isSystemOpen    = systemKeys.includes(activePage);
-  const commodityKeys = ['cmxCrudeEmaRsiStPaper', 'cmxCrudeEmaRsiStV2Paper', 'cmxGoldEmaRsiStPaper', 'cmxGoldEmaRsiStV2Paper', 'cmxSilverEmaRsiStPaper', 'cmxSilverEmaRsiStV2Paper'];
-  commodityKeys.push('cmxCrudePivotEmaStPaper', 'cmxGoldPivotEmaStPaper', 'cmxSilverPivotEmaStPaper');
   // Pages that live outside every group (Real-Time monitor, docs, …) used to see
   // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
   // never rendered fully collapsed.
@@ -329,8 +318,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     || isPivotEmaStOpen || isSailPivotEmaStOpen
     || isGapRunawayOpen || isGapRunawayStkOpen
     || isItm20ScalpOpen
-    || isEarlyBirdOpen || isSystemOpen
-    || commodityKeys.includes(activePage);
+    || isEarlyBirdOpen || isSystemOpen;
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
 
   // Build a ema_rsi_st items list with per-feature toggle
@@ -609,40 +597,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       parent: 'stocks',
       items: gapRunawayStkItems,
     }] : []),
-    // ── COMMODITY — one group per commodity, both strategies inside ──────
-    {
-      header: 'CRUDE OIL', collapsible: true,
-      collapsed: !['cmxCrudeEmaRsiStPaper', 'cmxCrudeEmaRsiStV2Paper', 'cmxCrudePivotEmaStPaper'].includes(activePage),
-      groupId: 'nav-cmx-crude',
-      parent: 'commodity',
-      items: [
-        ...(cmxOn('CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED')    ? [{ key: 'cmxCrudeEmaRsiStPaper',   href: '/cmx_crude_ema_rsi_st-paper/status',    icon: '📋', label: 'EMA_RSI_ST Paper' }] : []),
-        ...(cmxOn('CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED') ? [{ key: 'cmxCrudeEmaRsiStV2Paper', href: '/cmx_crude_ema_rsi_st_v2-paper/status', icon: '📋', label: 'EMA_RSI_ST_V2 Paper' }] : []),
-        ...(cmxOnDefaultTrue('CMX_CRUDE_PIVOT_EMA_ST_MODE_ENABLED') ? [{ key: 'cmxCrudePivotEmaStPaper', href: '/cmx_crude_pivot_ema_st-paper/status', icon: '📋', label: 'PIVOT_EMA_ST Paper' }] : []),
-      ],
-    },
-    {
-      header: 'GOLD', collapsible: true,
-      collapsed: !['cmxGoldEmaRsiStPaper', 'cmxGoldEmaRsiStV2Paper', 'cmxGoldPivotEmaStPaper'].includes(activePage),
-      groupId: 'nav-cmx-gold',
-      parent: 'commodity',
-      items: [
-        ...(cmxOn('CMX_GOLD_EMA_RSI_ST_MODE_ENABLED')    ? [{ key: 'cmxGoldEmaRsiStPaper',   href: '/cmx_gold_ema_rsi_st-paper/status',    icon: '📋', label: 'EMA_RSI_ST Paper' }] : []),
-        ...(cmxOn('CMX_GOLD_EMA_RSI_ST_V2_MODE_ENABLED') ? [{ key: 'cmxGoldEmaRsiStV2Paper', href: '/cmx_gold_ema_rsi_st_v2-paper/status', icon: '📋', label: 'EMA_RSI_ST_V2 Paper' }] : []),
-        ...(cmxOnDefaultTrue('CMX_GOLD_PIVOT_EMA_ST_MODE_ENABLED') ? [{ key: 'cmxGoldPivotEmaStPaper', href: '/cmx_gold_pivot_ema_st-paper/status', icon: '📋', label: 'PIVOT_EMA_ST Paper' }] : []),
-      ],
-    },
-    {
-      header: 'SILVER', collapsible: true,
-      collapsed: !['cmxSilverEmaRsiStPaper', 'cmxSilverEmaRsiStV2Paper', 'cmxSilverPivotEmaStPaper'].includes(activePage),
-      groupId: 'nav-cmx-silver',
-      parent: 'commodity',
-      items: [
-        ...(cmxOn('CMX_SILVER_EMA_RSI_ST_MODE_ENABLED')    ? [{ key: 'cmxSilverEmaRsiStPaper',   href: '/cmx_silver_ema_rsi_st-paper/status',    icon: '📋', label: 'EMA_RSI_ST Paper' }] : []),
-        ...(cmxOn('CMX_SILVER_EMA_RSI_ST_V2_MODE_ENABLED') ? [{ key: 'cmxSilverEmaRsiStV2Paper', href: '/cmx_silver_ema_rsi_st_v2-paper/status', icon: '📋', label: 'EMA_RSI_ST_V2 Paper' }] : []),
-        ...(cmxOnDefaultTrue('CMX_SILVER_PIVOT_EMA_ST_MODE_ENABLED') ? [{ key: 'cmxSilverPivotEmaStPaper', href: '/cmx_silver_pivot_ema_st-paper/status', icon: '📋', label: 'PIVOT_EMA_ST Paper' }] : []),
-      ],
-    },
     // The underlying parents render here — after Dashboard, before
     // System. Every section carrying a `parent` is nested inside one of them.
     { parentsAnchor: true },
@@ -763,16 +717,14 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
 
   // ── Two-level nav: underlying parent → strategy group → page ───────────────
   // Each parent is its own accordion (independent of the group accordion inside
-  // it), so opening COMMODITY closes NIFTY but leaves whichever strategy group
+  // it), so opening STOCKS closes NIFTY but leaves whichever strategy group
   // was open inside it untouched.
   const parentDefs = [
     { id: 'nav-parent-nifty', key: 'nifty', header: 'NIFTY' },
-    ...(showCommodity ? [{ id: 'nav-parent-commodity', key: 'commodity', header: 'COMMODITY' }] : []),
     // STOCKS — rendered only when one of its sections (SAIL_VWAP_ST) is enabled.
     { id: 'nav-parent-stocks', key: 'stocks', header: 'STOCKS' },
   ];
-  const isCommodityOpen = commodityKeys.includes(activePage);
-  const parentOpen = { nifty: !isCommodityOpen, commodity: isCommodityOpen };
+  const parentOpen = { nifty: true };
   // STOCKS opens when its own page is showing (and then NIFTY stays closed).
   parentOpen.stocks = sailVwapStKeys.includes(activePage);
   if (sailPivotEmaStKeys.includes(activePage)) parentOpen.stocks = true;   // SAIL_PIVOT_EMA_ST is a STOCKS page too
@@ -1515,7 +1467,7 @@ function sidebarCSS() {
     .sb-section-header.sb-collapsible.collapsed .sb-chevron{transform:rotate(0deg);}
     .sb-group-items{overflow:hidden;max-height:500px;transition:max-height 0.25s ease-in-out,opacity 0.2s;opacity:1;}
     .sb-group-items.collapsed{max-height:0;opacity:0;padding:0;}
-    /* Underlying parents (NIFTY / COMMODITY / ...). Brighter and a touch larger than
+    /* Underlying parents (NIFTY / STOCKS). Brighter and a touch larger than
        a strategy header so the two levels read as two levels. max-height is
        generous because the box has to fit every child header PLUS whichever
        child group is expanded inside it. */

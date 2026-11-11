@@ -1,7 +1,7 @@
 /**
  * Consolidation Report — a printable, DAILY consolidated report of every recorded
- * paper trade, rendered as one table per market (NIFTY, NIFTY FUTURES,
- * BANK NIFTY, COMMODITY) with a row per trading day.
+ * paper trade, rendered as one table per market (NIFTY today) with a row per
+ * trading day.
  *
  * Mirrors the Telegram "CONSOLIDATED DAY REPORT" layout (per-strategy trades + P&L,
  * then Total / Wins / Losses / Win rate / Net P&L) but for every day at once, in a
@@ -160,29 +160,8 @@ const PAPER_HISTORY_PATH = {
   EARLYBIRD:         "/early-bird-paper/history",
 };
 
-// COMMODITY (MCX) paper pages keep their own book under ~/trading-data/cmx
-// ({ days: { YYYY-MM-DD: { trades } } }). Shown in their own COMMODITY table,
-// only while that page's toggle is on.
-const CMX_SOURCES = [];
-for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
-  for (const st of ["EMA_RSI_ST", "EMA_RSI_ST_V2"]) {
-    const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
-    // group/col: the table prints the commodity once, above its strategy columns.
-    CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, group: cl, col: st, file: `cmx/${id}_paper_trades.json`,
-                       modeKey: `CMX_${c}_${st}_MODE_ENABLED`, hist: `/${id}-paper/history` });
-  }
-}
-// PIVOT_EMA_ST commodity pages — same shape; their toggle defaults ON (modeDefault).
-for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
-  const st = "PIVOT_EMA_ST";
-  const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
-  CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, group: cl, col: st, file: `cmx/${id}_paper_trades.json`,
-                     modeKey: `CMX_${c}_${st}_MODE_ENABLED`, modeDefault: "true", hist: `/${id}-paper/history` });
-}
-
 // Which table a strategy's column sits in.
 function groupOf(mode) {
-  if (mode.startsWith("CMX_")) return "COMMODITY";
   return "NIFTY";
 }
 
@@ -194,7 +173,7 @@ function safeRead(p) {
 }
 
 // Entry time as IST "HH:MM". NIFTY books store IST text ("23/10/2026, 09:31:29");
-// commodity books store an ISO UTC timestamp.
+// an ISO UTC timestamp is converted too.
 function entryHHMM(v) {
   const s = String(v || "");
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
@@ -227,25 +206,13 @@ function loadBook(sources, book) {
   return out;
 }
 
-function loadCmxBook() {
-  const out = [];
-  for (const src of CMX_SOURCES) {
-    const data = safeRead(path.join(DATA_DIR, src.file));
-    for (const [date, d] of Object.entries(data.days || {})) {
-      for (const t of (d.trades || [])) out.push({ book: "paper", mode: src.mode, date, pnl: Number(t.pnl) || 0,
-        str: t.signalStrength || "", side: t.side || "", time: entryHHMM(t.entryTime) });
-    }
-  }
-  return out;
-}
-
 // Cache the flattened trade list — same approach as consolidation.js / edgeAnalytics.js.
 // Invalidate by a cheap mtime+size signature so a new trade is picked up immediately.
 let _cache = null;
 let _sig   = null;
 function _sourcesSig() {
   let sig = "";
-  for (const src of [...PAPER_SOURCES, ...CMX_SOURCES]) {
+  for (const src of PAPER_SOURCES) {
     try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
     catch (_) { sig += `${src.mode}:0|`; }
   }
@@ -254,7 +221,7 @@ function _sourcesSig() {
 function loadAllTrades() {
   const sig = _sourcesSig();
   if (_cache && sig === _sig) return _cache;
-  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadCmxBook());
+  const trades = loadBook(PAPER_SOURCES, "paper");
   trades.sort((a, b) => (a.date || "").localeCompare(b.date || "")); // oldest → newest
   _cache = trades;
   _sig   = sig;
@@ -266,9 +233,7 @@ router.get("/", async (req, res) => {
   // hidden from the sidebar, so its columns (and its trades in the day totals)
   // must not appear here either. Filtered per-request, never cached: Settings
   // saves mutate process.env while the process is running.
-  const cmxOn       = CMX_SOURCES.filter(c => (process.env[c.modeKey] || c.modeDefault || "false").toLowerCase() === "true");
-  const enabled     = [...enabledStrategies().map(s => ({ mode: s.mode, label: s.mode })),
-                       ...cmxOn.map(c => ({ mode: c.mode, label: c.label, group: c.group, col: c.col }))];
+  const enabled     = enabledStrategies().map(s => ({ mode: s.mode, label: s.mode }));
   const enabledSet  = new Set(enabled.map(s => s.mode));
   const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const theme = resolveTheme();
@@ -340,7 +305,7 @@ ${multiSelectCSS()}
     :root[data-theme="light"] .tbl-scroll{scrollbar-color:#cbd5e1 #f1f5f9;}
     :root[data-theme="light"] .tbl-scroll::-webkit-scrollbar-track{background:#f1f5f9;}
     :root[data-theme="light"] .tbl-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;}
-    /* Grouped header (COMMODITY): the commodity sits once above its strategies,
+    /* Grouped header: a group sits once above its strategies,
        and a rule down the left of each group carries the grouping into the rows. */
     .tbl th.grp{text-align:center;color:#7dd3fc;border-left:0.5px solid #17324f;border-bottom:0.5px solid #0e1e36;}
     .tbl th.grp-first,.tbl td.grp-first{border-left:0.5px solid #17324f;}
@@ -475,7 +440,7 @@ ${multiSelectCSS()}
       <label>Market</label>
       <div class="seg" id="segMkt">
         <button data-mkt="all" class="on">All</button>
-        ${["NIFTY", "COMMODITY"].filter(g => enabled.some(s => groupOf(s.mode) === g)).map(g => `<button data-mkt="${g}">${g}</button>`).join("")}
+        ${["NIFTY"].filter(g => enabled.some(s => groupOf(s.mode) === g)).map(g => `<button data-mkt="${g}">${g}</button>`).join("")}
       </div>
       <label>Strategy</label>
       ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All strategies')}
@@ -501,13 +466,13 @@ const VIX_BY_DATE = ${JSON.stringify(vixByDate)};   // { 'YYYY-MM-DD': vixClose 
 const VIX_NOTE    = ${JSON.stringify(vixNote)};     // why the VIX column is empty, if it is
 const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
 const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.label])))};
-const HIST_PATH  = ${JSON.stringify({ ...PAPER_HISTORY_PATH, ...Object.fromEntries(CMX_SOURCES.map(c => [c.mode, c.hist])) })};   // mode → paper history page
-// Table headers only: a COMMODITY column prints as its strategy, under one
-// header cell per commodity. NIFTY / BANK NIFTY columns have no group.
+const HIST_PATH  = ${JSON.stringify(PAPER_HISTORY_PATH)};   // mode → paper history page
+// Table headers only: a grouped column prints as its strategy, under one
+// header cell per group. NIFTY columns have no group.
 const COL_GROUP  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.group])))};
 const COL_LABEL  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.col])))};
 const GROUP_OF   = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, groupOf(s.mode)])))};
-const GROUPS     = ['NIFTY', 'NIFTY FUTURES', 'BANK NIFTY', 'COMMODITY'];
+const GROUPS     = ['NIFTY'];
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -782,13 +747,12 @@ function render(){
     if(split.length>1) h+='<div class="mkt-split">By market: '+split.join('<i>│</i>')+'</div>';
   }
 
-  // One Daily Breakdown table per market — NIFTY, BANK NIFTY, COMMODITY — each
-  // with its own day rows and TOTAL. The cards above stay the all-market total.
-  // VIX is an NSE number, so the COMMODITY table has no VIX column.
+  // One Daily Breakdown table per market, each with its own day rows and TOTAL.
+  // The cards above stay the all-market total.
   for(const G of GROUPS){
     const gModes = activeModes.filter(m => GROUP_OF[m]===G);
     if(!gModes.length) continue;
-    h += dayTable(G==='COMMODITY' ? 'COMMODITY (MCX)' : G, gModes, arr.filter(t => GROUP_OF[t.mode]===G), G!=='COMMODITY');
+    h += dayTable(G, gModes, arr.filter(t => GROUP_OF[t.mode]===G), true);
   }
   h+='<div class="skip-note">Tick <b>Skip</b> to leave a day out of the cards and the TOTAL rows — the trade files are not touched, and the choice stays in this browser.'
     +(nSkipped?'<button type="button" id="clearSkip">Clear '+nSkipped+' skipped</button>':'')+'</div>';
