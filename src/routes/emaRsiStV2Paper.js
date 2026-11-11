@@ -1028,6 +1028,13 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
       expectedPrice: _jFut ? price : (_jeq ? _jeq.ltp : null),
       candles: ptState.candles, nowMs: simNow(),
     });
+    // No premium yet: onEntry fell back to the SPOT as the fill (e.g. fill 24012
+    // vs wanted ₹150 = "slippage" +23862). Leave both unset until _jEntryPremium
+    // fills them, so a premium that never arrives records no fill rather than spot.
+    if (!_jFut && _jp.optionEntryLtp == null && _jp.journal && _jp.journal.entry) {
+      _jp.journal.entry.fill = null;
+      _jp.journal.entry.slippagePts = null;
+    }
   }
 
   // Crash-recovery snapshot: written on entry, cleared on exit. app.js reconciles it against the broker book on boot.

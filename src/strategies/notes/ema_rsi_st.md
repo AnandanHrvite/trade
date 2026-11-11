@@ -4,6 +4,8 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — `emaRsiStV2Paper.js` journal: an option entry with no premium yet records `entry.fill` / `slippagePts` as null (was the spot, e.g. +23862 "slippage" when the first poll never landed); `_jEntryPremium` fills both when it lands. Observer only.
+
 - 2026-11-11 — `emaRsiStV2Paper.js` (every pair instance) writes the trade journal (`utils/tradeJournal`): entry, per-tick peak/drawdown, the profit-lock / premium-stop / futures-stop level each time it moves, exit with slippage + giveback; spread into the trade as `journal`. Observer only — NIFTY + pair goldens byte-identical.
 
 - 2026-11-11 — `emaRsiStV2Paper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same path, files, keys, logs — golden byte-identical); every other market's V2 pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`) and has its own spread limit / expiry-day switch. Engine reads pair keys with NIFTY inheritance (`pairs.envGet`).
