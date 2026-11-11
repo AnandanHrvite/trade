@@ -370,6 +370,77 @@ check("every simulate path and every ready label follows the real warm-up", () =
   assert.ok(!/candleCount >= (15|30)|state\.candles\.length >= (15|30) \?/.test(paper), "a ready label still uses the old count");
 });
 
+// ── Markets (config/pairs.js) ────────────────────────────────────────────────
+check("a pair prefix reads its own key, else inherits the PA_* value; no prefix = PA_* exactly", () => {
+  // Unset BN_PA_* → BANKNIFTY reads NIFTY's PA_* values: the same answer as NIFTY.
+  assert.deepStrictEqual(sig(bullBars(), { prefix: "BN_PA" }), sig(bullBars()));
+  // An own key wins, for that pair only.
+  withEnv({ BN_PA_MAX_SL_PTS: "15" }, () => {
+    const bn = sig(bullBars(), { prefix: "BN_PA" });
+    assert.strictEqual(bn.signal, "NONE", bn.reason);
+    assert.ok(/wider than 15/.test(bn.reason), bn.reason);
+    assert.strictEqual(sig(bullBars()).signal, "BUY_CE", "NIFTY must not read BN_PA_MAX_SL_PTS");
+    assert.strictEqual(sig(bullBars(), { prefix: "SENSEX_PA" }).signal, "BUY_CE", "SENSEX must not read BN_PA_*");
+  });
+  // Inherits a NIFTY change while the pair key is unset.
+  withEnv({ PA_MAX_SL_PTS: "15" }, () => assert.strictEqual(sig(bullBars(), { prefix: "SENSEX_PA" }).signal, "NONE"));
+  // The prefix "PA" is NIFTY itself.
+  withEnv({ PA_SMC_MIN_RR: "2.5" }, () => assert.deepStrictEqual(sig(bullBars(), { prefix: "PA" }), sig(bullBars())));
+});
+
+check("the trading window reads the pair's own entry window", () => {
+  const rows = bullBars();
+  const candles = toCandles(rows, 300, 75 - rows.length); // last bar is 15:25 IST
+  withEnv({ FUT_PA_ENTRY_END: "15:30" }, () => {
+    assert.ok(/^After /.test(pa.getSignal(candles, { silent: true }).reason), "NIFTY keeps PA_ENTRY_END");
+    const f = pa.getSignal(candles, { silent: true, prefix: "FUT_PA" });
+    assert.ok(!/^After /.test(f.reason), f.reason);
+  });
+});
+
+check("one route file runs every offered market, each with its own state, paths and files", () => {
+  const pairs = require("../src/config/pairs");
+  assert.ok(pairs.RUNS_AS_PAIR.has("pa"));
+  assert.strictEqual(_paPaper.forMarket("NIFTY"), _paPaper, "the default export is the NIFTY instance");
+  assert.strictEqual(_paPaper.pairRuntime.paperPath, "/pa-paper");
+  const offered = pairs.all().filter(p => p.strategyId === "pa").map(p => p.marketKey);
+  assert.deepStrictEqual(offered, ["NIFTY", "NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"]);
+  const seen = new Set();
+  for (const mk of offered) {
+    const r = _paPaper.forMarket(mk);
+    assert.ok(r && typeof r.stopSession === "function", `${mk}: no router`);
+    assert.strictEqual(_paPaper.forMarket(mk), r, `${mk}: not memoised`);
+    assert.ok(!seen.has(r), `${mk} shares a router`); seen.add(r);
+    assert.strictEqual(r.pairRuntime.marketKey, mk);
+  }
+  const bn = _paPaper.forMarket("BANKNIFTY").pairRuntime;
+  assert.deepStrictEqual([bn.paperPath, bn.tradesFile, bn.modeKey, bn.socketSlot.mode, bn.notifyMode],
+    ["/bn_pa-paper", "bn_pa_paper_trades.json", "bn_pa", "BN_PA_PAPER", "BN_PA-PAPER"]);
+});
+
+check("paper: NIFTY-only hooks stay NIFTY; market facts come from the pair runtime", () => {
+  // Code only: comments may still say what NIFTY's values are.
+  const src = read("src/routes/paPaper.js").split("\n").filter(l => !/^\s*(\/\/|\*)/.test(l)).map(l => l.replace(/\s\/\/ .*$/, "")).join("\n");
+  assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(src), "OI gate must be NIFTY-only");
+  assert.ok(/rt\.oiApplies \? oiFilter\.recordOiSample/.test(src), "OI sampling must be NIFTY-only");
+  for (const gone of [/NIFTY_INDEX_SYMBOL/, /"pa-paper"/, /(capitalPool|skipLogger|tradeLogger)\.\w+\("pa"[,)]/, /clearTodayFiles\("pa"\)/, /sharedSocketState\.(setPAActive|clearPA|canStart)\(/, /Math\.round\(\w+(\.\w+)? \/ 50\) \* 50/]) {
+    assert.ok(!gone.test(src), `paPaper.js still has ${gone}`);
+  }
+  // Pair-only fills: the ask on entry, the bid on exit, never on NIFTY.
+  assert.ok(/if \(!rt\.home\) \{\s*state\.optionQuote = null;/.test(src));
+  assert.ok(/if \(!rt\.home && !isFutures\) \{\s*const _q = state\.optionQuote/.test(src));
+});
+
+check("paper: the trade journal is wired at entry, tick, stop change and exit, and spread into the trade", () => {
+  const src = read("src/routes/paPaper.js");
+  for (const hook of ["tradeJournal.onEntry(state.position", "tradeJournal.onTick(pos", "tradeJournal.onStopChange(pos", "tradeJournal.onExit(state.position", "...tradeJournal.fields(state.position)"]) {
+    assert.ok(src.includes(hook), `missing ${hook}`);
+  }
+  // onExit runs before the trade object is built; fields() is spread into it.
+  assert.ok(src.indexOf("tradeJournal.onExit(state.position") < src.indexOf("...tradeJournal.fields(state.position)"));
+  assert.ok(!/journal\.[a-z]+\s*[<>=!]=?[^=]/.test(src.replace(/pos\.journal\.stops/g, "")), "a decision reads the journal");
+});
+
 check("Start All includes Price Action, and drops it when switched off", () => {
   const log = console.log, warn = console.warn; console.log = console.warn = () => {};
   try {

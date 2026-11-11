@@ -75,12 +75,34 @@ check("BANKNIFTY / NIFTY_FUT keep the old twins' paths and data files", () => {
   assert.deepStrictEqual([fut.paperPath, fut.tradesFile, fut.modeKey], ["/fut_ema_rsi_st_v2-paper", "fut_ema_rsi_st_v2_paper_trades.json", "fut_ema_rsi_st_v2"]);
   assert.strictEqual(rtOf("SENSEX").paperPath, "/sensex_ema_rsi_st_v2-paper");
 });
-check("running pairs = every offered non-home V2 pair; none other runs", () => {
-  const ids = pairs.runnable().map(p => p.marketKey);
-  assert.deepStrictEqual(ids, ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"]);
-  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2"));
+check("running pairs = every offered non-home V2 and Price Action pair; none other runs", () => {
+  const MKTS = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
+  assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === "emaRsiStV2").map(p => p.marketKey), MKTS);
+  assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === "pa").map(p => p.marketKey), MKTS);
+  assert.strictEqual(pairs.runnable().length, MKTS.length * 2);
+  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2" || p.strategyId === "pa"));
   assert.strictEqual(pairs.byReplayMode("bn_ema_rsi_st_v2-paper").marketKey, "BANKNIFTY");
   assert.strictEqual(pairs.byReplayMode("ema_rsi_st_v2-paper"), null, "the home mode is the registry's");
+  assert.strictEqual(pairs.byReplayMode("sensex_pa-paper").id, "pa@SENSEX");
+  assert.strictEqual(pairs.byReplayMode("pa-paper"), null, "PA's home mode is the registry's");
+});
+
+check("Price Action: NIFTY is the registry's PA; other markets get their own keys, paths, files and slots", () => {
+  const n = pairRuntime.forStrategy("pa", "NIFTY");
+  assert.deepStrictEqual(
+    [n.home, n.modeKey, n.envPrefix, n.paperPath, n.replayMode, n.ownerId, n.tradesFile, n.socketSlot.mode, n.notifyMode, n.sidebarKey, n.historySidebarKey, n.tag],
+    [true, "pa", "PA", "/pa-paper", "pa-paper", "pa-paper", "pa_paper_trades.json", "PA_PAPER", "PA-PAPER", "paPaper", "paHistory", "PA"]);
+  assert.strictEqual(n.oiApplies, true);
+  const s = pairRuntime.forStrategy("pa", "SENSEX"), f = pairRuntime.forStrategy("pa", "NIFTY_FUT");
+  assert.deepStrictEqual([s.paperPath, s.tradesFile, s.modeKey, s.envPrefix, s.socketSlot.mode, s.oiApplies], ["/sensex_pa-paper", "sensex_pa_paper_trades.json", "sensex_pa", "SENSEX_PA", "SENSEX_PA_PAPER", false]);
+  assert.deepStrictEqual([f.isFutures, f.instrumentName(), f.paperPath], [true, "NIFTY_FUTURES", "/fut_pa-paper"]);
+  // PA's own keys inherit; a PA pair key never resolves to another strategy's.
+  withEnv({ PA_SMC_MIN_RR: "2", BN_PA_SMC_MIN_RR: undefined, BN_PIVOT_EMA_ST_X: "9" }, () => {
+    assert.strictEqual(pairs.envGet("BN_PA_SMC_MIN_RR"), "2");
+    assert.strictEqual(pairs.envGet("PA_SMC_MIN_RR"), "2");
+  });
+  withEnv({ PA_EXPIRY_DAY_ONLY: "true", SENSEX_PA_EXPIRY_DAY_ONLY: undefined }, () => assert.strictEqual(s.expiryDayOnly(), true));
+  withEnv({ PA_EXPIRY_DAY_ONLY: "true", SENSEX_PA_EXPIRY_DAY_ONLY: "false" }, () => assert.strictEqual(s.expiryDayOnly(), false));
 });
 check("every pair ships OFF", () => {
   for (const p of pairs.runnable()) assert.strictEqual(pairRuntime.forPair(p).enabled(), false, p.id);
