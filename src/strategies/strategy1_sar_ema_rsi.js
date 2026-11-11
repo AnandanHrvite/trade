@@ -63,7 +63,14 @@ const DEFAULT_PREFIX = "EMA_RSI_ST";
 const PREFIXES = { EMA_RSI_ST: "NIFTY", FUT_EMA_RSI_ST: "NIFTY" };   // prefix → underlying
 const NAMES    = { EMA_RSI_ST: NAME,    FUT_EMA_RSI_ST: "FUT_SAR_EMA_RSI" };
 function _isDefault(P) { return !P || P === DEFAULT_PREFIX; }
-function _env(P, key) { return process.env[P + "_" + key]; }
+// A prefixed key with (strategy, market) pair inheritance: BN_EMA_RSI_ST_EMA_FAST
+// unset reads EMA_RSI_ST_EMA_FAST (config/pairs.js envGet). Only non-default
+// prefixes come here — the default path reads the literal EMA_RSI_ST_* keys.
+var _pairsMod = null;
+function _env(P, key) {
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(P + "_" + key);
+}
 
 // ── Trading window ────────────────────────────────────────────────────────
 function _parseMins(envKey, fallback) {
@@ -78,12 +85,25 @@ function _fmtTime(mins) {
   return h12 + ":" + (m < 10 ? "0" : "") + m + " " + suffix;
 }
 
-function isInTradingWindow(unixSec) {
+// Entry-window start / end minutes. The default prefix reads the common
+// TRADE_ENTRY_START/END exactly as before; another prefix (a pair) reads its own
+// <P>_ENTRY_START/END, which inherit EMA_RSI_ST_* and then TRADE_ENTRY_* (pairs.js
+// maps EMA_RSI_ST's legacy TRADE_* keys), so an unset pair keeps NIFTY's window.
+function _windowMins(P, which, fallback) {
+  if (_isDefault(P)) return _parseMins(which === "start" ? "TRADE_ENTRY_START" : "TRADE_ENTRY_END", fallback);
+  var v = _env(P, which === "start" ? "ENTRY_START" : "ENTRY_END") || fallback;
+  var parts = String(v).split(":");
+  var h = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+  if (!Number.isFinite(h)) { parts = fallback.split(":"); h = parseInt(parts[0], 10); m = parseInt(parts[1], 10); }
+  return h * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+function isInTradingWindow(unixSec, prefix) {
   // Fast IST conversion: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
   var istSec   = unixSec + 19800;
   var totalMin = Math.floor(istSec / 60) % 1440;
-  var startMin = _parseMins("TRADE_ENTRY_START", "09:30");
-  var endMin   = _parseMins("TRADE_ENTRY_END",   "14:00");
+  var startMin = _windowMins(prefix, "start", "09:30");
+  var endMin   = _windowMins(prefix, "end",   "14:00");
   if (totalMin < startMin) return { ok: false, reason: "Before " + _fmtTime(startMin) + " — waiting for indicators to stabilise" };
   if (totalMin >= endMin)  return { ok: false, reason: "After " + _fmtTime(endMin) + " — no new entries (EOD risk)" };
   return { ok: true, reason: null };
@@ -160,7 +180,7 @@ function _getSignal(candles, opts, P) {
   // snapshots (so EOD/after-window exits still log indicator values) — never
   // by the live entry path, which always enforces the window.
   var skipTimeCheck = (opts && opts.skipTimeCheck === true);
-  var windowCheck = skipTimeCheck ? { ok: true, reason: null } : isInTradingWindow(signalCandle.time);
+  var windowCheck = skipTimeCheck ? { ok: true, reason: null } : isInTradingWindow(signalCandle.time, P);
   if (!windowCheck.ok) {
     return {
       signal: "NONE",
@@ -285,7 +305,7 @@ function _getSignal(candles, opts, P) {
   // over the run of candles where it held; a candle before the window start (or on
   // an earlier day) inside that run makes it stale.
   function _staleSince(side) {
-    var startMin = _parseMins("TRADE_ENTRY_START", "09:30");
+    var startMin = _windowMins(P, "start", "09:30");
     var today = Math.floor((signalCandle.time + 19800) / 86400);
     for (var j = candles.length - 2; j >= 0; j--) {
       if (!_setupAt(j, side)) return null;
@@ -395,8 +415,8 @@ function _getSignal(candles, opts, P) {
 // signal path. The function itself is unchanged.
 // forPrefix(prefix) — the same API reading `${prefix}_*` strategy-own keys.
 // The default prefix gets these very exports back; any other prefix a cached
-// object of the same shape. isInTradingWindow reads only common keys, so it is
-// shared as is.
+// object of the same shape, whose isInTradingWindow reads that prefix's entry
+// window (a pair's own key, else NIFTY's).
 var _byPrefix = {};
 function forPrefix(prefix) {
   var P = prefix || DEFAULT_PREFIX;
@@ -408,7 +428,7 @@ function forPrefix(prefix) {
       PREFIX:      P,
       UNDERLYING:  PREFIXES[P] || "NIFTY",
       getSignal:   function (candles, opts) { return _getSignal(candles, opts, P); },
-      isInTradingWindow: isInTradingWindow,
+      isInTradingWindow: function (unixSec) { return isInTradingWindow(unixSec, P); },
     };
   }
   return _byPrefix[P];
