@@ -417,8 +417,17 @@ check("the V2 paper route never touches V1's mutex helpers", () => {
     assert.ok(!code.includes("sharedSocketState." + bad),
       `sharedSocketState.${bad}) is V1's slot — V2 must use its own EmaRsiStV2 helpers`);
   }
-  assert.ok(/setEmaRsiStV2Mode\(/.test(code) && /clearEmaRsiStV2Mode\(/.test(code),
+  // The route is a create(pair) builder: it claims / releases its slot through
+  // pairRuntime's socketSlot, which on NIFTY is V2's own EmaRsiStV2 helpers.
+  assert.ok(/rt\.socketSlot\.set\(\)/.test(code) && /rt\.socketSlot\.clear\(\)/.test(code),
     "V2 must claim and release its own slot");
+  const slot = require("../src/utils/pairRuntime").forStrategy("emaRsiStV2", "NIFTY").socketSlot;
+  assert.strictEqual(slot.mode, "EMA_RSI_ST_V2_PAPER", "the NIFTY instance holds V2's own slot");
+  const sss = require("../src/utils/sharedSocketState");
+  slot.set();
+  try { assert.ok(sss.isEmaRsiStV2Active() && !sss.isActive(), "V2's slot is set, V1's is not"); }
+  finally { slot.clear(); }
+  assert.ok(!sss.isEmaRsiStV2Active(), "V2's slot is released");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

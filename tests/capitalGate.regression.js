@@ -128,6 +128,12 @@ const paperRoutes = fs.readdirSync(routesDir).filter(f => /Paper\.js$/.test(f))
 function keyOf(r) {
   const lit = r.src.match(/capitalPool\.gate\("([a-z0-9_]+)"/);
   if (lit) return lit[1];
+  // A create(pair) builder (utils/pairRuntime.js) uses MODE = its pair's mode
+  // key; the file's own (home) instance is the registry entry's mode key.
+  if (/function create\(pair\)/.test(r.src) && /capitalPool\.gate\(MODE,/.test(r.src)) {
+    const e = require("../src/config/strategyRegistry").all().find(s => s.paper.module === "routes/" + r.file.replace(/\.js$/, ""));
+    return e ? e.modeKey : null;
+  }
   const mk = r.src.match(/^const MODE_KEY\s*=\s*"([a-z0-9_]+)"/m);
   return mk ? mk[1] : null;
 }
@@ -165,6 +171,17 @@ for (const r of paperRoutes) {
     assert.ok(/capitalPool\.release\(/.test(r.src), "blocks capital but never releases it");
   });
 }
+
+check("every running (strategy, market) pair registers its own pool key (Fyers)", () => {
+  const pairs = require("../src/config/pairs");
+  const pairRuntime = require("../src/utils/pairRuntime");
+  for (const p of pairs.runnable()) {
+    pairRuntime.forPair(p).registerCapital();
+    pool.block(p.modeKey, 1, { symbol: "T" });
+    try { assert.ok(pool.snapshot().fyers.positions.some(x => x.key === p.modeKey), `${p.modeKey} not in the Fyers pool`); }
+    finally { pool.clear(p.modeKey); }
+  }
+});
 
 check("EarlyBird blocks additively per symbol and releases per symbol", () => {
   const src = read("routes/earlyBirdPaper.js");

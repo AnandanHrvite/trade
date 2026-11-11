@@ -4,6 +4,8 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — `emaRsiStV2Paper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same path, files, keys, logs — golden byte-identical); every other market's V2 pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`) and has its own spread limit / expiry-day switch. Engine reads pair keys with NIFTY inheritance (`pairs.envGet`).
+
 - 2026-11-08 — Engine env prefix: `forPrefix("FUT_EMA_RSI_ST")` returns the same `getSignal`/`isInTradingWindow` reading `FUT_EMA_RSI_ST_*` own keys (default exports unchanged, literal `EMA_RSI_ST_*` reads kept); `backtestEngine.runBacktest` gains an optional trailing `{ isFutures, prefix }`. For the NIFTY FUTURES twin `futEmaRsiStPaper.js` / `futEmaRsiStBacktest.js` (same rules, futures forced).
 
 - 2026-10-28 — New `EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED` (default on) in Paper/Live/Backtest: after an exit, that side takes no new entry until SuperTrend flips against it at a candle close. Stretch gate below now defaults to 0 (off) so the first entry of a move is kept.
