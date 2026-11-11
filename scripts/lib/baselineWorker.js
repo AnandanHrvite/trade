@@ -185,7 +185,102 @@ function _writeJsonl(file, rows) {
 // ═════════════════════════════════════════════════════════════════════════════
 //  --generate
 // ═════════════════════════════════════════════════════════════════════════════
+// ── --generate --market KEY: a (strategy, market) pair's recording ──────────
+// One day file per market (its own ticks dir), so the NIFTY recording above is
+// untouched. BANKNIFTY / SENSEX get their own synthetic chain
+// (syntheticMarket.forMarket), their own spot symbol + idx, option chain on their
+// grid and expiry (src/config/markets — NSE/BSE holiday-preponed), and a Market
+// Context Snapshot with `underlyings[U]` so replay pins that market's expiry.
+// NIFTY_FUT replays NIFTY's own ticks (the future is priced at the index).
+// India VIX is the one global series, NIFTY's.
+function generateMarket(mk) {
+  const ticksDir = arg("--ticks");
+  const spec = JSON.parse(fs.readFileSync(arg("--settings"), "utf8"));
+  const instrument = require(path.join(SRC, "config", "instrument"));
+  const markets = require(path.join(SRC, "config", "markets"));
+  const NIFTY_SPOT = "NSE:NIFTY50-INDEX";
+  const M = markets.get(mk);
+  const U = instrument.underlyingOf(M.underlying);
+  const chain = mk === "NIFTY_FUT" ? market.forMarket("NIFTY") : market.forMarket(U.key);
+  const SPOT = U.spot;
+  const summary = [];
+  for (const sess of market.SESSIONS) {
+    const dir = path.join(ticksDir, sess.date);
+    fs.mkdirSync(dir, { recursive: true });
+    const nTicks = market.dayTicks(sess.date);          // NIFTY — drives India VIX
+    const ticks = chain.dayTicks(sess.date);
+    _writeJsonl(path.join(dir, "spot.jsonl"), ticks.map(tk => ({ t: tk.t, symbol: SPOT, ltp: tk.ltp, idx: SPOT })));
+    const vix = [];
+    let ti = 0;
+    for (let t = istMs(sess.date, 9, 14); t <= istMs(sess.date, 15, 30); t += 60000) {
+      while (ti + 1 < nTicks.length && nTicks[ti + 1].t <= t) ti++;
+      vix.push({ t, v: market.vixAt(sess.date, t, nTicks[ti].ltp) });
+    }
+    _writeJsonl(path.join(dir, "vix.jsonl"), vix);
+
+    // The market's live contract on that morning, as the engines resolve it.
+    const info = markets.expiryInfo(mk === "NIFTY_FUT" ? "NIFTY" : mk, `${sess.date}T09:20`);
+    const expiry = info.date;
+    const [ey, em, ed] = expiry.split("-").map(Number);
+    const code = instrument.expiryCodeFor(new RealDate(ey, em - 1, ed), U);
+    const opts = [];
+    if (M.kind === "options") {
+      const step = U.strikeStep;
+      const band = step * 12;
+      ti = 0;
+      let vi = 0;
+      for (let t = ticks[0].t; t <= ticks[ticks.length - 1].t; t += spec.optionEveryMs) {
+        while (ti + 1 < ticks.length && ticks[ti + 1].t <= t) ti++;
+        while (vi + 1 < vix.length && vix[vi + 1].t <= t) vi++;
+        const spot = ticks[ti].ltp;
+        const atm = Math.round(spot / step) * step;
+        for (let k = atm - band; k <= atm + band; k += step) {
+          for (const side of ["CE", "PE"]) {
+            const l = market.optionPremium(spot, k, side, t, expiry, vix[vi].v);
+            // Wider books than NIFTY's: a one-point spread above ₹100 premium.
+            const half = l < 20 ? 0.1 : l < 100 ? 0.25 : 0.5;
+            opts.push({ t, s: `${U.exchange}:${U.optPrefix}${code}${k}${side}`, l, b: market.round05(Math.max(0.05, l - half)), a: market.round05(l + half), src: "baseline" });
+          }
+        }
+      }
+    }
+    _writeJsonl(path.join(dir, "options.jsonl"), opts);
+
+    const nInfo = markets.expiryInfo("NIFTY", `${sess.date}T09:20`);
+    const monthly = (() => {
+      const lastDow = instrument.monthlyExpiryAt(new RealDate(+sess.date.slice(0, 4), +sess.date.slice(5, 7) - 1, +sess.date.slice(8, 10), 9, 20), U);
+      return require(path.join(SRC, "utils", "nseHolidays")).formatDateToYYYYMMDD(require(path.join(SRC, "utils", "nseHolidays")).preponedExpirySync(lastDow));
+    })();
+    _writeJsonl(path.join(dir, "market.jsonl"), [{
+      t: istMs(sess.date, 9, 10), e: "market_context", schemaVersion: 1, recorderVersion: "baseline",
+      date: sess.date, index: NIFTY_SPOT, underlying: "NIFTY", exchange: "NSE", instrument: "NIFTY_OPTIONS",
+      strikeInterval: 50, weeklyExpiriesExist: true,
+      weeklyExpiry: nInfo.date, weeklyExpiryCode: nInfo.code,
+      monthlyExpiry: market.monthlyExpiryOf(sess.date), dataBroker: "fyers",
+      underlyings: { [U.key]: {
+        index: SPOT, underlying: U.key, strikeInterval: U.strikeStep, lotSize: U.lotSize,
+        weeklyExpiriesExist: U.weekly, weeklyExpiry: U.weekly ? expiry : null, weeklyExpiryCode: U.weekly ? code : null,
+        monthlyExpiry: monthly,
+      } },
+    }]);
+
+    const startT = istMs(sess.date, ...spec.sessionStart);
+    const stopT  = istMs(sess.date, ...spec.sessionStop);
+    const rows = [];
+    for (const mode of spec.modes) {
+      const sid = `baseline:${mode}:${sess.date}`;
+      rows.push({ t: startT, e: "start", mode, sid, settings: spec.settings, warmup: [], vix: sess.vix,
+                  meta: { baseline: true, recordsOptionLtps: true, regime: sess.regime, market: mk } });
+      rows.push({ t: stopT, e: "stop", mode, sid, reason: "baseline_eod" });
+    }
+    _writeJsonl(path.join(dir, "sessions.jsonl"), rows);
+    summary.push({ date: sess.date, regime: sess.regime, market: mk, spotTicks: ticks.length, optionTicks: opts.length, expiry, expiryCode: code });
+  }
+  _writeFileSync(arg("--out"), JSON.stringify({ ok: true, summary }, null, 2));
+}
+
 function generate() {
+  if (arg("--market")) return generateMarket(String(arg("--market")).toUpperCase());
   const ticksDir = arg("--ticks");
   const spec = JSON.parse(fs.readFileSync(arg("--settings"), "utf8"));   // { settings, modes, sessionStart, sessionStop, optionEveryMs, strikeBand }
   const instrument = require(path.join(SRC, "config", "instrument"));
@@ -267,6 +362,14 @@ const _SPOT_SYMBOLS = /NIFTY50-INDEX/i;
 const _VIX_SYMBOLS  = /INDIAVIX/i;
 const _isDaily = (res) => ["D", "1D", "W", "M"].includes(String(res || "").toUpperCase());
 
+// --market KEY (a pair replay): that market's spot symbol is served from its own
+// synthetic chain; NIFTY 50 / VIX stay NIFTY's.
+let _pairSpot = null, _pairChain = null;
+function _chainFor(sym) {
+  if (_pairSpot && sym === _pairSpot) return _pairChain;
+  return _SPOT_SYMBOLS.test(sym) ? market.forMarket("NIFTY") : null;
+}
+
 /** Broker-history stand-in. `from`/`to` are IST "YYYY-MM-DD" (or epoch sec). */
 function syntheticHistory(symbol, resolution, from, to) {
   const now = Date.now();                     // the replay clock while a run is live
@@ -280,17 +383,18 @@ function syntheticHistory(symbol, resolution, from, to) {
   if (_VIX_SYMBOLS.test(sym)) {
     return _isDaily(resolution) ? days.filter(d => d < today).map(market.vixDailyBar) : [];
   }
-  if (!_SPOT_SYMBOLS.test(sym)) return [];     // futures, stocks, BANKNIFTY …: no data
+  const C = _chainFor(sym);
+  if (!C) return [];                          // futures, stocks, another index …: no data
   const sessionToday = market.SESSIONS.some(s => s.date === today);
   if (_isDaily(resolution)) {
     const out = [];
     for (const d of days) {
-      if (d < today) { out.push(market.dailyBar(d)); continue; }
+      if (d < today) { out.push(C.dailyBar(d)); continue; }
       // Today's daily bar, as Fyers serves it mid-session: built from what has traded so far.
       if (sessionToday && now >= market.openMs(d)) {
-        const b1 = market.intradayBarsAsOf(d, 1, now);
+        const b1 = C.intradayBarsAsOf(d, 1, now);
         if (b1.length) {
-          out.push({ time: market.dailyBar(d).time, open: b1[0].open,
+          out.push({ time: C.dailyBar(d).time, open: b1[0].open,
                      high: Math.max(...b1.map(b => b.high)), low: Math.min(...b1.map(b => b.low)),
                      close: b1[b1.length - 1].close, volume: 0 });
         }
@@ -302,8 +406,8 @@ function syntheticHistory(symbol, resolution, from, to) {
   if (!Number.isFinite(res) || res <= 0) return [];
   const out = [];
   for (const d of days) {
-    if (d < today) out.push(...market.intradayBars(d, res));
-    else if (sessionToday) out.push(...market.intradayBarsAsOf(d, res, now));   // closed bars + the forming one
+    if (d < today) out.push(...C.intradayBars(d, res));
+    else if (sessionToday) out.push(...C.intradayBarsAsOf(d, res, now));   // closed bars + the forming one
   }
   return out;
 }
@@ -313,6 +417,13 @@ async function replayOne() {
   const sess = market.SESSIONS.find(s => s.date === date);
   if (!sess) throw new Error(`unknown session date ${date}`);
   _fallbackNow = istMs(date, 9, 14);
+  if (arg("--market")) {
+    const mk = String(arg("--market")).toUpperCase();
+    const markets = require(path.join(SRC, "config", "markets"));
+    const M = markets.get(mk);
+    _pairSpot  = require(path.join(SRC, "config", "instrument")).underlyingOf(M.underlying).spot;
+    _pairChain = mk === "NIFTY_FUT" ? market.forMarket("NIFTY") : market.forMarket(M.underlying);
+  }
 
   // Recording root → the synthetic recordings. Must precede requiring tickReplay.
   const tickRecorder = require(path.join(SRC, "utils", "tickRecorder"));

@@ -8,6 +8,11 @@
  * under tests/baseline/. The purpose is a refactor safety net: a change that is
  * meant to leave paper decisions untouched must leave these files byte-identical.
  *
+ * PAIRS: the same harness also replays the (strategy, market) pairs a create(pair)
+ * builder runs (PAIRS below) through synthetic SENSEX / BANKNIFTY / NIFTY-futures
+ * sessions — each market recorded into its own ticks dir, so the NIFTY recording
+ * is byte-for-byte what it always was — into tests/baseline/<route>.<MARKET>.json.
+ *
  *   node scripts/strategyBaseline.js            regenerate tests/baseline/*.json
  *   node scripts/strategyBaseline.js --check    re-run and diff against them (exit 1 on any difference)
  *   npm run test:baseline                       same as --check
@@ -121,6 +126,21 @@ const SETTINGS = {
     "PIVOT_EMA_ST_ENTRY_END",
   ].map(k => [k, "14:00"])),
 };
+
+// (strategy, market) pairs replayed on their own synthetic market. mode / key
+// are config/pairs.js's for that pair (spelled here so the parent never loads
+// src/): mode = "<modeKey>-paper", enabledKey = "<PAIR>_MODE_ENABLED".
+//   SENSEX     BSE, weekly Thursday, grid 100, lot 20, ~77–83k
+//   BANKNIFTY  NSE, monthly only, grid 100, lot 30, ~56–60k
+//   NIFTY_FUT  the NIFTY 50 month future, priced at the index
+// Every pair ships OFF, so its switch is set in its recording's snapshot; the
+// rest of SETTINGS (paper switch, entry window, profit lock, premium stop …) is
+// inherited from NIFTY's keys exactly as a live pair would.
+const PAIRS = [
+  { route: "emaRsiStV2Paper", market: "SENSEX",    mode: "sensex_ema_rsi_st_v2-paper", enabledKey: "SENSEX_EMA_RSI_ST_V2_MODE_ENABLED" },
+  { route: "emaRsiStV2Paper", market: "BANKNIFTY", mode: "bn_ema_rsi_st_v2-paper",     enabledKey: "BN_EMA_RSI_ST_V2_MODE_ENABLED" },
+  { route: "emaRsiStV2Paper", market: "NIFTY_FUT", mode: "fut_ema_rsi_st_v2-paper",    enabledKey: "FUT_EMA_RSI_ST_V2_MODE_ENABLED" },
+].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {
   settings: SETTINGS,
@@ -249,7 +269,10 @@ const short = (v) => { const s = JSON.stringify(v); return s === undefined ? "un
 (async () => {
   const t0 = Date.now();
   const strategies = STRATEGIES.filter(s => !ONLY || ONLY.has(s.route) || ONLY.has(s.mode));
-  if (!strategies.length) { console.error(`No strategy matches --only=${[...ONLY].join(",")}`); process.exit(2); }
+  // A pair runs with --only naming its own name ("emaRsiStV2Paper.SENSEX") or
+  // mode, or with no --only at all; naming the route alone selects NIFTY only.
+  const pairJobs = PAIRS.filter(p => !ONLY || ONLY.has(p.name) || ONLY.has(p.mode));
+  if (!strategies.length && !pairJobs.length) { console.error(`No strategy matches --only=${[...ONLY].join(",")}`); process.exit(2); }
 
   const tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "strategy-baseline-")));
   const ticksDir = path.join(tmpRoot, "ticks");
@@ -265,14 +288,30 @@ const short = (v) => { const s = JSON.stringify(v); return s === undefined ? "un
     const gen = JSON.parse(fs.readFileSync(genOut, "utf8"));
     console.log(`📼 synthetic recordings: ${gen.summary.map(s => `${s.date} ${s.regime}`).join(" · ")}`);
 
+    // 1b. One recording per pair market, in its own ticks dir.
+    for (const p of pairJobs) {
+      p.ticksDir = path.join(tmpRoot, `ticks-${p.market}`);
+      fs.mkdirSync(p.ticksDir, { recursive: true });
+      const pSpec = path.join(tmpRoot, `recording-spec-${p.market}.json`);
+      fs.writeFileSync(pSpec, JSON.stringify({ ...RECORDING_SPEC, settings: { ...SETTINGS, [p.enabledKey]: "true" }, modes: [p.mode] }));
+      const pOut = path.join(tmpRoot, `generate-${p.market}.json`);
+      const pg = await runWorker(["--generate", "--market", p.market, "--ticks", p.ticksDir, "--settings", pSpec, "--out", pOut], tmpRoot, `generate-${p.market}`);
+      if (pg.code !== 0) throw new Error(`${p.market} recording generation failed (exit ${pg.code}) — see ${pg.log}\n${pg.stderr}`);
+      const pr = JSON.parse(fs.readFileSync(pOut, "utf8"));
+      console.log(`📼 ${p.market}: ${pr.summary.map(s => `${s.date.slice(5)}→${s.expiry.slice(5)}`).join(" ")}`);
+    }
+
     // 2. One child per (strategy, session).
     const jobs = [];
     for (const s of strategies) for (const sess of market.SESSIONS) jobs.push({ s, date: sess.date });
-    console.log(`▶ ${jobs.length} replays (${strategies.length} strategies × ${market.SESSIONS.length} sessions), ${JOBS} in parallel…`);
+    for (const p of pairJobs) for (const sess of market.SESSIONS) jobs.push({ s: { route: p.name, mode: p.mode }, pair: p, date: sess.date });
+    console.log(`▶ ${jobs.length} replays (${strategies.length} strategies + ${pairJobs.length} pairs × ${market.SESSIONS.length} sessions), ${JOBS} in parallel…`);
     const results = await pool(jobs, JOBS, async (job) => {
       const tag = `${job.s.route}-${job.date}`;
       const out = path.join(tmpRoot, "runs", `${tag}.json`);
-      const r = await runWorker(["--mode", job.s.mode, "--date", job.date, "--ticks", ticksDir, "--out", out], tmpRoot, tag);
+      const wargs = ["--mode", job.s.mode, "--date", job.date, "--ticks", job.pair ? job.pair.ticksDir : ticksDir, "--out", out];
+      if (job.pair) wargs.push("--market", job.pair.market);
+      const r = await runWorker(wargs, tmpRoot, tag);
       let res;
       try { res = JSON.parse(fs.readFileSync(out, "utf8")); }
       catch (_) { res = { ok: false, error: `worker exit ${r.code}, no result (log: ${r.log}) ${r.stderr.slice(0, 500)}` }; }
@@ -292,12 +331,13 @@ const short = (v) => { const s = JSON.stringify(v); return s === undefined ? "un
     }
 
     // 4. Golden build / compare.
-    const byStrategy = new Map(strategies.map(s => [s.route, []]));
+    const allGoldens = strategies.concat(pairJobs.map(p => ({ route: p.name, mode: p.mode })));
+    const byStrategy = new Map(allGoldens.map(s => [s.route, []]));
     for (const { job, res } of results) byStrategy.get(job.s.route).push(res);
     const counts = [];
     let diffs = 0;
     if (!CHECK) fs.mkdirSync(BASELINE_DIR, { recursive: true });
-    for (const s of strategies) {
+    for (const s of allGoldens) {
       const runs = byStrategy.get(s.route).sort((a, b) => a.date.localeCompare(b.date));
       const golden = buildGolden(s, runs);
       const perDay = golden.sessions.map(x => (x.trades || []).length);
@@ -331,8 +371,8 @@ const short = (v) => { const s = JSON.stringify(v); return s === undefined ? "un
 
     // 5. Report.
     console.log("");
-    console.log("strategy                trades  per session (" + market.SESSIONS.map(s => s.date.slice(5)).join(" ") + ")");
-    for (const c of counts) console.log(`  ${c.strategy.padEnd(22)}${String(c.total).padStart(5)}   ${c.perDay.map(n => String(n).padStart(5)).join(" ")}`);
+    console.log("strategy                          trades  per session (" + market.SESSIONS.map(s => s.date.slice(5)).join(" ") + ")");
+    for (const c of counts) console.log(`  ${c.strategy.padEnd(32)}${String(c.total).padStart(5)}   ${c.perDay.map(n => String(n).padStart(5)).join(" ")}`);
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     if (problems.length) {
       exitCode = 1;
@@ -341,9 +381,9 @@ const short = (v) => { const s = JSON.stringify(v); return s === undefined ? "un
     }
     if (CHECK) {
       if (diffs) { exitCode = 1; console.log(`\n❌ baseline check FAILED — ${diffs} strateg${diffs === 1 ? "y" : "ies"} differ (${secs}s)`); }
-      else if (!problems.length) console.log(`\n✅ baseline check passed — ${strategies.length} strategies byte-identical to tests/baseline (${secs}s)`);
+      else if (!problems.length) console.log(`\n✅ baseline check passed — ${strategies.length} strategies + ${pairJobs.length} pairs byte-identical to tests/baseline (${secs}s)`);
     } else if (!problems.length) {
-      console.log(`\n💾 wrote ${strategies.length} golden file(s) to ${path.relative(REPO, BASELINE_DIR)}/ (${secs}s)`);
+      console.log(`\n💾 wrote ${allGoldens.length} golden file(s) to ${path.relative(REPO, BASELINE_DIR)}/ (${secs}s)`);
     }
   } catch (e) {
     exitCode = 1;
