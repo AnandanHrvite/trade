@@ -259,21 +259,18 @@ function _fileFingerprint(p) {
 // Inverting that would feed every old day's NIFTY ticks to BANKNIFTY.
 const _NIFTY_INDEX     = "NSE:NIFTY50-INDEX";
 const _BANKNIFTY_INDEX = "NSE:NIFTYBANK-INDEX";
-// SAIL — a STOCK spot (SAIL_VWAP_ST), recorded with idx "NSE:SAIL-EQ". Like
+// SAIL — a STOCK spot, recorded with idx "NSE:SAIL-EQ". Like
 // BANKNIFTY it accepts ONLY ticks stamped with its own idx (never a no-idx
 // NIFTY tick), so a SAIL replay can never be fed NIFTY / NIFTY BANK prices.
 const _SAIL_SPOT = "NSE:SAIL-EQ";
 const _MODE_TO_SPOT_INDEX = {
-  // Non-NIFTY modes. A mode missing here replays NIFTY 50 ticks into its
-  // engine and pins the NIFTY weekly expiry.
-  // SAIL stock options — the paper callback is bound to NSE:SAIL-EQ.
-  "sail_vwap_st-paper": _SAIL_SPOT,
+  // Non-NIFTY modes (none today). A mode missing here replays NIFTY 50 ticks
+  // into its engine and pins the NIFTY weekly expiry.
 };
 /** The spot index a mode's engine subscribes to. Defaults to NIFTY 50. */
 function _spotIndexOf(mode) { return _MODE_TO_SPOT_INDEX[mode] || _NIFTY_INDEX; }
 /** Human name for the underlying, for logs that must not be ambiguous. */
 const _MODE_UNDERLYING_LABEL = {
-  "sail_vwap_st-paper": "SAIL_VWAP_ST (SAIL stock, monthly options)",
 };
 function _underlyingLabelOf(mode) {
   return _MODE_UNDERLYING_LABEL[mode]
@@ -445,7 +442,7 @@ function _resolveBankniftyExpiryEnv({ marketContext, snapshot, date, tradedExpir
 }
 
 /**
- * Expiry for SAIL_VWAP_ST (SAIL stock options). Resolved by UNDERLYING through
+ * Expiry for a SAIL stock-options mode. Resolved by UNDERLYING through
  * instrument.js's SAIL keys (UNDERLYING_DEFS.SAIL.env), exactly like the
  * BANKNIFTY path above: MONTHLY always — NSE stock options have no weekly
  * contract — and the NIFTY expiry keys are blanked so a standing NIFTY
@@ -908,7 +905,6 @@ const _MODE_TO_CANONICAL_FILE = {
   "itm20-scalp-paper":     "itm20_scalp_paper_trades.json",
   "early-bird-paper":      "early_bird_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
-  "sail_vwap_st-paper":    "sail_vwap_st_paper_trades.json",
   "simple930-paper":       "simple930_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
@@ -1106,20 +1102,13 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // still never touch its REAL mutex slot.
     ss_setStRsiPivBbMode:      sharedSocketState.setStRsiPivBbMode,
     ss_clearStRsiPivBbMode:    sharedSocketState.clearStRsiPivBbMode,
-    // SAIL_VWAP_ST keeps its OWN mutex slot — a replay must never touch the real one.
-    ss_setSailVwapStMode:      sharedSocketState.setSailVwapStMode,
-    ss_clearSailVwapStMode:    sharedSocketState.clearSailVwapStMode,
-    // PIVOT_EMA_ST family is not replayable (paper only), but a replay
-    // must still never touch its REAL mutex slots.
+    // PIVOT_EMA_ST is not replayable (paper only), but a replay
+    // must still never touch its REAL mutex slot.
     ss_setPivotEmaStMode:        sharedSocketState.setPivotEmaStMode,
     ss_clearPivotEmaStMode:      sharedSocketState.clearPivotEmaStMode,
-    ss_setSailPivotEmaStMode:    sharedSocketState.setSailPivotEmaStMode,
-    ss_clearSailPivotEmaStMode:  sharedSocketState.clearSailPivotEmaStMode,
-    // GAP_RUNAWAY (+ its stock scanner) is not replayable either — same rule.
+    // GAP_RUNAWAY is not replayable either — same rule.
     ss_setGapRunawayMode:        sharedSocketState.setGapRunawayMode,
     ss_clearGapRunawayMode:      sharedSocketState.clearGapRunawayMode,
-    ss_setGapRunawayStkMode:     sharedSocketState.setGapRunawayStkMode,
-    ss_clearGapRunawayStkMode:   sharedSocketState.clearGapRunawayStkMode,
     ss_setSimple930Active:     sharedSocketState.setSimple930Active,
     ss_clearSimple930:         sharedSocketState.clearSimple930,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
@@ -1672,16 +1661,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEmaRsiStV2Mode    = () => {};
     sharedSocketState.setStRsiPivBbMode      = () => {};
     sharedSocketState.clearStRsiPivBbMode    = () => {};
-    sharedSocketState.setSailVwapStMode      = () => {};
-    sharedSocketState.clearSailVwapStMode    = () => {};
     sharedSocketState.setPivotEmaStMode        = () => {};
     sharedSocketState.clearPivotEmaStMode      = () => {};
-    sharedSocketState.setSailPivotEmaStMode    = () => {};
-    sharedSocketState.clearSailPivotEmaStMode  = () => {};
     sharedSocketState.setGapRunawayMode        = () => {};
     sharedSocketState.clearGapRunawayMode      = () => {};
-    sharedSocketState.setGapRunawayStkMode     = () => {};
-    sharedSocketState.clearGapRunawayStkMode   = () => {};
     sharedSocketState.setSimple930Active     = () => {};
     sharedSocketState.clearSimple930         = () => {};
 
@@ -1959,16 +1942,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEmaRsiStV2Mode    = orig.ss_clearEmaRsiStV2Mode;
     sharedSocketState.setStRsiPivBbMode      = orig.ss_setStRsiPivBbMode;
     sharedSocketState.clearStRsiPivBbMode    = orig.ss_clearStRsiPivBbMode;
-    sharedSocketState.setSailVwapStMode      = orig.ss_setSailVwapStMode;
-    sharedSocketState.clearSailVwapStMode    = orig.ss_clearSailVwapStMode;
     sharedSocketState.setPivotEmaStMode        = orig.ss_setPivotEmaStMode;
     sharedSocketState.clearPivotEmaStMode      = orig.ss_clearPivotEmaStMode;
-    sharedSocketState.setSailPivotEmaStMode    = orig.ss_setSailPivotEmaStMode;
-    sharedSocketState.clearSailPivotEmaStMode  = orig.ss_clearSailPivotEmaStMode;
     sharedSocketState.setGapRunawayMode        = orig.ss_setGapRunawayMode;
     sharedSocketState.clearGapRunawayMode      = orig.ss_clearGapRunawayMode;
-    sharedSocketState.setGapRunawayStkMode     = orig.ss_setGapRunawayStkMode;
-    sharedSocketState.clearGapRunawayStkMode   = orig.ss_clearGapRunawayStkMode;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
     sharedSocketState.clearSimple930         = orig.ss_clearSimple930;
     fs.writeFileSync     = orig.fs_writeFileSync;
@@ -2052,8 +2029,6 @@ const MODE_TO_MODULE = {
   "itm20-scalp-paper":     "../routes/itm20ScalpPaper",
   "early-bird-paper":      "../routes/earlyBirdPaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
-  // SAIL stock options — fed ONLY NSE:SAIL-EQ ticks (_MODE_TO_SPOT_INDEX).
-  "sail_vwap_st-paper":    "../routes/sailVwapStPaper",
   "simple930-paper":       "../routes/simple930Paper",
 };
 
@@ -2831,11 +2806,8 @@ function replayPreflight() {
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isEmaRsiStV2Active && sharedSocketState.isEmaRsiStV2Active()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode() || "ema_rsi_st_v2");
   if (sharedSocketState.isStRsiPivBbActive && sharedSocketState.isStRsiPivBbActive()) activeModes.push(sharedSocketState.getStRsiPivBbMode() || "st_rsi_piv_bb");
-  if (sharedSocketState.isSailVwapStActive && sharedSocketState.isSailVwapStActive()) activeModes.push(sharedSocketState.getSailVwapStMode() || "sail_vwap_st");
   if (sharedSocketState.isPivotEmaStActive && sharedSocketState.isPivotEmaStActive()) activeModes.push(sharedSocketState.getPivotEmaStMode() || "pivot_ema_st");
-  if (sharedSocketState.isSailPivotEmaStActive && sharedSocketState.isSailPivotEmaStActive()) activeModes.push(sharedSocketState.getSailPivotEmaStMode() || "sail_pivot_ema_st");
   if (sharedSocketState.isGapRunawayActive && sharedSocketState.isGapRunawayActive()) activeModes.push(sharedSocketState.getGapRunawayMode() || "gap_runaway");
-  if (sharedSocketState.isGapRunawayStkActive && sharedSocketState.isGapRunawayStkActive()) activeModes.push(sharedSocketState.getGapRunawayStkMode() || "gap_runaway_stk");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
     return {
@@ -2902,11 +2874,8 @@ function forceClearSharedState() {
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     ema_rsi_st_v2: sharedSocketState.getEmaRsiStV2Mode ? sharedSocketState.getEmaRsiStV2Mode() : null,
     st_rsi_piv_bb: sharedSocketState.getStRsiPivBbMode ? sharedSocketState.getStRsiPivBbMode() : null,
-    sail_vwap_st: sharedSocketState.getSailVwapStMode ? sharedSocketState.getSailVwapStMode() : null,
     pivot_ema_st: sharedSocketState.getPivotEmaStMode ? sharedSocketState.getPivotEmaStMode() : null,
-    sail_pivot_ema_st: sharedSocketState.getSailPivotEmaStMode ? sharedSocketState.getSailPivotEmaStMode() : null,
     gap_runaway: sharedSocketState.getGapRunawayMode ? sharedSocketState.getGapRunawayMode() : null,
-    gap_runaway_stk: sharedSocketState.getGapRunawayStkMode ? sharedSocketState.getGapRunawayStkMode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
   };
@@ -2927,11 +2896,8 @@ function forceClearSharedState() {
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearEmaRsiStV2Mode) sharedSocketState.clearEmaRsiStV2Mode();
   if (sharedSocketState.clearStRsiPivBbMode) sharedSocketState.clearStRsiPivBbMode();
-  if (sharedSocketState.clearSailVwapStMode) sharedSocketState.clearSailVwapStMode();
   if (sharedSocketState.clearPivotEmaStMode) sharedSocketState.clearPivotEmaStMode();
-  if (sharedSocketState.clearSailPivotEmaStMode) sharedSocketState.clearSailPivotEmaStMode();
   if (sharedSocketState.clearGapRunawayMode) sharedSocketState.clearGapRunawayMode();
-  if (sharedSocketState.clearGapRunawayStkMode) sharedSocketState.clearGapRunawayStkMode();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;
   return { ok: true, cleared: before };

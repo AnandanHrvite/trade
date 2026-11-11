@@ -265,7 +265,7 @@ function futuresStopOpts(_entryLevel) {
   return { slPct: livePremiumSlPct(), slBase: 200 };
 }
 
-// ── Stock stop (cash-equity legs: EarlyBird stock, GAP_RUNAWAY_STK) ─────────
+// ── Stock stop (cash-equity legs: EarlyBird stock) ─────────────────────────
 // The premium stop's % are sized for an option premium; on a share price a 20%
 // stop never fires. Stocks get their own sizes, switched by the same
 // PREMIUM_SL_ENABLED: sell STOCK_SL_PCT % against entry, move to entry once

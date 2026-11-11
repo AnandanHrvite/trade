@@ -1092,86 +1092,8 @@ function clearStRsiPivBbPosition() {
   console.log("[PERSIST] ST_RSI_PIV_BB position file cleared.");
 }
 
-// ── SAIL_VWAP_ST (SAIL VWAP cross + breakout, SuperTrend stop, Zerodha) ─────
-// Copied from the ST_RSI_PIV_BB block above, on its OWN file. The SuperTrend
-// line is the initial stop AND the trail — tightened on every closed candle,
-// never widened — so `stopLoss` is live trail state, persisted at its CURRENT
-// value and never re-derived from the entry on load. `crossLevel` (the cross
-// candle's high/low the breakout cleared) and `tradeRes` (the chart the trade
-// lives on) are kept so a recovered position is self-describing. SAIL stock
-// options: `symbol` is the SAIL option contract, `qty` is lots × SAIL_LOT_SIZE.
-
-const SAIL_VWAP_ST_POS_FILE = path.join(DATA_DIR, ".active_sail_vwap_st_position.json");
-
-function saveSailVwapStPosition(position, sessionMeta) {
-  try {
-    if (!position) { _persistAtomic(SAIL_VWAP_ST_POS_FILE, null); return; }
-    const data = {
-      position: {
-        side:            position.side,
-        symbol:          position.symbol,
-        qty:             position.qty,
-        entryPrice:      position.entryPrice,
-        spotAtEntry:     position.spotAtEntry || position.entrySpot,
-        // The SuperTrend trail — the only spot stop. Persisted at its CURRENT
-        // tightened value, never re-derived on load.
-        stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
-        initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
-        bestPrice:       position.bestPrice,
-        bestOptionLtp:   position.bestOptionLtp ?? null,
-        entryUnixSec:    position.entryUnixSec,
-        entryTime:       position.entryTime,
-        entryBarTime:    position.entryBarTime ?? null,
-        signalBarTime:   position.signalBarTime ?? null,
-        crossTime:       position.crossTime ?? null,
-        crossLevel:      position.crossLevel ?? null,
-        tradeRes:        position.tradeRes ?? null,
-        underlying:      position.underlying || "SAIL",
-        orderId:         position.orderId,
-        isFutures:       !!position.isFutures,
-        optionEntryLtp:  position.optionEntryLtp,
-        optionStrike:    position.optionStrike,
-        optionExpiry:    position.optionExpiry,
-        optionType:      position.optionType || position.side,
-        signalStrength:  position.signalStrength,
-      },
-      sessionMeta: sessionMeta || {},
-      savedAt: Date.now(),
-      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
-    };
-    _persistAtomic(SAIL_VWAP_ST_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] SAIL_VWAP_ST position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
-  } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save SAIL_VWAP_ST position: ${err.message}`);
-  }
-}
-
-function loadSailVwapStPosition() {
-  try {
-    if (!fs.existsSync(SAIL_VWAP_ST_POS_FILE)) return null;
-    const data = _readSnapshot(SAIL_VWAP_ST_POS_FILE);
-    if (!data) return null;
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale SAIL_VWAP_ST position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
-      _markStale(SAIL_VWAP_ST_POS_FILE, data);
-      return null;
-    }
-    if (data.position) console.log(`[PERSIST] SAIL_VWAP_ST position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
-    return data;
-  } catch (err) {
-    console.warn(`[PERSIST] Could not load SAIL_VWAP_ST position: ${err.message}`);
-    return null;
-  }
-}
-
-function clearSailVwapStPosition() {
-  _persistAtomic(SAIL_VWAP_ST_POS_FILE, null);
-  console.log("[PERSIST] SAIL_VWAP_ST position file cleared.");
-}
-
 // ── PIVOT_EMA_ST family (pivot zone + EMA20/50 cross + SuperTrend, Zerodha) ──
-// NIFTY / SAIL, each on its OWN file. Same shape as the
+// Each instance on its OWN file. Same shape as the
 // ST_RSI_PIV_BB block: exactly ONE stop, the SuperTrend line — the initial stop
 // AND the trail, tightened on every closed candle and never widened. `stopLoss`
 // is live trail state, persisted at its CURRENT value and never re-derived from
@@ -1239,18 +1161,13 @@ function _makePivotEmaStPersist(label, file) {
   return { save, load, clear };
 }
 const _pivotEmaStPersist     = _makePivotEmaStPersist("PIVOT_EMA_ST", path.join(DATA_DIR, ".active_pivot_ema_st_position.json"));
-const _sailPivotEmaStPersist = _makePivotEmaStPersist("SAIL_PIVOT_EMA_ST", path.join(DATA_DIR, ".active_sail_pivot_ema_st_position.json"));
 function savePivotEmaStPosition(position, sessionMeta) { return _pivotEmaStPersist.save(position, sessionMeta); }
 function loadPivotEmaStPosition() { return _pivotEmaStPersist.load(); }
 function clearPivotEmaStPosition() { return _pivotEmaStPersist.clear(); }
-function saveSailPivotEmaStPosition(position, sessionMeta) { return _sailPivotEmaStPersist.save(position, sessionMeta); }
-function loadSailPivotEmaStPosition() { return _sailPivotEmaStPersist.load(); }
-function clearSailPivotEmaStPosition() { return _sailPivotEmaStPersist.clear(); }
 
 // ── GAP_RUNAWAY (GAP_runAway__Kirubakaran, NIFTY options, Zerodha) ──────────
 // Same snapshot shape as the PIVOT_EMA_ST family (one builder, so it cannot
 // drift): ONE stop — yesterday's close, the gap-fill level — fixed for the trade.
-// The stock scanner (GAP_RUNAWAY_STK) is paper-only and keeps its own file.
 const _gapRunawayPersist = _makePivotEmaStPersist("GAP_RUNAWAY", path.join(DATA_DIR, ".active_gap_runaway_position.json"));
 function saveGapRunawayPosition(position, sessionMeta) { return _gapRunawayPersist.save(position, sessionMeta); }
 function loadGapRunawayPosition() { return _gapRunawayPersist.load(); }
@@ -1480,9 +1397,7 @@ module.exports = {
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveEmaRsiStV2Position, loadEmaRsiStV2Position, clearEmaRsiStV2Position,
   saveStRsiPivBbPosition, loadStRsiPivBbPosition, clearStRsiPivBbPosition,
-  saveSailVwapStPosition, loadSailVwapStPosition, clearSailVwapStPosition,
   savePivotEmaStPosition, loadPivotEmaStPosition, clearPivotEmaStPosition,
-  saveSailPivotEmaStPosition, loadSailPivotEmaStPosition, clearSailPivotEmaStPosition,
   saveGapRunawayPosition, loadGapRunawayPosition, clearGapRunawayPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
   // Boot-reconcile helpers (corrupt files moved aside, previous-day snapshots kept)

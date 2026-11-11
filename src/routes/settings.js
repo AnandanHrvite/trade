@@ -621,41 +621,6 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha",
-    icon: "\u{1F3ED}",
-    nav: "SAIL_VWAP_ST",
-    group: "STOCKS",
-    fields: [
-      // SAIL STOCK options (NSE:SAIL-EQ spot, monthly expiry, ₹2.5 strikes, lot
-      // 4700). A 5-min candle closes across the session VWAP, then within a few
-      // candles one closes beyond that cross candle's high (CE) / low (PE) with
-      // SuperTrend agreeing. The SuperTrend line is the stop, trailed on candle
-      // close. Every key is its own SAIL_VWAP_ST_* key and every default below
-      // equals the engine's code default (src/strategies/sail_vwap_st.js).
-      // The SAIL contract itself (strike grid, lot size, expiry) lives in
-      // Common → PER-INDEX CONFIGURATION → SAIL.
-      //
-      // Ships OFF and unproven: turn the Mode toggle on (MENU VISIBILITY) and
-      // paper it for a stretch of sessions before thinking about live.
-      { key: "SAIL_VWAP_ST_PAPER_ENABLED", label: "SAIL_VWAP_ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new SAIL_VWAP_ST paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode" },
-
-      // ── Chart & signal ──
-      { key: "SAIL_VWAP_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles" }, { value: "5", label: "5 — 5-min candles (default)" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which SAIL candle the whole strategy reads — the VWAP cross, the breakout and the SuperTrend stop all run on this one chart. Example: at 5, a cross candle closing at 10:05 can be confirmed by the 10:10, 10:15 or 10:20 candle. Takes effect at the next Start.", default: "5", subheader: "Chart & signal" },
-      { key: "SAIL_VWAP_ST_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How many candles the SuperTrend's ATR is measured over. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the trailing stop. Longer = a slower line that gives the trade more room.", default: "10" },
-      { key: "SAIL_VWAP_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs away from price the SuperTrend line sits. Example: SAIL ATR ₹0.20 × 2 = the line sits about ₹0.40 below price on a CE (SAIL at ₹170.00, stop near ₹169.60). Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "2" },
-      { key: "SAIL_VWAP_ST_BREAKOUT_BARS", label: "Breakout Window (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After a candle closes across VWAP, how many following candles may confirm it. Example: at 3, the cross candle closes at ₹169.80 above VWAP with a high of ₹169.90 — a CE is bought only if one of the next 3 candles closes above ₹169.90. If none does, or one closes back below VWAP first, the setup is dropped.", default: "3" },
-
-      // ── Session window ──
-      { key: "SAIL_VWAP_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). Skips the opening minutes, when the day's VWAP is built from only a few candles.", default: "09:30", subheader: "Session window" },
-      { key: "SAIL_VWAP_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:30" },
-      { key: "SAIL_VWAP_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of SAIL candles are loaded before the session so the SuperTrend starts the day settled (VWAP restarts every day and needs no warm-up). Example: at 2, a 09:15 start already has two full days of 5-min candles behind it and can trade from the first close.", default: "2" },
-
-      // ── Size & day guards ──
-      { key: "SAIL_VWAP_ST_LOTS", label: "Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.", default: "1", subheader: "Size & day guards" },
-
-    ],
-  },
-  {
     section: "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
     icon: "\u{1F3AF}",
     nav: "PIVOT_EMA_ST",
@@ -680,34 +645,6 @@ const SETTINGS_SCHEMA = [
       { key: "PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
       { key: "PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
       { key: "PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
-    ],
-  },
-  {
-    section: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
-    icon: "\u{1F3ED}",
-    nav: "SAIL_PIVOT_EMA_ST",
-    group: "STOCKS",
-    fields: [
-      // SAIL STOCK options (NSE:SAIL-EQ spot, monthly expiry) — the PIVOT_EMA_ST
-      // rules (src/strategies/pivot_ema_st.js) with their own SAIL_PIVOT_EMA_ST_*
-      // keys. The SAIL contract itself (strike grid, lot size, expiry) lives in
-      // Common → PER-INDEX CONFIGURATION → SAIL.
-      // Paper only — no backtest page, not replayable.
-
-      // ── Chart & signal ──
-      { key: "SAIL_PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which SAIL candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
-      { key: "SAIL_PIVOT_EMA_ST_EMA_FAST", label: "Fast EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The fast EMA in the crossover. A CE needs it to cross ABOVE the slow EMA on the signal candle itself (the bar before: fast ≤ slow; this bar: fast > slow), and the cross level — (fast + slow) / 2 on that candle — must sit inside the same zone as the close (PP–R1 for CE, S1–PP for PE). A cross on an earlier candle, or outside the zone, does not count.", default: "20" },
-      { key: "SAIL_PIVOT_EMA_ST_EMA_SLOW", label: "Slow EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The slow EMA in the crossover. Must be longer than the fast EMA — if it is not, the engine falls back to 50.", default: "50" },
-      { key: "SAIL_PIVOT_EMA_ST_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "ATR length behind the SuperTrend line. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the stop — its value on the signal candle is the first stop, then it trails.", default: "10" },
-      { key: "SAIL_PIVOT_EMA_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.INSTANT, desc: "How many ATRs away from price the SuperTrend line sits. Example: SAIL ATR ₹0.20 × 3 = the line sits about ₹0.60 from price. Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "3" },
-
-      // ── Session window ──
-      { key: "SAIL_PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
-      { key: "SAIL_PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
-      { key: "SAIL_PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of SAIL candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
-
-      // ── Size & day guards ──
-      { key: "SAIL_PIVOT_EMA_ST_LOTS", label: "Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares, capped by MAX_LOT_MULTIPLIER. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.", default: "1", subheader: "Size & day guards" },
     ],
   },
   {
@@ -738,35 +675,6 @@ const SETTINGS_SCHEMA = [
 
       // ── Size & capital (its own — the common ones do not apply) ──
       { key: "GAP_RUNAWAY_LOTS", label: "Lots", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "NIFTY lots per trade. This strategy's own count — the common Lot Multiplier does not apply. Example: 1 lot = 65 qty.", default: "1", subheader: "Size & capital" },
-    ],
-  },
-  {
-    section: "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)",
-    icon: "\u{1F50E}",
-    nav: "GAP_RUNAWAY Stocks",
-    group: "STOCKS",
-    fields: [
-      // The same engine (src/strategies/gap_runaway.js) over a stock universe:
-      // yesterday's RSI extreme + today's gap, biggest gaps first, up to Max
-      // Trades a day, bought (gap up) or short-sold (gap down) as INTRADAY shares.
-      // Paper only — no live orders, no backtest, not replayable. No common rules.
-      { key: "GAP_RUNAWAY_STK_REFERENCE_URL", label: "Reference Video", type: "text", effect: EFFECT.INSTANT, desc: "The YouTube video this strategy comes from — kept here to refer back to. Shown as a link on the stock page. Changes nothing in the rules.", default: "https://www.youtube.com/watch?v=uLTaXTyDxiI", subheader: "Reference" },
-
-      // ── Daily setup (yesterday's closed bar) ──
-      { key: "GAP_RUNAWAY_STK_EMA_LENGTH", label: "Daily EMA Length (RSI source)", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "The RSI is worked out on this EMA of the DAILY close, not on the close itself (TradingView: RSI Source = EMA). Smoothing it once is what lets the RSI reach 90 / 10.", default: "21", subheader: "Daily setup (yesterday's closed bar)" },
-      { key: "GAP_RUNAWAY_STK_RSI_LENGTH", label: "Daily RSI Length", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "RSI length on the EMA line above. Read on YESTERDAY's closed daily bar. Example: RSI 7 yesterday = oversold.", default: "10" },
-      { key: "GAP_RUNAWAY_STK_RSI_UPPER", label: "Overbought (RSI above)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's RSI above this = overbought: a gap DOWN today short-sells the stock. Must be above Oversold, or both fall back to 90 / 10.", default: "90" },
-      { key: "GAP_RUNAWAY_STK_RSI_LOWER", label: "Oversold (RSI below)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's RSI below this = oversold: a gap UP today buys the stock.", default: "10" },
-      { key: "GAP_RUNAWAY_STK_MIN_GAP_PTS", label: "Minimum Gap (pts)", type: "number", min: 0, max: 5000, step: 1, effect: EFFECT.INSTANT, desc: "Gap = today's open minus yesterday's close. 0 = any gap counts, exactly like the video. Example at 20: open 24,010 vs close 24,000 is a 10-pt gap → no trade. The gap is also the stop: yesterday's close.", default: "0" },
-
-      // ── Entry & exits ──
-      { key: "GAP_RUNAWAY_STK_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "The day's one decision is made from this time (IST), once today's open is known.", default: "09:15", subheader: "Entry & exits" },
-      { key: "GAP_RUNAWAY_STK_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No entry after this time (IST). If the fill keeps failing until then, there is no trade today.", default: "09:30" },
-
-      // ── Universe & size ──
-      { key: "GAP_RUNAWAY_STK_UNIVERSE", label: "Stock List", type: "select", options: ["FNO", "NIFTY100", "NIFTY50"], effect: EFFECT.SESSION, desc: "Which stocks are scanned before 09:15. FNO = all F&O stocks (~220, about 75 s to scan). Lists can be edited in ~/trading-data/swing_scanner_universe.json.", default: "FNO", subheader: "Universe & size" },
-      { key: "GAP_RUNAWAY_STK_TRADE_AMOUNT", label: "Amount per Trade (₹)", type: "number", min: 1000, max: 10000000, step: 1000, effect: EFFECT.SESSION, desc: "Shares per trade = this ÷ price, rounded down. Example: ₹1,00,000 on a ₹2,500 stock = 40 shares.", default: "100000" },
-      { key: "GAP_RUNAWAY_STK_MAX_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "When more stocks fire, the biggest gaps (in %) are taken first, up to this many a day. One trade per stock per day.", default: "3" },
     ],
   },
   {
@@ -872,7 +780,7 @@ const SETTINGS_SCHEMA = [
       { key: "BANKNIFTY_SPOT_FALLBACK", label: "NIFTY BANK — Spot Fallback", type: "number", min: 30000, max: 80000, step: 100, effect: EFFECT.INSTANT, desc: "Fallback NIFTY BANK price when no live quote is available.", default: "54000" },
       { key: "BANKNIFTY_FUTURES_MARGIN_PCT", label: "NIFTY BANK — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, used to size the capital pool when the Trade Type is futures. Advisory only — never blocks a trade.", default: "11" },
 
-      // SAIL — a STOCK, not an index (traded only by SAIL_VWAP_ST). Same nine
+      // SAIL — a STOCK, not an index (no strategy trades it today). Same nine
       // fields, SAIL_-prefixed keys (instrument.js UNDERLYING_DEFS.SAIL). Stock
       // options are monthly-only and struck on a ₹2.5 grid, so the step and the
       // offsets are fractional. Read live per entry — a save applies at once.
@@ -882,9 +790,9 @@ const SETTINGS_SCHEMA = [
       { key: "SAIL_STRIKE_OFFSET_PE", label: "SAIL — PE Strike Offset (₹)", type: "number", min: -25, max: 25, step: 2.5, effect: EFFECT.INSTANT, desc: "PE strike vs ATM, in rupees on the ₹2.5 grid (+2.5 = one strike ITM, 0 = ATM, -2.5 = one strike OTM). Example: SAIL at ₹170 with -2.5 buys the ₹167.50 PE.", default: "0" },
       { key: "SAIL_WEEKLY_EXPIRY_ENABLED", label: "SAIL — Weekly Expiries Exist", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF, and it must stay off: NSE STOCK options are MONTHLY only (last Tuesday of the month) — there has never been a weekly SAIL contract. Switching this on would make the engine build weekly symbols that do not exist, so every entry would be refused.", default: "false" },
       { key: "SAIL_OPTION_EXPIRY_TYPE", label: "SAIL — Expiry Type", type: "select", options: ["monthly", "weekly"], effect: EFFECT.INSTANT, desc: "Monthly is the only real answer — SAIL is a stock and stock options expire monthly only. Weekly is honoured only if the Weekly Expiries Exist toggle above is on, which it never should be for SAIL.", default: "monthly" },
-      { key: "SAIL_OPTION_EXPIRY_OVERRIDE", label: "SAIL — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual SAIL expiry (YYYY-MM-DD). Leave blank to use the current month's contract (e.g. 2026-10-27 for October 2026). Like the index keys above, a stored date is rolled forward automatically once it expires while SAIL_VWAP_ST is switched on; a future date you set is left alone. A date that has already passed BLOCKS SAIL entries rather than quietly trading a different expiry." },
+      { key: "SAIL_OPTION_EXPIRY_OVERRIDE", label: "SAIL — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual SAIL expiry (YYYY-MM-DD). Leave blank to use the current month's contract (e.g. 2026-10-27 for October 2026). Like the index keys above, a stored date is rolled forward automatically once it expires while SAIL is switched on; a future date you set is left alone. A date that has already passed BLOCKS SAIL entries rather than quietly trading a different expiry." },
       { key: "SAIL_SPOT_FALLBACK", label: "SAIL — Spot Fallback (₹)", type: "number", min: 1, max: 10000, step: 0.05, effect: EFFECT.INSTANT, desc: "Fallback SAIL share price when no live quote is available — used only to pick a strike, never to fill a trade.", default: "170" },
-      { key: "SAIL_FUTURES_MARGIN_PCT", label: "SAIL — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, for completeness of the SAIL contract definition. SAIL_VWAP_ST trades options only, so this is advisory and never blocks a trade.", default: "20" },
+      { key: "SAIL_FUTURES_MARGIN_PCT", label: "SAIL — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, for completeness of the SAIL contract definition. No strategy trades SAIL futures, so this is advisory and never blocks a trade.", default: "20" },
 
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true", subheader: "Recording & Replay" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Delete tick recordings older than this.", default: "30" },
@@ -902,10 +810,6 @@ const SETTINGS_SCHEMA = [
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees." },
       { key: "BACKTEST_SLIPPAGE_PTS", label: "Slippage (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Spread + slippage charged on entry AND exit, in points. One value for every NIFTY / BANK NIFTY backtest — no strategy has its own.", default: "1.5" },
       { key: "BACKTEST_SEED_PREMIUM", label: "Seed Premium (₹)", type: "number", min: 10, max: 2000, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed option premium at entry for the simulated-premium backtests. One value for every NIFTY / BANK NIFTY backtest. Note: a BANK NIFTY monthly premium is usually higher than this NIFTY-weekly figure.", default: "240" },
-      { key: "SAIL_VWAP_ST_BT_SLIPPAGE_PTS", label: "SAIL — Slippage (₹ of SAIL spot, each way)", type: "number", min: 0, max: 5, step: 0.05, effect: EFFECT.BACKTEST, desc: "Cost the backtest charges on both the entry and the exit fill, in rupees of the SAIL share price, to stand in for the spread you really pay. Example: at 0.05, a CE signalled at ₹170.00 fills at ₹170.05. Set it to 0 and the backtest flatters itself.", default: "0.05", subheader: "SAIL Backtest (₹ per share)" },
-      { key: "SAIL_VWAP_ST_BT_SEED_PREMIUM", label: "SAIL — Seed Premium (₹ / share)", type: "number", min: 0.05, max: 1000, step: 0.05, effect: EFFECT.BACKTEST, desc: "The option price the backtest starts each trade from, since no historical SAIL option chain exists here. Example: 5 = every trade is assumed bought at ₹5.00. It is a guess, and the weakest number in any SAIL backtest result.", default: "5" },
-      { key: "SAIL_VWAP_ST_BT_DELTA", label: "SAIL — Delta", type: "number", min: 0.05, max: 1, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option moves per ₹1 move in SAIL. Example: at 0.5, SAIL rising ₹1.00 adds ₹0.50 to a CE's simulated premium. 0.5 is roughly an at-the-money option.", default: "0.5" },
-      { key: "SAIL_VWAP_ST_BT_THETA_DAY", label: "SAIL — Time Decay (₹ / share / day)", type: "number", min: 0, max: 100, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option loses per full trading day just from time passing. Example: at 0.1, a trade held half the day loses about ₹0.05 per share to decay.", default: "0.1" },
       { key: "EARLYBIRD_BT_SLIPPAGE_PTS", label: "EarlyBird — Slippage Haircut (₹ each way)", type: "number", min: 0, max: 20, step: 0.05, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in rupees of stock price. Applied to both entry and exit. Without it a breakout backtest always flatters.", default: "0.05", subheader: "Stock Backtest (EarlyBird)" },
       { key: "EARLYBIRD_BT_CONCURRENCY", label: "EarlyBird — Fetch Concurrency", type: "number", min: 1, max: 16, step: 1, effect: EFFECT.BACKTEST, desc: "How many symbols' history are fetched in parallel during a backtest. Higher is faster but risks Fyers rate limits.", default: "4" },
       { key: "EARLYBIRD_BT_RPS", label: "EarlyBird — Fetch Rate (per second)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Fyers meters history requests per second. Lower this if a wide-range run starts failing.", default: "8" },
@@ -980,11 +884,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_STARTED", label: "EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST_V2 session starts.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_STARTED", label: "ST_RSI_PIV_BB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ST_RSI_PIV_BB session starts.", default: "true" },
-      { key: "TG_SAIL_VWAP_ST_STARTED", label: "SAIL_VWAP_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_VWAP_ST session starts.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_STARTED", label: "PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a PIVOT_EMA_ST session starts.", default: "true" },
-      { key: "TG_SAIL_PIVOT_EMA_ST_STARTED", label: "SAIL_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_PIVOT_EMA_ST session starts.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STARTED", label: "GAP_RUNAWAY — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAP_runAway__Kirubakaran (NIFTY) session starts.", default: "true" },
-      { key: "TG_GAP_RUNAWAY_STK_STARTED", label: "GAP_RUNAWAY Stocks — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when the GAP_runAway stock scanner starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
@@ -1001,11 +902,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_ENTRY", label: "EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 entry.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_ENTRY", label: "ST_RSI_PIV_BB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB entry.", default: "true" },
-      { key: "TG_SAIL_VWAP_ST_ENTRY", label: "SAIL_VWAP_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST entry.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_ENTRY", label: "PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST entry.", default: "true" },
-      { key: "TG_SAIL_PIVOT_EMA_ST_ENTRY", label: "SAIL_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST entry.", default: "true" },
       { key: "TG_GAP_RUNAWAY_ENTRY", label: "GAP_RUNAWAY — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) entry.", default: "true" },
-      { key: "TG_GAP_RUNAWAY_STK_ENTRY", label: "GAP_RUNAWAY Stocks — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
@@ -1022,11 +920,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_EXIT", label: "EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 exit.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_EXIT", label: "ST_RSI_PIV_BB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB exit.", default: "true" },
-      { key: "TG_SAIL_VWAP_ST_EXIT", label: "SAIL_VWAP_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST exit.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_EXIT", label: "PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST exit.", default: "true" },
-      { key: "TG_SAIL_PIVOT_EMA_ST_EXIT", label: "SAIL_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST exit.", default: "true" },
       { key: "TG_GAP_RUNAWAY_EXIT", label: "GAP_RUNAWAY — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) exit.", default: "true" },
-      { key: "TG_GAP_RUNAWAY_STK_EXIT", label: "GAP_RUNAWAY Stocks — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
@@ -1048,11 +943,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_DAYREPORT", label: "EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST_V2 day summary on stop.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_DAYREPORT", label: "ST_RSI_PIV_BB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an ST_RSI_PIV_BB day summary on stop.", default: "true" },
-      { key: "TG_SAIL_VWAP_ST_DAYREPORT", label: "SAIL_VWAP_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_VWAP_ST day summary on stop.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_DAYREPORT", label: "PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a PIVOT_EMA_ST day summary on stop.", default: "true" },
-      { key: "TG_SAIL_PIVOT_EMA_ST_DAYREPORT", label: "SAIL_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_PIVOT_EMA_ST day summary on stop.", default: "true" },
       { key: "TG_GAP_RUNAWAY_DAYREPORT", label: "GAP_RUNAWAY — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a GAP_runAway__Kirubakaran (NIFTY) day summary on stop.", default: "true" },
-      { key: "TG_GAP_RUNAWAY_STK_DAYREPORT", label: "GAP_RUNAWAY Stocks — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the stock-scanner day summary on stop.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
       { key: "TG_EOD_CHARTS", label: "EOD Chart Images (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "At 15:34 IST send one chart image per strategy that took an entry today, with its entry/exit markers. Strategies that did not trade send nothing.", default: "true" },
@@ -1160,11 +1052,8 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
       { key: "EMA_RSI_ST_V2_MODE_ENABLED", label: "EMA_RSI_ST_V2 Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST_V2 menu and settings. A separate strategy from EMA_RSI_ST, not a mode of it. Ships OFF because V2 is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "ST_RSI_PIV_BB_MODE_ENABLED", label: "ST_RSI_PIV_BB Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ST_RSI_PIV_BB menu and settings — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle. Ships OFF because it is unproven — turn it on to paper-trade it.", default: "false" },
-      { key: "SAIL_VWAP_ST_MODE_ENABLED", label: "SAIL_VWAP_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven — turn it on to backtest and paper-trade it.", default: "false" },
       { key: "PIVOT_EMA_ST_MODE_ENABLED", label: "PIVOT_EMA_ST Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper only. On by default; unproven — never traded.", default: "true" },
       { key: "GAP_RUNAWAY_MODE_ENABLED", label: "GAP_runAway__Kirubakaran Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close.", default: "true" },
-      { key: "GAP_RUNAWAY_STK_MODE_ENABLED", label: "GAP_runAway Stock Scanner Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY SCANNER menu (under STOCKS) and its settings, and include it in Start All. Same rules over F&O stocks, paper-traded as intraday shares.", default: "true" },
-      { key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_PIVOT_EMA_ST menu (under STOCKS) and its settings, include it in Start All, and start streaming SAIL prices. The PIVOT_EMA_ST rules on SAIL stock options. On by default; unproven — never traded.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -1240,24 +1129,14 @@ const SETTINGS_SCHEMA = [
       // until ST_RSI_PIV_BB_MODE_ENABLED is switched on.
       { key: "UI_SHOW_ST_RSI_PIV_BB_PAPER",    label: "ST_RSI_PIV_BB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ST_RSI_PIV_BB.", default: "true" },
       { key: "UI_SHOW_ST_RSI_PIV_BB_HISTORY",  label: "ST_RSI_PIV_BB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ST_RSI_PIV_BB.", default: "true" },
-      // ── SAIL_VWAP_ST submenu (STOCKS) ── defaults match what sharedNav falls
-      // back to (Backtest/Paper/History on); the whole group stays
-      // hidden until SAIL_VWAP_ST_MODE_ENABLED is switched on.
-      { key: "UI_SHOW_SAIL_VWAP_ST_BACKTEST", label: "SAIL_VWAP_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SAIL VWAP+ST.", default: "false", subheader: "SAIL_VWAP_ST sub-menus" },
-      { key: "UI_SHOW_SAIL_VWAP_ST_PAPER",    label: "SAIL_VWAP_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL VWAP+ST.", default: "true" },
-      { key: "UI_SHOW_SAIL_VWAP_ST_HISTORY",  label: "SAIL_VWAP_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL VWAP+ST.", default: "true" },
-      // ── PIVOT_EMA_ST family submenus (NIFTY / STOCKS) ── no
+      // ── PIVOT_EMA_ST submenus ── no
       // Backtest (none exists); defaults match what sharedNav falls back to.
       { key: "UI_SHOW_PIVOT_EMA_ST_PAPER",    label: "PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under PIVOT_EMA_ST.", default: "true", subheader: "PIVOT_EMA_ST sub-menus" },
       { key: "UI_SHOW_PIVOT_EMA_ST_HISTORY",  label: "PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under PIVOT_EMA_ST.", default: "true" },
-      { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_PAPER",    label: "SAIL_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL PIVOT_EMA_ST.", default: "true" },
-      // ── GAP_RUNAWAY submenus (NIFTY + STOCKS) ── no Backtest (none exists);
+      // ── GAP_RUNAWAY submenus ── no Backtest (none exists);
       // defaults match sharedNav's fall-backs.
       { key: "UI_SHOW_GAP_RUNAWAY_PAPER",        label: "GAP_RUNAWAY → Paper",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under GAP_RUNAWAY (NIFTY).", default: "true", subheader: "GAP_RUNAWAY sub-menus" },
       { key: "UI_SHOW_GAP_RUNAWAY_HISTORY",      label: "GAP_RUNAWAY → History",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under GAP_RUNAWAY (NIFTY).", default: "true" },
-      { key: "UI_SHOW_GAP_RUNAWAY_STK_PAPER",    label: "GAP_RUNAWAY SCANNER → Paper", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's Paper page under STOCKS.", default: "true" },
-      { key: "UI_SHOW_GAP_RUNAWAY_STK_HISTORY",  label: "GAP_RUNAWAY SCANNER → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's History under STOCKS.", default: "true" },
-      { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_HISTORY",  label: "SAIL_PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL PIVOT_EMA_ST.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
@@ -1334,11 +1213,8 @@ const MODE_SECTION_TITLES = {
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   ema_rsi_st_v2: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
   st_rsi_piv_bb: "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha",
-  sail_vwap_st: "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha",
   pivot_ema_st: "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
-  sail_pivot_ema_st: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
   gap_runaway: "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha",
-  gap_runaway_stk: "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)",
   early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
@@ -1350,11 +1226,8 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
 
 const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), ema_rsi_st_v2: new Set(), early_bird: new Set() };
 _MODE_KEYS.st_rsi_piv_bb = new Set();
-_MODE_KEYS.sail_vwap_st = new Set();
 _MODE_KEYS.pivot_ema_st = new Set();
-_MODE_KEYS.sail_pivot_ema_st = new Set();
 _MODE_KEYS.gap_runaway = new Set();
-_MODE_KEYS.gap_runaway_stk = new Set();
 _MODE_KEYS.itm20_scalp = new Set();
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
@@ -2307,14 +2180,10 @@ router.get("/", (req, res) => {
   const emaRsiStV2ModeOn = (envData["EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // ST_RSI_PIV_BB — also "false" by default, like V2.
   const stRsiPivBbModeOn = (envData["ST_RSI_PIV_BB_MODE_ENABLED"] ?? process.env.ST_RSI_PIV_BB_MODE_ENABLED ?? "false").toLowerCase() === "true";
-  // SAIL_VWAP_ST — also "false" by default.
-  const sailVwapStModeOn = (envData["SAIL_VWAP_ST_MODE_ENABLED"] ?? process.env.SAIL_VWAP_ST_MODE_ENABLED ?? "false").toLowerCase() === "true";
-  // PIVOT_EMA_ST family — "true" by default (the user wants Start All to start them).
+  // PIVOT_EMA_ST — "true" by default (the user wants Start All to start it).
   const pivotEmaStModeOn     = (envData["PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  const sailPivotEmaStModeOn = (envData["SAIL_PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  // GAP_RUNAWAY + its stock scanner — "true" by default (Start All starts them).
+  // GAP_RUNAWAY — "true" by default (Start All starts it).
   const gapRunawayModeOn     = (envData["GAP_RUNAWAY_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  const gapRunawayStkModeOn  = (envData["GAP_RUNAWAY_STK_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_STK_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -2332,11 +2201,8 @@ router.get("/", (req, res) => {
     "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,
     "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha": emaRsiStV2ModeOn,
     "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha": stRsiPivBbModeOn,
-    "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha": sailVwapStModeOn,
     "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": pivotEmaStModeOn,
-    "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": sailPivotEmaStModeOn,
     "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha": gapRunawayModeOn,
-    "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)": gapRunawayStkModeOn,
     "ITM20 SCALP STRATEGY (15m range break + retest, 1 ITM, +20/−10 premium) — Zerodha": itm20ScalpModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
@@ -2381,7 +2247,7 @@ router.get("/", (req, res) => {
   // Server Control has no schema fields but still needs an index entry.
   railItems.push({ group: "System", id: "server-control", icon: "🔄", nav: "Server Control", count: 0 });
 
-  const RAIL_GROUP_ORDER = ["NIFTY", "STOCKS", "Trading", "System"];
+  const RAIL_GROUP_ORDER = ["NIFTY", "Trading", "System"];
   const railHtml = RAIL_GROUP_ORDER.map(g => {
     const items = railItems.filter(r => r.group === g);
     if (!items.length) return "";

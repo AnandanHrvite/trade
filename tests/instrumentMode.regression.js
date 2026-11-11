@@ -24,7 +24,7 @@
  * used to open.
  *
  * Exemption sets are kept, re-expressed: the strategies they name (premium-
- * denominated, stock options, cash equity, options-by-rule) each prove
+ * denominated, options-by-rule) each prove
  * their own instrument rule — asserted in the last groups.
  */
 
@@ -112,14 +112,9 @@ const FUT_LIT = /["']NIFTY_FUTURES["']/;
 //
 // Premium-denominated: the trigger, stop and trail are all option-premium levels.
 const PREMIUM_DENOMINATED = new Set(["simple930Paper.js", "itm20ScalpPaper.js", "itm20ScalpBacktest.js"]);
-// STOCK-option strategies — every contract names its own stock underlying.
-const STOCK_OPTIONS = { SAIL: new Set(["sailVwapStPaper.js", "sailVwapStBacktest.js", "sailPivotEmaStPaper.js"]) };
-const stockUnderlyingOf = (f) => Object.keys(STOCK_OPTIONS).find((k) => STOCK_OPTIONS[k].has(f)) || null;
 // GAP_RUNAWAY: by the user's rule NO common setting applies to it — it always
 // buys the exact-ATM NIFTY option.
 const OPTIONS_ONLY_BY_RULE = new Set(["gapRunawayPaper.js"]);
-// Its stock scanner trades CASH EQUITY (intraday shares) — no NIFTY contract.
-const CASH_EQUITY_ONLY = new Set(["gapRunawayStkPaper.js"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 section("The global INSTRUMENT env is IGNORED — every default reader says options");
@@ -468,7 +463,7 @@ const nonFutRoutes = allRoutes.filter(f => /(Paper|Backtest)\.js$/.test(f));
 const OPT_FLAG_OK = /instrumentConfig\.INSTRUMENT\b|\bINSTR(UMENT)?\s*===\s*["']NIFTY_FUTURES["']|instrumentMode\.isFutures\(\)|\.isFutures\s*===\s*true|^false\b|^["'](?!NIFTY_FUTURES)[A-Z_]+["']/;
 
 check("the discovery found the options routes", () => {
-  assert.ok(nonFutRoutes.filter(f => /Paper\.js$/.test(f)).length >= 20,
+  assert.ok(nonFutRoutes.filter(f => /Paper\.js$/.test(f)).length >= 17,   // the 17 NIFTY paper engines
     `expected the repo's options paper routes, found ${nonFutRoutes.length} routes in all`);
 });
 
@@ -505,21 +500,7 @@ for (const file of nonFutRoutes) {
     }
   });
 
-  if (stockUnderlyingOf(file)) {
-    const U = stockUnderlyingOf(file);
-    check(`${file} trades ${U} stock options only — never a NIFTY contract`, () => {
-      if (/Paper\.js$/.test(file)) {
-        const calls = src.match(/validateAndGetOptionSymbol\([^)]*\)/g) || [];
-        assert.ok(calls.length > 0, `${file} must resolve its option through validateAndGetOptionSymbol`);
-        for (const c of calls) assert.ok(/underlying:\s*UNDERLYING/.test(c), `${file}: ${c} does not name the ${U} underlying`);
-        assert.ok(!/\bgetSymbol\(|\bgetLotQty\(/.test(src), `${file} must not call the NIFTY-default getSymbol/getLotQty`);
-      } else {
-        assert.ok(/underlyingOf\(\s*["']SAIL["']\s*\)|UNDERLYING/.test(src), `${file} must fetch its own stock's candles`);
-      }
-      const eng = require(path.join(ROUTES, "..", "strategies", "sail_vwap_st"));
-      assert.strictEqual(eng.UNDERLYING, U);
-    });
-  } else if (OPTIONS_ONLY_BY_RULE.has(file)) {
+  if (OPTIONS_ONLY_BY_RULE.has(file)) {
     check(`${file} always buys the exact-ATM NIFTY option`, () => {
       assert.ok(!/NIFTY_FUTURES|instrumentMode|\bgetSymbol\(|\bgetLotQty\(/.test(src),
         `${file} must stay out of the instrument-switching code entirely`);
@@ -528,12 +509,6 @@ for (const file of nonFutRoutes) {
       for (const c of calls) assert.ok(/strikeOverride/.test(c), `${file}: ${c} does not pin the ATM strike`);
       assert.ok(/instrument:\s*"NIFTY_OPTIONS"/.test(src), `${file} must stamp the instrument it traded`);
     });
-  } else if (CASH_EQUITY_ONLY.has(file)) {
-    check(`${file} trades cash equity only — never touches the NIFTY instrument code`, () => {
-      assert.ok(!/config\/instrument|instrumentMode|NIFTY_FUTURES|validateAndGetOptionSymbol/.test(src),
-        `${file} must never build a NIFTY symbol`);
-      assert.ok(/instrument:\s*"NSE_EQUITY_MIS"/.test(src), `${file} must stamp the instrument it traded`);
-    });
   }
 }
 
@@ -541,7 +516,7 @@ for (const file of nonFutRoutes) {
 section("The options-only exemption sets still name real routes");
 
 check("the never-a-twin sets still name real routes (an empty exemption is a dead one)", () => {
-  for (const f of [...PREMIUM_DENOMINATED, ...STOCK_OPTIONS.SAIL, ...OPTIONS_ONLY_BY_RULE, ...CASH_EQUITY_ONLY]) {
+  for (const f of [...PREMIUM_DENOMINATED, ...OPTIONS_ONLY_BY_RULE]) {
     assert.ok(allRoutes.includes(f), `${f} is listed but no longer exists — drop it from the set`);
   }
 });

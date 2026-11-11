@@ -26,8 +26,6 @@ const EOD_MIN       = 15 * 60 + 30;          // 15:30 IST
 const MARKS_MIN     = [5, 15, 30, 60];
 const CHECK_MS      = 30 * 1000;
 const NIFTY         = "NSE:NIFTY50-INDEX";
-const BANKNIFTY     = "NSE:NIFTYBANK-INDEX";
-const SAIL          = "NSE:SAIL-EQ";
 const CALLBACK_PREF = "post-exit:";
 
 const trackers = [];        // open trackers (today)
@@ -45,9 +43,6 @@ function istParts(ms) {
 // Which index/stock the trade's spotAtExit is quoted in. null = not tracked.
 function spotSymbolFor(mode) {
   const m = String(mode || "");
-  if (m === "gap_runaway_stk") return null;          // many stocks, symbol varies
-  if (m.startsWith("bn_"))   return BANKNIFTY;
-  if (m.startsWith("sail_")) return SAIL;
   return NIFTY;
 }
 

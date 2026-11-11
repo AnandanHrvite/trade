@@ -256,8 +256,6 @@ section("Reach — every engine that can hold an option honours the lock");
 // entry must be removed and the engine wired instead.
 const ENGINES_WITHOUT_OPTION_POSITIONS = new Set([
   "earlyBirdPaper.js",                        // stock mode, not options
-  // GAP_RUNAWAY's stock scanner holds shares — checked in tests/gapRunaway.regression.js.
-  "gapRunawayStkPaper.js",
 ]);
 
 check("every enabled paper engine calls checkProfitLock", () => {

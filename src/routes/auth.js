@@ -60,19 +60,14 @@ function _activeZerodhaModes() {
     const m = sharedSocketState.getStRsiPivBbMode && sharedSocketState.getStRsiPivBbMode();
     if (m && /^ST_RSI_PIV_BB_PAPER$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
-  // SAIL_VWAP_ST — Fyers candles, Zerodha orders (SAIL stock options).
-  try {
-    const m = sharedSocketState.getSailVwapStMode && sharedSocketState.getSailVwapStMode();
-    if (m && /^SAIL_VWAP_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
-  } catch (_) {}
-  // PIVOT_EMA_ST family (NIFTY / SAIL) — Fyers candles, Zerodha orders.
-  for (const g of ["getPivotEmaStMode", "getSailPivotEmaStMode"]) {
+  // PIVOT_EMA_ST — Fyers candles, Zerodha orders.
+  for (const g of ["getPivotEmaStMode"]) {
     try {
       const m = sharedSocketState[g] && sharedSocketState[g]();
-      if (m && /^(SAIL_)?PIVOT_EMA_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
+      if (m && /^PIVOT_EMA_ST_PAPER$/.test(m) && !out.includes(m)) out.push(m);
     } catch (_) {}
   }
-  // GAP_RUNAWAY — Fyers data, Zerodha orders (the stock scanner places none).
+  // GAP_RUNAWAY — Fyers data, Zerodha orders.
   try {
     const m = sharedSocketState.getGapRunawayMode && sharedSocketState.getGapRunawayMode();
     if (m && /^GAP_RUNAWAY_PAPER$/.test(m) && !out.includes(m)) out.push(m);

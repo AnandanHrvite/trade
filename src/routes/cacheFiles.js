@@ -68,14 +68,10 @@ const STRATEGY_BADGE = {
   // badged as the NIFTY one.
   // ST_RSI_PIV_BB — its own key.
   st_rsi_piv_bb: { label: "ST_RSI_PIV_BB", cls: "mode-st_rsi_piv_bb" },
-  // SAIL_VWAP_ST (SAIL stock options) — its own key.
-  sail_vwap_st: { label: "SAIL_VWAP_ST", cls: "mode-sail_vwap_st" },
   // PIVOT_EMA_ST family — each its own key.
   pivot_ema_st: { label: "PIVOT_EMA_ST", cls: "mode-pivot_ema_st" },
-  sail_pivot_ema_st: { label: "SAIL PIVOT_EMA_ST", cls: "mode-sail_pivot_ema_st" },
   // GAP_RUNAWAY + its stock scanner — each its own key.
   gap_runaway: { label: "GAP_runAway__Kirubakaran", cls: "mode-gap_runaway" },
-  gap_runaway_stk: { label: "GAP_runAway Stocks", cls: "mode-gap_runaway_stk" },
   itm20_scalp: { label: "ITM20 SCALP", cls: "mode-itm20_scalp" },
   bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
@@ -198,13 +194,11 @@ async function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // ST_RSI_PIV_BB — tested first so its files carry their own badge.
   if (/^st_rsi_piv_bb\b/i.test(path.basename(rel))) return { strat: "st_rsi_piv_bb", date: null };
-  // SAIL_VWAP_ST — tested first so its files carry their own badge.
-  if (/^sail_vwap_st\b/i.test(path.basename(rel))) return { strat: "sail_vwap_st", date: null };
-  // PIVOT_EMA_ST family — tested before the generic list (none of its names is in it).
-  const _pesName = path.basename(rel).match(/^((?:sail_)?pivot_ema_st)(?![a-z0-9])/i);
+  // PIVOT_EMA_ST — tested before the generic list (its name is not in it).
+  const _pesName = path.basename(rel).match(/^(pivot_ema_st)(?![a-z0-9])/i);
   if (_pesName) return { strat: _pesName[1].toLowerCase(), date: null };
-  // GAP_RUNAWAY — its scanner first (gap_runaway_stk_* also starts with gap_runaway).
-  const _grName = path.basename(rel).match(/^(gap_runaway(?:_stk)?)(?![a-z0-9])/i);
+  // GAP_RUNAWAY — not in the generic list below.
+  const _grName = path.basename(rel).match(/^(gap_runaway)(?![a-z0-9])/i);
   if (_grName) return { strat: _grName[1].toLowerCase(), date: null };
   // ITM20_SCALP — not in the generic list below.
   if (/^itm20_scalp\b/i.test(path.basename(rel))) return { strat: "itm20_scalp", date: null };
@@ -220,10 +214,9 @@ async function detectMeta(group, rel, abs, mtimeMs) {
     const m = String(obj && obj.mode || "").match(/^(ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend[-_]pb)/i);
     if (m) meta.strat = m[1].toLowerCase().replace(/-/g, "_");   // "trend-pb" → "trend_pb"
     if (!meta.strat && /^st_rsi_piv_bb/i.test(String(obj && obj.mode || ""))) meta.strat = "st_rsi_piv_bb";
-    if (!meta.strat && /^sail_vwap_st/i.test(String(obj && obj.mode || ""))) meta.strat = "sail_vwap_st";
-    const _pesMode = !meta.strat && String(obj && obj.mode || "").match(/^((?:sail_)?pivot_ema_st)/i);
+    const _pesMode = !meta.strat && String(obj && obj.mode || "").match(/^(pivot_ema_st)/i);
     if (_pesMode) meta.strat = _pesMode[1].toLowerCase();
-    const _grMode = !meta.strat && String(obj && obj.mode || "").match(/^(gap_runaway(?:_stk)?)(?![a-z0-9])/i);
+    const _grMode = !meta.strat && String(obj && obj.mode || "").match(/^(gap_runaway)(?![a-z0-9])/i);
     if (_grMode) meta.strat = _grMode[1].toLowerCase();
     if (!meta.strat && /^itm20[-_]scalp/i.test(String(obj && obj.mode || ""))) meta.strat = "itm20_scalp";
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
@@ -547,11 +540,8 @@ router.get("/", (req, res) => {
     .mode-ema_rsi_st    { color:#60a5fa; }
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
     .mode-st_rsi_piv_bb { color:#bef264; }
-    .mode-sail_vwap_st { color:#fecdd3; }
     .mode-pivot_ema_st { color:#7dd3fc; }
-    .mode-sail_pivot_ema_st { color:#fde68a; }
     .mode-gap_runaway { color:#c4b5fd; }
-    .mode-gap_runaway_stk { color:#d8b4fe; }
     .mode-itm20_scalp { color:#67e8f9; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
@@ -694,11 +684,8 @@ ${embed ? '' : buildSidebar('tradeLogs', false)}
     ema_rsi_st:    { label: 'EMA_RSI_ST',    cls: 'mode-ema_rsi_st' },
     ema_rsi_st_v2: { label: 'EMA_RSI_ST_V2', cls: 'mode-ema_rsi_st_v2' },
     st_rsi_piv_bb: { label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
-    sail_vwap_st: { label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
     pivot_ema_st: { label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
-    sail_pivot_ema_st: { label: 'SAIL PIVOT_EMA_ST', cls: 'mode-sail_pivot_ema_st' },
     gap_runaway: { label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
-    gap_runaway_stk: { label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
     itm20_scalp: { label: 'ITM20 SCALP', cls: 'mode-itm20_scalp' },
     bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },

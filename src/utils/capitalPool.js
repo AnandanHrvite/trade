@@ -83,10 +83,7 @@ const STRATEGIES = {
   ema_rsi_st_v2: { broker: "zerodha", label: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_paper_trades.json" },
   // ST_RSI_PIV_BB — NIFTY, Zerodha orders, so it draws from ZERODHA_INV_AMOUNT.
   st_rsi_piv_bb: { broker: "zerodha", label: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
-  // SAIL_VWAP_ST — SAIL stock options, Zerodha orders, so it draws from ZERODHA_INV_AMOUNT.
-  sail_vwap_st: { broker: "zerodha", label: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
   pivot_ema_st: { broker: "zerodha", label: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
-  sail_pivot_ema_st: { broker: "zerodha", label: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   simple930: { broker: "zerodha", label: "SIMPLE_9:30", file: "simple930_paper_trades.json" },
   ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },
   prev_orb_scalp: { broker: "zerodha", label: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
@@ -95,7 +92,6 @@ const STRATEGIES = {
   // GAP_RUNAWAY — NIFTY options, Zerodha orders. Its stock scanner holds up to
   // three cash-equity positions at once, so it blocks additively like EarlyBird.
   gap_runaway:     { broker: "zerodha", label: "GAP_RUNAWAY",     file: "gap_runaway_paper_trades.json" },
-  gap_runaway_stk: { broker: "zerodha", label: "GAP_RUNAWAY_STK", file: "gap_runaway_stk_paper_trades.json" },
 };
 
 

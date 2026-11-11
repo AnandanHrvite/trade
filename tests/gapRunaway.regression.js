@@ -242,22 +242,21 @@ check("09:15 and 09:30 are inside the entry window; 09:14 and 09:31 are not", ()
 section("Routes — rules live only in the engine; the profit lock is the only exit");
 
 const paper = decomment(read("routes/gapRunawayPaper.js"));
-const stk   = decomment(read("routes/gapRunawayStkPaper.js"));
 check("no route does indicator maths of its own", () => {
-  for (const [n, s] of [["paper", paper], ["stk", stk]]) {
+  for (const [n, s] of [["paper", paper]]) {
     assert.ok(!/technicalindicators|EMA\.calculate|RSI\.calculate/.test(s), `${n} computes an indicator`);
   }
 });
 check("no route compares RSI to a band itself", () => {
-  for (const s of [paper, stk]) assert.ok(!/prevRsi\s*[<>]=?\s*\d|RSI_UPPER\s*[<>]|RSI_LOWER\s*[<>]/.test(s));
+  for (const s of [paper]) assert.ok(!/prevRsi\s*[<>]=?\s*\d|RSI_UPPER\s*[<>]|RSI_LOWER\s*[<>]/.test(s));
 });
 check("both routes decide entries through engine.getSignal / entryStillValid", () => {
-  for (const s of [paper, stk]) {
+  for (const s of [paper]) {
     assert.ok(/engine\.getSignal\(/.test(s)); assert.ok(/engine\.entryStillValid\(/.test(s));
   }
 });
 check("both routes exit on the common profit lock and nothing else automatic", () => {
-  for (const [n, s] of [["paper", paper], ["stk", stk]]) {
+  for (const [n, s] of [["paper", paper]]) {
     assert.ok(/tradeGuards\.checkProfitLock\(/.test(s), `${n} must call checkProfitLock`);
     assert.ok(!/checkBreakevenStop|checkTimeStop|stopHit|trailExit|computeTrailEma|isEodExit|EOD_EXIT|EXIT_TF|TRAIL_EMA_LENGTH|MAX_DAILY_LOSS/.test(s), `${n} still has a removed exit / limit`);
   }
@@ -265,13 +264,8 @@ check("both routes exit on the common profit lock and nothing else automatic", (
 check("NIFTY: no other common rule: no breakeven, cooldown, spread check, LOT_MULTIPLIER", () => {
   assert.ok(!/checkBreakevenStop|reentryCooldown|checkSpread|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(paper));
 });
-check("scanner: common profit lock, cooldown, spread — but no trade window / lot multiplier", () => {
-  for (const re of [/tradeGuards\.checkProfitLock\(/, /tradeGuards\.reentryCooldownUntil\(/, /tradeGuards\.checkSpread\(/]) assert.ok(re.test(stk), String(re));
-  assert.ok(!/commonTradeWindow|getLotQty|LOT_MULTIPLIER/.test(stk));
-  assert.ok(require("../src/utils/portfolioRisk").PAPER_MODES.includes("gap_runaway_stk"));
-});
 check("the one common rule kept: both draw from the shared Zerodha capital pool", () => {
-  for (const s of [paper, stk]) assert.ok(/ZERODHA_INV_AMOUNT/.test(s) && /capitalPool\.gate\(/.test(s));
+  for (const s of [paper]) assert.ok(/ZERODHA_INV_AMOUNT/.test(s) && /capitalPool\.gate\(/.test(s));
 });
 check("NIFTY sizes off its own GAP_RUNAWAY_LOTS × the NIFTY lot", () => {
   assert.ok(/GAP_RUNAWAY_LOTS/.test(paper)); assert.ok(/underlyingOf\("NIFTY"\)\.lotSize/.test(paper));
@@ -289,12 +283,10 @@ check("entry guards are synchronous before the first await (_entryPending set fi
 });
 check("one trade per day, restart-proof (day file counted on /start)", () => {
   assert.ok(/_taken >= 1/.test(paper)); assert.ok(/readDailyTrades\("gap_runaway", todayStr\)/.test(paper));
-  assert.ok(/_priorTradesToday/.test(stk) && /_tradedToday/.test(stk));
 });
 check("restart-proof: a crash snapshot from today and a settled decision both block a second decision", () => {
   assert.ok(/loadGapRunawayPosition\(\)/.test(paper), "the /start check must read today's crash snapshot");
   assert.ok(/_loadDayDecision\(\)/.test(paper) && /_saveDayDecision\(\)/.test(paper), "the NIFTY day decision must persist");
-  assert.ok(/_loadDay\(\)/.test(stk) && /_saveDay\(\)/.test(stk) && /st\._dayFinal/.test(stk), "the scanner's settled decisions must persist");
 });
 check("a fill re-checks the day and its own token after every await (a hung attempt can never open)", () => {
   const fe = paper.slice(paper.indexOf("async function _fillEntry"), paper.indexOf("function _tryDayEntry"));
@@ -305,20 +297,14 @@ check("the manual entry honours one trade per day", () => {
   const me = paper.slice(paper.indexOf('router.post("/manualEntry"'), paper.indexOf("function buildSessionTradeRows"));
   assert.ok(/One trade per day/.test(me) && /_priorTradesToday/.test(me));
 });
-check("the scanner holds a bigger gap's slot while its price is missing", () => {
-  assert.ok(/_slotsLeft\(\) - held <= 0/.test(stk) && /held\+\+/.test(stk));
-});
 check("the open's history call is bounded and the tick fallback only trusts the first seconds of 09:15", () => {
   assert.ok(/OPEN_FETCH_TIMEOUT_MS/.test(paper) && /Promise\.race/.test(paper) && /OPEN_TICK_MAX_DELAY_S/.test(paper));
 });
-check("the stock scanner ranks by |gap %| and caps at MAX_TRADES", () => {
-  assert.ok(/Math\.abs\(b\.signal\.gapPct/.test(stk)); assert.ok(/_slotsLeft\(\)/.test(stk)); assert.ok(/GAP_RUNAWAY_STK_MAX_TRADES/.test(stk));
-});
 check("the stale-session gate runs after rehydrate in both routes", () => {
-  for (const s of [paper, stk]) assert.ok(/clearStaleSessionOnTradingDay/.test(s));
+  for (const s of [paper]) assert.ok(/clearStaleSessionOnTradingDay/.test(s));
 });
 check("both routes register the shared history endpoints (and not /delete-session)", () => {
-  for (const s of [paper, stk]) {
+  for (const s of [paper]) {
     assert.ok(/router\.post\("\/restore-session\/:date"/.test(s)); assert.ok(/router\.delete\("\/session\/:index"/.test(s));
     assert.ok(!/delete-session/.test(s));
   }
@@ -328,12 +314,12 @@ check("both routes register the shared history endpoints (and not /delete-sessio
 section("Wiring — shared files");
 
 const tl = require("../src/utils/tradeLogger");
-check("tradeLogger knows gap_runaway and gap_runaway_stk", () => {
-  for (const k of ["gap_runaway", "gap_runaway_stk"]) assert.ok(tl.filePathFor(k));
+check("tradeLogger knows gap_runaway", () => {
+  for (const k of ["gap_runaway"]) assert.ok(tl.filePathFor(k));
 });
-check("skipLogger knows both modes", () => {
+check("skipLogger knows the mode", () => {
   const sl = require("../src/utils/skipLogger");
-  for (const k of ["gap_runaway", "gap_runaway_stk"]) assert.ok(sl.filePathFor(k, "2026-10-26"));
+  for (const k of ["gap_runaway"]) assert.ok(sl.filePathFor(k, "2026-10-26"));
 });
 check("sharedSocketState: own slots, parallel with everything else", () => {
   const sss = require("../src/utils/sharedSocketState");
@@ -341,27 +327,26 @@ check("sharedSocketState: own slots, parallel with everything else", () => {
   sss.setGapRunawayMode("GAP_RUNAWAY_PAPER");
   try {
     assert.ok(!sss.canStart("GAP_RUNAWAY_PAPER", { reserve: false }).allowed);
-    assert.ok(sss.canStart("GAP_RUNAWAY_STK_PAPER", { reserve: false }).allowed);
+    assert.ok(sss.canStart("RSI_PIVOT_ST_PAPER", { reserve: false }).allowed);
     assert.ok(sss.isAnyActive());
   } finally { sss.clearGapRunawayMode(); }
   assert.ok(!sss.isGapRunawayActive());
 });
-check("notify groups both modes on their own TG keys", () => {
+check("notify groups the mode on its own TG keys", () => {
   const n = read("utils/notify.js");
-  assert.ok(/return "GAP_RUNAWAY_STK"/.test(n) && /return "GAP_RUNAWAY"/.test(n));
-  assert.ok(n.indexOf('return "GAP_RUNAWAY_STK"') < n.indexOf('return "GAP_RUNAWAY";'), "the scanner must be matched first");
+  assert.ok(/return "GAP_RUNAWAY"/.test(n));
 });
-check("both strategies are in STRATEGY_MODES (Start All) and ship ON", () => {
+check("GAP_RUNAWAY is in STRATEGY_MODES (Start All) and ships ON", () => {
   const { STRATEGY_MODES } = require("../src/utils/sharedNav");
-  for (const m of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) {
+  for (const m of ["GAP_RUNAWAY"]) {
     const row = STRATEGY_MODES.find(r => r.mode === m);
     assert.ok(row, m); assert.strictEqual(row.envDefault, "true");
   }
 });
-check("app.js mounts the two routes and opens the read-only pages", () => {
+check("app.js mounts the route and opens the read-only pages", () => {
   const a = read("app.js");
-  for (const m of ['"/gap_runaway-paper"', '"/gap_runaway_stk-paper"']) assert.ok(a.includes(`app.use(${m}`), m);
-  for (const p of ["/gap_runaway-paper/status/data", "/gap_runaway_stk-paper/status/data", "/gap_runaway-paper/view/", "/gap_runaway_stk-paper/download/"]) assert.ok(a.includes(`"${p}"`), p);
+  for (const m of ['"/gap_runaway-paper"']) assert.ok(a.includes(`app.use(${m}`), m);
+  for (const p of ["/gap_runaway-paper/status/data", "/gap_runaway-paper/view/"]) assert.ok(a.includes(`"${p}"`), p);
 });
 check("Settings exposes every key the engine and routes read, with matching defaults", () => {
   // settings.js does not export its schema — read the literal field lines, the
@@ -374,34 +359,25 @@ check("Settings exposes every key the engine and routes read, with matching defa
   }
   const want = { EMA_LENGTH: "21", RSI_LENGTH: "10", RSI_UPPER: "90", RSI_LOWER: "10", MIN_GAP_PTS: "0",
     ENTRY_START: "09:15", ENTRY_END: "09:30", REFERENCE_URL: eng.REFERENCE_URL };
-  for (const P of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) for (const [k, d] of Object.entries(want)) {
+  for (const P of ["GAP_RUNAWAY"]) for (const [k, d] of Object.entries(want)) {
     const f = fields.get(`${P}_${k}`); assert.ok(f, `${P}_${k} missing`); assert.strictEqual(String(f.default), d, `${P}_${k}`);
   }
-  for (const [k, d] of [["GAP_RUNAWAY_LOTS", "1"], ["GAP_RUNAWAY_STK_TRADE_AMOUNT", "100000"],
-    ["GAP_RUNAWAY_STK_MAX_TRADES", "3"], ["GAP_RUNAWAY_STK_UNIVERSE", "FNO"],
-    ["GAP_RUNAWAY_MODE_ENABLED", "true"], ["GAP_RUNAWAY_STK_MODE_ENABLED", "true"]]) {
+  for (const [k, d] of [["GAP_RUNAWAY_LOTS", "1"], ["GAP_RUNAWAY_MODE_ENABLED", "true"]]) {
     const f = fields.get(k); assert.ok(f, `${k} missing`); assert.strictEqual(String(f.default), d, k);
   }
-  for (const g of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) for (const e of ["STARTED", "ENTRY", "EXIT", "DAYREPORT"]) assert.ok(fields.has(`TG_${g}_${e}`), `TG_${g}_${e}`);
+  for (const g of ["GAP_RUNAWAY"]) for (const e of ["STARTED", "ENTRY", "EXIT", "DAYREPORT"]) assert.ok(fields.has(`TG_${g}_${e}`), `TG_${g}_${e}`);
 });
-check("both appear in the sidebar, and vanish when disabled", () => {
+check("it appears in the sidebar, and vanishes when disabled", () => {
   const nav = require("../src/utils/sharedNav");
   const on = nav.buildSidebar("gapRunawayPaper", false);
-  assert.ok(/\/gap_runaway-paper\/status/.test(on)); assert.ok(/\/gap_runaway_stk-paper\/status/.test(on));
-  process.env.GAP_RUNAWAY_MODE_ENABLED = "false"; process.env.GAP_RUNAWAY_STK_MODE_ENABLED = "false";
+  assert.ok(/\/gap_runaway-paper\/status/.test(on));
+  process.env.GAP_RUNAWAY_MODE_ENABLED = "false";
   try {
     const off = nav.buildSidebar("dashboard", false);
-    assert.ok(!/gap_runaway-paper/.test(off)); assert.ok(!/gap_runaway_stk-paper/.test(off));
+    assert.ok(!/gap_runaway-paper/.test(off));
     assert.ok(!nav.enabledStrategies().some(r => /^GAP_RUNAWAY/.test(r.mode)), "a disabled strategy must leave Start All");
-  } finally { delete process.env.GAP_RUNAWAY_MODE_ENABLED; delete process.env.GAP_RUNAWAY_STK_MODE_ENABLED; }
+  } finally { delete process.env.GAP_RUNAWAY_MODE_ENABLED; }
   assert.ok(nav.enabledStrategies().some(r => r.mode === "GAP_RUNAWAY"));
-});
-check("the stock scanner's MIS charges are a real round trip (both legs billed)", () => {
-  const { _misCharges } = require("../src/routes/gapRunawayStkPaper");
-  const c = _misCharges("CE", 2500, 2550, 40);   // ₹1L buy, ₹1.02L sell
-  assert.ok(c > 50 && c < 90, `charges ${c}`);
-  assert.strictEqual(_misCharges("CE", null, 2550, 40), 0);
-  assert.ok(_misCharges("PE", 2550, 2500, 40) > 0);
 });
 
 console.log(`\nGAP_RUNAWAY: ${pass} passed, ${fail} failed`);

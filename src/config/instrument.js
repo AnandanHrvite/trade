@@ -113,13 +113,14 @@ const UNDERLYING_DEFS = {
       marginPct:      "BANKNIFTY_FUTURES_MARGIN_PCT",
     },
   },
-  // SAIL — a STOCK, not an index (SAIL_VWAP_ST). Stock options are monthly-only
+  // SAIL — a STOCK, not an index. Stock options are monthly-only
   // (last Tuesday, like the index monthlies) and struck on a ₹2.5 grid at
   // today's ~₹170 price, so the grid and the offsets are fractional. Verified
   // against Fyers' symbol master (public.fyers.in/sym_details/NSE_FO.csv,
   // 2026-10-20): SAIL26OCT167.5CE / SAIL26OCT170CE, lot 4700, expiry 27-Oct-2026.
   // `enabledEnv`: the always-on spot recorder and the expiry health check only
-  // carry SAIL while its strategy is switched on.
+  // carry SAIL while that toggle is on (no strategy trades SAIL today, and the
+  // key defaults to off).
   SAIL: {
     key:         "SAIL",
     label:       "SAIL",
@@ -134,9 +135,6 @@ const UNDERLYING_DEFS = {
     fractionalStrikes: true,
     spotDefault: 170,
     enabledEnv:  "SAIL_VWAP_ST_MODE_ENABLED",
-    // SAIL_PIVOT_EMA_ST trades SAIL too: SAIL counts as enabled when EITHER
-    // toggle is on. [key, default-when-unset] — SAIL_PIVOT_EMA_ST ships ON.
-    alsoEnabledEnv: [["SAIL_PIVOT_EMA_ST_MODE_ENABLED", "true"]],
     env: {
       strikeStep:     "SAIL_STRIKE_STEP",
       lotSize:        "SAIL_LOT_SIZE",
@@ -234,7 +232,7 @@ function _offsetOf(raw, fractional) {
 function isUnderlyingEnabled(u) {
   const r = underlyingOf(u);
   if (!r.enabledEnv) return true;
-  // Any second strategy on the same underlying (SAIL_PIVOT_EMA_ST) also enables it.
+  // Optional extra [key, default-when-unset] toggles that also enable it.
   for (const [k, dflt] of r.alsoEnabledEnv || []) {
     if (String(process.env[k] || dflt).trim().toLowerCase() === "true") return true;
   }
@@ -1116,7 +1114,7 @@ module.exports = {
   isExpiryOverrideStale,       // shared by the dashboard banner and the entry guard
   underlyingOf,                // "BANKNIFTY" → the resolved per-index config row
   listUnderlyings,             // every index the app knows, for the Settings UI
-  isUnderlyingEnabled,         // false for SAIL while SAIL_VWAP_ST is switched off
+  isUnderlyingEnabled,         // false for SAIL while its enabledEnv toggle is off
   UNDERLYING_DEFS,             // static table (env key names) — Settings reads this
 };
 

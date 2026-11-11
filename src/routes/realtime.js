@@ -44,19 +44,10 @@ const STRATEGY_DEFS = [
   { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
   // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. defaultOff like V2.
   { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
-  // SAIL_VWAP_ST: SAIL stock options (VWAP cross + breakout, SuperTrend stop).
-  // Its Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
-  // defaultOff like V2.
-  { key:'SAIL_VWAP_ST', label:'SAIL VWAP+ST', accentClass:'sailvwapst', accent:'#fda4af', paperPrefix:'/sail_vwap_st-paper', hasDayLog:true, modeFlag:'SAIL_VWAP_ST_MODE_ENABLED', defaultOff:true },
   // PIVOT_EMA_ST family: pivot zone + EMA20/50 cross + SuperTrend. Default ON (no defaultOff).
   { key:'PIVOT_EMA_ST', label:'PIVOT_EMA_ST', accentClass:'pivotemast', accent:'#38bdf8', paperPrefix:'/pivot_ema_st-paper', hasDayLog:true, modeFlag:'PIVOT_EMA_ST_MODE_ENABLED' },
-  // SAIL: Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
-  { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
   // GAP_RUNAWAY (GAP_runAway__Kirubakaran): NIFTY options.
   { key:'GAP_RUNAWAY', label:'GAP_runAway__Kirubakaran', accentClass:'gaprunaway', accent:'#a78bfa', paperPrefix:'/gap_runaway-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_MODE_ENABLED' },
-  // Its stock scanner — intraday shares, an NSE-session strategy in the NIFTY start/stop roster.
-  // Its /status/data returns positions[] in the cash-equity row shape (like EarlyBird).
-  { key:'GAP_RUNAWAY_STK', label:'GAP_runAway Stocks', accentClass:'gaprunawaystk', accent:'#c084fc', paperPrefix:'/gap_runaway_stk-paper', hasDayLog:true, modeFlag:'GAP_RUNAWAY_STK_MODE_ENABLED' },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
   // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
   // returns `positions[]`, not a single `position`, so renderColumn below
@@ -73,9 +64,8 @@ function enabledStrategies() {
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
 const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.GAP_RUNAWAY = 'ZERODHA'; BROKER_OF.GAP_RUNAWAY_STK = 'ZERODHA';
+BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
+BROKER_OF.GAP_RUNAWAY = 'ZERODHA';
 BROKER_OF.ITM20_SCALP = 'ZERODHA'; // paper only — charges modelled on Zerodha, like PREV_ORB_SCALP
 const brokerOfKey = (key) => BROKER_OF[key];
 function brokerPools(strategies) {
@@ -274,11 +264,8 @@ ${faviconLink()}
   .card.rsipivotst { border-top-color:#facc15; }
   .card.emarsistv2 { border-top-color:#38bdf8; }
   .card.strsipivbb { border-top-color:#a3e635; }
-  .card.sailvwapst { border-top-color:#fda4af; }
   .card.pivotemast { border-top-color:#38bdf8; }
-  .card.sailpivotemast { border-top-color:#fcd34d; }
   .card.gaprunaway { border-top-color:#a78bfa; }
-  .card.gaprunawaystk { border-top-color:#c084fc; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
 

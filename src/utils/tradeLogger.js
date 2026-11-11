@@ -35,14 +35,10 @@ const FILE_BY_MODE = {
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_log.jsonl",
   // ST_RSI_PIV_BB — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_log.jsonl",
-  // SAIL_VWAP_ST — SAIL stock options: VWAP cross + breakout, SuperTrend stop.
-  sail_vwap_st: "sail_vwap_st_paper_trades_log.jsonl",
-  // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend (NIFTY / BANK NIFTY / SAIL).
+  // PIVOT_EMA_ST — pivot zone + EMA20/50 cross + SuperTrend.
   pivot_ema_st: "pivot_ema_st_paper_trades_log.jsonl",
-  sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_log.jsonl",
-  // GAP_RUNAWAY (NIFTY options) + GAP_RUNAWAY_STK (stock scanner, paper only).
+  // GAP_RUNAWAY (NIFTY options).
   gap_runaway: "gap_runaway_paper_trades_log.jsonl",
-  gap_runaway_stk: "gap_runaway_stk_paper_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
 
@@ -62,13 +58,10 @@ const DAILY_PREFIX_BY_MODE = {
   // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_",
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_",
-  sail_vwap_st: "sail_vwap_st_paper_trades_",
   // PIVOT_EMA_ST family — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   pivot_ema_st: "pivot_ema_st_paper_trades_",
-  sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_",
   // GAP_RUNAWAY — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   gap_runaway: "gap_runaway_paper_trades_",
-  gap_runaway_stk: "gap_runaway_stk_paper_trades_",
   simple930: "simple930_paper_trades_",
 };
 
