@@ -359,10 +359,11 @@ async function readDay(date) {
   return readRange(date, idx, 0, totalOf(idx));
 }
 
-/** Delete archives older than RETAIN_DAYS (today counts as day 1). */
+/** Delete archives older than SERVER_LOG_RETAIN_DAYS (today counts as day 1).
+ *  Read live, so a Settings save applies on the next hourly prune. */
 function prune(retainDays) {
   if (!ENABLED) return { kept: 0, deleted: 0 };
-  const days   = Number.isFinite(retainDays) ? retainDays : RETAIN_DAYS;
+  const days   = Number.isFinite(retainDays) ? retainDays : clampInt(process.env.SERVER_LOG_RETAIN_DAYS, 7, 1, 90);
   const cutoff = istDateString(Date.now() - (days - 1) * 86400000);
   let kept = 0, deleted = 0;
 
