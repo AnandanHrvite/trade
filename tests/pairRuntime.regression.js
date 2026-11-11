@@ -91,6 +91,97 @@ check("every pair ships OFF", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+section("EMA9+VWAP runs as a pair");
+
+const e9Of = (mk) => pairRuntime.forStrategy("ema9vwap", mk);
+check("NIFTY EMA9+VWAP is the home pair: the old keys, path, file, slot; OI is NIFTY-only", () => {
+  const rt = e9Of("NIFTY");
+  assert.deepStrictEqual([rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.tradesFile, rt.ownerId, rt.socketSlot.mode, rt.notifyMode, rt.oiApplies],
+    [true, "ema9vwap", "EMA9VWAP", "/ema9vwap-paper", "ema9vwap_paper_trades.json", "ema9vwap-paper", "EMA9VWAP_PAPER", "EMA9VWAP-PAPER", true]);
+  for (const [mk, pre] of [["BANKNIFTY", "bn"], ["SENSEX", "sensex"], ["NIFTY_FUT", "fut"]]) {
+    const r = e9Of(mk);
+    assert.deepStrictEqual([r.home, r.modeKey, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.oiApplies],
+      [false, `${pre}_ema9vwap`, `${pre.toUpperCase()}_EMA9VWAP`, `/${pre}_ema9vwap-paper`, `${pre}_ema9vwap_paper_trades.json`, `${pre.toUpperCase()}_EMA9VWAP_PAPER`, false], mk);
+  }
+  assert.strictEqual(e9Of("NIFTY_FUT").instrumentName(), "NIFTY_FUTURES");
+});
+check("ema9vwapPaper exports the NIFTY router; forMarket builds one memoised router per offered market", () => {
+  const R = require("../src/routes/ema9vwapPaper");
+  assert.strictEqual(typeof R, "function", "the default export must still be an express router");
+  assert.strictEqual(R.forMarket("NIFTY"), R, "the home instance is the default export");
+  assert.strictEqual(R.pairRuntime, e9Of("NIFTY"));
+  const bn = R.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== R, "BANKNIFTY gets its own router");
+  assert.strictEqual(R.forMarket("BANKNIFTY"), bn, "forMarket is memoised (one engine per market)");
+  assert.notStrictEqual(R.forMarket("SENSEX"), bn);
+  assert.strictEqual(R.forMarket("NOPE"), null);
+  assert.strictEqual(R.forPair(pairs.get("ema9vwap", "NIFTY_FUT")), R.forMarket("NIFTY_FUT"));
+  assert.strictEqual(typeof bn.stopSession, "function", "a pair router must expose stopSession for the shutdown square-off");
+});
+check("the EMA9+VWAP engine reads a pair's own key, else inherits NIFTY's", () => {
+  const eng = require("../src/strategies/ema9_vwap");
+  const t = Math.floor(istMs("2026-09-17", 10, 10) / 1000);   // a 5m bar closing 10:15
+  withEnv({ EMA9VWAP_ENTRY_START: undefined, BN_EMA9VWAP_ENTRY_START: undefined }, () => {
+    assert.deepStrictEqual([eng.isEntryWindowOpen(t, 5), eng.isEntryWindowOpen(t, 5, "BN_EMA9VWAP")], [false, false], "default window opens 10:30");
+  });
+  withEnv({ EMA9VWAP_ENTRY_START: "10:00", BN_EMA9VWAP_ENTRY_START: undefined }, () => {
+    assert.strictEqual(eng.forPrefix("BN_EMA9VWAP").isEntryWindowOpen(t, 5), true, "an unset pair key inherits NIFTY's value");
+  });
+  withEnv({ EMA9VWAP_ENTRY_START: undefined, BN_EMA9VWAP_ENTRY_START: "10:00" }, () => {
+    assert.deepStrictEqual([eng.isEntryWindowOpen(t, 5), eng.isEntryWindowOpen(t, 5, "BN_EMA9VWAP"), eng.isEntryWindowOpen(t, 5, "SENSEX_EMA9VWAP")], [false, true, false],
+      "a pair key must not leak into NIFTY or another pair");
+  });
+});
+check("ema9vwapPaper: per-market facts come from rt; journal hooks + NIFTY-only OI are wired", () => {
+  const code = fs.readFileSync(path.join(__dirname, "../src/routes/ema9vwapPaper.js"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ [^\n]*$/gm, "");
+  assert.ok(/function create\(pair\)\s*\{\s*const rt\s*=\s*pairRuntime\.forPair\(pair\)/.test(code), "create(pair) builder");
+  assert.ok(/const ROUTE\s*=\s*rt\.paperPath;/.test(code) && /const MODE\s*=\s*rt\.modeKey;/.test(code), "path / mode key must come from rt");
+  assert.ok(!/["'`]\/ema9vwap-paper/.test(code), "no literal NIFTY route path");
+  assert.ok(!/NSE:NIFTY50-INDEX/.test(code), "the spot symbol must come from rt");
+  assert.ok(!/\(\s*"ema9vwap"\s*[,)]/.test(code.replace(/vixFilter\.\w+\("ema9vwap"\)|\{ mode: "ema9vwap" \}|validateAndGetOptionSymbol\(spot, side, "ema9vwap"\)|pairs\.get\("ema9vwap"/g, "")),
+    "a literal \"ema9vwap\" mode key outside the VIX mode / NIFTY symbol call");
+  for (const h of ["onEntry", "onTick", "onStopChange", "onExit", "fields"]) {
+    assert.ok(new RegExp(`tradeJournal\\.${h}\\(`).test(code), `tradeJournal.${h} hook missing`);
+  }
+  assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(code), "the OI gate must stay NIFTY-only");
+  // NIFTY's symbol lookup stays a DIRECT call: pairRuntime's async wrapper adds a
+  // microtask hop that lost the prefetch race and moved a NIFTY entry's strike.
+  assert.ok(/rt\.home \? validateAndGetOptionSymbol\(spot, side, "ema9vwap"\) : rt\.resolveEntrySymbol\(spot, side\)/.test(code),
+    "NIFTY must call validateAndGetOptionSymbol directly");
+});
+check("ema9vwapPaper: a pair's own VIX switch (Settings → that market) drives its gate", () => {
+  const R = require("../src/routes/ema9vwapPaper");
+  const vixOn = (router) => {
+    const layer = router.stack.find(l => l.route && l.route.path === "/status" && l.route.methods.get);
+    let html = "";
+    layer.route.stack[0].handle({ query: {}, headers: {} }, { send: (h) => { html = h; }, setHeader() {}, set() {}, status() { return this; }, json() {} });
+    return /🌡️ VIX (n\/a|\d)/.test(html);
+  };
+  const S = R.forMarket("SENSEX");
+  withEnv({ VIX_FILTER_ENABLED: "false", EMA9VWAP_VIX_ENABLED: undefined, SENSEX_EMA9VWAP_VIX_ENABLED: undefined }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [false, false]));
+  withEnv({ VIX_FILTER_ENABLED: "false", EMA9VWAP_VIX_ENABLED: undefined, SENSEX_EMA9VWAP_VIX_ENABLED: "true" }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [false, true], "SENSEX's own key ON must not need NIFTY's"));
+  withEnv({ VIX_FILTER_ENABLED: "false", EMA9VWAP_VIX_ENABLED: "true", SENSEX_EMA9VWAP_VIX_ENABLED: undefined }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, true], "an unset pair key inherits NIFTY's"));
+  withEnv({ VIX_FILTER_ENABLED: undefined, EMA9VWAP_VIX_ENABLED: "true", SENSEX_EMA9VWAP_VIX_ENABLED: "false" }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, false], "SENSEX's own key OFF wins over NIFTY's"));
+  withEnv({ VIX_FILTER_ENABLED: undefined, EMA9VWAP_VIX_ENABLED: undefined, SENSEX_EMA9VWAP_VIX_ENABLED: undefined }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, true], "unset everywhere: the global key's tri-state default (ON) for both"));
+});
+check("ema9vwapPaper: a pair's /start refuses while its own switch is off, and binds its own spot feed", () => {
+  // The Fyers token check runs first (no login in this sandbox), so the gates are
+  // pinned in the source rather than exercised.
+  const code = fs.readFileSync(path.join(__dirname, "../src/routes/ema9vwapPaper.js"), "utf8");
+  const start = code.slice(code.indexOf('router.get("/start"'), code.indexOf('router.get("/stop"'));
+  assert.ok(/if \(!rt\.home && !rt\.enabled\(\)\) \{\s*return res\.status\(403\)/.test(start), "/start must refuse a switched-off pair");
+  assert.ok(/rt\.home \? await isTradingAllowed\(\) : await rt\.isTradingAllowed\(\)/.test(start), "a pair checks its own exchange calendar");
+  assert.ok(/addCallback\(CALLBACK_ID, onTick, log, _cbSym\)/.test(start) && /const _cbSym = rt\.home \? undefined : subscribeSymbol;/.test(start),
+    "a pair binds its socket callback to its own spot symbol; NIFTY stays unbound (default feed)");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 section("Market facts");
 
 check("spot, grid, lot, instrument per market", () => {

@@ -525,7 +525,6 @@ function getCapitalFromEnv() {
 
 const fyers = require('../config/fyers');
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require('../utils/notify');
-const NIFTY_INDEX_SYMBOL = 'NSE:NIFTY50-INDEX';
 
 // ── Pre-fetch option symbols in background after each candle close ──────────
 async function prefetchOptionSymbols(spot) {
