@@ -37,10 +37,23 @@ const NAME        = "TREND_PULLBACK";
 const DESCRIPTION = "Trend Pullback — 15m bias + 5m pullback/resumption, slightly-ITM CE/PE buying, profit-lock exit";
 
 // ── time / day helpers (repo convention, mirrors orb_breakout.js) ────────────
-function _parseMins(envKey, fallback) {
-  const v = (process.env[envKey] || fallback).trim();
+function _parseMins(envKey, fallback, pairVal) {
+  const v = (pairVal || process.env[envKey] || fallback).trim();
   const parts = v.split(":");
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+
+// ── (strategy, market) pair keys ─────────────────────────────────────────────
+// opts.prefix names the pair a call reads ("BN_TREND_PB"): _pairEnv(prefix)(k)
+// is BN_TREND_PB_<k>, else NIFTY's TREND_PB_<k> (config/pairs.js envGet). Every
+// read below is `pairVal || <the TREND_PB_ env read> || default`, so with no
+// prefix (every NIFTY call) pairVal is undefined and the read is exactly the
+// process.env one it always was.
+let _pairsMod = null;
+function _pairEnv(prefix) {
+  if (!prefix || prefix === "TREND_PB") return () => undefined;
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return (k) => _pairsMod.envGet(`${prefix}_${k}`);
 }
 function _utcSecToIstMins(unixSec) { return Math.floor((unixSec + 19800) / 60) % 1440; }
 function _istDayOf(unixSec) { return Math.floor((unixSec + 19800) / 86400); }
@@ -53,8 +66,8 @@ function _r2(x) { return Math.round(x * 100) / 100; }
  * "volume" and history bars carry exchange volume, so a volume-weighted mean gave
  * Paper and Backtest different VWAPs for the same session (same reason as EMA9_VWAP).
  */
-function computeVwap(candles) {
-  const rangeStartMin = _parseMins("TREND_PB_SESSION_START", "09:15");
+function computeVwap(candles, prefix) {
+  const rangeStartMin = _parseMins("TREND_PB_SESSION_START", "09:15", _pairEnv(prefix)("SESSION_START"));
   if (!candles || candles.length === 0) return null;
   const day = _istDayOf(candles[candles.length - 1].time);
   let sumP = 0, count = 0;
@@ -139,38 +152,40 @@ function _baseSignal() {
  * getSignal(candles, opts) — 5-min IST spot candles WITH multi-day history (so
  * EMA20(15m)/EMA50(15m)/EMA20(5m)/ATR(5m) are seeded before the open). VWAP +
  * today's session are day-scoped internally so prior days never leak.
- * opts: { silent }.
+ * opts: { silent, prefix } — prefix: a pair's env prefix (see _pairEnv).
  */
 function getSignal(candles, opts) {
   const silent = !!(opts && opts.silent);
+  const prefix = (opts && opts.prefix) || null;
+  const P = _pairEnv(prefix);
   const base = _baseSignal();
   if (!candles || candles.length < 2) {
     return Object.assign(base, { reason: `Warming up (${candles ? candles.length : 0} candles)` });
   }
 
   const cfg = {
-    swingL:       parseInt  (process.env.TREND_PB_SWING_LOOKBACK   || "2", 10),
-    emaFast:      parseInt  (process.env.TREND_PB_EMA_FAST         || "20", 10),
-    emaSlow:      parseInt  (process.env.TREND_PB_EMA_SLOW         || "50", 10),
-    ema5Period:   parseInt  (process.env.TREND_PB_EMA5_PERIOD      || "20", 10),
-    atrPeriod:    parseInt  (process.env.TREND_PB_ATR_PERIOD       || "14", 10),
-    bodyAtrMult:  parseFloat(process.env.TREND_PB_BODY_ATR_MULT    || "0.5"),
-    pbMaxAtr:     parseFloat(process.env.TREND_PB_PULLBACK_MAX_ATR || "1.5"),
-    pbWindow:     parseInt  (process.env.TREND_PB_PULLBACK_WINDOW  || "6", 10),
-    pbMinBars:    parseInt  (process.env.TREND_PB_MIN_PULLBACK_BARS|| "2", 10),
-    pbTouchAtr:   parseFloat(process.env.TREND_PB_PULLBACK_TOUCH_ATR || "0.25"),
-    atrFloorPts:  parseFloat(process.env.TREND_PB_ATR_FLOOR_PTS    || "0"),
-    vwapOn:       (process.env.TREND_PB_VWAP_FILTER_ENABLED || "true").toLowerCase() === "true",
+    swingL:       parseInt  (P("SWING_LOOKBACK") || process.env.TREND_PB_SWING_LOOKBACK   || "2", 10),
+    emaFast:      parseInt  (P("EMA_FAST") || process.env.TREND_PB_EMA_FAST         || "20", 10),
+    emaSlow:      parseInt  (P("EMA_SLOW") || process.env.TREND_PB_EMA_SLOW         || "50", 10),
+    ema5Period:   parseInt  (P("EMA5_PERIOD") || process.env.TREND_PB_EMA5_PERIOD      || "20", 10),
+    atrPeriod:    parseInt  (P("ATR_PERIOD") || process.env.TREND_PB_ATR_PERIOD       || "14", 10),
+    bodyAtrMult:  parseFloat(P("BODY_ATR_MULT") || process.env.TREND_PB_BODY_ATR_MULT    || "0.5"),
+    pbMaxAtr:     parseFloat(P("PULLBACK_MAX_ATR") || process.env.TREND_PB_PULLBACK_MAX_ATR || "1.5"),
+    pbWindow:     parseInt  (P("PULLBACK_WINDOW") || process.env.TREND_PB_PULLBACK_WINDOW  || "6", 10),
+    pbMinBars:    parseInt  (P("MIN_PULLBACK_BARS") || process.env.TREND_PB_MIN_PULLBACK_BARS|| "2", 10),
+    pbTouchAtr:   parseFloat(P("PULLBACK_TOUCH_ATR") || process.env.TREND_PB_PULLBACK_TOUCH_ATR || "0.25"),
+    atrFloorPts:  parseFloat(P("ATR_FLOOR_PTS") || process.env.TREND_PB_ATR_FLOOR_PTS    || "0"),
+    vwapOn:       (P("VWAP_FILTER_ENABLED") || process.env.TREND_PB_VWAP_FILTER_ENABLED || "true").toLowerCase() === "true",
   };
 
-  const entryStartMin = _parseMins("TREND_PB_ENTRY_START", "09:45");
-  const entryEndMin   = _parseMins("TREND_PB_ENTRY_END",   "14:30");
+  const entryStartMin = _parseMins("TREND_PB_ENTRY_START", "09:45", P("ENTRY_START"));
+  const entryEndMin   = _parseMins("TREND_PB_ENTRY_END",   "14:30", P("ENTRY_END"));
   const last    = candles[candles.length - 1];
   const lastIst = _utcSecToIstMins(last.time);
   const day     = _istDayOf(last.time);
 
-  if (lastIst < entryStartMin) return Object.assign(base, { reason: `Before entry window (${process.env.TREND_PB_ENTRY_START || "09:45"} IST)` });
-  if (lastIst >= entryEndMin)  return Object.assign(base, { reason: `Past entry window (${process.env.TREND_PB_ENTRY_END || "14:30"} IST) — no new entries` });
+  if (lastIst < entryStartMin) return Object.assign(base, { reason: `Before entry window (${P("ENTRY_START") || process.env.TREND_PB_ENTRY_START || "09:45"} IST)` });
+  if (lastIst >= entryEndMin)  return Object.assign(base, { reason: `Past entry window (${P("ENTRY_END") || process.env.TREND_PB_ENTRY_END || "14:30"} IST) — no new entries` });
 
   // ── Indicators ───────────────────────────────────────────────────────────
   const closes5 = candles.map(c => c.close);
@@ -178,7 +193,7 @@ function getSignal(candles, opts) {
   const lows5   = candles.map(c => c.low);
   const ema5 = _emaAtLast(closes5, cfg.ema5Period);
   const atr5 = _atrAtLast(highs5, lows5, closes5, cfg.atrPeriod);
-  const vwap = computeVwap(candles);
+  const vwap = computeVwap(candles, prefix);
   base.ema5 = ema5 != null ? _r2(ema5) : null;
   base.atr5 = atr5 != null ? _r2(atr5) : null;
   base.vwap = vwap;
@@ -314,7 +329,7 @@ function getSignal(candles, opts) {
 
   if (!silent) {
     const istStr = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-    console.log(`[TREND_PB ${istStr}] ENTER ${side} | bias=${bias} EMA20_15=${base.ema20_15}/EMA50_15=${base.ema50_15} | ATR5=${base.atr5} pbLow=${pbLow} | resume close=${_r2(last.close)} body=${_r2(body)}pt [STRONG]`);
+    console.log(`[${prefix || "TREND_PB"} ${istStr}] ENTER ${side} | bias=${bias} EMA20_15=${base.ema20_15}/EMA50_15=${base.ema50_15} | ATR5=${base.atr5} pbLow=${pbLow} | resume close=${_r2(last.close)} body=${_r2(body)}pt [STRONG]`);
   }
 
   return base;
