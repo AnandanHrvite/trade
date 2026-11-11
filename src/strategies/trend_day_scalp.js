@@ -131,16 +131,26 @@ function _parseHHMM(raw, def) {
 /** Finite-number guard. Number(null)===0 and Number("")===0 both invent a price. */
 function _num(x) { return typeof x === "number" && Number.isFinite(x); }
 
-function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+// Env read for one key. The home pair (no prefix / "TDS") reads process.env
+// exactly as it always did; another market's pair (SENSEX_TDS, BN_TDS ...) reads
+// with pair inheritance: its own key when set, else NIFTY's (config/pairs.js envGet).
+let _pairsMod = null;
+function _rawEnv(key, pairRead) {
+  if (!pairRead) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(key);
+}
+
+function _numEnv(key, def, min, max, pairRead) {
+  const v = parseFloat(_rawEnv(key, pairRead));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
 
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+function _intEnv(key, def, min, max, pairRead) {
+  const v = parseInt(_rawEnv(key, pairRead), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
@@ -150,14 +160,21 @@ function _intEnv(key, def, min, max) {
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ *
+ * `prefix`: a (strategy, market) pair's env prefix ("SENSEX_TDS", "BN_TDS" ...),
+ * whose keys are read with pair inheritance. Omitted (or "TDS") = the NIFTY
+ * keys, read exactly as before.
  */
-function getConfig() {
+function getConfig(prefix) {
+  const P = prefix || "TDS";
+  const pr = P !== "TDS";              // read through pairs.envGet
+  const K = (k) => `${P}_${k}`;
   return {
     // Day gate
-    sessionStartMin: _parseHHMM(process.env.TDS_SESSION_START, 9 * 60 + 15),
-    gateMin:         _parseHHMM(process.env.TDS_GATE_TIME,    10 * 60 + 15),
-    minRangePct:     _numEnv("TDS_MIN_RANGE_PCT",    0.5, 0),
-    vwapStreakBars:  _intEnv("TDS_VWAP_STREAK_BARS",   6, 1, 100),
+    sessionStartMin: _parseHHMM(_rawEnv(K("SESSION_START"), pr), 9 * 60 + 15),
+    gateMin:         _parseHHMM(_rawEnv(K("GATE_TIME"), pr),     10 * 60 + 15),
+    minRangePct:     _numEnv(K("MIN_RANGE_PCT"), 0.5, 0, undefined, pr),
+    vwapStreakBars:  _intEnv(K("VWAP_STREAK_BARS"), 6, 1, 100, pr),
     // 0.20, MEASURED — the earlier 0.35 (and the 0.6 before it) came from
     // arithmetic on an idealised path and was simply wrong. The "linear ramp
     // scores 0.5" reasoning assumes price walks from L to H with VWAP anchored
@@ -171,13 +188,13 @@ function getConfig() {
     // 0.20 nets -683, but the whole sweep runs -2676..+758 on 17 trades, which
     // is noise. Picking the peak would be fitting to 39 sessions. This leg is set
     // from the distribution, and the P&L is left to a real out-of-sample run.
-    extensionMult:   _numEnv("TDS_EXTENSION_MULT",  0.20, 0),
+    extensionMult:   _numEnv(K("EXTENSION_MULT"), 0.20, 0, undefined, pr),
     // Entry
-    emaPeriod:       _intEnv("TDS_EMA_PERIOD",        20, 2, 400),
-    atrPeriod:       _intEnv("TDS_ATR_PERIOD",        14, 2, 400),
-    bodyAtrMult:     _numEnv("TDS_BODY_ATR_MULT",    0.4, 0),
-    pullbackWindow:  _intEnv("TDS_PULLBACK_WINDOW",    3, 1, 50),
-    entryEndMin:     _parseHHMM(process.env.TDS_ENTRY_END, 14 * 60),
+    emaPeriod:       _intEnv(K("EMA_PERIOD"), 20, 2, 400, pr),
+    atrPeriod:       _intEnv(K("ATR_PERIOD"), 14, 2, 400, pr),
+    bodyAtrMult:     _numEnv(K("BODY_ATR_MULT"), 0.4, 0, undefined, pr),
+    pullbackWindow:  _intEnv(K("PULLBACK_WINDOW"), 3, 1, 50, pr),
+    entryEndMin:     _parseHHMM(_rawEnv(K("ENTRY_END"), pr), 14 * 60),
     // Pullback-depth cap (entry filter). 40, MEASURED — and this was the defect that made the strategy produce 5
     // trades in a year. With the cap removed, 39 sessions yield 53 valid
     // pullback-and-reclaim setups whose structural stop (reclaim close back to
@@ -190,8 +207,8 @@ function getConfig() {
     // points, and no cap near 18 can pay for it. 40 covers ~p60 of the real
     // distribution while still refusing the 47pt+ tail.
     //
-    maxSlPts:        _numEnv("TDS_MAX_SL_PTS",        40, 0),
-    resolutionMins:  _intEnv("TDS_RESOLUTION", 5, 1, 60),
+    maxSlPts:        _numEnv(K("MAX_SL_PTS"), 40, 0, undefined, pr),
+    resolutionMins:  _intEnv(K("RESOLUTION"), 5, 1, 60, pr),
   };
 }
 
