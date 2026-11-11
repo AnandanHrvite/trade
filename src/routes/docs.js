@@ -25,6 +25,7 @@ const GUIDE_MODE_BY_FILE = {
   "ema_rsi_st_strategy_guide.html":    "EMA_RSI_ST",
   "ema_rsi_st_v2_strategy_guide.html": "EMA_RSI_ST_V2",
   "st_rsi_piv_bb_strategy_guide.html": "ST_RSI_PIV_BB",
+  "sail_vwap_st_strategy_guide.html":  "SAIL_VWAP_ST",
   "bb_rsi_strategy_guide.html":        "BB_RSI",
   "price_action_strategy_guide.html":  "PA",
   "orb_strategy_guide.html":           "ORB",
@@ -37,8 +38,8 @@ const GUIDE_MODE_BY_FILE = {
   "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
   "simple930_strategy_guide.html":    "SIMPLE930",
   "earlybird_strategy_guide.html":    "EARLYBIRD",
+  // GAP_RUNAWAY's guide also covers its stock scanner — see isDocVisible below.
   "gap_runaway_strategy_guide.html":  "GAP_RUNAWAY",
-  "pivot_ema_st_strategy_guide.html": "PIVOT_EMA_ST",
 };
 
 /**
@@ -46,9 +47,19 @@ const GUIDE_MODE_BY_FILE = {
  * @param {Set<string>} enabledModes
  * @returns {boolean} true when the file should appear in the Documents list
  */
+// The PIVOT_EMA_ST guide is shown while PIVOT_EMA_ST is on.
+const PIVOT_GUIDE_FILE = "pivot_ema_st_strategy_guide.html";
+const PIVOT_NSE_MODES = ["PIVOT_EMA_ST"];
 
 function isDocVisible(filename, enabledModes) {
   const lower = String(filename).toLowerCase();
+  // One guide for GAP_RUNAWAY (NIFTY) and its stock scanner — shown while either is on.
+  if (lower === "gap_runaway_strategy_guide.html") {
+    return enabledModes.has("GAP_RUNAWAY") || enabledModes.has("GAP_RUNAWAY_STK");
+  }
+  if (lower === PIVOT_GUIDE_FILE) {
+    return PIVOT_NSE_MODES.some(m => enabledModes.has(m));
+  }
   const mode = GUIDE_MODE_BY_FILE[lower];
   return !mode || enabledModes.has(mode);
 }
@@ -819,6 +830,17 @@ const GUIDE_STATUS = {
     { type: "value", label: "SuperTrend Period", key: "ST_RSI_PIV_BB_ST_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "ST_RSI_PIV_BB_ST_MULT", def: "2" },
   ] }] },
+  // SAIL_VWAP_ST — SAIL stock options; every key is its own and the mode toggle
+  // defaults FALSE, so the guide stays hidden until it is switched on in Settings.
+  "SAIL_VWAP_ST_Strategy_Guide.html": { title: "SAIL_VWAP_ST — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "SAIL_VWAP_ST Mode (sidebar + Settings section)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
+    { type: "bool", label: "Paper Trading", key: "SAIL_VWAP_ST_PAPER_ENABLED", def: "false" },
+    { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "SAIL_VWAP_ST_TF", def: "5" },
+    { type: "value", label: "SuperTrend Period", key: "SAIL_VWAP_ST_ST_PERIOD", def: "10" },
+    { type: "value", label: "SuperTrend Multiplier", key: "SAIL_VWAP_ST_ST_MULT", def: "2" },
+    { type: "value", label: "Breakout Window (candles)", key: "SAIL_VWAP_ST_BREAKOUT_BARS", def: "3" },
+    { type: "value", label: "Lots (× SAIL_LOT_SIZE)", key: "SAIL_VWAP_ST_LOTS", def: "1" },
+  ] }] },
   // PIVOT_EMA_ST — mode toggle defaults TRUE (Start All).
   "PIVOT_EMA_ST_Strategy_Guide.html": { title: "PIVOT_EMA_ST — Live Configuration", groups: [
     { heading: "NIFTY", rows: [
@@ -828,7 +850,7 @@ const GUIDE_STATUS = {
       { type: "value", label: "SuperTrend Multiplier", key: "PIVOT_EMA_ST_ST_MULT", def: "3" },
     ] },
   ] },
-  // GAP_RUNAWAY — NIFTY options.
+  // GAP_RUNAWAY — NIFTY options and its stock scanner (paper only).
   "GAP_RUNAWAY_Strategy_Guide.html": { title: "GAP_runAway__Kirubakaran — Live Configuration", groups: [
     { heading: "NIFTY", rows: [
       { type: "bool", label: "GAP_RUNAWAY Mode (sidebar + Settings section)", key: "GAP_RUNAWAY_MODE_ENABLED", def: "true" },
@@ -838,6 +860,12 @@ const GUIDE_STATUS = {
       { type: "value", label: "Oversold (RSI below)", key: "GAP_RUNAWAY_RSI_LOWER", def: "10" },
       { type: "value", label: "Minimum Gap (pts)", key: "GAP_RUNAWAY_MIN_GAP_PTS", def: "0" },
       { type: "value", label: "Lots", key: "GAP_RUNAWAY_LOTS", def: "1" },
+    ] },
+    { heading: "Stock scanner (paper only)", rows: [
+      { type: "bool", label: "GAP_RUNAWAY Stock Scanner Mode", key: "GAP_RUNAWAY_STK_MODE_ENABLED", def: "true" },
+      { type: "value", label: "Stock List", key: "GAP_RUNAWAY_STK_UNIVERSE", def: "FNO" },
+      { type: "value", label: "Amount per Trade (₹)", key: "GAP_RUNAWAY_STK_TRADE_AMOUNT", def: "100000" },
+      { type: "value", label: "Max Trades/Day", key: "GAP_RUNAWAY_STK_MAX_TRADES", def: "3" },
     ] },
   ] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
@@ -907,8 +935,10 @@ const GUIDE_STATUS = {
       { type: "bool", label: "EMA_RSI_ST Mode", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA_RSI_ST_V2 Mode", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "ST_RSI_PIV_BB Mode", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "SAIL_VWAP_ST Mode (SAIL stock options)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
       { type: "bool", label: "PIVOT_EMA_ST Mode", key: "PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "GAP_runAway__Kirubakaran Mode (NIFTY)", key: "GAP_RUNAWAY_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "GAP_runAway Stock Scanner Mode", key: "GAP_RUNAWAY_STK_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },

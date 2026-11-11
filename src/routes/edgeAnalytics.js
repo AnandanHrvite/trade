@@ -51,10 +51,13 @@ const PAPER_SOURCES = [
   // Same engine, NIFTY BANK — a different underlying is a different edge.
   // ST_RSI_PIV_BB — its own rules, its own edge.
   { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
+  // SAIL_VWAP_ST — a different underlying (SAIL stock) is a different edge.
+  { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
   // PIVOT_EMA_ST family — one rule set, three underlyings = three edges.
   { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
   // GAP_RUNAWAY — NIFTY options and the stock scanner are two different edges.
   { mode: "GAP_RUNAWAY", file: "gap_runaway_paper_trades.json" },
+  { mode: "GAP_RUNAWAY_STK", file: "gap_runaway_stk_paper_trades.json" },
   { mode: "BB_RSI",    file: "bb_rsi_paper_trades.json" },
   { mode: "PA",       file: "pa_paper_trades.json" },
   { mode: "ORB",      file: "orb_paper_trades.json" },
@@ -344,8 +347,10 @@ ${multiSelectCSS()}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
+    .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;border:0.5px solid rgba(253,164,175,0.3);}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);}
+    .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;border:0.5px solid rgba(192,132,252,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}

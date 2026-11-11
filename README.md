@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-Indian index algorithmic trading bot with **17 NIFTY strategies** (EMA_RSI_ST, EMA_RSI_ST_V2, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, Prev ORB Scalp, ITM20 Scalp, RSI Pivot ST, ST_RSI_PIV_BB, PIVOT_EMA_ST, GAP_runAway, SIMPLE_9:30 — all NIFTY options — plus **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+Indian index algorithmic trading bot with **13 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, Prev ORB Scalp, RSI Pivot ST, SIMPLE_9:30 — all NIFTY options — plus **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -50,8 +50,11 @@ All strategies run **in parallel** on the same WebSocket — different candle re
 | **RSI Pivot ST Paper** | RSI(14) extreme + a candle crossing and closing beyond yesterday's Standard Pivot R1/S1 (single-leg OTM CE/PE) | 5-min | Simulated | `/rsi-pivot-st-paper` |
 | **RSI Pivot ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/rsi-pivot-st-backtest` |
 | **ST_RSI_PIV_BB Paper** | SuperTrend + RSI + a close beyond yesterday's pivot R1/S1 + a close outside the Bollinger Band, all four on one closed candle (single-leg ATM CE/PE) | 3-min, 5-min, or 3-min confirmed by 5-min | Simulated | `/st_rsi_piv_bb-paper` |
+| **SAIL_VWAP_ST Paper** | **SAIL stock options**: a candle closes across the session VWAP, then within 3 candles one closes beyond that cross candle's high (CE) / low (PE) with SuperTrend(10, 2) agreeing; SuperTrend trailing stop on candle close | 5-min (3 / 15 selectable) | Simulated | `/sail_vwap_st-paper` |
+| **SAIL_VWAP_ST Backtest** | Same engine over a date range (next-bar-open fills, SAIL-scaled δ+θ premium sim) | 5-min historical | Historical | `/sail_vwap_st-backtest` |
 | **PIVOT_EMA_ST Paper** | NIFTY: one closed candle inside yesterday's pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend(10, 3) agreeing; SuperTrend trailing stop on candle close | 3-min (5 / 15 selectable) | Simulated | `/pivot_ema_st-paper` |
 | **GAP_runAway__Kirubakaran Paper** | NIFTY: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close, trail = 5-min close through EMA21, square-off 15:15; one trade a day | Daily signal, 5-min exits | Simulated | `/gap_runaway-paper` |
+| **GAP_runAway Stock Scanner Paper** | The same rules over the F&O stock list, biggest gaps first (max 3 a day), paper-traded as **intraday shares** (buy on gap up, short on gap down) | Daily signal, 5-min exits | Simulated | `/gap_runaway_stk-paper` |
 | **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
@@ -104,6 +107,7 @@ This list is the current truth. Where an older strategy section below talks abou
 - **RSI Pivot ST** — RSI above 70 and a candle crosses and closes above R1; the next candle must clear that candle's high.
 - **PIVOT_EMA_ST** — EMA20 crosses EMA50 inside the PP–R1 zone, SuperTrend green.
 - **ST_RSI_PIV_BB** — all four on one candle: SuperTrend green, RSI above 70, close above R1, close above the upper Bollinger band.
+- **SAIL_VWAP_ST** — a SAIL candle crosses VWAP, then within 3 candles one closes past the cross candle's high, SuperTrend green.
 - **Prev ORB Scalp** — the 09:15 15-min candle closes outside yesterday's high/low; enter on the first 3-min close beyond that candle. If that first break comes before the entry start (10:00 with the common window), there is no trade that day.
 - **HA Scalp** — a 15-min Heikin Ashi candle with no wick against the trend, on the right side of the 50 MA.
 - **SIMPLE_9:30** — at 09:25 pick the CE and PE nearest ₹180; buy the first one to trade above ₹180 by 09:35.
@@ -334,6 +338,16 @@ NIFTY 50, option buying, intraday. Fyers data, Zerodha orders. All indicators ar
 - **Exit** is the SuperTrend line as a trailing stop, checked on candle close only: the trade closes when the SuperTrend flips, or a candle closes beyond the trailed line. The line only tightens. Anything still open is squared off at the end-of-day time.
 - **Not in this strategy, on purpose:** VIX gate, OI filter, ADX, volume, EMA, VWAP, fixed target, profit booking, breakeven jump, premium stop, cooldowns. The only day guards are the entry window, max trades per day and the daily loss cap.
 
+### SAIL_VWAP_ST — VWAP cross + breakout, SuperTrend stop, on SAIL stock options (`src/strategies/sail_vwap_st.js`)
+
+**Never traded, and never validated.** Zero paper sessions, zero live orders. Ships OFF (`SAIL_VWAP_ST_MODE_ENABLED`); its pages sit under a separate **STOCKS** group in the sidebar.
+
+The only strategy on a **single stock**: SAIL (`NSE:SAIL-EQ`), option buying, intraday. Fyers data, Zerodha orders. Stock options are **monthly only** and struck on a **₹2.5** grid, lot **4700** — configured under Settings → Common → SAIL (`SAIL_*` keys, the same nine fields as NIFTY 50 / NIFTY BANK).
+
+- **BUY CE** when a candle closes above the session VWAP (the one before it closed at or below), then one of the next 3 candles closes above that cross candle's **high**, every close in between stays above VWAP, and SuperTrend(10, 2) is green. **BUY PE** is the mirror (below VWAP, beyond the cross candle's low, SuperTrend red).
+- **Exit** is the SuperTrend line as a trailing stop, checked on candle close only, plus the repo-wide profit lock / breakeven, an option-premium stop (25% below entry by default) and the 15:15 square-off. **One trade a day.**
+- **Replay** feeds it only `NSE:SAIL-EQ` ticks from the day file and pins the SAIL monthly expiry, never the NIFTY one.
+
 ### PIVOT_EMA_ST — EMA 20/50 cross inside the pivot zone, SuperTrend stop (`src/strategies/pivot_ema_st.js`)
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. Every number is the user's stated rule, not a fitted value. Ships ON, so Start All starts it.
@@ -347,12 +361,13 @@ NIFTY 50, under NIFTY in the sidebar. Option buying, intraday, 1 lot. Fyers data
 
 ### GAP_runAway__Kirubakaran — extreme daily RSI + a breakaway gap (`src/strategies/gap_runaway.js`)
 
-**Never traded, and never validated.** Zero paper sessions, zero live orders. Ships ON, so Start All starts it. Reference video: https://www.youtube.com/watch?v=uLTaXTyDxiI (kept in Settings).
+**Never traded, and never validated.** Zero paper sessions, zero live orders. Ships ON, so Start All starts both pages. Reference video: https://www.youtube.com/watch?v=uLTaXTyDxiI (kept in Settings).
 
 - **Setup** is read on YESTERDAY's closed NIFTY daily bar: RSI(10) worked out on the EMA21 line (TradingView "Source: EMA"). Below 10 = oversold, above 90 = overbought.
 - **Entry** once a day, 09:15–09:30: oversold + today opens above yesterday's close (gap up) → ATM CE; overbought + gap down → ATM PE. Any gap size by default. No trade if the gap has already filled at the fill.
 - **Exit**: yesterday's close is the stop (a fixed level, every tick); a 5-min candle closing back through EMA21 is the trail; 15:15 square-off. No re-entry.
 - **No common rules** apply (no profit lock, breakeven, cooldown, spread check, trade window, lot multiplier or capital pool) — its own lots and paper capital.
+- **Stock scanner**: the same engine over the F&O list, the biggest gaps (%) first, up to 3 a day, ₹1,00,000 a trade, as intraday shares. Paper only.
 - **Paper only** — no backtest page and not replayable. **Tests**: `npm run test:gaprunaway`.
 
 ### SIMPLE_9:30 — the ₹180 option-premium breakout (`src/strategies/simple930.js`)
@@ -449,8 +464,9 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   itm20_scalp_paper_trades.json   # ITM20 Scalp paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
+  sail_vwap_st_paper_trades.json  # SAIL_VWAP_ST (SAIL stock options) paper sessions
   pivot_ema_st_paper_trades.json  # PIVOT_EMA_ST paper sessions
-  gap_runaway_paper_trades.json   # GAP_RUNAWAY paper sessions
+  gap_runaway_paper_trades.json   # GAP_RUNAWAY paper sessions (gap_runaway_stk_ for the stock scanner)
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
@@ -466,8 +482,10 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_itm20_scalp_position.json # Crash recovery — ITM20 Scalp position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
+  .active_sail_vwap_st_position.json # Crash recovery — SAIL_VWAP_ST position (carries the SuperTrend trail; Zerodha group)
   .active_pivot_ema_st_position.json # Crash recovery — PIVOT_EMA_ST position (SuperTrend trail; Zerodha group)
   .active_gap_runaway_position.json # Crash recovery — GAP_RUNAWAY position (gap stop = yesterday's close; Zerodha group)
+  .gap_runaway_stk_positions.json   # The stock scanner's open paper positions — resumed by the next /start the same day
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
@@ -594,17 +612,25 @@ log, so each session's trades carry the exact config that produced them.
 | `/st_rsi_piv_bb-paper/status` | Paper trade — live position, P&L and session log on the NIFTY chart |
 | `/st_rsi_piv_bb-paper/history` | Sessions (per-session delete + view modal) |
 
+### SAIL_VWAP_ST (SAIL stock options)
+| URL | Description |
+|-----|-------------|
+| `/sail_vwap_st-backtest` | Date-range backtest on SAIL 5-min bars (next-bar-open fills, SAIL-scaled δ+θ premium sim) |
+| `/sail_vwap_st-paper/status` | Paper trade — SAIL chart with session VWAP and the SuperTrend line |
+| `/sail_vwap_st-paper/history` | Sessions (per-session delete + view modal) |
+
 ### PIVOT_EMA_ST
 | URL | Description |
 |-----|-------------|
 | `/pivot_ema_st-paper/status` | Paper trade — NIFTY chart with EMA20/50, SuperTrend and the PP / R1 / S1 lines |
 | `/pivot_ema_st-paper/history` | Sessions (per-session delete + view modal) |
 
-### GAP_runAway__Kirubakaran
+### GAP_runAway__Kirubakaran (NIFTY + stock scanner)
 | URL | Description |
 |-----|-------------|
 | `/gap_runaway-paper/status` | Paper trade — the daily setup card (RSI, yesterday's close, today's gap) and the NIFTY 5-min chart with EMA21 and the stop line |
 | `/gap_runaway-paper/history` | Sessions (per-session delete + view modal) |
+| `/gap_runaway_stk-paper/status`, `/history` | Stock scanner — scan progress, today's candidates, open positions, trades (paper only) |
 
 ### SIMPLE_9:30
 | URL | Description |

@@ -113,14 +113,13 @@ const UNDERLYING_DEFS = {
       marginPct:      "BANKNIFTY_FUTURES_MARGIN_PCT",
     },
   },
-  // SAIL — a STOCK, not an index. Stock options are monthly-only
+  // SAIL — a STOCK, not an index (SAIL_VWAP_ST). Stock options are monthly-only
   // (last Tuesday, like the index monthlies) and struck on a ₹2.5 grid at
   // today's ~₹170 price, so the grid and the offsets are fractional. Verified
   // against Fyers' symbol master (public.fyers.in/sym_details/NSE_FO.csv,
   // 2026-10-20): SAIL26OCT167.5CE / SAIL26OCT170CE, lot 4700, expiry 27-Oct-2026.
   // `enabledEnv`: the always-on spot recorder and the expiry health check only
-  // carry SAIL while that toggle is on (no strategy trades SAIL today, and the
-  // key defaults to off).
+  // carry SAIL while its strategy is switched on.
   SAIL: {
     key:         "SAIL",
     label:       "SAIL",
@@ -1114,7 +1113,7 @@ module.exports = {
   isExpiryOverrideStale,       // shared by the dashboard banner and the entry guard
   underlyingOf,                // "BANKNIFTY" → the resolved per-index config row
   listUnderlyings,             // every index the app knows, for the Settings UI
-  isUnderlyingEnabled,         // false for SAIL while its enabledEnv toggle is off
+  isUnderlyingEnabled,         // false for SAIL while SAIL_VWAP_ST is switched off
   UNDERLYING_DEFS,             // static table (env key names) — Settings reads this
 };
 

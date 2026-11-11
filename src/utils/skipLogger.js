@@ -48,8 +48,10 @@ const FILE_PREFIX_BY_MODE = {
   rsi_pivot_st: "rsi_pivot_st_paper_skips_",
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_skips_",
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_skips_",
+  sail_vwap_st: "sail_vwap_st_paper_skips_",
   pivot_ema_st: "pivot_ema_st_paper_skips_",
   gap_runaway: "gap_runaway_paper_skips_",
+  gap_runaway_stk: "gap_runaway_stk_paper_skips_",
   simple930: "simple930_paper_skips_",
 };
 

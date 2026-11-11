@@ -430,13 +430,14 @@ const _SETTINGS_KEY_MATCHERS = [
   /^PAPER_CAPITAL_/,
   //   ST_RSI_PIV_BB_* — the ST_RSI_PIV_BB strategy (NOT matched by /^RSI_/, key starts "ST_").
   /^ST_RSI_PIV_BB_/,
-  //   SAIL_* — the SAIL per-underlying instrument keys (strike grid, lot size,
-  //   expiry) read by instrument.js.
+  //   SAIL_VWAP_ST_* — the SAIL_VWAP_ST strategy; SAIL_* — its per-underlying
+  //   instrument keys (strike grid, lot size, expiry) read by instrument.js.
+  /^SAIL_VWAP_ST_/,
   /^SAIL_/,
   //   PIVOT_EMA_ST family — none is matched by an older prefix (/^PA_/ needs
   //   "PA_", /^RSI_PIVOT_ST_/ the RSI name).
   /^PIVOT_EMA_ST_/,
-  //   GAP_RUNAWAY — no older prefix matches "GAP_RUNAWAY_".
+  //   GAP_RUNAWAY + GAP_RUNAWAY_STK — no older prefix matches "GAP_RUNAWAY_".
   /^GAP_RUNAWAY_/,
   //   ITM20_SCALP_* — the ITM20 Scalp strategy; no older prefix matches "ITM20_".
   /^ITM20_SCALP_/,

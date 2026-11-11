@@ -47,8 +47,9 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
 
 const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "prev_orb_scalp", "rsi_pivot_st", "simple930", "early_bird"];
 MODES.push("st_rsi_piv_bb"); // ST_RSI_PIV_BB
+MODES.push("sail_vwap_st"); // SAIL_VWAP_ST
 MODES.push("pivot_ema_st"); // PIVOT_EMA_ST
-MODES.push("gap_runaway"); // GAP_RUNAWAY (NIFTY)
+MODES.push("gap_runaway", "gap_runaway_stk"); // GAP_RUNAWAY (NIFTY) + its stock scanner
 MODES.push("itm20_scalp"); // ITM20_SCALP
 
 function validMode(m) { return MODES.includes(m); }
@@ -736,10 +737,13 @@ function enabledModesFromEnv() {
     ema_rsi_st_v2: String(process.env.EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
     // ST_RSI_PIV_BB defaults OFF like V2.
     st_rsi_piv_bb: String(process.env.ST_RSI_PIV_BB_MODE_ENABLED || "false").toLowerCase() === "true",
+    // SAIL_VWAP_ST defaults OFF.
+    sail_vwap_st: String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() === "true",
     // PIVOT_EMA_ST family defaults ON.
     pivot_ema_st: on(process.env.PIVOT_EMA_ST_MODE_ENABLED),
     // GAP_RUNAWAY + its stock scanner default ON.
     gap_runaway: on(process.env.GAP_RUNAWAY_MODE_ENABLED),
+    gap_runaway_stk: on(process.env.GAP_RUNAWAY_STK_MODE_ENABLED),
     itm20_scalp: on(process.env.ITM20_SCALP_MODE_ENABLED),
     bb_rsi:    on(process.env.BB_RSI_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
@@ -809,8 +813,10 @@ router.get("/", (req, res) => {
     .mode-ema_rsi_st    { color:#60a5fa; }
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
     .mode-st_rsi_piv_bb { color:#bef264; }
+    .mode-sail_vwap_st { color:#fecdd3; }
     .mode-pivot_ema_st { color:#7dd3fc; }
     .mode-gap_runaway { color:#c4b5fd; }
+    .mode-gap_runaway_stk { color:#d8b4fe; }
     .mode-itm20_scalp { color:#67e8f9; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
@@ -1257,8 +1263,10 @@ ${buildSidebar('tradeLogs', false)}
     { key: 'ema_rsi_st',    label: 'EMA_RSI_ST',        cls: 'mode-ema_rsi_st' },
     { key: 'ema_rsi_st_v2', label: 'EMA_RSI_ST_V2',     cls: 'mode-ema_rsi_st_v2' },
     { key: 'st_rsi_piv_bb', label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
+    { key: 'sail_vwap_st', label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
     { key: 'pivot_ema_st', label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
     { key: 'gap_runaway', label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
+    { key: 'gap_runaway_stk', label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
     { key: 'itm20_scalp', label: 'ITM20 SCALP', cls: 'mode-itm20_scalp' },
     { key: 'bb_rsi',    label: 'BB_RSI',        cls: 'mode-bb_rsi' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
@@ -1287,8 +1295,10 @@ ${buildSidebar('tradeLogs', false)}
   var _filesPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, simple930:1, early_bird:1 };
   var _skipsPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, simple930:1, early_bird:1 };
   _filesPage.st_rsi_piv_bb = 1; _skipsPage.st_rsi_piv_bb = 1;
+  _filesPage.sail_vwap_st = 1; _skipsPage.sail_vwap_st = 1;
   _filesPage.pivot_ema_st = 1; _skipsPage.pivot_ema_st = 1;
   _filesPage.gap_runaway = 1; _skipsPage.gap_runaway = 1;
+  _filesPage.gap_runaway_stk = 1; _skipsPage.gap_runaway_stk = 1;
   _filesPage.itm20_scalp = 1; _skipsPage.itm20_scalp = 1;
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state

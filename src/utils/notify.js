@@ -22,8 +22,9 @@
  *
  *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST, EMA_RSI_ST_V2 and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *   ST_RSI_PIV_BB uses the same four per-mode toggles (TG_ST_RSI_PIV_BB_STARTED/_ENTRY/_EXIT/_DAYREPORT) and no _SIGNALS toggle.
+ *   SAIL_VWAP_ST uses the same four per-mode toggles (TG_SAIL_VWAP_ST_STARTED/_ENTRY/_EXIT/_DAYREPORT) and no _SIGNALS toggle.
  *   PIVOT_EMA_ST likewise (TG_<group>_STARTED/_ENTRY/_EXIT/_DAYREPORT), no _SIGNALS toggle.
- *   GAP_RUNAWAY likewise (TG_<group>_STARTED/_ENTRY/_EXIT/_DAYREPORT), no _SIGNALS toggle.
+ *   GAP_RUNAWAY / GAP_RUNAWAY_STK likewise (TG_<group>_STARTED/_ENTRY/_EXIT/_DAYREPORT), no _SIGNALS toggle.
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -132,10 +133,15 @@ function modeGroup(mode) {
   // ST_RSI_PIV_BB — its own group key, so TG_ST_RSI_PIV_BB_* and
   // ST_RSI_PIV_BB_MODE_ENABLED gate it; no earlier branch matches an "ST_" prefix.
   if (m === "ST_RSI_PIV_BB" || m.startsWith("ST_RSI_PIV_BB-") || m.startsWith("ST_RSI_PIV_BB_")) return "ST_RSI_PIV_BB";
+  // SAIL_VWAP_ST — its own group key, so TG_SAIL_VWAP_ST_* and
+  // SAIL_VWAP_ST_MODE_ENABLED gate it; no earlier branch matches a "SAIL" prefix.
+  if (m === "SAIL_VWAP_ST" || m.startsWith("SAIL_VWAP_ST-") || m.startsWith("SAIL_VWAP_ST_")) return "SAIL_VWAP_ST";
   // PIVOT_EMA_ST — its own group key (TG_PIVOT_EMA_ST_*, PIVOT_EMA_ST_MODE_ENABLED).
   // Anchored prefix: no earlier branch matches "PIVOT_".
   if (m === "PIVOT_EMA_ST" || m.startsWith("PIVOT_EMA_ST-") || m.startsWith("PIVOT_EMA_ST_")) return "PIVOT_EMA_ST";
-  // GAP_RUNAWAY (NIFTY) — its own group key; no earlier branch matches a "GAP_" prefix.
+  // GAP_RUNAWAY (NIFTY) and its stock scanner — two group keys, most specific
+  // first; no earlier branch matches a "GAP_" prefix.
+  if (m === "GAP_RUNAWAY_STK" || m.startsWith("GAP_RUNAWAY_STK-") || m.startsWith("GAP_RUNAWAY_STK_")) return "GAP_RUNAWAY_STK";
   if (m === "GAP_RUNAWAY" || m.startsWith("GAP_RUNAWAY-") || m.startsWith("GAP_RUNAWAY_")) return "GAP_RUNAWAY";
   // EMA_RSI_ST_V2 — a separate strategy from EMA_RSI_ST (V1), not another mode
   // of it, so it gets its own group key and its own TG_EMA_RSI_ST_V2_* toggles.
@@ -157,6 +163,7 @@ function modeGroup(mode) {
 // to "false").
 const DEFAULT_OFF_GROUPS = new Set(["EMA_RSI_ST_V2"]);
 DEFAULT_OFF_GROUPS.add("ST_RSI_PIV_BB"); // ships dark like V2 (Settings defaults it to "false")
+DEFAULT_OFF_GROUPS.add("SAIL_VWAP_ST"); // ships dark (Settings defaults it to "false")
 
 function isModeEnabled(group) {
   const v = process.env[`${group}_MODE_ENABLED`];
@@ -427,7 +434,9 @@ function modeLabel(mode) {
   if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
   if (m.startsWith("EMA_RSI_ST_V2-PAPER")) return "📄 EMA_RSI_ST_V2 PAPER" + m.slice("EMA_RSI_ST_V2-PAPER".length);
   if (m.startsWith("ST_RSI_PIV_BB-PAPER")) return "📄 ST_RSI_PIV_BB PAPER" + m.slice("ST_RSI_PIV_BB-PAPER".length);
+  if (m.startsWith("SAIL_VWAP_ST-PAPER")) return "📄 SAIL_VWAP_ST PAPER" + m.slice("SAIL_VWAP_ST-PAPER".length);
   if (m.startsWith("PIVOT_EMA_ST-PAPER")) return "📄 PIVOT_EMA_ST PAPER" + m.slice("PIVOT_EMA_ST-PAPER".length);
+  if (m.startsWith("GAP_RUNAWAY_STK-PAPER")) return "📄 GAP_RUNAWAY STOCKS PAPER" + m.slice("GAP_RUNAWAY_STK-PAPER".length);
   if (m.startsWith("GAP_RUNAWAY-PAPER")) return "📄 GAP_runAway__Kirubakaran PAPER" + m.slice("GAP_RUNAWAY-PAPER".length);
   return m;
 }
@@ -740,8 +749,9 @@ function notifyConsolidatedDayReport({ byMode }) {
   // Only include strategies that are currently enabled in Settings.
   const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "EMA_RSI_ST_V2", "SIMPLE930", "HA_SCALP", "PREV_ORB_SCALP", "EARLYBIRD"].filter(isModeEnabled);
   if (isModeEnabled("ST_RSI_PIV_BB")) groups.push("ST_RSI_PIV_BB");
+  if (isModeEnabled("SAIL_VWAP_ST")) groups.push("SAIL_VWAP_ST");
   if (isModeEnabled("PIVOT_EMA_ST")) groups.push("PIVOT_EMA_ST");
-  if (isModeEnabled("GAP_RUNAWAY")) groups.push("GAP_RUNAWAY");
+  for (const g of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) if (isModeEnabled(g)) groups.push(g);
   if (isModeEnabled("ITM20_SCALP")) groups.push("ITM20_SCALP");
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];

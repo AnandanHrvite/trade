@@ -67,6 +67,8 @@ const STRATEGIES = [
   { group: "EMA_RSI_ST_V2", label: "EMA_RSI_ST_V2", module: "../routes/emaRsiStV2Paper" },
   // SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
   { group: "ST_RSI_PIV_BB", label: "ST_RSI_PIV_BB", module: "../routes/stRsiPivBbPaper" },
+  // SAIL stock options: VWAP cross + breakout, SuperTrend stop.
+  { group: "SAIL_VWAP_ST", label: "SAIL_VWAP_ST", module: "../routes/sailVwapStPaper" },
   // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend.
   { group: "PIVOT_EMA_ST", label: "PIVOT_EMA_ST", module: "../routes/pivotEmaStPaper" },
   // GAP_RUNAWAY — NIFTY 5-min with its EMA21 trail (the stock scanner has no single chart).

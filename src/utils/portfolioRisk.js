@@ -24,7 +24,9 @@ const tradeLogger = require("./tradeLogger");
 // realized P&L for the day.
 const PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "rsi_pivot_st", "ema_rsi_st_v2", "simple930", "ha_scalp", "prev_orb_scalp", "early_bird"];
 PAPER_MODES.push("st_rsi_piv_bb"); // ST_RSI_PIV_BB (NIFTY, Zerodha)
+PAPER_MODES.push("sail_vwap_st"); // SAIL_VWAP_ST (SAIL stock options, Zerodha)
 PAPER_MODES.push("pivot_ema_st"); // PIVOT_EMA_ST (Zerodha)
+PAPER_MODES.push("gap_runaway_stk"); // GAP_RUNAWAY stock scanner (intraday shares, Zerodha pool)
 PAPER_MODES.push("itm20_scalp"); // ITM20_SCALP (NIFTY options, paper + backtest)
 
 // Pull a realized P&L number out of a logged record. Trade exits carry `pnl`;
