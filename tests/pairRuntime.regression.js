@@ -335,6 +335,20 @@ check("route source: market facts come from the runtime, the journal is hooked, 
   assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(src) && /if \(rt\.oiApplies\) await oiFilter\.recordOiSample/.test(src));
   for (const h of ["onEntry", "onTick", "onStopChange", "onExit", "fields"]) assert.ok(src.includes(`tradeJournal.${h}(`), `tradeJournal.${h} not hooked`);
 });
+check("pair keys Settings shows reach the paper engine: ITM steps, VIX max entry; pair VIX is force-fetched", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../src/routes/trendPbPaper.js"), "utf8");
+  assert.ok(/underlying: rt\.underlyingKey, itmSteps: PV\("ITM_STEPS"\)/.test(src), "a pair's ITM_STEPS is not passed to the symbol resolver");
+  assert.ok(/fetchLiveVix\(\{ force: true \}\), sig\.signalStrength, \{ mode: "trend_pb", force: true, maxEntry: PV\("VIX_MAX_ENTRY"\) \}/.test(src),
+    "a pair's VIX gate must force-fetch VIX (pair keys are unknown to anyVixEnabled) and use its own max entry");
+  const vf = require("../src/services/vixFilter");
+  withEnv({ TREND_PB_VIX_MAX_ENTRY: "22" }, () => {
+    assert.strictEqual(vf.checkBacktestVix(18, "STRONG", { mode: "trend_pb", force: true }).allowed, true);
+    assert.strictEqual(vf.checkBacktestVix(18, "STRONG", { mode: "trend_pb", force: true, maxEntry: "15" }).allowed, false);
+    assert.strictEqual(vf.checkBacktestVix(18, "STRONG", { mode: "trend_pb", force: true, maxEntry: undefined }).allowed, true, "blank = the mode's level");
+  });
+  const isrc = fs.readFileSync(path.join(__dirname, "../src/config/instrument.js"), "utf8");
+  assert.ok(/opts\.itmSteps != null && opts\.itmSteps !== "" \? String\(opts\.itmSteps\) : process\.env\[`\$\{_itmMode\}_ITM_STEPS`\]/.test(isrc));
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Async checks above return promises; wait for them before reporting.

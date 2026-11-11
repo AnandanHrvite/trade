@@ -385,7 +385,7 @@ async function _simulateBuyInner(side, sig, spot) {
     } else {
       // The same slightly-ITM rule as NIFTY (TREND_PB_ITM_STEPS strikes ITM),
       // on this market's own strike grid, stem and expiry.
-      optInfo = await instrumentConfig.validateAndGetOptionSymbol(spot, side, "TREND_PB", { underlying: rt.underlyingKey });
+      optInfo = await instrumentConfig.validateAndGetOptionSymbol(spot, side, "TREND_PB", { underlying: rt.underlyingKey, itmSteps: PV("ITM_STEPS") });
     }
   } catch (e) {
     log(`❌ ${TAG} Symbol resolve failed: ${e.message}`);
@@ -790,11 +790,11 @@ async function onCandleClose(bar) {
   }
 
   if ((PV("VIX_ENABLED") || process.env.TREND_PB_VIX_ENABLED || "false").toLowerCase() === "true") {
-    // Another market's own switch decides (else NIFTY's); India VIX and the
-    // TREND_PB_VIX_* thresholds are the same for every market.
+    // Another market's own switch and max-entry level decide (else NIFTY's), as
+    // its backtest does. force: vixFilter's own gate does not know pair keys.
     const vixCheck = rt.home
       ? await checkLiveVix(sig.signalStrength, { mode: "trend_pb" })
-      : vixFilter.checkBacktestVix(await fetchLiveVix(), sig.signalStrength, { mode: "trend_pb", force: true });
+      : vixFilter.checkBacktestVix(await fetchLiveVix({ force: true }), sig.signalStrength, { mode: "trend_pb", force: true, maxEntry: PV("VIX_MAX_ENTRY") });
     if (!vixCheck.allowed) {
       log(`⏸️ ${TAG} VIX gate blocked: ${vixCheck.reason}`);
       skipLogger.appendSkipLog(MODE, { gate: "vix", reason: vixCheck.reason, spot: _spot, vix: vixCheck.vix, sig: sig.signal, strength: sig.signalStrength });
@@ -1188,7 +1188,7 @@ router.get("/status", (req, res) => {
   const winRate = state.sessionTrades.length ? ((wins / state.sessionTrades.length) * 100).toFixed(1) : null;
   const _vix = getCachedVix();
   const _vixEnabled = (PV("VIX_ENABLED") || process.env.TREND_PB_VIX_ENABLED || "false").toLowerCase() === "true";
-  const _vixMaxEntry = vixFilter.getVixMaxEntry("trend_pb");
+  const _vixMaxEntry = rt.home ? vixFilter.getVixMaxEntry("trend_pb") : (parseFloat(PV("VIX_MAX_ENTRY")) || vixFilter.getVixMaxEntry("trend_pb"));
   const _entryStart = PV("ENTRY_START") || process.env.TREND_PB_ENTRY_START || "09:45";
   const _entryEnd   = PV("ENTRY_END") || process.env.TREND_PB_ENTRY_END   || "14:30";
 

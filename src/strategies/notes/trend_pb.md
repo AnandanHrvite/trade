@@ -5,6 +5,7 @@ Engine: `src/strategies/trend_pb.js` · Routes: `trendPb*.js` · Env prefix: `TR
 Append a dated bullet whenever this strategy changes. Newest on top.
 
 ## Log
+- 2026-11-11: a non-NIFTY pair's paper now reads its own `<PAIR>_TREND_PB_ITM_STEPS` and `<PAIR>_TREND_PB_VIX_MAX_ENTRY`, which Settings shows and the backtest already honoured, and it fetches VIX with `force` so a VIX switch that only the pair turned on no longer fails closed. NIFTY: unchanged.
 - 2026-11-11: runs on every market pairs.js offers. `getSignal(candles, { prefix })` / `computeVwap(candles, prefix)` read a pair's own `<PAIR>_TREND_PB_*` key, else NIFTY's (`pairs.envGet`); no prefix = the old `process.env` reads. `trendPbPaper.js` is a `create(pair)` builder (default export = NIFTY, golden byte-identical); other markets ship OFF, fill at ask/bid, keep the slightly-ITM rule on their own grid; the trade journal is hooked. The backtest runs on BANKNIFTY / SENSEX / NIFTY futures.
 - 2026-08-11: the backtest's VIX gate now runs BEFORE the side-selection block. It sat after it, so a blocked bar still latched `baselineDone` — the dumb baseline lost the whole session while the real strategy just retried on the next bar, making the "bar to beat" artificially easy. Inert at the default `TREND_PB_VIX_ENABLED=false`.
 - 2026-08-11: the backtest's loss-streak counter now uses paper's exact three-way rule — a loss increments, a win resets, an exactly-flat trade leaves it alone — instead of resetting on any non-loss.
