@@ -198,11 +198,14 @@ check("a refused resolution never falls through to a DIFFERENT expiry", async ()
 section("Stale-expiry guard is wired end to end");
 
 check("the dashboard banner shares the resolver's staleness predicate", () => {
-  const app = decomment(read("app.js"));
-  assert.ok(/isExpiryOverrideStale/.test(app),
-    "app.js re-implements staleness instead of importing it — the banner and the engine can disagree");
-  assert.ok(!/T15:30:00\+05:30/.test(app),
-    "app.js still hand-rolls the 15:30 IST boundary; delete it and use isExpiryOverrideStale");
+  // The banner is rendered by routes/dashboard.js (app.js only routes to it).
+  const dash = decomment(read("routes/dashboard.js"));
+  assert.ok(/isExpiryOverrideStale/.test(dash),
+    "routes/dashboard.js re-implements staleness instead of importing it — the banner and the engine can disagree");
+  for (const f of ["app.js", "routes/dashboard.js"]) {
+    assert.ok(!/T15:30:00\+05:30/.test(decomment(read(f))),
+      `${f} hand-rolls the 15:30 IST boundary; delete it and use isExpiryOverrideStale`);
+  }
 });
 
 check("no engine has re-grown a per-mode expiry override", () => {
@@ -218,7 +221,7 @@ check("no engine has re-grown a per-mode expiry override", () => {
   // replays on the expiry it actually traded. That is history, not live config.
   const readers = [];
   for (const p of RETIRED_PREFIXES) {
-    for (const f of ["config/instrument.js", "app.js", "routes/settings.js"]) {
+    for (const f of ["config/instrument.js", "app.js", "routes/dashboard.js", "routes/settings.js"]) {
       if (new RegExp(`${p}_OPTION_EXPIRY_(OVERRIDE|TYPE)`).test(decomment(read(f)))) {
         readers.push(`${f}: ${p}_OPTION_EXPIRY_*`);
       }
@@ -295,7 +298,7 @@ check("the Dashboard's range select offers Today and Yesterday, and opens on Tod
   const html = sharedNav.dateRangeOptionsHTML("td");
   assert.ok(/<option value="td" selected>Today<\/option>/.test(html), "Today missing or not selectable");
   assert.ok(/<option value="yd">Yesterday<\/option>/.test(html), "Yesterday missing");
-  assert.ok(/dateRangeOptionsHTML\('td'\)/.test(decomment(read("app.js"))),
+  assert.ok(/dateRangeOptionsHTML\('td'\)/.test(decomment(read("routes/dashboard.js"))),
     "the Dashboard no longer opens on Today");
 });
 
