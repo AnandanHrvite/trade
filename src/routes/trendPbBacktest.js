@@ -279,13 +279,13 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
-function _renderResults(res, from, to, trades, stats, baselineStats, wf) {
+function _resultsView(from, to, trades, stats, baselineStats, wf) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const beatsBaseline = (stats.totalPnl || 0) - (baselineStats.totalPnl || 0);
   const wfLine = wf.foldCount
     ? `Walk-forward (${wf.foldCount} × ${wf.testDays}-day OOS folds): net ₹${wf.oosNetPnl}, PF ${inf(wf.oosProfitFactor)}, ${wf.positiveFolds}/${wf.foldCount} folds positive${wf.thinFolds ? `, ${wf.thinFolds} thin (<${wf.minTrades} trades)` : ""} — ${wf.verdict}.`
     : "Walk-forward: no trades to fold.";
-  const html = renderBacktestResults({
+  return {
     mode: "TREND_PB",
     accent: ACCENT,
     strategyName: trendPbStrategy.NAME,
@@ -308,8 +308,63 @@ function _renderResults(res, from, to, trades, stats, baselineStats, wf) {
       { label: "WF verdict", value: wf.foldCount ? `${wf.positiveFolds}/${wf.foldCount} folds +ve` : "—" },
     ],
     notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}Option premium δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded slightly-ITM at ₹${backtestCosts.seedPremium()}, PLUS a spread/slippage haircut of ${backtestCosts.slippagePts()}pt EACH way — treat ₹ as directional, not exact. Entry: 15m bias (HH/HL + EMA20>EMA50 + slope + VWAP) → healthy 5m pullback to EMA20 → resumption body ≥ ${process.env.TREND_PB_BODY_ATR_MULT || "0.5"}×ATR5. Exit: the global profit lock on the simulated premium is the only automatic exit; otherwise the trade is held to the day's last candle (session end). <b>${wfLine}</b> The DUMB BASELINE (enter in the 15m-trend direction at the window open, same exit, NO pullback filter) is the bar to beat: if the strategy doesn't clear it out-of-sample, the pullback filter is noise. Use Replay (recorded ticks) for tick-accurate fills.`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, baselineStats, wf) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, baselineStats, wf));
   res.send(html);
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    console.log(`🔍 Trend Pullback Backtest job ${id}: ${from} → ${to}`);
+    backtestJobs.updateProgress(id, { phase: "Fetching candle data…", pct: 0 });
+    const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, (p) => backtestJobs.updateProgress(id, p));
+    if (!Array.isArray(candles) || candles.length < 5) {
+      const n = Array.isArray(candles) ? candles.length : 0;
+      const msg = n === 0
+        ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error). Log in to Fyers again, then retry. Otherwise the range may be in the future / beyond available history.`
+        : `Only ${n} candle(s) for ${from} → ${to} — widen the range to at least a week of trading days.`;
+      backtestJobs.failJob(id, msg);
+      return;
+    }
+    // Daily VIX for the entry gate. Only fetched when the gate is on; a failed
+    // fetch leaves it empty and checkBacktestVix applies VIX_FAIL_MODE, exactly
+    // as paper does when the live VIX read fails.
+    const vixCandles = vixFilter.getVixEnabled("trend_pb")
+      ? await fetchCandlesCachedBT(vixFilter.VIX_SYMBOL, "D", from, to, false).catch((e) => {
+          console.warn(`[trend-pb-backtest] VIX candle fetch failed: ${e.message}`);
+          return [];
+        })
+      : [];
+
+    backtestJobs.updateProgress(id, { phase: `Running Trend Pullback backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
+    const trades = await runTrendPbBacktest(candles, { baseline: false, vixCandles });
+    const stats = computeBacktestStats(trades);
+    stats.optionSim = true;
+    stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+
+    backtestJobs.updateProgress(id, { phase: "Running dumb baseline + walk-forward…", pct: 90 });
+    const baselineTrades = await runTrendPbBacktest(candles, { baseline: true, vixCandles });
+    const baselineStats = computeBacktestStats(baselineTrades);
+    const wf = walkForward(trades, {});
+
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } }); }
+    catch (e) { console.warn("[trend-pb-backtest] saveResult failed:", e.message); }
+
+    backtestJobs.completeJob(id, { trades, stats, baselineStats, wf, from, to });
+    console.log(`✅ Trend Pullback Backtest job ${id} complete — ${trades.length} trades (baseline ${baselineTrades.length}); WF: ${wf.verdict}`);
+  } catch (err) {
+    console.error("[trend-pb-backtest] job error:", err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -326,51 +381,7 @@ router.get("/", async (req, res) => {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "Trend Pullback Backtest"));
     const { id } = backtestJobs.createJob("trend_pb");
-    (async () => {
-      try {
-        console.log(`🔍 Trend Pullback Backtest job ${id}: ${from} → ${to}`);
-        backtestJobs.updateProgress(id, { phase: "Fetching candle data…", pct: 0 });
-        const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, (p) => backtestJobs.updateProgress(id, p));
-        if (!Array.isArray(candles) || candles.length < 5) {
-          const n = Array.isArray(candles) ? candles.length : 0;
-          const msg = n === 0
-            ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error). Log in to Fyers again, then retry. Otherwise the range may be in the future / beyond available history.`
-            : `Only ${n} candle(s) for ${from} → ${to} — widen the range to at least a week of trading days.`;
-          backtestJobs.failJob(id, msg);
-          return;
-        }
-        // Daily VIX for the entry gate. Only fetched when the gate is on; a failed
-        // fetch leaves it empty and checkBacktestVix applies VIX_FAIL_MODE, exactly
-        // as paper does when the live VIX read fails.
-        const vixCandles = vixFilter.getVixEnabled("trend_pb")
-          ? await fetchCandlesCachedBT(vixFilter.VIX_SYMBOL, "D", from, to, false).catch((e) => {
-              console.warn(`[trend-pb-backtest] VIX candle fetch failed: ${e.message}`);
-              return [];
-            })
-          : [];
-
-        backtestJobs.updateProgress(id, { phase: `Running Trend Pullback backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-        const trades = await runTrendPbBacktest(candles, { baseline: false, vixCandles });
-        const stats = computeBacktestStats(trades);
-        stats.optionSim = true;
-        stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-
-        backtestJobs.updateProgress(id, { phase: "Running dumb baseline + walk-forward…", pct: 90 });
-        const baselineTrades = await runTrendPbBacktest(candles, { baseline: true, vixCandles });
-        const baselineStats = computeBacktestStats(baselineTrades);
-        const wf = walkForward(trades, {});
-
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } }); }
-        catch (e) { console.warn("[trend-pb-backtest] saveResult failed:", e.message); }
-
-        backtestJobs.completeJob(id, { trades, stats, baselineStats, wf, from, to });
-        console.log(`✅ Trend Pullback Backtest job ${id} complete — ${trades.length} trades (baseline ${baselineTrades.length}); WF: ${wf.verdict}`);
-      } catch (err) {
-        console.error("[trend-pb-backtest] job error:", err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "Trend Pullback Backtest"));
   }
 
@@ -391,5 +402,12 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.baselineStats, r.wf),
+};
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).
 module.exports.runTrendPbBacktest = runTrendPbBacktest;

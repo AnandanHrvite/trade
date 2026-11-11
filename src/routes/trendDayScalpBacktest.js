@@ -277,11 +277,11 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
-function _renderResults(res, from, to, trades, stats, meta) {
+function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = tdsStrategy.getConfig();
   const gs = meta.gateStats || { decided: 0, tradeable: 0 };
-  const html = renderBacktestResults({
+  return {
     mode: "TREND_DAY_SCALP",
     accent: ACCENT,
     strategyName: tdsStrategy.NAME,
@@ -304,8 +304,59 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
     notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, meta));
   res.send(html);
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    console.log(`🔍 TREND_DAY_SCALP Backtest job ${id}: ${from} → ${to}`);
+    backtestJobs.updateProgress(id, { phase: "Fetching intraday candles…", pct: 0 });
+    // Warm-up runway BEFORE `from` so EMA20/ATR14 are seeded on day one of the
+    // range — exactly as Paper's preloadHistory does. ~10 calendar days is
+    // ~7 sessions ≈ 525 five-minute bars, far past the ~150-bar convergence.
+    const warmDays = 10;
+    const warmFrom = new Date(new Date(from + "T00:00:00+05:30").getTime() - warmDays * 86400000)
+      .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const intraday = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, String(_resMin()), warmFrom, to, false, (p) => backtestJobs.updateProgress(id, p));
+    if (!Array.isArray(intraday) || intraday.length < 50) {
+      const n = Array.isArray(intraday) ? intraday.length : 0;
+      backtestJobs.failJob(id, n === 0
+        ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error). Log in to Fyers again, then retry.`
+        : `Only ${n} candle(s) for ${from} → ${to} — widen the range.`);
+      return;
+    }
+
+    backtestJobs.updateProgress(id, { phase: `Running Trend Day Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 70 });
+    // Drop the warm-up days from the RESULT window while leaving them in the
+    // series the engine reads (indicators stay warm, trades stay in range).
+    const fromTs = Math.floor(new Date(from + "T00:00:00+05:30").getTime() / 1000);
+    const all = await runTrendDayScalpBacktest(intraday);
+    const trades = all.trades.filter(t => t.entryTs >= fromTs);
+    const days = all.days;
+    const stats = computeBacktestStats(trades);
+    stats.optionSim = true;
+    stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
+    catch (e) { console.warn("[trend-day-scalp-backtest] saveResult failed:", e.message); }
+
+    backtestJobs.completeJob(id, { trades, stats, from, to, meta: { days, skipped: all.skipped, gateStats: all.gateStats } });
+    console.log(`✅ TREND_DAY_SCALP Backtest job ${id} complete — ${trades.length} trades over ${days} sessions (gate passed ${all.gateStats.tradeable}/${all.gateStats.decided})`);
+  } catch (err) {
+    console.error("[trend-day-scalp-backtest] job error:", err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -322,47 +373,7 @@ router.get("/", async (req, res) => {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "Trend Day Scalp Backtest"));
     const { id } = backtestJobs.createJob("trend_day_scalp");
-    (async () => {
-      try {
-        console.log(`🔍 TREND_DAY_SCALP Backtest job ${id}: ${from} → ${to}`);
-        backtestJobs.updateProgress(id, { phase: "Fetching intraday candles…", pct: 0 });
-        // Warm-up runway BEFORE `from` so EMA20/ATR14 are seeded on day one of the
-        // range — exactly as Paper's preloadHistory does. ~10 calendar days is
-        // ~7 sessions ≈ 525 five-minute bars, far past the ~150-bar convergence.
-        const warmDays = 10;
-        const warmFrom = new Date(new Date(from + "T00:00:00+05:30").getTime() - warmDays * 86400000)
-          .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-        const intraday = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, String(_resMin()), warmFrom, to, false, (p) => backtestJobs.updateProgress(id, p));
-        if (!Array.isArray(intraday) || intraday.length < 50) {
-          const n = Array.isArray(intraday) ? intraday.length : 0;
-          backtestJobs.failJob(id, n === 0
-            ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error). Log in to Fyers again, then retry.`
-            : `Only ${n} candle(s) for ${from} → ${to} — widen the range.`);
-          return;
-        }
-
-        backtestJobs.updateProgress(id, { phase: `Running Trend Day Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 70 });
-        // Drop the warm-up days from the RESULT window while leaving them in the
-        // series the engine reads (indicators stay warm, trades stay in range).
-        const fromTs = Math.floor(new Date(from + "T00:00:00+05:30").getTime() / 1000);
-        const all = await runTrendDayScalpBacktest(intraday);
-        const trades = all.trades.filter(t => t.entryTs >= fromTs);
-        const days = all.days;
-        const stats = computeBacktestStats(trades);
-        stats.optionSim = true;
-        stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
-        catch (e) { console.warn("[trend-day-scalp-backtest] saveResult failed:", e.message); }
-
-        backtestJobs.completeJob(id, { trades, stats, from, to, meta: { days, skipped: all.skipped, gateStats: all.gateStats } });
-        console.log(`✅ TREND_DAY_SCALP Backtest job ${id} complete — ${trades.length} trades over ${days} sessions (gate passed ${all.gateStats.tradeable}/${all.gateStats.decided})`);
-      } catch (err) {
-        console.error("[trend-day-scalp-backtest] job error:", err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "Trend Day Scalp Backtest"));
   }
 
@@ -392,5 +403,12 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, skipped: [], gateStats: { decided: 0, tradeable: 0 } }),
+};
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).
 module.exports.runTrendDayScalpBacktest = runTrendDayScalpBacktest;

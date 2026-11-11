@@ -178,6 +178,8 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   // ── Top-level menu-visibility toggles ──
   const showDashboard   = (process.env.UI_SHOW_DASHBOARD     || 'false').toLowerCase() === 'true';
   const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'false').toLowerCase()  === 'true';
+  // The ONE backtest page (/backtest): pick strategy + market + dates there.
+  const showBacktestPage = (process.env.UI_SHOW_BACKTEST_PAGE || 'true').toLowerCase()  === 'true';
   const showReplay      = (process.env.UI_SHOW_REPLAY        || 'false').toLowerCase()  === 'true' && !_hideReplayLive;
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
@@ -291,7 +293,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
   // sidebar behaves the same way — one accordion, no ungrouped stragglers.
-  const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
+  const dashboardKeys = ['dashboard', 'backtest', 'allBacktest', 'replay', 'consolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
   const systemKeys    = ['tradeLogs', 'tokenSync', 'brokers', 'settings'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
@@ -455,7 +457,8 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '🏠',  label: 'Dashboard' }] : []),
-    ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '🧪',  label: 'Backtest' }] : []),
+    ...(showBacktestPage ? [{ key: 'backtest',         href: '/backtest',           icon: '🧪',  label: 'Backtest' }] : []),
+    ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '📊',  label: 'All Backtest' }] : []),
     ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '⏪', label: 'Replay' }] : []),
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '📒', label: 'Paper Traded History' }] : []),
     ...(showEdgeAnalytics ? [{ key: 'consolidationReport', href: '/consolidation-report', icon: '📑', label: 'Consolidation Report' }] : []),

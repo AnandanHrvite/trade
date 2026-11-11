@@ -386,7 +386,7 @@ function _tableHtml(title, rows) {
   return `<table class="iz-tbl"><thead><tr><th>${escHtml(title)}</th><th>Trades</th><th>W/L</th><th>Win %</th><th>Points</th><th>Net</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
-function _renderResults(res, from, to, trades, stats, meta, jobId) {
+function _resultsView(from, to, trades, stats, meta, jobId) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = strat.getConfig();
   const f = meta.funnel || {};
@@ -398,7 +398,7 @@ function _renderResults(res, from, to, trades, stats, meta, jobId) {
   const tables = `<div style="margin-top:10px;">${_tableHtml("CE / PE", [{ key: "CE", ...rep.bySide.CE }, { key: "PE", ...rep.bySide.PE }])}${_tableHtml("Month", rep.months)}${_tableHtml("Entry time", rep.times)}</div>`;
   const csvLink = jobId ? `<a href="${ENDPOINT}/csv?jobId=${encodeURIComponent(jobId)}" style="color:${ACCENT};display:inline-flex;align-items:center;min-height:44px;">⬇ Download all trades (CSV)</a> · ` : "";
 
-  const html = renderBacktestResults({
+  return {
     mode: "ITM20_SCALP",
     accent: ACCENT,
     strategyName: strat.NAME,
@@ -433,8 +433,55 @@ function _renderResults(res, from, to, trades, stats, meta, jobId) {
       { label: "Expectancy /trade", value: `₹${stats.expectancy}` },
     ],
     notes: `${csvLink}<b>Chart:</b> NIFTY 50 INDEX spot (<code>${escHtml(SPOT_SYMBOL)}</code>) 5-min. <b>Range:</b> ${strat._fmtMins(cfg.sessionStartMin)}–${strat._fmtMins(cfg.orEndMin)} high/low. <b>Entry:</b> close beyond the range with VWAP + EMA${cfg.emaPeriod} agreeing → retest within ${cfg.retestCandles} candles (±${escHtml(cfg.retestTolPts)}pt) without closing back inside → confirmation close; filled at the NEXT bar's open until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> premium +${escHtml(cfg.targetPts)} / −${escHtml(cfg.slPts)}, square-off ${strat._fmtMins(cfg.squareOffMin)}; a bar touching both counts as the stop. <b>Day:</b> max ${cfg.maxTrades} trades, stop after a win / 2 losses / −${escHtml(cfg.dailyLossPts)} pts; expiry day ${cfg.tradeExpiryDay ? "traded" : "skipped"}. <b>Premium is SIMULATED</b> (δ ${escHtml(process.env.BACKTEST_DELTA || "0.55")} + θ, seeded at ₹${escHtml(backtestCosts.seedPremium())}, ${escHtml(backtestCosts.slippagePts())}pt slippage each way, full charges) — there is no historical option-chain data, so ₹ are directional, not exact. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) before ${escHtml(from)}. <b>Never traded on paper or live; nothing here is validated.</b>${tables}`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta, jobId) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, meta, jobId));
   res.send(html.replace("</body>", `${MOBILE_CSS}</body>`));
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
+    backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} 5-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
+    let intraday;
+    try {
+      intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(RES), fetchFrom, fetchTo, false,
+        (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
+    } catch (err) {
+      const msg = fyersErrText(err);
+      backtestJobs.failJob(id, `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. "Could not authenticate the user" means the Fyers session needs re-login.`);
+      return;
+    }
+    intraday = Array.isArray(intraday) ? intraday : [];
+    if (!intraday.length) {
+      backtestJobs.failJob(id, `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error.`);
+      return;
+    }
+    backtestJobs.updateProgress(id, { phase: `Running ITM20 Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 75 });
+    const result = await runItm20ScalpBacktest(intraday, from);
+    const stats = computeBacktestStats(result.trades);
+    stats.optionSim = true;
+    stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(RES) } }); }
+    catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
+    const fn = result.funnel;
+    console.log(`${LOG} ${from}→${to}: ${fn.days} days | expiry skipped ${fn.expirySkipped} | signals ${fn.signals} → entries ${fn.entries} | exits ${JSON.stringify(result.exitReasons)}`);
+    backtestJobs.completeJob(id, {
+      trades: result.trades, stats, from, to,
+      meta: { days: result.days, skipped: result.skipped, funnel: result.funnel, exitReasons: result.exitReasons, dayStops: result.dayStops, warmupDays, fetchFrom, candles: intraday.length },
+    });
+  } catch (err) {
+    console.error(`${LOG} job error:`, err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -449,43 +496,7 @@ router.get("/", async (req, res) => {
   if (!jobId) {
     if (backtestJobs.getActiveJob()) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "ITM20 Scalp Backtest"));
     const { id } = backtestJobs.createJob("itm20_scalp");
-    (async () => {
-      try {
-        const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
-        backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} 5-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
-        let intraday;
-        try {
-          intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(RES), fetchFrom, fetchTo, false,
-            (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
-        } catch (err) {
-          const msg = fyersErrText(err);
-          backtestJobs.failJob(id, `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. "Could not authenticate the user" means the Fyers session needs re-login.`);
-          return;
-        }
-        intraday = Array.isArray(intraday) ? intraday : [];
-        if (!intraday.length) {
-          backtestJobs.failJob(id, `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error.`);
-          return;
-        }
-        backtestJobs.updateProgress(id, { phase: `Running ITM20 Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 75 });
-        const result = await runItm20ScalpBacktest(intraday, from);
-        const stats = computeBacktestStats(result.trades);
-        stats.optionSim = true;
-        stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(RES) } }); }
-        catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
-        const fn = result.funnel;
-        console.log(`${LOG} ${from}→${to}: ${fn.days} days | expiry skipped ${fn.expirySkipped} | signals ${fn.signals} → entries ${fn.entries} | exits ${JSON.stringify(result.exitReasons)}`);
-        backtestJobs.completeJob(id, {
-          trades: result.trades, stats, from, to,
-          meta: { days: result.days, skipped: result.skipped, funnel: result.funnel, exitReasons: result.exitReasons, dayStops: result.dayStops, warmupDays, fetchFrom, candles: intraday.length },
-        });
-      } catch (err) {
-        console.error(`${LOG} job error:`, err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "ITM20 Scalp Backtest"));
   }
 
@@ -509,6 +520,13 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, funnel: {}, exitReasons: {}, warmupDays: _warmupDays() }, p.jobId),
+};
 module.exports.runItm20ScalpBacktest = runItm20ScalpBacktest;
 module.exports.buildReport = buildReport;
 module.exports.toCsv = toCsv;

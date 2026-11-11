@@ -50,6 +50,14 @@
  *
  * THE PREMIUM IS SIMULATED. There is no historical option chain here, so P&L is
  * δ+θ modelled from the spot move. Treat ₹ as directional, not exact.
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles, lot, exchange charges (BSE for SENSEX) and — for
+ * NIFTY_FUT — futures pricing come from services/backtestMarket.js, and the
+ * market's pair settings (config/pairs.js: own key → NIFTY's → default) are
+ * mapped onto the EMA_RSI_ST_V2_* keys this file and the engine read, for that
+ * run only (utils/scopedEnv.js). With market NIFTY nothing changes.
  */
 
 const express = require("express");
@@ -74,8 +82,8 @@ const { getCharges }     = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
 const { saveResult }     = require("../utils/resultStore");
 const backtestJobs       = require("../utils/backtestJobManager");
-const instrumentConfig   = require("../config/instrument");
 const backtestCosts = require("../config/backtestCosts");
+const backtestMarket = require("../services/backtestMarket");
 
 const ACCENT      = "#2563eb";
 const ENDPOINT    = "/ema_rsi_st_v2-backtest";
@@ -163,7 +171,10 @@ function getGuardConfig() {
 
 // ── The engine loop ─────────────────────────────────────────────────────────
 /**
- * runEmaRsiStV2Backtest(candles, activeFromTs)
+ * runEmaRsiStV2Backtest(candles, activeFromTs, mkt)
+ *
+ * `mkt` is a backtestMarket.context() — the market's lot, exchange and futures
+ * flag. Omitted = NIFTY options, exactly as before markets existed.
  *
  * `candles` includes the warm-up runway; `activeFromTs` is the unix second at
  * which the REQUESTED range begins. Bars before it feed the indicators and are
@@ -171,7 +182,7 @@ function getGuardConfig() {
  * non-zero count is a bug in this file, surfaced on the results page rather than
  * swallowed.
  */
-async function runEmaRsiStV2Backtest(candles, activeFromTs) {
+async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt) {
   const empty = {
     trades: [], days: 0, warmupViolations: 0, warmupBars: 0,
     gateStats: { setups: 0, confirmArmed: 0, confirmFilled: 0, confirmExpired: 0,
@@ -182,13 +193,15 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs) {
 
   const g = getGuardConfig();
   const stratCfg = engine.getConfig();
+  const M = mkt || backtestMarket.context("NIFTY");
 
-  // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
-  // "premium" the sim carries IS the spot level.
-  const IS_FUT    = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  // FUTURES MODE (the NIFTY_FUT market only) — index points are rupees 1:1: no
+  // delta, no theta, and the "premium" the sim carries IS the spot level.
+  const IS_FUT    = M.isFutures === true;
   const DELTA     = IS_FUT ? 1.0 : _num("BACKTEST_DELTA", "0.55");
   const THETA_DAY = IS_FUT ? 0   : _num("BACKTEST_THETA_DAY", "8");
-  const LOT_SIZE  = instrumentConfig.getLotQty();
+  const LOT_SIZE  = M.lotQty;
+  const EXCHANGE  = M.exchange;
   const RES       = g.resolutionMins > 0 ? g.resolutionMins : 5;
   const SLIP      = g.slippagePts;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
@@ -281,7 +294,7 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs) {
       const raw      = premiumAt(exitPx, exitTime);
       const exitPrem = Math.max(0.05, raw - 2 * SLIP);   // buy high + sell low
       const charges  = getCharges({
-        broker: "zerodha", isFutures: IS_FUT,
+        broker: "zerodha", isFutures: IS_FUT, exchange: EXCHANGE,
         entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE,
       });
       return {
@@ -523,8 +536,15 @@ router.get("/results.json", (req, res) => {
   });
 });
 
-function _renderResults(res, from, to, trades, stats, meta) {
+/**
+ * The results-page options (renderBacktestResults) for one finished run — this
+ * page and the unified /backtest page render the same view. `meta.market` is
+ * the run's market key (absent on a NIFTY run).
+ */
+function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
+  const M   = backtestMarket.context(meta.market || "NIFTY");
+  const futMode = M.isFutures === true;
   const g   = getGuardConfig();
   const c   = engine.getConfig();
   const gs  = meta.gateStats || {};
@@ -535,7 +555,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
   const lockTrail = tradeGuards.PROFIT_LOCK_TRAIL_PCT;
   const lockTiers = tradeGuards.PROFIT_LOCK_TRAIL_TIERS;
 
-  const html = renderBacktestResults({
+  return {
     mode: LABEL,
     accent: ACCENT,
     strategyName: engine.NAME,
@@ -572,19 +592,99 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
     notes:
-      `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "<b>FUTURES MODE</b> — P&L is index points × lot with futures charges, no δ/θ; a PE is a SHORT. " : ""}` +
+      `${M.key !== "NIFTY" ? `<b>MARKET: ${_escHtml(M.label)}</b> — ${_escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${_escHtml(M.exchange)} charges. ` : ""}` +
+      `${futMode ? "<b>FUTURES MODE</b> — P&L is index points × lot with futures charges, no δ/θ; a PE is a SHORT. " : ""}` +
       `<b>Rules come from the engine</b> (<code>src/strategies/ema_rsi_st_v2.js</code>) — this page re-implements only the exit sequencing, because Paper is canonical. ` +
       `<b>Entry:</b> CE = EMA${c.EMA_FAST} &gt; EMA${c.EMA_SLOW} AND the bar CLOSES above EMA${c.EMA_FAST} AND RSI(${c.RSI_PERIOD}) &gt; ${c.RSI_CE_MIN}; PE is the exact mirror (&lt;, &lt;, RSI &lt; ${c.RSI_PE_MAX}). ` +
       `There is deliberately <b>no SuperTrend entry gate and no RSI cap</b> — a CE may fire while SuperTrend is red, and RSI 95 is a valid CE. ` +
       `<b>Confirmation candle is ${g.confirmEnabled ? "ON" : "OFF"}</b> (<code>EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED</code>)${g.confirmEnabled ? ": the signal bar never enters — its CLOSE is armed as the trigger and the fill is taken on the IMMEDIATELY-next bar, the same market moment paper fills at on its first tick past the trigger" : ": entry is the signal bar's close"}. ` +
-      `<b>Exit:</b> the global profit lock is the ONLY automatic exit (arm +${lockArm}%, floor +${lockFloor}%, trail ${lockTrail}%${lockTiers ? `, tiers ${_escHtml(lockTiers)}` : ""} — the shared <code>PROFIT_LOCK_*</code> keys)${lockOn ? "" : " — <b>currently OFF</b>"}${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? " — off in futures mode (it is defined on option premium)" : ""}, tested on the simulated premium with the peak tracked intra-bar. Anything still open is squared off at the session end (${_fmtMins(g.sessionStopMin)} IST, <code>TRADE_STOP_TIME</code>) or the day's last bar. ` +
+      `<b>Exit:</b> the global profit lock is the ONLY automatic exit (arm +${lockArm}%, floor +${lockFloor}%, trail ${lockTrail}%${lockTiers ? `, tiers ${_escHtml(lockTiers)}` : ""} — the shared <code>PROFIT_LOCK_*</code> keys)${lockOn ? "" : " — <b>currently OFF</b>"}${futMode ? " — off in futures mode (it is defined on option premium)" : ""}, tested on the simulated premium with the peak tracked intra-bar. Anything still open is squared off at the session end (${_fmtMins(g.sessionStopMin)} IST, <code>TRADE_STOP_TIME</code>) or the day's last bar. ` +
       `There is <b>no stop loss, no trail, no target</b>, no breakeven, no time-stop, no signal exit and no early square-off. ` +
       `<b>Guards (V2's own keys):</b> entries ${_fmtMins(g.entryStartMin)}–${_fmtMins(g.entryEndMin)}, plus the global wait-after-exit cooldown. No loss-based day limits. ` +
       `<b>Warm-up:</b> the engine refuses below ${engine.warmupBars(c)} candles — more than one session — so ${g.warmupDays} calendar days of runway are fetched BEFORE ${_escHtml(from)} purely to seed the indicators. ${meta.warmupBars || 0} such bars were loaded and ${wv === 0 ? "<b>none of them produced a trade</b> (asserted, not assumed)" : `<b>⚠ ${wv} produced a trade — this is a bug, do not trust these results</b>`}. ` +
       `<b>Intra-bar ordering is conservative:</b> each bar is walked open → adverse extreme → favourable extreme → close, so the lock is tested on the adverse leg before the favourable extreme can raise the peak, and a bar that opened through the locked floor fills at the OPEN. ` +
       `<b>P&L is simulated</b> — no historical option chain exists here, so premium is δ+θ modelled (BACKTEST_DELTA ${_num("BACKTEST_DELTA", "0.55")}, θ ₹${_num("BACKTEST_THETA_DAY", "8")}/day) seeded at ₹${g.seedPremium}, PLUS ${g.slippagePts}pt slippage EACH way (<code>BACKTEST_SLIPPAGE_PTS</code>) and real brokerage. Treat ₹ as directional, not exact.`,
-  });
-  res.send(html);
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta) {
+  res.send(renderBacktestResults(_resultsView(from, to, trades, stats, meta)));
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, complete (or
+ * fail). This page and the unified /backtest page both call it.
+ *   p = { from, to, market? }   market: a markets.js key, default NIFTY
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  try {
+    const g   = getGuardConfig();
+    const res5 = String(g.resolutionMins);
+    // The runway starts WARMUP_DAYS calendar days before `from`. Calendar,
+    // not trading, days — weekends/holidays simply return no bars, so a
+    // generous default is the safe direction to err in.
+    const fetchFrom = _shiftDate(from, -Math.max(1, g.warmupDays));
+    const activeFromTs = Math.floor(new Date(`${from}T00:00:00+05:30`).getTime() / 1000);
+
+    console.log(`🔍 ${LABEL} Backtest job ${id}: ${from} → ${to} (runway from ${fetchFrom})${home ? "" : ` on ${M.key}`}`);
+    backtestJobs.updateProgress(id, { phase: `Fetching ${res5}-min ${M.shortLabel} candles (+${g.warmupDays}d warm-up runway)…`, pct: 20 });
+
+    let candles = [];
+    try {
+      candles = await fetchCandles(M.spotSymbol, res5, fetchFrom, to);
+    } catch (err) {
+      backtestJobs.failJob(id, `Fyers refused the candle request for ${fetchFrom} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
+      return;
+    }
+    if (!Array.isArray(candles) || !candles.length) {
+      backtestJobs.failJob(id,
+        `Fyers returned no historical candles for ${fetchFrom} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`);
+      return;
+    }
+
+    const need = engine.warmupBars(engine.getConfig());
+    if (candles.length < need + 10) {
+      backtestJobs.failJob(id,
+        `Only ${candles.length} candle(s) for ${fetchFrom} → ${to}. The EMA_RSI_ST_V2 engine refuses below ${need} candles (more than one session), so this range cannot produce a single trade. Widen the range or raise EMA_RSI_ST_V2_WARMUP_DAYS (currently ${g.warmupDays}).`);
+      return;
+    }
+
+    backtestJobs.updateProgress(id, { phase: `Running ${LABEL} backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
+    const result = await runEmaRsiStV2Backtest(candles, activeFromTs, M);
+
+    const stats = computeBacktestStats(result.trades);
+    stats.optionSim   = !M.isFutures;
+    stats.delta       = _num("BACKTEST_DELTA", "0.55");
+    stats.thetaPerDay = _num("BACKTEST_THETA_DAY", "8");
+    if (M.isFutures) stats.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
+
+    if (result.warmupViolations > 0) {
+      console.warn(`⚠ ${LABEL} Backtest job ${id}: ${result.warmupViolations} warm-up bar(s) attempted a trade — runway is leaking into results.`);
+    }
+
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (home) {
+      try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: res5 } }); }
+      catch (e) { console.warn(`[${ENDPOINT}] saveResult failed:`, e.message); }
+    }
+
+    const meta = {
+      days: result.days,
+      gateStats: result.gateStats,
+      warmupViolations: result.warmupViolations,
+      warmupBars: result.warmupBars,
+    };
+    if (!home) meta.market = M.key;
+    backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta });
+    console.log(`✅ ${LABEL} Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
+  } catch (err) {
+    console.error(`[${ENDPOINT}] job error:`, err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -600,69 +700,7 @@ router.get("/", async (req, res) => {
     if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, PAGE_TITLE));
 
     const { id } = backtestJobs.createJob(MODE_KEY);
-    (async () => {
-      try {
-        const g   = getGuardConfig();
-        const res5 = String(g.resolutionMins);
-        // The runway starts WARMUP_DAYS calendar days before `from`. Calendar,
-        // not trading, days — weekends/holidays simply return no bars, so a
-        // generous default is the safe direction to err in.
-        const fetchFrom = _shiftDate(from, -Math.max(1, g.warmupDays));
-        const activeFromTs = Math.floor(new Date(`${from}T00:00:00+05:30`).getTime() / 1000);
-
-        console.log(`🔍 ${LABEL} Backtest job ${id}: ${from} → ${to} (runway from ${fetchFrom})`);
-        backtestJobs.updateProgress(id, { phase: `Fetching ${res5}-min NIFTY candles (+${g.warmupDays}d warm-up runway)…`, pct: 20 });
-
-        let candles = [];
-        try {
-          candles = await fetchCandles(SPOT_SYMBOL, res5, fetchFrom, to);
-        } catch (err) {
-          backtestJobs.failJob(id, `Fyers refused the candle request for ${fetchFrom} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
-          return;
-        }
-        if (!Array.isArray(candles) || !candles.length) {
-          backtestJobs.failJob(id,
-            `Fyers returned no historical candles for ${fetchFrom} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`);
-          return;
-        }
-
-        const need = engine.warmupBars(engine.getConfig());
-        if (candles.length < need + 10) {
-          backtestJobs.failJob(id,
-            `Only ${candles.length} candle(s) for ${fetchFrom} → ${to}. The EMA_RSI_ST_V2 engine refuses below ${need} candles (more than one session), so this range cannot produce a single trade. Widen the range or raise EMA_RSI_ST_V2_WARMUP_DAYS (currently ${g.warmupDays}).`);
-          return;
-        }
-
-        backtestJobs.updateProgress(id, { phase: `Running ${LABEL} backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
-        const result = await runEmaRsiStV2Backtest(candles, activeFromTs);
-
-        const stats = computeBacktestStats(result.trades);
-        stats.optionSim   = instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
-        stats.delta       = _num("BACKTEST_DELTA", "0.55");
-        stats.thetaPerDay = _num("BACKTEST_THETA_DAY", "8");
-
-        if (result.warmupViolations > 0) {
-          console.warn(`⚠ ${LABEL} Backtest job ${id}: ${result.warmupViolations} warm-up bar(s) attempted a trade — runway is leaking into results.`);
-        }
-
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: res5 } }); }
-        catch (e) { console.warn(`[${ENDPOINT}] saveResult failed:`, e.message); }
-
-        backtestJobs.completeJob(id, {
-          trades: result.trades, stats, from, to,
-          meta: {
-            days: result.days,
-            gateStats: result.gateStats,
-            warmupViolations: result.warmupViolations,
-            warmupBars: result.warmupBars,
-          },
-        });
-        console.log(`✅ ${LABEL} Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
-      } catch (err) {
-        console.error(`[${ENDPOINT}] job error:`, err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, PAGE_TITLE));
   }
 
@@ -700,3 +738,11 @@ a{display:inline-flex;align-items:center;min-height:44px;margin-top:16px;backgro
 
 module.exports = router;
 module.exports.runEmaRsiStV2Backtest = runEmaRsiStV2Backtest;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
+  resolution: null,   // TRADE_RESOLUTION — the global candle size paper uses
+  run: _runJob,
+  view: (result) => _resultsView(result.from, result.to, result.trades, result.stats,
+    result.meta || { days: 0, gateStats: {}, warmupViolations: 0, warmupBars: 0 }),
+};

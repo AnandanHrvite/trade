@@ -15,6 +15,8 @@
  *   STT_FUT_SELL_PCT          Futures STT on sell side (default 0.05 → 0.05% of turnover)
  *   EXCHANGE_TXN_OPT_PCT      NSE options exchange txn (default 0.03553 → 0.03553% of premium turnover)
  *   EXCHANGE_TXN_FUT_PCT      NSE futures exchange txn (default 0.00183 → 0.00183% of turnover)
+ *   EXCHANGE_TXN_OPT_PCT_BSE  BSE options exchange txn — SENSEX (default 0.0325 → 0.0325% of premium turnover)
+ *   EXCHANGE_TXN_FUT_PCT_BSE  BSE futures exchange txn (default 0 — BSE levies none on index futures)
  *   SEBI_CHARGES_PER_CRORE    SEBI turnover fee ₹ per crore (default 10)
  *   GST_PCT                   GST on (brokerage + exchange txn + SEBI) (default 18 → 18%)
  *   STAMP_DUTY_PCT            Stamp duty on buy side (default 0.003 → 0.003%)
@@ -36,9 +38,10 @@ function env(key, fallback) {
  * @param {number}  opts.entryPremium   — option premium at entry (buy side) or futures entry price
  * @param {number}  opts.qty            — quantity (lot size × multiplier)
  * @param {string}  [opts.broker]       — "fyers" for Fyers rates, default uses Kite/env rates
+ * @param {string}  [opts.exchange]     — "BSE" for BSE exchange txn rates (SENSEX); anything else = NSE
  * @returns {{ stt, exchangeTxn, sebi, gst, stampDuty, brokerage, total }}
  */
-function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
+function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker, exchange }) {
   // ── Rates from env (or defaults — current NSE / statutory schedule) ──────
   // STT is a central-govt tax and exchange transaction charges are levied by
   // the exchange (NSE) — BOTH are identical for every broker (Zerodha, Fyers,
@@ -48,6 +51,11 @@ function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
   const sttFutPct       = env("STT_FUT_SELL_PCT",     0.05);     // % of sell-side turnover (govt STT)
   const exchOptPct      = env("EXCHANGE_TXN_OPT_PCT", 0.03553);  // % — NSE options txn on premium turnover
   const exchFutPct      = env("EXCHANGE_TXN_FUT_PCT", 0.00183);  // % — NSE futures txn on turnover
+  // BSE (SENSEX) — its own exchange txn schedule; STT, SEBI, GST, stamp duty
+  // and brokerage are the same statutory/broker charges on either exchange.
+  const isBse           = String(exchange || "").toUpperCase() === "BSE";
+  const exchOptPctBse   = parseFloat(process.env.EXCHANGE_TXN_OPT_PCT_BSE || "0.0325");
+  const exchFutPctBse   = parseFloat(process.env.EXCHANGE_TXN_FUT_PCT_BSE || "0");
   const sebiPerCrore    = env("SEBI_CHARGES_PER_CRORE", 10);     // ₹ per crore (turnover)
   const gstPct          = env("GST_PCT",                18);     // % on (brokerage + exchange txn + SEBI)
   const stampDutyPct    = env("STAMP_DUTY_PCT",         0.003);  // % on buy-side turnover
@@ -68,7 +76,9 @@ function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
 
   // ── Exchange transaction charges (NSE) ──────────────────────────────────
   // Options and futures have very different exchange txn rates
-  const exchRate    = isFutures ? exchFutPct : exchOptPct;
+  const exchRate    = isBse
+    ? (isFutures ? (Number.isFinite(exchFutPctBse) ? exchFutPctBse : 0) : (Number.isFinite(exchOptPctBse) ? exchOptPctBse : 0.0325))
+    : (isFutures ? exchFutPct : exchOptPct);
   const exchangeTxn = parseFloat(((exchRate / 100) * totalTurnover).toFixed(2));
 
   // ── SEBI charges ────────────────────────────────────────────────────────
@@ -93,12 +103,12 @@ function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
  * Quick helper: returns just the total charges number.
  * Falls back to a flat estimate when premium data is unavailable.
  */
-function getCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
+function getCharges({ isFutures, exitPremium, entryPremium, qty, broker, exchange }) {
   // If we have no premium data, use a conservative flat estimate
   if (!exitPremium && !entryPremium) {
     return isFutures ? 60 : 100;
   }
-  return calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }).total;
+  return calcCharges({ isFutures, exitPremium, entryPremium, qty, broker, exchange }).total;
 }
 
 module.exports = { calcCharges, getCharges };

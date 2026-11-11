@@ -387,8 +387,8 @@ router.get("/idle", (req, res) => {
 });
 
 // Rendered trade-log / stats helper — shared by the completed-job branch.
-function _renderOrbResults(res, from, to, trades, stats) {
-  const html = renderBacktestResults({
+function _resultsView(from, to, trades, stats) {
+  return {
     mode: "ORB",
     accent: ACCENT,
     strategyName: orbStrategy.NAME,
@@ -407,8 +407,86 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
     notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "10:15"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
-  });
+  };
+}
+
+function _renderOrbResults(res, from, to, trades, stats) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats));
   res.send(html);
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    console.log(`🔍 ORB Backtest job ${id}: ${from} → ${to}`);
+    backtestJobs.updateProgress(id, { phase: "Fetching candle data…", pct: 0 });
+    const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
+    const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, _onFetchProgress);
+
+    if (!Array.isArray(candles) || candles.length < 5) {
+      // Distinguish "Fyers had no data for this range" (0 candles — future dates,
+      // beyond available history, or a token/entitlement gap) from a genuinely
+      // narrow range (a handful of candles). The old message told the user to
+      // "widen the range" even when they'd asked for a whole month and Fyers
+      // simply returned nothing — misleading. Real reason is in the server logs
+      // (fetchChunk logs the Fyers getHistory response).
+      const n = Array.isArray(candles) ? candles.length : 0;
+      const msg = n === 0
+        ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error), so this looks like "no history". Log in to Fyers again, then retry. Otherwise the range may be in the future / beyond available history. The getHistory response is in the server logs.`
+        : `Only ${n} candle(s) for ${from} → ${to} — the range is too narrow. Widen it to at least a week of trading days.`;
+      backtestJobs.failJob(id, msg);
+      return;
+    }
+
+    // Pre-compute expiry-day set if ORB_EXPIRY_DAY_ONLY is on
+    let expirySet = null;
+    if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      const uniqueDates = new Set();
+      for (const c of candles) {
+        const d = new Date((c.time + 19800) * 1000);
+        uniqueDates.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`);
+      }
+      expirySet = new Set();
+      for (const dt of uniqueDates) {
+        try { if (await isExpiryDate(dt)) expirySet.add(dt); } catch (_) {}
+      }
+      console.log(`📅 ORB expiry-only: ${expirySet.size}/${uniqueDates.size} trading days qualified`);
+    }
+
+    // Daily VIX for the entry gate. Only fetched when the gate is on; a failed
+    // fetch leaves it empty and checkBacktestVix applies VIX_FAIL_MODE, exactly
+    // as paper behaves when the live VIX read fails.
+    const vixCandles = vixFilter.getVixEnabled("orb")
+      ? await fetchCandlesCachedBT(vixFilter.VIX_SYMBOL, "D", from, to, false).catch((e) => {
+          console.warn(`[orb-backtest] VIX candle fetch failed: ${e.message}`);
+          return [];
+        })
+      : [];
+
+    backtestJobs.updateProgress(id, { phase: `Running ORB backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
+    const trades = await runOrbBacktest(candles, expirySet, vixCandles);
+    const stats = computeBacktestStats(trades);
+    // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
+    // so /all-backtest renders it as ₹ instead of "pts".
+    stats.optionSim   = true;
+    stats.delta       = parseFloat(process.env.BACKTEST_DELTA     || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+
+    // Save for /all-backtest dashboard
+    try {
+      saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
+    } catch (e) { console.warn("[orb-backtest] saveResult failed:", e.message); }
+
+    backtestJobs.completeJob(id, { trades, stats, from, to });
+    console.log(`✅ ORB Backtest job ${id} complete — ${trades.length} trades`);
+  } catch (err) {
+    console.error("[orb-backtest] job error:", err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -435,74 +513,7 @@ router.get("/", async (req, res) => {
 
     const { id } = backtestJobs.createJob("orb");
 
-    (async () => {
-      try {
-        console.log(`🔍 ORB Backtest job ${id}: ${from} → ${to}`);
-        backtestJobs.updateProgress(id, { phase: "Fetching candle data…", pct: 0 });
-        const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
-        const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, _onFetchProgress);
-
-        if (!Array.isArray(candles) || candles.length < 5) {
-          // Distinguish "Fyers had no data for this range" (0 candles — future dates,
-          // beyond available history, or a token/entitlement gap) from a genuinely
-          // narrow range (a handful of candles). The old message told the user to
-          // "widen the range" even when they'd asked for a whole month and Fyers
-          // simply returned nothing — misleading. Real reason is in the server logs
-          // (fetchChunk logs the Fyers getHistory response).
-          const n = Array.isArray(candles) ? candles.length : 0;
-          const msg = n === 0
-            ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error), so this looks like "no history". Log in to Fyers again, then retry. Otherwise the range may be in the future / beyond available history. The getHistory response is in the server logs.`
-            : `Only ${n} candle(s) for ${from} → ${to} — the range is too narrow. Widen it to at least a week of trading days.`;
-          backtestJobs.failJob(id, msg);
-          return;
-        }
-
-        // Pre-compute expiry-day set if ORB_EXPIRY_DAY_ONLY is on
-        let expirySet = null;
-        if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-          const uniqueDates = new Set();
-          for (const c of candles) {
-            const d = new Date((c.time + 19800) * 1000);
-            uniqueDates.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`);
-          }
-          expirySet = new Set();
-          for (const dt of uniqueDates) {
-            try { if (await isExpiryDate(dt)) expirySet.add(dt); } catch (_) {}
-          }
-          console.log(`📅 ORB expiry-only: ${expirySet.size}/${uniqueDates.size} trading days qualified`);
-        }
-
-        // Daily VIX for the entry gate. Only fetched when the gate is on; a failed
-        // fetch leaves it empty and checkBacktestVix applies VIX_FAIL_MODE, exactly
-        // as paper behaves when the live VIX read fails.
-        const vixCandles = vixFilter.getVixEnabled("orb")
-          ? await fetchCandlesCachedBT(vixFilter.VIX_SYMBOL, "D", from, to, false).catch((e) => {
-              console.warn(`[orb-backtest] VIX candle fetch failed: ${e.message}`);
-              return [];
-            })
-          : [];
-
-        backtestJobs.updateProgress(id, { phase: `Running ORB backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-        const trades = await runOrbBacktest(candles, expirySet, vixCandles);
-        const stats = computeBacktestStats(trades);
-        // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
-        // so /all-backtest renders it as ₹ instead of "pts".
-        stats.optionSim   = true;
-        stats.delta       = parseFloat(process.env.BACKTEST_DELTA     || "0.55");
-        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-
-        // Save for /all-backtest dashboard
-        try {
-          saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
-        } catch (e) { console.warn("[orb-backtest] saveResult failed:", e.message); }
-
-        backtestJobs.completeJob(id, { trades, stats, from, to });
-        console.log(`✅ ORB Backtest job ${id} complete — ${trades.length} trades`);
-      } catch (err) {
-        console.error("[orb-backtest] job error:", err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
 
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "ORB Backtest"));
   }
@@ -535,6 +546,13 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats),
+};
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).
 module.exports.runOrbBacktest = runOrbBacktest;
 // Exported for the regression suite: the disclosure of paper/live-only entry gates

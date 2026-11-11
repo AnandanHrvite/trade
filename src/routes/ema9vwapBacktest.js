@@ -1,5 +1,6 @@
 const express = require("express");
 const router  = express.Router();
+const { engineResultView } = require("../utils/backtestUI");
 const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { runEma9VwapBacktest } = require("../services/ema9vwapBacktestEngine");
 const ACTIVE = "EMA9_VWAP";
@@ -39,6 +40,116 @@ router.get("/idle", (req, res) => {
   res.json({ idle: backtestJobs.isIdle() });
 });
 
+/** The results-page trade rows for this engine's trades (also the /backtest view). */
+function _tradeRows(trades) {
+  return trades.map(t => ({
+    side:      t.side || "",
+    entry:     t.entryTime  || "",
+    exit:      t.exitTime   || "",
+    entryTs:   typeof t.entryTs === "number" ? t.entryTs : 0,
+    exitTs:    typeof t.exitTs  === "number" ? t.exitTs  : 0,
+    ePrice:    typeof t.entryPrice === "number" ? t.entryPrice : 0,
+    xPrice:    typeof t.exitPrice  === "number" ? t.exitPrice  : 0,
+    sl:        (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null,
+    initialSL: (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss) : ((t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null),
+    pnl:       typeof t.pnl === "number" ? t.pnl : null,
+    spotPts:   typeof t.spotPnlPts === "number" ? t.spotPnlPts : null,
+    pnlMode:   t.pnlMode || null,
+    held:      typeof t.candlesHeld === "number" ? t.candlesHeld : null,
+    reason:    String(t.exitReason || ""),
+    entryReason: String(t.entryReason || ""),
+    risk_pts:  (() => {
+      const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
+               : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
+      if (!sl) return null;
+      return parseFloat(Math.abs(t.entryPrice - sl).toFixed(2));
+    })(),
+    rr:        (() => {
+      if (typeof t.pnl !== "number") return null;
+      const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
+               : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
+      if (!sl) return null;
+      const risk   = Math.abs(t.entryPrice - sl);
+      if (risk === 0) return null;
+      const rewardPts = typeof t.spotPnlPts === "number" ? Math.abs(t.spotPnlPts) : Math.abs(t.pnl);
+      const ratio = rewardPts / risk;
+      return (t.pnl >= 0 ? "1:" : "-1:") + ratio.toFixed(2);
+    })(),
+  }));
+}
+
+/** The run parameters a request asks for — this page and /backtest share these defaults. */
+function _jobParams(q) {
+  return {
+    resolution: q.resolution
+      || process.env.TRADE_RESOLUTION
+      || "5",
+    capital:    parseInt(process.env.BACKTEST_CAPITAL || "100000", 10),
+    symbol:     q.symbol     || "NSE:NIFTY50-INDEX",
+    skipCache:  q.skipCache === "true",
+  };
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to, resolution, capital, symbol, skipCache } = p;
+  try {
+    backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
+    const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
+
+    // ── Warm-up buffer ─────────────────────────────────────────────────────
+    // Indicators (EMA9 + session VWAP) need history to be meaningful. Instead of
+    // consuming the start of the requested range as warm-up — which broke
+    // short ranges (a 1-day backtest skipped its own morning and reset EMAs
+    // each day) — fetch extra candles BEFORE `from` purely to seed indicators.
+    // Trades are only recorded from `from` onward (gated by activeFromTs in the
+    // engine), so the requested range is evaluated from its very first candle
+    // with the same warmed indicators a continuous live session would have.
+    const _isIntraday  = /^\d+$/.test(String(resolution));
+    const _warmupDays  = _isIntraday ? 10 : 150; // calendar days; daily/weekly need far more
+    const warmupFrom   = new Date(new Date(from + "T00:00:00+05:30").getTime() - _warmupDays * 86400000)
+      .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const activeFromTs = Math.floor(new Date(from + "T00:00:00+05:30").getTime() / 1000);
+
+    const [_candles, _vixCandles] = await Promise.all([
+      fetchCandlesCachedBT(symbol, resolution, warmupFrom, to, skipCache, _onFetchProgress),
+      vixFilter.VIX_ENABLED
+        ? fetchCandlesCachedBT(VIX_SYMBOL, "D", warmupFrom, to, skipCache).catch(err => {
+            console.warn(`[Backtest] VIX candle fetch failed: ${err.message}`);
+            return [];
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (_candles.length < 30) {
+      backtestJobs.failJob(id, 'Too few candles for the selected date range. Try a wider range (at least 1 month).');
+      return;
+    }
+
+    let _expiryDates = null;
+    if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
+      const expirySet = new Set();
+      for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+      _expiryDates = expirySet;
+    }
+
+    backtestJobs.updateProgress(id, { phase: 'Running EMA9+VWAP backtest…', pct: 5, current: 0, total: _candles.length - 30 });
+    const _result = await runEma9VwapBacktest(_candles, capital,
+      (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles);
+    _result.candleCount = _candles.length;
+    saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
+    backtestJobs.completeJob(id, _result);
+    console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);
+  } catch (err) {
+    console.error('[Backtest Job Error]', err);
+    backtestJobs.failJob(id, err.message);
+  }
+}
+
 router.get("/", async (req, res) => {
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
@@ -47,12 +158,7 @@ router.get("/", async (req, res) => {
   const to         = req.query.to         || defTo;
   // Candle timeframe is GLOBAL (TRADE_RESOLUTION); an explicit ?resolution= still
   // wins for ad-hoc runs. Same precedence the paper engine uses.
-  const resolution = req.query.resolution
-    || process.env.TRADE_RESOLUTION
-    || "5";
-  const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
-  const symbol     = req.query.symbol     || "NSE:NIFTY50-INDEX";
-  const skipCache  = req.query.skipCache === "true";
+  const { resolution, capital, symbol, skipCache } = _jobParams(req.query);
 
   if (!process.env.ACCESS_TOKEN) {
     res.setHeader("Content-Type", "text/html");
@@ -75,60 +181,7 @@ router.get("/", async (req, res) => {
     const { id } = backtestJobs.createJob('ema9vwap');
 
     // Fire-and-forget — runs in background, server stays responsive
-    (async () => {
-      try {
-        backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
-        const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
-
-        // ── Warm-up buffer ─────────────────────────────────────────────────────
-        // Indicators (EMA9 + session VWAP) need history to be meaningful. Instead of
-        // consuming the start of the requested range as warm-up — which broke
-        // short ranges (a 1-day backtest skipped its own morning and reset EMAs
-        // each day) — fetch extra candles BEFORE `from` purely to seed indicators.
-        // Trades are only recorded from `from` onward (gated by activeFromTs in the
-        // engine), so the requested range is evaluated from its very first candle
-        // with the same warmed indicators a continuous live session would have.
-        const _isIntraday  = /^\d+$/.test(String(resolution));
-        const _warmupDays  = _isIntraday ? 10 : 150; // calendar days; daily/weekly need far more
-        const warmupFrom   = new Date(new Date(from + "T00:00:00+05:30").getTime() - _warmupDays * 86400000)
-          .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-        const activeFromTs = Math.floor(new Date(from + "T00:00:00+05:30").getTime() / 1000);
-
-        const [_candles, _vixCandles] = await Promise.all([
-          fetchCandlesCachedBT(symbol, resolution, warmupFrom, to, skipCache, _onFetchProgress),
-          vixFilter.VIX_ENABLED
-            ? fetchCandlesCachedBT(VIX_SYMBOL, "D", warmupFrom, to, skipCache).catch(err => {
-                console.warn(`[Backtest] VIX candle fetch failed: ${err.message}`);
-                return [];
-              })
-            : Promise.resolve([]),
-        ]);
-
-        if (_candles.length < 30) {
-          backtestJobs.failJob(id, 'Too few candles for the selected date range. Try a wider range (at least 1 month).');
-          return;
-        }
-
-        let _expiryDates = null;
-        if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-          const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
-          const expirySet = new Set();
-          for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
-          _expiryDates = expirySet;
-        }
-
-        backtestJobs.updateProgress(id, { phase: 'Running EMA9+VWAP backtest…', pct: 5, current: 0, total: _candles.length - 30 });
-        const _result = await runEma9VwapBacktest(_candles, capital,
-          (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles);
-        _result.candleCount = _candles.length;
-        saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
-        backtestJobs.completeJob(id, _result);
-        console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);
-      } catch (err) {
-        console.error('[Backtest Job Error]', err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to, resolution, capital, symbol, skipCache });
 
     return res.send(backtestJobs.buildProgressPage(id, '/ema9vwap-backtest', 'EMA9+VWAP Backtest'));
   }
@@ -151,40 +204,7 @@ router.get("/", async (req, res) => {
     const trades = [...(result.trades || [])].reverse();
 
     // Build trades array - embedded safely via JSON script tag
-    const tradesData = trades.map(t => ({
-      side:      t.side || "",
-      entry:     t.entryTime  || "",
-      exit:      t.exitTime   || "",
-      entryTs:   typeof t.entryTs === "number" ? t.entryTs : 0,
-      exitTs:    typeof t.exitTs  === "number" ? t.exitTs  : 0,
-      ePrice:    typeof t.entryPrice === "number" ? t.entryPrice : 0,
-      xPrice:    typeof t.exitPrice  === "number" ? t.exitPrice  : 0,
-      sl:        (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null,
-      initialSL: (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss) : ((t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null),
-      pnl:       typeof t.pnl === "number" ? t.pnl : null,
-      spotPts:   typeof t.spotPnlPts === "number" ? t.spotPnlPts : null,
-      pnlMode:   t.pnlMode || null,
-      held:      typeof t.candlesHeld === "number" ? t.candlesHeld : null,
-      reason:    String(t.exitReason || ""),
-      entryReason: String(t.entryReason || ""),
-      risk_pts:  (() => {
-        const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
-                 : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
-        if (!sl) return null;
-        return parseFloat(Math.abs(t.entryPrice - sl).toFixed(2));
-      })(),
-      rr:        (() => {
-        if (typeof t.pnl !== "number") return null;
-        const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
-                 : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
-        if (!sl) return null;
-        const risk   = Math.abs(t.entryPrice - sl);
-        if (risk === 0) return null;
-        const rewardPts = typeof t.spotPnlPts === "number" ? Math.abs(t.spotPnlPts) : Math.abs(t.pnl);
-        const ratio = rewardPts / risk;
-        return (t.pnl >= 0 ? "1:" : "-1:") + ratio.toFixed(2);
-      })(),
-    }));
+    const tradesData = _tradeRows(trades);
     // Escape </script> in JSON to prevent early tag termination
     // Cap embedded trades for browser performance — summary stats use full array
     const MAX_EMBEDDED_TRADES = 2000;
@@ -1624,3 +1644,14 @@ function errorPage(title, msg, from, to, resolution) {
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: { options: ["3", "5", "15"], default: () => _jobParams({}).resolution },
+  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to }, _jobParams({ resolution: p.resolution }))),
+  view: (r, p) => engineResultView({
+    result: r, rows: _tradeRows(r.trades || []), mode: "EMA9+VWAP", accent: "#3b82f6", strategyName: ACTIVE,
+    endpoint: "/ema9vwap-backtest", activePage: "ema9vwapBacktest", from: p.from, to: p.to,
+    extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "held", label: "Held" }],
+  }),
+};

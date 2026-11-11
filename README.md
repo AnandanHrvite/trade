@@ -58,6 +58,7 @@ All strategies run **in parallel** on the same WebSocket — different candle re
 | **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
+| **Backtest** | The ONE backtest page — pick any strategy × market, dates, candle size, current or custom settings; runs that strategy's own engine; saved runs re-open | Per-strategy | Historical | `/backtest` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
 | **Simulation** | Any (after-hours) | Configurable | Simulated ticks | `/*/simulate` |
