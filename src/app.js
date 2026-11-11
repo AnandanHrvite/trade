@@ -1045,6 +1045,7 @@ const OPEN_PATHS = [
   // Its one caller uses secretFetch.
   "/consolidation",       // read-only cross-mode trade history + analytics
   "/consolidation/data",
+  "/consolidation/trade-detail", // one trade's journal + post-exit record (read-only); /consolidation/export-day stays protected
   "/oi-monitor",          // read-only per-strike OI ladder — no position, no order
   "/oi-monitor/data",
   // Swing Scanner reads. /swing-scanner/order is deliberately NOT here — it
