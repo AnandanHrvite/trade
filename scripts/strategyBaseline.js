@@ -419,3 +419,6 @@ async function main() {
 if (require.main === module) main();
 // For tests/tradeJournal.regression.js (no run when required).
 module.exports = { OBSERVER_KEYS, stripObserverKeys, buildGolden, compactTrade, firstDiff };
+// For route-level tests that replay a synthetic session themselves (e.g.
+// tests/emaRsiStV2Journal.regression.js): the same inputs and sandbox as the goldens.
+module.exports.harness = { SETTINGS, RECORDING_SPEC, PAIRS, runWorker };
