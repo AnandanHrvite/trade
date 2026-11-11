@@ -100,7 +100,7 @@
 <div class="wrap">
 
 <header class="hero">
-  <div class="kicker">PIVOT_EMA_ST · NIFTY · BANK NIFTY · SAIL · Commodity · Fyers data · Zerodha orders · Plain-English edition</div>
+  <div class="kicker">PIVOT_EMA_ST · NIFTY · Fyers data · Zerodha orders · Plain-English edition</div>
   <h1>PIVOT_EMA_ST</h1>
   <p>Draw yesterday's <b>pivot lines</b> on today's chart. Buy a <b>CE</b> when the fast average (<b>EMA20</b>) crosses above the slow one (<b>EMA50</b>) <b>inside</b> the zone between the pivot and R1, the candle closes in that zone, and <b>SuperTrend</b> is green. Buy a <b>PE</b> on the mirror picture between S1 and the pivot. The SuperTrend line is the stop, and it is only checked when a candle closes.</p>
   <p class="muted" style="margin-top:10px;">Updated 2026-10-24 &nbsp;·&nbsp; rules checked against <code>src/strategies/pivot_ema_st.js</code> &nbsp;·&nbsp; every chart is real NIFTY data run through that engine</p>
@@ -135,7 +135,6 @@
     <li>The <b>stop</b> is the SuperTrend line. It only moves your way, and it is only checked when a candle <b>closes</b>.</li>
     <li>The app-wide <b>common rules</b> also apply: profit lock, breakeven stop, a 2-candle wait after any exit, and a bid-ask spread check. New trades <b>10:00&ndash;14:00</b>, everything closed at <b>15:00</b>.</li>
     <li>Up to <b>3 trades a day</b>, &#8377;5,000 daily loss limit, <b>1 lot</b>. Orders go to <b>Zerodha</b>; prices come from Fyers. Live is <b>dry-run</b> unless you switch three things.</li>
-    <li>The same rules run on <b>NIFTY</b>, <b>BANK NIFTY</b>, <b>SAIL</b> and on <b>MCX crude, gold and silver</b> (paper only, MCX hours).</li>
   </ul>
 </div>
 <div class="flow">
@@ -191,7 +190,6 @@
 <ul>
   <li>If yesterday's high/low/close cannot be loaded, there are no lines and the bot refuses to trade.</li>
   <li>If the lines it has are <b>older</b> than the last session on its chart (for example, the daily feed is missing yesterday's bar), it refuses them and fetches them again. Lines from a <b>newer</b> day are fine &mdash; that happens after a special session such as Muhurat trading, whose candles are not on the normal chart.</li>
-  <li>BANK NIFTY and SAIL use their own yesterday; the commodity pages use the traded future's previous MCX day.</li>
 </ul>
 
 <h2 id="entry">4. How a trade starts</h2>
@@ -242,13 +240,13 @@
   <b>The SuperTrend stop is never checked tick by tick.</b> A candle that dips through the line but closes back on the right side does not end the trade (the CE chart in section 9 shows three). The flip side: a candle that jumps a long way through the line is only sold after it closes, so a loss can be bigger than the gap to the line (the PE chart shows one).
 </div>
 <p><b>Checked on every tick</b> (the app's common rules, on the option price &mdash; section 6): the <b>profit lock</b> and the <b>breakeven stop</b>. And at <b>15:00</b> anything still open is sold.</p>
-<p>There is <b>no</b> fixed target, <b>no</b> option-price stop of its own on the NIFTY / BANK NIFTY / SAIL pages, and nothing about R2 or S2. Once a trade is open, R1 and S1 no longer matter &mdash; the CE example runs above R1 and is kept.</p>
+<p>There is <b>no</b> fixed target, <b>no</b> option-price stop of its own, and nothing about R2 or S2. Once a trade is open, R1 and S1 no longer matter &mdash; the CE example runs above R1 and is kept.</p>
 
 <h2 id="common">6. Common rules &amp; session</h2>
 <p>These are the app-wide <b>Common Rules</b> in Settings. Every strategy shares them; turning one off turns it off for all.</p>
 <table>
   <tr><th>Rule</th><th>Default</th><th>Plain meaning, with an example</th></tr>
-  <tr><td>Trade window</td><td>10:00&ndash;14:00, exit 15:00</td><td>New trades only on a signal candle that <b>closes</b> 10:00&ndash;14:00. On 3-minute candles the first one that can trade is 09:57&ndash;10:00 and the last is 13:57&ndash;14:00. Anything open is sold at 15:00. (Commodity keeps MCX hours.)</td></tr>
+  <tr><td>Trade window</td><td>10:00&ndash;14:00, exit 15:00</td><td>New trades only on a signal candle that <b>closes</b> 10:00&ndash;14:00. On 3-minute candles the first one that can trade is 09:57&ndash;10:00 and the last is 13:57&ndash;14:00. Anything open is sold at 15:00.</td></tr>
   <tr><td>Profit lock</td><td>arm +8%, keep +5%</td><td>Option bought at &#8377;150. Once it has touched &#8377;162 (+8%), it is never sold below a floor: &#8377;160.20 at that point, and the floor follows new highs (peak &#8377;180 &rarr; floor &#8377;175.50).</td></tr>
   <tr><td>Breakeven stop</td><td>arm +5%</td><td>Bought at &#8377;150. Once it has touched &#8377;157.50 (+5%), a fall back to &#8377;150 sells, so a winner cannot turn into a loss.</td></tr>
   <tr><td>Wait after any exit</td><td>2 candles</td><td>After a trade closes (any reason), no new trade on either side for 2 of this strategy's candles. On 3-minute candles: exit at 10:48 &rarr; nothing new until 10:54.</td></tr>
@@ -260,7 +258,7 @@
   <tr><th>Rule</th><th>Default</th><th>Plain meaning</th></tr>
   <tr><td>Trades per day</td><td>3</td><td>After the third trade, the bot only watches.</td></tr>
   <tr><td>Daily loss limit</td><td>&#8377;5,000</td><td>No new trade once today's losses reach this.</td></tr>
-  <tr><td>Size</td><td>1 lot</td><td>NIFTY 65, BANK NIFTY 30 (the common Lot Multiplier, 1 by default). SAIL 4,700 shares (its own <code>SAIL_PIVOT_EMA_ST_LOTS</code>, 1 by default).</td></tr>
+  <tr><td>Size</td><td>1 lot</td><td>NIFTY 65 (the common Lot Multiplier, 1 by default).</td></tr>
   <tr><td>Contract</td><td>ATM</td><td>The strike nearest the price at the moment of entry.</td></tr>
   <tr><td>Warm-up</td><td>3 / 5 / 11 earlier days</td><td>EMA50 needs a long run of candles to settle, so earlier sessions are loaded at Start: 3 days on 3-minute candles, 5 on 5-minute, 11 on 15-minute (or <code>&hellip;_WARMUP_DAYS</code> if that is set higher). The EMAs then run on across days, as on TradingView.</td></tr>
 </table>
@@ -269,19 +267,16 @@
   Adding any of these makes it a different strategy that needs its own testing.
 </div>
 
-<h2 id="where">7. Four instruments, one rule set</h2>
-<p>All four read the same engine. Each NSE page has its own settings (same names, with a <code>BN_</code> or <code>SAIL_</code> in front), its own position and its own trade book.</p>
+<h2 id="where">7. Where it runs</h2>
+<p>NIFTY 50 only, with its own settings, position and trade book.</p>
 <table>
   <tr><th>Instrument</th><th>Paper page</th><th>Menu</th><th>1 lot</th><th>Notes</th></tr>
   <tr><td>NIFTY 50</td><td><code>/pivot_ema_st-paper</code></td><td>NIFTY</td><td>65</td><td>Settings <code>PIVOT_EMA_ST_*</code>. Live: <code>/pivot_ema_st-live</code>.</td></tr>
-  <tr><td>BANK NIFTY</td><td><code>/bn_pivot_ema_st-paper</code></td><td>BANK NIFTY</td><td>30</td><td>Settings <code>BN_PIVOT_EMA_ST_*</code>. Monthly options (NSE has no BANK NIFTY weeklies). Live: <code>/bn_pivot_ema_st-live</code>.</td></tr>
-  <tr><td>SAIL</td><td><code>/sail_pivot_ema_st-paper</code></td><td>STOCKS</td><td>4,700 shares</td><td>Settings <code>SAIL_PIVOT_EMA_ST_*</code>. A stock: monthly options only, strikes every &#8377;2.50. Live: <code>/sail_pivot_ema_st-live</code>.</td></tr>
-  <tr><td>Crude oil, gold, silver (MCX)</td><td><code>/cmx_crude_pivot_ema_st-paper</code>, <code>/cmx_gold_&hellip;</code>, <code>/cmx_silver_&hellip;</code></td><td>COMMODITY</td><td><code>CMX_PIVOT_EMA_ST_LOTS</code> (1)</td><td><b>Paper only.</b> Uses the NIFTY page's EMA and SuperTrend settings, but its own candle size (<code>CMX_PIVOT_EMA_ST_RESOLUTION</code>, 3 min) and MCX hours: entries 10:00&ndash;22:30, exit 23:00. The commodity pages' 10% option stop applies; the spread check does not (it reads NSE data).</td></tr>
 </table>
 
 <h2 id="start">8. Starting it, and Live</h2>
 <ul>
-  <li><b>Start All (Paper)</b> on the Dashboard starts every switched-on paper strategy, one after another. These three NSE pages are switched <b>on</b> by default, so they start with it. While MCX is open it also starts the switched-on commodity pages; after the NSE close only the commodity half runs. The Real-Time monitor has a separate <b>Start All (Commodity)</b> button.</li>
+  <li><b>Start All (Paper)</b> on the Dashboard starts every switched-on paper strategy, one after another. This page is switched <b>on</b> by default, so it starts with it.</li>
   <li>Each page also has its own Start and Stop.</li>
   <li><b>Live</b> is a wrapper around the Paper page: Paper decides, Live copies each entry and exit to Zerodha. It needs both logins &mdash; Fyers for prices, Zerodha for orders. Its menu item is hidden by default.</li>
   <li><b>A real order needs all three:</b> the strategy's <code>&hellip;_LIVE_ENABLED</code> on, the global <code>LIVE_HARNESS_DRY_RUN</code> off, and the strategy's <code>&hellip;_LIVE_DRY_RUN</code> off. Out of the box the global dry-run is on, so Live only writes the order it <b>would</b> have placed to the log.</li>
@@ -315,7 +310,7 @@
 <h2 id="data">10. What the NIFTY data says</h2>
 <div class="card warn">
   How this was measured: the engine (default settings, except <b>5-minute</b> candles) was walked candle by candle over stored NIFTY 5-minute candles from 1 Jan 2018 to 31 Jul 2026. The first 5 days were warm-up (the engine loads 5 sessions on 5-minute candles), so <b>2,115 trading days</b> (8 Jan 2018 &ndash; 31 Jul 2026, 102.7 months) could trade. Decide on the close, buy at the next open, trail on each close, sell at the next open after an exit close, square off at 15:00, at most 3 trades a day, wait 2 candles after an exit.
-  This is a <b>spot-point simulation</b> &mdash; not a backtest page, and not rupees. The profit lock, breakeven stop, spread check and &#8377;5,000 loss limit need option prices, which this data does not have, so they were <b>not</b> applied. No costs were charged. The live default (3-minute) was not measured, and neither were BANK NIFTY, SAIL or the commodity pages.
+  This is a <b>spot-point simulation</b> &mdash; not a backtest page, and not rupees. The profit lock, breakeven stop, spread check and &#8377;5,000 loss limit need option prices, which this data does not have, so they were <b>not</b> applied. No costs were charged. The live default (3-minute) was not measured.
 </div>
 <h3>How often the three boxes agree</h3>
 <table>
@@ -395,32 +390,9 @@
 <tr><td><code>PIVOT_EMA_ST_MAX_DAILY_TRADES</code></td><td><code>3</code></td><td><b>Max Trades/Day</b> (1&ndash;50). Stop taking new entries once this many trades are done for the day.</td></tr>
 <tr><td><code>PIVOT_EMA_ST_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td><b>Max Daily Loss (₹)</b> (0&ndash;50000). Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.</td></tr>
 </tbody></table>
-<h3>BANK NIFTY and SAIL</h3>
-<p>Every NIFTY setting above also exists as <code>BN_PIVOT_EMA_ST_&hellip;</code> (BANK NIFTY) and <code>SAIL_PIVOT_EMA_ST_&hellip;</code> (SAIL), each in its own Settings section, with the same default and range &mdash; for example <code>BN_PIVOT_EMA_ST_TF</code> = 3 and <code>SAIL_PIVOT_EMA_ST_ST_MULT</code> = 3. SAIL adds one setting of its own:</p>
-<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
-<tr><td><code>SAIL_PIVOT_EMA_ST_LOTS</code></td><td><code>1</code></td><td><b>Lots</b> (1&ndash;50). How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares, capped by MAX_LOT_MULTIPLIER. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.</td></tr>
-</tbody></table>
-<h3>Commodity (MCX crude / gold / silver)</h3>
-<p>The commodity pages read the NIFTY <code>PIVOT_EMA_ST_EMA_FAST</code> / <code>_EMA_SLOW</code> / <code>_ST_PERIOD</code> / <code>_ST_MULT</code> for the rules, and these for timing and size:</p>
-<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
-<tr><td><code>CMX_PIVOT_EMA_ST_RESOLUTION</code></td><td><code>3</code></td><td><b>PIVOT_EMA_ST — Candle Size (min)</b> (1&ndash;60). Candle length the PIVOT_EMA_ST rules run on, for every commodity (the NIFTY PIVOT_EMA_ST_TF is not used here). Takes effect on the next Start.</td></tr>
-<tr><td><code>CMX_PIVOT_EMA_ST_LOTS</code></td><td><code>1</code></td><td><b>PIVOT_EMA_ST — Lots</b> (1&ndash;50). Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.</td></tr>
-<tr><td><code>CMX_PIVOT_EMA_ST_ENTRY_START</code></td><td><code>10:00</code></td><td><b>PIVOT_EMA_ST — Entry Window Start</b>. No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.</td></tr>
-<tr><td><code>CMX_PIVOT_EMA_ST_ENTRY_END</code></td><td><code>22:30</code></td><td><b>PIVOT_EMA_ST — Entry Window End</b>. No new entries after this time (IST). An open trade is not affected.</td></tr>
-<tr><td><code>CMX_PIVOT_EMA_ST_EOD_EXIT_TIME</code></td><td><code>23:00</code></td><td><b>PIVOT_EMA_ST — Forced Exit</b>. Anything still open is closed at this time (IST). Nothing is held overnight.</td></tr>
-<tr><td><code>CMX_PIVOT_EMA_ST_MAX_DAILY_TRADES</code></td><td><code>3</code></td><td><b>PIVOT_EMA_ST — Max Trades/Day</b> (1&ndash;50). No new entries once this many trades are done for the day, on each commodity page.</td></tr>
-<tr><td><code>CMX_PIVOT_EMA_ST_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td><b>PIVOT_EMA_ST — Max Daily Loss (₹)</b> (0&ndash;100000). Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.</td></tr>
-<tr><td><code>CMX_OPT_STOP_PCT</code></td><td><code>10</code></td><td><b>Option Stop (% of premium)</b> (0&ndash;50). Sell when the option premium falls this % below the buy price, on every commodity page (EMA_RSI_ST and V2). Example: bought at ₹200, 10% → out at ₹180. In Oct 2026 crude V2 losers ran to −20% before the SuperTrend stop. 0 = off.</td></tr>
-</tbody></table>
 <h3>Menu, Start All &amp; alerts</h3>
-<p>The <code>UI_SHOW_&hellip;</code> and <code>TG_&hellip;</code> keys also exist with <code>BN_</code> and <code>SAIL_</code> in the name, with the same defaults.</p>
 <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
 <tr><td><code>PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST Mode</b>. Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper + Live harness only. On by default; unproven — never traded.</td></tr>
-<tr><td><code>BN_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>BN_PIVOT_EMA_ST Mode (NIFTY BANK)</b>. Show the BN_PIVOT_EMA_ST menu (under BANK NIFTY) and its settings, and include it in Start All. The PIVOT_EMA_ST rules on NIFTY BANK, with its own settings and position. On by default; unproven — never traded.</td></tr>
-<tr><td><code>SAIL_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>SAIL_PIVOT_EMA_ST Mode (SAIL stock options)</b>. Show the SAIL_PIVOT_EMA_ST menu (under STOCKS) and its settings, include it in Start All, and start streaming SAIL prices. The PIVOT_EMA_ST rules on SAIL stock options. On by default; unproven — never traded.</td></tr>
-<tr><td><code>CMX_CRUDE_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>Crude Oil PIVOT_EMA_ST Mode (Commodity)</b>. Show the COMMODITY → Crude Oil → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. On by default.</td></tr>
-<tr><td><code>CMX_GOLD_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>Gold PIVOT_EMA_ST Mode (Commodity)</b>. Show the COMMODITY → Gold → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX gold, paper only, separate from every NIFTY strategy. On by default.</td></tr>
-<tr><td><code>CMX_SILVER_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>Silver PIVOT_EMA_ST Mode (Commodity)</b>. Show the COMMODITY → Silver → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX silver, paper only, separate from every NIFTY strategy. On by default.</td></tr>
 <tr><td><code>UI_SHOW_PIVOT_EMA_ST_PAPER</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST → Paper</b>. Show Paper under PIVOT_EMA_ST.</td></tr>
 <tr><td><code>UI_SHOW_PIVOT_EMA_ST_LIVE_HARNESS</code></td><td><code>false</code></td><td><b>PIVOT_EMA_ST → Live</b>. Show Live (the paper-wrapping harness at /pivot_ema_st-live) under PIVOT_EMA_ST.</td></tr>
 <tr><td><code>UI_SHOW_PIVOT_EMA_ST_HISTORY</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST → History</b>. Show History under PIVOT_EMA_ST.</td></tr>
@@ -442,19 +414,17 @@
 <tr><td><code>EXIT_REENTRY_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td><b>Wait after any exit (candles)</b> (0&ndash;20). One rule for EVERY strategy: after a trade closes for any reason (stop, target, breakeven, profit lock, signal), take no new trade on either side for this many of the strategy's own candles. Example on 5-min candles with 2: exit at 10:48 → no new trade until 10:58. Manual entries are not blocked. 0 = off.</td></tr>
 <tr><td><code>MAX_BID_ASK_SPREAD_ENABLED</code></td><td><code>true</code></td><td><b>Bid-Ask Spread Check (all strategies)</b>. Skip an entry when the option's bid-ask gap is wider than "Max Bid-Ask Spread (pts)". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap.</td></tr>
 <tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td><b>Max Bid-Ask Spread (pts)</b> (0&ndash;20). Reject entries when the spread is wider than this.</td></tr>
-<tr><td><code>COMMON_TRADE_WINDOW_ENABLED</code></td><td><code>true</code></td><td><b>Trade Window 10:00–14:00, exit 15:00 (all strategies)</b>. Every NIFTY / BANK NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle) and not Commodity (MCX hours). Overrides each strategy's own Entry Start / Entry End / Forced Exit; the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.</td></tr>
-<tr><td><code>LOT_MULTIPLIER</code></td><td><code>(blank) → 1</code></td><td><b>Lot Multiplier</b> (1&ndash;50). Lots per trade for EVERY NIFTY / BANK NIFTY strategy — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL and Commodity keep their own lots (different contracts).</td></tr>
+<tr><td><code>COMMON_TRADE_WINDOW_ENABLED</code></td><td><code>true</code></td><td><b>Trade Window 10:00–14:00, exit 15:00 (all strategies)</b>. Every NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle). Overrides each strategy's own Entry Start / Entry End / Forced Exit; the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.</td></tr>
+<tr><td><code>LOT_MULTIPLIER</code></td><td><code>(blank) → 1</code></td><td><b>Lot Multiplier</b> (1&ndash;50). Lots per trade for EVERY NIFTY strategy — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL keeps its own lots (a different contract).</td></tr>
 <tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td><code>true</code></td><td><b>Live Harness DRY-RUN (GLOBAL)</b>. Global switch: log live orders but place none.</td></tr>
 <tr><td><code>NIFTY_LOT_SIZE</code></td><td><code>(blank) → 65</code></td><td><b>Lot Size (Qty)</b> (1&ndash;200). Quantity per lot.</td></tr>
-<tr><td><code>BANKNIFTY_LOT_SIZE</code></td><td><code>30</code></td><td><b>NIFTY BANK — Lot Size (Qty)</b> (1&ndash;200). Quantity per NIFTY BANK lot — 30 since NSE's Nov-2024 revision.</td></tr>
-<tr><td><code>SAIL_LOT_SIZE</code></td><td><code>4700</code></td><td><b>SAIL — Lot Size (shares)</b> (1&ndash;100000). Shares per SAIL option lot — 4700 per NSE's contract list. Example: 1 lot of a ₹5.00 option costs 4,700 × ₹5 = ₹23,500.</td></tr>
 </tbody></table>
 
 <h2 id="missing">12. What's still missing</h2>
 <ul>
-  <li><b>It has never traded.</b> No paper session and no live order on NIFTY, BANK NIFTY, SAIL or the commodity pages.</li>
+  <li><b>It has never traded.</b> No paper session and no live order.</li>
   <li><b>No backtest page and no Replay</b> &mdash; by your choice. The only test is the spot-point simulation in section 10.</li>
-  <li><b>The numbers are NIFTY spot points on 5-minute candles.</b> Not option rupees, no costs. The live default is 3-minute, which was not measured (there is no 3-minute history). BANK NIFTY, SAIL and the commodities were not measured at all.</li>
+  <li><b>The numbers are NIFTY spot points on 5-minute candles.</b> Not option rupees, no costs. The live default is 3-minute, which was not measured (there is no 3-minute history).</li>
   <li><b>The tick-level rules were not tested.</b> Profit lock, breakeven and the spread check need real option ticks. They will change the results above, most likely by cutting some winners short &mdash; 103 of the 257 trades were held to 15:00.</li>
   <li><b>The stop is wide and close-only.</b> The middle first stop is about 48 points (about &#8377;1,560 a lot at delta 0.5), and 38 of 147 losers lost more than that first gap. <code>PIVOT_EMA_ST_ST_MULT</code> is the lever: smaller = tighter stop but more noise exits.</li>
   <li><b>Thin before costs, and slow.</b> +4.58 points a trade on average, at about 2.5 trades a month on 5-minute NIFTY candles. 30 NIFTY paper trades would take about a year at that pace (3-minute candles and the other three instruments will add more).</li>
