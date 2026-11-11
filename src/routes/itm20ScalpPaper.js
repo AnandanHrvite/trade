@@ -38,10 +38,10 @@ const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
 const tradeGuards        = require("../utils/tradeGuards");
 const vixFilter          = require("../services/vixFilter");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
-const { isTradingAllowed, isExpiryDay } = require("../utils/nseHolidays");
+const { isTradingAllowed, isExpiryDay } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
@@ -279,7 +279,7 @@ function startPolling() {
         let ltp = streamed ? streamed.ltp : null;
         if (!streamed) {
           const symbols = [optSym];
-          const r = await fyers.getQuotes(symbols);
+          const r = await require("../services/marketData").getQuotes(symbols);
           ltp = attributeQuotes(r, symbols, optSym).optLtp;
         }
         if (ltp != null && state.position && state.position.symbol === optSym) {
@@ -359,12 +359,12 @@ function _noteHistoryFailure(why) {
 function _todayIst() { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
 
 async function _fetchSpotToday() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const today = _todayIst();
   return fetchCandles(NIFTY_INDEX_SYMBOL, String(RES_MIN), today, today);
 }
 async function _fetchWarmupBars() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const from = new Date(Date.now() - _warmupDays() * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   return fetchCandles(NIFTY_INDEX_SYMBOL, String(RES_MIN), from, _todayIst());
 }
@@ -443,7 +443,7 @@ async function simulateBuy(side, sig) {
 
   let optionEntryLtp = null;
   try {
-    const r = await fyers.getQuotes([optInfo.symbol]);
+    const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
     const q = attributeQuotes(r, [optInfo.symbol], optInfo.symbol);
     if (q.optLtp != null) {
       optionEntryLtp = q.optLtp;

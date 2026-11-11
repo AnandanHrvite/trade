@@ -913,6 +913,13 @@ const SETTINGS_SCHEMA = [
       { key: "TOKEN_SYNC_LIVE_API_SECRET",   label: "Token Sync: LIVE App Secret",       type: "password", effect: EFFECT.INSTANT, desc: "App secret of the LIVE server (blank = use this machine's App Secret)." },
       { key: "TOKEN_SYNC_ALLOW_SELF_SIGNED", label: "Token Sync: Allow Self-Signed Cert", type: "toggle",  effect: EFFECT.INSTANT, desc: "LIVE serves its own certificate, so keep this on unless a real certificate is installed there.", default: "true" },
 
+      // ── Shared market data — src/services/marketData.js ─────────────────────
+      // One broker call shared by every strategy asking for the same thing at the
+      // same time. Changes only how often the broker is asked, never the answer.
+      { key: "MARKET_DATA_SHARED",         label: "Share Broker Calls Across Strategies", type: "toggle", effect: EFFECT.INSTANT, desc: "Strategies asking Fyers for the same thing at the same moment (token check, spot, option-symbol check, warm-up candles, option price) share one request. Off = every strategy calls Fyers on its own, as before.", default: "true", subheader: "Shared Market Data" },
+      { key: "MARKET_DATA_TTL_SEC",        label: "Shared Answer Reuse Window (sec)",     type: "number", min: 0, max: 600, step: 5, effect: EFFECT.INSTANT, desc: "How long an answer that cannot change meanwhile (trading-day check, nearest expiry, contract exists, closed candle history) is reused. Live prices and today's forming candles are never reused. 0 = only share calls already in flight.", default: "30" },
+      { key: "MARKET_DATA_QUOTE_BATCH_MS", label: "Quote Batching Window (ms)",           type: "number", min: 0, max: 250, step: 5, effect: EFFECT.INSTANT, desc: "Option-price requests arriving within this window go to Fyers as one call (up to 50 symbols each).", default: "20" },
+
       { key: "MANUAL_TRADES_AUTO_SYNC_ENABLED", label: "Manual Trades Auto-Sync (Kite + Fyers)", type: "toggle", effect: EFFECT.SESSION, desc: "Daily 15:35 IST auto-pull of today's manual Kite and Fyers fills into P&L History → Manual Trading Analytics. Neither broker has a historical-trade API, so this only ever captures today going forward — past trades still need a one-time tradebook CSV import.", default: "true", subheader: "Manual Trades" },
     ],
   },

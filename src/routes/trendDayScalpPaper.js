@@ -39,11 +39,11 @@ const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog, inr } = require("../utils/bbRsiStyleUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const chartBackfill = require("../utils/chartBackfill");
 const aiExport    = require("../utils/aiExport");
@@ -265,7 +265,7 @@ function startOptionPolling() {
         _applyOptionLtp(symbol, streamed.ltp, streamed.at, false);
       } else {
         try {
-          const r = await fyers.getQuotes([symbol]);
+          const r = await require("../services/marketData").getQuotes([symbol]);
           if (r && r.s === "ok" && r.d && r.d.length) {
             const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
             if (typeof ltp === "number" && ltp > 0) _applyOptionLtp(symbol, ltp, Date.now(), true);
@@ -312,7 +312,7 @@ async function simulateBuy(side, sig) {
     optionEntryLtp = spot;
   } else {
     try {
-      const r = await fyers.getQuotes([optInfo.symbol]);
+      const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
       if (r && r.s === "ok" && r.d && r.d.length) {
         const v = r.d[0].v || {};
         const ltp = v.lp || v.ltp;
@@ -791,7 +791,7 @@ const WARM_BARS = 150;
 async function preloadHistory() {
   try {
     const { fetchCandlesCached } = require("../utils/candleCache");
-    const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandles } = require("../services/marketData");
     const resMin = _resMin();
     const barsPerDay = Math.max(1, Math.round(375 / resMin));
     const lookbackDays = Math.max(5, Math.ceil((WARM_BARS / barsPerDay) * 1.5) + 2);

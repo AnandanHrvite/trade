@@ -49,11 +49,11 @@ const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
 const tradeGuards        = require("../utils/tradeGuards");
 const vixFilter          = require("../services/vixFilter");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiActivityLog, inr } = require("../utils/bbRsiStyleUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
@@ -364,7 +364,7 @@ async function fetchQuotes(symbols) {
   const merged = new Map();
   for (let i = 0; i < symbols.length; i += MAX_SYMBOLS_PER_CALL) {
     const batch = symbols.slice(i, i + MAX_SYMBOLS_PER_CALL);
-    const resp  = await fyers.getQuotes(batch);
+    const resp  = await require("../services/marketData").getQuotes(batch);
     for (const [k, v] of attributeQuotes(resp, batch)) merged.set(k, v);
   }
   return merged;

@@ -50,11 +50,11 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const tickRecorder  = require("../utils/tickRecorder");
 const optionFeed    = require("../utils/optionFeed");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { istDayFromAny, istIsoFromAny } = require("../utils/tradeUtils");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const chartBackfill = require("../utils/chartBackfill");
 const aiExport    = require("../utils/aiExport");
@@ -500,7 +500,7 @@ let _optionPollGen = 0;
 async function fetchOptionLtp(symbol) {
   try {
     // Fyers v3 getQuotes accepts a comma-separated symbol string directly
-    const response = await fyers.getQuotes([symbol]);
+    const response = await require("../services/marketData").getQuotes([symbol]);
 
     if (response.s === 'ok' && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
@@ -1446,7 +1446,7 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * partial day can never leave holes in the path-dependent SuperTrend.
  */
 async function _preloadSeries(resMin, days, todayStr) {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const fromDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   fromDate.setDate(fromDate.getDate() - (days * 2 + 7));
   const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -1573,7 +1573,7 @@ router.get("/start", async (req, res) => {
 
   // Expiry day check
   if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-    const { isExpiryDay } = require("../utils/nseHolidays");
+    const { isExpiryDay } = require("../services/marketData");
     const isExpiry = await isExpiryDay();
     if (!isExpiry) ptState._expiryDayBlocked = true;
     log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
@@ -1599,7 +1599,7 @@ router.get("/start", async (req, res) => {
   // Telegram: session started + checklist
   const _ptChecks = { fyers: { ok: false, msg: "" }, symbol: { ok: false, msg: "" } };
   try {
-    const { getLiveSpot } = require("../config/instrument");
+    const { getLiveSpot } = require("../services/marketData");
     const [spotResult] = await Promise.allSettled([
       getLiveSpot(UNDERLYING).then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
     ]);
