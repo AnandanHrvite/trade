@@ -4,6 +4,8 @@ Engine: `src/strategies/bb_rsi.js` · Routes: `bbRsi*.js` · Env prefix: `BB_RSI
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — `bbRsiPaper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same `/bb_rsi-paper` path, files, keys, logs — golden byte-identical); every other offered market's BB_RSI pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`), has its own spread limit / expiry-day switch, and its exchange's charges (BSE for SENSEX). The engine reads `<PAIR>_BB_RSI_*` keys with NIFTY inheritance (`pairs.envGet`). OI gate stays NIFTY-only; VIX gate stays on the shared `BB_RSI_VIX_*` keys.
+
 - 2026-11-08 — Engine prefix support for the NIFTY FUTURES twin: `bb_rsi.forPrefix("FUT_BB_RSI")` returns the same API reading `FUT_BB_RSI_*` keys (own indicator cache per prefix); the default exports still read `BB_RSI_*` and are output-identical (verified on 7.6k synthetic calls). New routes `futBbRsiPaper.js` / `futBbRsiBacktest.js` use it; the options strategy is unchanged.
 
 - 2026-11-08 — Futures stop in bbRsiPaper: a NIFTY_FUTURES position has no premium, so the profit lock never fired; the per-tick exit now also calls `tradeGuards.checkFuturesStop` (premium stop mapped to index points) and exits through `simulateSell`. Options unchanged.

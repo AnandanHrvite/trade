@@ -75,10 +75,11 @@ check("BANKNIFTY / NIFTY_FUT keep the old twins' paths and data files", () => {
   assert.deepStrictEqual([fut.paperPath, fut.tradesFile, fut.modeKey], ["/fut_ema_rsi_st_v2-paper", "fut_ema_rsi_st_v2_paper_trades.json", "fut_ema_rsi_st_v2"]);
   assert.strictEqual(rtOf("SENSEX").paperPath, "/sensex_ema_rsi_st_v2-paper");
 });
-check("running pairs = every offered non-home V2 pair; none other runs", () => {
-  const ids = pairs.runnable().map(p => p.marketKey);
-  assert.deepStrictEqual(ids, ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"]);
-  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2"));
+check("running pairs = every offered non-home V2 / BB_RSI pair; none other runs", () => {
+  const all7 = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
+  assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === "emaRsiStV2").map(p => p.marketKey), all7);
+  assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === "bbRsi").map(p => p.marketKey), all7);
+  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2" || p.strategyId === "bbRsi"));
   assert.strictEqual(pairs.byReplayMode("bn_ema_rsi_st_v2-paper").marketKey, "BANKNIFTY");
   assert.strictEqual(pairs.byReplayMode("ema_rsi_st_v2-paper"), null, "the home mode is the registry's");
 });
