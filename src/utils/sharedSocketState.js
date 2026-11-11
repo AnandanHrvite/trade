@@ -400,12 +400,12 @@ const _slotModes = new Map();   // socket mode -> label (registered pairs)
 const _slotActive = new Map();  // socket mode -> mode string while running
 
 function registerSlot(mode, label) { if (mode) _slotModes.set(mode, label || mode); }
-function setSlot(mode)       { if (_slotModes.has(mode)) _slotActive.set(mode, mode); }
-function clearSlot(mode)     { _slotActive.delete(mode); }
-function isSlotActive(mode)  { return _slotActive.has(mode); }
-function getSlot(mode)       { return _slotActive.get(mode) || null; }
+function holdSlot(mode)       { if (_slotModes.has(mode)) _slotActive.set(mode, mode); }
+function releaseSlot(mode)     { _slotActive.delete(mode); }
+function slotHeld(mode)  { return _slotActive.has(mode); }
+function heldSlotMode(mode)       { return _slotActive.get(mode) || null; }
 /** Socket modes of every running pair slot. */
-function activeSlots()       { return Array.from(_slotActive.keys()); }
+function heldSlots()       { return Array.from(_slotActive.keys()); }
 
 // ── Combined queries ──────────────────────────────────────────────────────
 
@@ -573,7 +573,7 @@ module.exports = {
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // (strategy, market) pair slots
-  registerSlot, setSlot, clearSlot, isSlotActive, getSlot, activeSlots,
+  registerSlot, holdSlot, releaseSlot, slotHeld, heldSlotMode, heldSlots,
   // Combined
   isAnyActive, canStart,
 };
@@ -586,10 +586,11 @@ const _CLEAR_SLOT = Object.fromEntries(require("../config/strategyRegistry").all
   .map(s => [s.socket.clear, _slotOf(s.socket.mode)]));
 for (const name of Object.keys(module.exports)) {
   const fn = module.exports[name];
-  if (typeof fn !== "function" || !/^(set|clear)/.test(name)) continue;
+  // holdSlot / releaseSlot: the generic (strategy, market) pair slots, keyed by mode.
+  if (typeof fn !== "function" || !/^(set|clear|holdSlot$|releaseSlot$)/.test(name)) continue;
   module.exports[name] = function (...args) {
     const r = fn.apply(this, args);
-    const slot = (name.startsWith("set") || name === "clearSlot") ? _slotOf(args[0]) : _CLEAR_SLOT[name];
+    const slot = (name.startsWith("set") || name === "holdSlot" || name === "releaseSlot") ? _slotOf(args[0]) : _CLEAR_SLOT[name];
     if (slot) _reservations.delete(slot);
     return r;
   };

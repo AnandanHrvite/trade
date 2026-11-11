@@ -51,6 +51,12 @@ MODES.push("sail_vwap_st"); // SAIL_VWAP_ST
 MODES.push("pivot_ema_st"); // PIVOT_EMA_ST
 MODES.push("gap_runaway", "gap_runaway_stk"); // GAP_RUNAWAY (NIFTY) + its stock scanner
 MODES.push("itm20_scalp"); // ITM20_SCALP
+// Running (strategy, market) pairs (config/pairs.js runnable) log under their own
+// mode key — bn_ema_rsi_st_v2, sensex_ema_rsi_st_v2 … — generated, never typed.
+const PAIR_LOG_MODES = require("../config/pairs").runnable().map(p => ({
+  key: p.modeKey, label: require("../utils/pairRuntime").forPair(p).title, enabledKey: p.enabledKey,
+}));
+MODES.push(...PAIR_LOG_MODES.map(m => m.key));
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -756,6 +762,8 @@ function enabledModesFromEnv() {
     rsi_pivot_st: on(process.env.RSI_PIVOT_ST_MODE_ENABLED),
     simple930: on(process.env.SIMPLE930_MODE_ENABLED),
     early_bird: on(process.env.EARLYBIRD_MODE_ENABLED),
+    // Every pair ships OFF.
+    ...Object.fromEntries(PAIR_LOG_MODES.map(m => [m.key, String(process.env[m.enabledKey] || "false").toLowerCase() === "true"])),
   };
 }
 
@@ -812,6 +820,7 @@ router.get("/", (req, res) => {
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
     .mode-ema_rsi_st    { color:#60a5fa; }
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
+    .mode-pairmk { color:#5eead4; }
     .mode-st_rsi_piv_bb { color:#bef264; }
     .mode-sail_vwap_st { color:#fecdd3; }
     .mode-pivot_ema_st { color:#7dd3fc; }
@@ -1279,7 +1288,7 @@ ${buildSidebar('tradeLogs', false)}
     { key: 'rsi_pivot_st', label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
     { key: 'simple930', label: 'SIMPLE_9:30', cls: 'mode-simple930' },
     { key: 'early_bird', label: 'EARLYBIRD', cls: 'mode-early_bird' },
-  ];
+  ].concat(${JSON.stringify(PAIR_LOG_MODES.map(m => ({ key: m.key, label: m.label, cls: "mode-pairmk" })))});
   function enabledModes() { return MODE_LIST.filter(function(m){ return ENABLED_MODES[m.key] !== false; }); }
 
   // Page size is global across all paginated views, persisted in localStorage.
@@ -1300,6 +1309,7 @@ ${buildSidebar('tradeLogs', false)}
   _filesPage.gap_runaway = 1; _skipsPage.gap_runaway = 1;
   _filesPage.gap_runaway_stk = 1; _skipsPage.gap_runaway_stk = 1;
   _filesPage.itm20_scalp = 1; _skipsPage.itm20_scalp = 1;
+  ${JSON.stringify(PAIR_LOG_MODES.map(m => m.key))}.forEach(function(k){ _filesPage[k] = 1; _skipsPage[k] = 1; });
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

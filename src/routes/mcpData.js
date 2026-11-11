@@ -98,7 +98,7 @@ router.get("/settings", (req, res) => {
 // newest day first. A "strategy" row means no signal formed on that candle —
 // a non-event — so pass gate= to see only real signals that a guard blocked.
 router.get("/skips", (req, res) => {
-  const skipModes = Object.keys(skipLogger.FILE_PREFIX_BY_MODE);
+  const skipModes = skipLogger.modes();   // registry modes + running (strategy, market) pairs
   const want = String(req.query.mode || "").toLowerCase();
   if (want && !skipModes.includes(want)) {
     return res.status(400).json({ success: false, error: `no skip log for mode "${want}". Skip-log modes: ${skipModes.join(", ")}` });

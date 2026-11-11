@@ -62,8 +62,16 @@ const STRATEGY_DEFS = [
   { key:'EARLYBIRD', label:'EarlyBird', accentClass:'earlybird', accent:'#14b8a6', paperPrefix:'/early-bird-paper', hasDayLog:true, modeFlag:'EARLYBIRD_MODE_ENABLED' },
 ];
 
+// Running (strategy, market) pairs (config/pairs.js runnable): one column each,
+// gated by the pair's own <PAIR>_MODE_ENABLED (default OFF). Generated, never hand-typed.
+const PAIR_DEFS = require("../config/pairs").runnable().map(p => ({
+  key: p.envPrefix, label: require("../utils/pairRuntime").forPair(p).title,
+  accentClass: 'pairmk', accent: '#2dd4bf', paperPrefix: p.paperPath, hasDayLog: true,
+  modeFlag: p.enabledKey, defaultOff: true,
+}));
+
 function enabledStrategies() {
-  return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || (s.defaultOff ? 'false' : 'true')).toLowerCase() !== 'false')
+  return STRATEGY_DEFS.concat(PAIR_DEFS).filter(s => (process.env[s.modeFlag] || (s.defaultOff ? 'false' : 'true')).toLowerCase() !== 'false')
 ;
 }
 
@@ -71,7 +79,8 @@ function enabledStrategies() {
 // The pool is the registry's capitalPool broker (Fyers candles + Zerodha
 // orders count as ZERODHA).
 const BROKER_OF = Object.fromEntries(require("../config/strategyRegistry").all()
-  .map(s => [s.key, s.broker.toUpperCase()]));
+  .map(s => [s.key, s.broker.toUpperCase()])
+  .concat(require("../config/pairs").runnable().map(p => [p.envPrefix, p.broker.toUpperCase()])));
 const brokerOfKey = (key) => BROKER_OF[key];
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
@@ -268,6 +277,7 @@ ${faviconLink()}
 .card.itm20scalp { border-top-color:#22d3ee; }
   .card.rsipivotst { border-top-color:#facc15; }
   .card.emarsistv2 { border-top-color:#38bdf8; }
+  .card.pairmk { border-top-color:#2dd4bf; }
   .card.strsipivbb { border-top-color:#a3e635; }
   .card.sailvwapst { border-top-color:#fda4af; }
   .card.pivotemast { border-top-color:#38bdf8; }
@@ -290,6 +300,7 @@ ${faviconLink()}
 .card.itm20scalp .card-title { color:#67e8f9; }
   .card.rsipivotst .card-title { color:#fde047; }
   .card.emarsistv2 .card-title { color:#7dd3fc; }
+  .card.pairmk .card-title { color:#5eead4; }
   .card.simple930 .card-title { color:#fdba74; }
   .card.earlybird .card-title { color:#5eead4; }
 
@@ -398,6 +409,7 @@ ${faviconLink()}
 .rollup tr.itm20scalp td:first-child { color:#67e8f9; }
   .rollup tr.rsipivotst td:first-child { color:#fde047; }
   .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
+  .rollup tr.pairmk td:first-child { color:#5eead4; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
   .rollup tr.earlybird td:first-child { color:#5eead4; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
@@ -430,6 +442,7 @@ ${faviconLink()}
 :root[data-theme="light"] .card.itm20scalp .card-title { color:#0e7490; }
   :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
+  :root[data-theme="light"] .card.pairmk .card-title { color:#0f766e; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.earlybird .card-title { color:#0f766e; }
   :root[data-theme="light"] .pos-block,

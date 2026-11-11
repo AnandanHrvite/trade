@@ -293,10 +293,10 @@ function forPair(pair) {
       }
     : {
         mode: pair.socketMode,
-        set:      () => sss().setSlot(pair.socketMode),
-        clear:    () => sss().clearSlot(pair.socketMode),
-        isActive: () => sss().isSlotActive(pair.socketMode),
-        get:      () => sss().getSlot(pair.socketMode),
+        set:      () => sss().holdSlot(pair.socketMode),
+        clear:    () => sss().releaseSlot(pair.socketMode),
+        isActive: () => sss().slotHeld(pair.socketMode),
+        get:      () => sss().heldSlotMode(pair.socketMode),
         canStart: (opts) => sss().canStart(pair.socketMode, opts),
       };
   if (!pair.home) sss().registerSlot(pair.socketMode, rt.title);

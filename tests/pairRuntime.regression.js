@@ -213,7 +213,7 @@ check("generic socket slots: one per pair, independent of NIFTY's", () => {
   try {
     assert.ok(bn.isActive() && !sx.isActive() && !sss.isEmaRsiStV2Active());
     assert.ok(sss.isAnyActive());
-    assert.deepStrictEqual(sss.activeSlots(), ["BN_EMA_RSI_ST_V2_PAPER"]);
+    assert.deepStrictEqual(sss.heldSlots(), ["BN_EMA_RSI_ST_V2_PAPER"]);
     assert.strictEqual(bn.canStart({ reserve: false }).allowed, false);
     assert.strictEqual(sx.canStart({ reserve: false }).allowed, true);
   } finally { bn.clear(); }
@@ -245,6 +245,21 @@ check("market tags: a pair names its market and its strategy", () => {
   assert.deepStrictEqual(tags.tagsFor("sensex_ema_rsi_st_v2", {}), { market: "SENSEX", strategy: "EMA_RSI_ST_V2" });
   assert.deepStrictEqual(tags.tagsFor("ema_rsi_st_v2", {}), { market: "NIFTY", strategy: "EMA_RSI_ST_V2" });
   assert.strictEqual(require("../src/utils/tradeSources").marketOf("fut_ema_rsi_st_v2"), "NIFTY_FUT");
+});
+check("common trade window: a pair's OWN entry window is overridden and restored; an unset one inherits", () => {
+  const ctw = require("../src/utils/commonTradeWindow");
+  withEnv({ COMMON_TRADE_WINDOW_ENABLED: "true", EMA_RSI_ST_V2_ENTRY_START: "10:30", SENSEX_EMA_RSI_ST_V2_ENTRY_START: "09:40", BN_EMA_RSI_ST_V2_ENTRY_START: undefined }, () => {
+    ctw.apply();
+    try {
+      assert.strictEqual(process.env.SENSEX_EMA_RSI_ST_V2_ENTRY_START, ctw.ENTRY_START, "own value overridden");
+      assert.strictEqual(process.env.BN_EMA_RSI_ST_V2_ENTRY_START, undefined, "an unset pair key is not written");
+      assert.strictEqual(pairs.envGet("BN_EMA_RSI_ST_V2_ENTRY_START"), ctw.ENTRY_START, "it inherits NIFTY's overridden window");
+      process.env.COMMON_TRADE_WINDOW_ENABLED = "false";
+      ctw.apply();
+      assert.strictEqual(process.env.SENSEX_EMA_RSI_ST_V2_ENTRY_START, "09:40", "own value restored");
+      assert.strictEqual(process.env.EMA_RSI_ST_V2_ENTRY_START, "10:30");
+    } finally { process.env.COMMON_TRADE_WINDOW_ENABLED = "false"; ctw.apply(); }
+  });
 });
 check("SENSEX stays marketOnly until a running SENSEX pair is switched on", () => {
   assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false);

@@ -269,13 +269,31 @@ const _MODE_TO_SPOT_INDEX = {
   // SAIL stock options — the paper callback is bound to NSE:SAIL-EQ.
   "sail_vwap_st-paper": _SAIL_SPOT,
 };
+// ── (strategy, market) pairs ─────────────────────────────────────────────────
+// A RUNNING pair (config/pairs.js runnable) replays as "<modeKey>-paper"
+// (bn_ema_rsi_st_v2-paper, sensex_ema_rsi_st_v2-paper …) through its OWN router
+// instance of its strategy's builder module — routeModule.forPair(pair) — on its
+// own spot (utils/pairRuntime.js). The registry tables below stay the registry's.
+function _pairOfMode(mode) {
+  try { return require("../config/pairs").byReplayMode(mode); } catch (_) { return null; }
+}
+function _pairRt(mode) {
+  const p = _pairOfMode(mode);
+  return p ? require("../utils/pairRuntime").forPair(p) : null;
+}
 /** The spot index a mode's engine subscribes to. Defaults to NIFTY 50. */
-function _spotIndexOf(mode) { return _MODE_TO_SPOT_INDEX[mode] || _NIFTY_INDEX; }
+function _spotIndexOf(mode) {
+  if (_MODE_TO_SPOT_INDEX[mode]) return _MODE_TO_SPOT_INDEX[mode];
+  const rt = _pairRt(mode);
+  return (rt && rt.spotSymbol()) || _NIFTY_INDEX;
+}
 /** Human name for the underlying, for logs that must not be ambiguous. */
 const _MODE_UNDERLYING_LABEL = {
   "sail_vwap_st-paper": "SAIL_VWAP_ST (SAIL stock, monthly options)",
 };
 function _underlyingLabelOf(mode) {
+  const _prt = _pairRt(mode);
+  if (_prt) return `${_prt.title} (${_prt.market().label})`;
   return _MODE_UNDERLYING_LABEL[mode]
       || (_spotIndexOf(mode) === _BANKNIFTY_INDEX ? "NIFTY BANK" : "NIFTY 50");
 }
@@ -477,6 +495,39 @@ function _resolveSailExpiryEnv({ marketContext, snapshot, date, tradedExpiry }) 
   };
 }
 
+/**
+ * Expiry for a (strategy, market) pair on an options market that has no resolver
+ * of its own above (SENSEX …): its underlying's own override keys
+ * (UNDERLYING_DEFS[U].env), pinned from — in order — the recorded override, the
+ * contract the live session traded, the recorded Market Context Snapshot
+ * (underlyings[U]: weekly when the market lists weeklies, else monthly). NIFTY's
+ * keys are blanked so a NIFTY override can never leak in. Futures / MCX pin
+ * nothing (their contract follows the replay clock / the MCX master).
+ */
+function _resolvePairExpiryEnv({ rt, marketContext, snapshot, date, tradedExpiry }) {
+  const env = {};
+  for (const k of _EXPIRY_PIN_KEYS) env[k] = "";
+  if (!rt.underlyingKey || rt.isFutures) return { env, source: rt.isFutures ? "futures" : "mcx", date: null, type: null, underlying: rt.underlyingKey };
+  const U = require("../config/instrument").underlyingOf(rt.underlyingKey);
+  const kOv = U.env.expiryOverride, kTy = U.env.expiryType;
+  const snap = snapshot || {};
+  const typeOf = (d) => (U.weekly ? "weekly" : "monthly");
+  const _pin = (d, source, type) => { env[kOv] = d; env[kTy] = type || typeOf(d); return { env, source, date: d, type: env[kTy], underlying: U.key }; };
+  const recorded = String(snap[kOv] || "").trim();
+  if (recorded.length >= 8 && _overrideUsableOn(recorded, date)) {
+    return _pin(recorded, "explicit-override", String(snap[kTy] || "").trim().toLowerCase() === "monthly" ? "monthly" : typeOf(recorded));
+  }
+  if (tradedExpiry && _overrideUsableOn(tradedExpiry, date)) return _pin(tradedExpiry, "live-trades");
+  const u = marketContext && marketContext.underlyings && marketContext.underlyings[U.key];
+  const ctxDate = u && (U.weekly ? (u.weeklyExpiry || u.monthlyExpiry) : u.monthlyExpiry);
+  if (ctxDate && _overrideUsableOn(ctxDate, date)) return _pin(ctxDate, "market-context");
+  env[kOv] = ""; env[kTy] = "";
+  return {
+    env, source: `unpinned-${U.key.toLowerCase()}`, date: null, type: typeOf(), underlying: U.key,
+    warn: `no recorded ${U.label} expiry (no ${kOv} in the snapshot, no traded contract, no underlyings.${U.key} in the Market Context Snapshot), so the ${U.label} expiry is auto-computed from the replay clock. The NIFTY expiry was NOT substituted.`,
+  };
+}
+
 function _resolveReplayExpiryEnv({ marketContext, snapshot, mode, date = null, tradedExpiry = null }) {
   // BANKNIFTY resolves through its own index keys — see _resolveBankniftyExpiryEnv.
   if (_spotIndexOf(mode) === _BANKNIFTY_INDEX) {
@@ -486,6 +537,8 @@ function _resolveReplayExpiryEnv({ marketContext, snapshot, mode, date = null, t
   if (_spotIndexOf(mode) === _SAIL_SPOT) {
     return _resolveSailExpiryEnv({ marketContext, snapshot, date, tradedExpiry });
   }
+  // Any other (strategy, market) pair — SENSEX, NIFTY futures, MCX.
+  { const rt = _pairRt(mode); if (rt) return _resolvePairExpiryEnv({ rt, marketContext, snapshot, date, tradedExpiry }); }
   const prefix = _MODE_TO_ENV_PREFIX[mode] || null;   // null for bb_rsi/pa (common key only)
   const snap = snapshot || {};
   const cfg  = snap;   // expiry is ALWAYS historical — read from the recording, never current env
@@ -899,7 +952,8 @@ function _applySettingsOverride(settings) {
 const _MODE_TO_CANONICAL_FILE = Object.fromEntries(require("../config/strategyRegistry").inOrder("replay")
   .map(s => [s.paper.path.slice(1), s.tradesFile]));
 function _lookupCanonicalSession(mode, sessionStartTs) {
-  const fname = _MODE_TO_CANONICAL_FILE[mode];
+  const _p = _pairOfMode(mode);
+  const fname = _MODE_TO_CANONICAL_FILE[mode] || (_p && _p.tradesFile);
   if (!fname) return null;
   const filePath = path.join(require("os").homedir(), "trading-data", fname);
   if (!fs.existsSync(filePath)) return null;
@@ -1054,6 +1108,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // the preflight banner falsely blocks the next replay. Stub the mutators
     // so replays can't touch real state at all; reads still pass through.
     ss_canStart:          sharedSocketState.canStart,
+    ss_holdSlot:          sharedSocketState.holdSlot,
+    ss_releaseSlot:       sharedSocketState.releaseSlot,
     ss_setActive:         sharedSocketState.setActive,
     ss_clear:             sharedSocketState.clear,
     ss_setBbRsiActive:    sharedSocketState.setBbRsiActive,
@@ -1667,6 +1723,9 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGapRunawayStkMode   = () => {};
     sharedSocketState.setSimple930Active     = () => {};
     sharedSocketState.clearSimple930         = () => {};
+    // (strategy, market) pair slots — the generic keyed ones.
+    sharedSocketState.holdSlot               = () => {};
+    sharedSocketState.releaseSlot            = () => {};
 
     // fs: a replay must never mutate the user's canonical state. Rather than
     // enumerate filenames (the old *_paper_trades.json regex missed the per-day
@@ -1952,6 +2011,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGapRunawayStkMode   = orig.ss_clearGapRunawayStkMode;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
     sharedSocketState.clearSimple930         = orig.ss_clearSimple930;
+    sharedSocketState.holdSlot               = orig.ss_holdSlot;
+    sharedSocketState.releaseSlot            = orig.ss_releaseSlot;
     fs.writeFileSync     = orig.fs_writeFileSync;
     fs.appendFileSync    = orig.fs_appendFileSync;
     fs.unlinkSync        = orig.fs_unlinkSync;
@@ -2024,6 +2085,20 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
 // (_MODE_TO_SPOT_INDEX).
 const MODE_TO_MODULE = Object.fromEntries(require("../config/strategyRegistry").inOrder("replay")
   .map(s => [s.paper.path.slice(1), "../" + s.paper.module]));
+/** Route module of a replay mode — the registry's, or a running pair's strategy builder. */
+function _moduleOfMode(mode) {
+  if (MODE_TO_MODULE[mode]) return MODE_TO_MODULE[mode];
+  const p = _pairOfMode(mode);
+  if (!p) return null;
+  const s = require("../config/strategyRegistry").byId(p.strategyId);
+  return s ? "../" + s.paper.module : null;
+}
+/** Every replayable mode: the registry's, then each running pair's. */
+function replayableModes() {
+  let extra = [];
+  try { extra = require("../config/pairs").runnable().map(p => p.replayMode); } catch (_) {}
+  return [...Object.keys(MODE_TO_MODULE), ...extra];
+}
 
 // Every NIFTY / BANK NIFTY strategy sizes off the one common LOT_MULTIPLIER, so
 // pinning that is enough — except EarlyBird, whose own lot count multiplies on
@@ -2156,8 +2231,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
   let liveCacheEntry = null;   // the mounted route module, put back after the replay
 
   try {
-    if (!MODE_TO_MODULE[mode]) {
-      throw new Error(`Unsupported replay mode: ${mode}. Supported: ${Object.keys(MODE_TO_MODULE).join(", ")}`);
+    if (!_moduleOfMode(mode)) {
+      throw new Error(`Unsupported replay mode: ${mode}. Supported: ${replayableModes().join(", ")}`);
     }
 
     // 1. Load recorded data (metadata + small streams). Spot ticks are NOT
@@ -2384,10 +2459,12 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // 4. Load the route module AFTER patches are installed so module-level
     //    state is fresh (Node caches require results — we clear cache for the
     //    route module so its `let state = {...}` reinitialises).
-    const routePath = require.resolve(MODE_TO_MODULE[mode]);
+    const routePath = require.resolve(_moduleOfMode(mode));
     liveCacheEntry = require.cache[routePath];
     delete require.cache[routePath];
-    routeMod = require(MODE_TO_MODULE[mode]);
+    routeMod = require(_moduleOfMode(mode));
+    // A (strategy, market) pair replays through its own instance of the fresh module.
+    { const _p = _pairOfMode(mode); if (_p) routeMod = routeMod.forPair(_p); }
 
     // 5. Set replay clock to session start, then call /start handler.
     //    Paper's /start runs unchanged: it'll preload candles (intercepted →
@@ -2712,7 +2789,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // the instance Express is actually serving.
     if (routeMod || liveCacheEntry) {   // also when the replay copy failed to load
       try {
-        const routePath = require.resolve(MODE_TO_MODULE[mode]);
+        const routePath = require.resolve(_moduleOfMode(mode));
         if (liveCacheEntry) require.cache[routePath] = liveCacheEntry;
         else delete require.cache[routePath];
       } catch (_) {}
@@ -2804,6 +2881,7 @@ function replayPreflight() {
   if (sharedSocketState.isGapRunawayActive && sharedSocketState.isGapRunawayActive()) activeModes.push(sharedSocketState.getGapRunawayMode() || "gap_runaway");
   if (sharedSocketState.isGapRunawayStkActive && sharedSocketState.isGapRunawayStkActive()) activeModes.push(sharedSocketState.getGapRunawayStkMode() || "gap_runaway_stk");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
+  if (sharedSocketState.heldSlots) activeModes.push(...sharedSocketState.heldSlots());   // running (strategy, market) pairs
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -2874,8 +2952,10 @@ function forceClearSharedState() {
     gap_runaway: sharedSocketState.getGapRunawayMode ? sharedSocketState.getGapRunawayMode() : null,
     gap_runaway_stk: sharedSocketState.getGapRunawayStkMode ? sharedSocketState.getGapRunawayStkMode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
+    pairs: sharedSocketState.heldSlots ? sharedSocketState.heldSlots() : [],
     replayInProgress: _replayInProgress,
   };
+  if (sharedSocketState.heldSlots) for (const m of sharedSocketState.heldSlots()) sharedSocketState.releaseSlot(m);
   sharedSocketState.clear();
   sharedSocketState.clearBbRsi();
   sharedSocketState.clearPA();
@@ -2938,6 +3018,7 @@ function deleteSessionMarker({ date, sessionId }) {
 }
 
 module.exports = {
+  replayableModes,
   loadSessionData,
   listRecordings,
   replaySession,
@@ -2950,5 +3031,5 @@ module.exports = {
   // getQuotes and write replay-clock data into today's real recording.
   isReplayInProgress: () => _replayInProgress,
   // exposed for tests
-  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _MODE_TO_CANONICAL_FILE, _resolveReplayExpiryEnv, _resolveReplayInstrumentEnv, _buildReplayCacheKey },
+  _internals: { _resolvePairExpiryEnv, _moduleOfMode, _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _MODE_TO_CANONICAL_FILE, _resolveReplayExpiryEnv, _resolveReplayInstrumentEnv, _buildReplayCacheKey },
 };

@@ -123,6 +123,17 @@ function startAllRoster() {
       paperOff: !paperEnabled(s),
     });
   }
+  // Running (strategy, market) pairs switched ON (config/pairs.js runnable),
+  // each at its own /<modeKey>-paper. Paper switch: the pair's own value, else
+  // its strategy's NIFTY value (pairRuntime.paperEnabled).
+  const pairs = require('../config/pairs');
+  const pairRuntime = require('./pairRuntime');
+  for (const p of pairs.runnable({ enabledOnly: true })) {
+    const routes = found.get(norm(p.modeKey));
+    if (!routes || !routes.paper) continue;
+    const rt = pairRuntime.forPair(p);
+    roster.push({ mode: p.envPrefix, label: rt.title, paper: `${routes.paper}/start`, paperOff: !rt.paperEnabled() });
+  }
   return roster;
 }
 
