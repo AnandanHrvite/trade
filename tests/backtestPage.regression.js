@@ -507,6 +507,20 @@ check("EMA_RSI_ST BANKNIFTY expiry-day-only trades only on BANKNIFTY's own (mont
   } finally { if (hadT === undefined) delete process.env.TRADE_EXPIRY_DAY_ONLY; else process.env.TRADE_EXPIRY_DAY_ONLY = hadT; }
 });
 
+check("EMA_RSI_ST NIFTY_FUT expiry-day-only trades on the month's expiry days paper trades on", async () => {
+  process.env.FUT_EMA_RSI_ST_EXPIRY_DAY_ONLY = "true";
+  try {
+    const neu = await withVixOff(() => runNew({ strategy: "emaRsiSt", market: "NIFTY_FUT", settings: "current", from: FROM, to: TO, resolution: "5" }));
+    const rt = require("../src/utils/pairRuntime").forStrategy("emaRsiSt", "NIFTY_FUT");
+    assert.ok(neu.result.trades.length > 0, "no futures trade on a monthly expiry day — the futures roll hid every expiry");
+    assert.ok(neu.result.trades.length < V1_RUNS.NIFTY_FUT.result.trades.length, "expiry-only should drop non-expiry days");
+    for (const t of neu.result.trades) {
+      const d = new Date((t.entryTs + 19800) * 1000).toISOString().slice(0, 10);
+      assert.ok(rt.isExpiryDay(t.entryTs * 1000), `NIFTY_FUT traded on ${d}, not a day paper calls expiry`);
+    }
+  } finally { delete process.env.FUT_EMA_RSI_ST_EXPIRY_DAY_ONLY; }
+});
+
 check("the old EMA_RSI_ST page stays NIFTY: NIFTY candles, NIFTY lot, no market field", async () => {
   const mark = fetchLog.length;
   const oldRes = await withVixOff(() => runOld("emaRsiSt", `from=${FROM}&to=${TO}&resolution=5`));

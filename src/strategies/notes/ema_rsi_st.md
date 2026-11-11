@@ -4,6 +4,8 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — `emaRsiStBacktest.js` NIFTY_FUT expiry-day-only: the expiry set uses the month's expiry day (paper's `rt.isExpiryDay`), not the traded contract's expiry — the futures roll made it match no day, so the run had 0 trades.
+
 - 2026-11-11 — `emaRsiStPaper.js` (V1) is a `create(pair)` builder like V2: the default export is the NIFTY instance (same path, files, keys, logs, "PAPER" notify tag — golden byte-identical); every other offered market (`/sensex_ema_rsi_st-paper`, `/bn_…`, `/fut_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`), has its own spread limit / expiry-day switch and crash snapshot. `forPrefix()` reads pair keys (and the pair's entry window) with NIFTY inheritance (`pairs.envGet`; legacy `TRADE_ENTRY_*` included).
 
 - 2026-11-11 — `emaRsiStV2Paper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same path, files, keys, logs — golden byte-identical); every other market's V2 pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`) and has its own spread limit / expiry-day switch. Engine reads pair keys with NIFTY inheritance (`pairs.envGet`).

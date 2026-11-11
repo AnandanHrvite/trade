@@ -136,7 +136,12 @@ async function _runJob(id, p) {
         if (!firstBar.has(d)) firstBar.set(d, c);
       }
       const expirySet = new Set();
+      // Futures: the traded contract rolls two days BEFORE its expiry, so its
+      // expiry never equals today — use the month's expiry day, as paper's
+      // rt.isExpiryDay() does.
+      const _futRt = M.isFutures ? require("../utils/pairRuntime").forStrategy("emaRsiSt", M.key) : null;
       for (const [d, c] of firstBar) {
+        if (_futRt) { if (_futRt.isExpiryDay(c.time * 1000)) expirySet.add(d); continue; }
         const k = backtestMarket.contractAt(M, c.close, "CE", c.time);
         if (k && k.expiry === d) expirySet.add(d);
       }
