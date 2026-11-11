@@ -624,11 +624,14 @@ function simulateSell(reason, kind) {
   const pnl        = _pnlRes.pnl;
 
   // Trade journal exit — before the trade object is built (observer only).
+  // A stop / lock exit aimed at the level it sits at (the journal's last stop);
+  // anything else at the price it was taken at.
+  const _aim = (kind === "sl" || kind === "trail") ? _stopLevelOf(pos) : null;
   tradeJournal.onExit(pos, {
     reason, kind: kind || null,
     spot: exitSpot, optionLtp: pos.isFutures ? null : exitOptLtp,
     bid: _exitQuote ? _exitQuote.bid : null, ask: _exitQuote ? _exitQuote.ask : null,
-    expectedPrice: pos.isFutures ? exitSpot : _ltpAtExit, fillPrice: pos.isFutures ? exitSpot : exitOptLtp,
+    expectedPrice: _aim != null ? _aim : (pos.isFutures ? exitSpot : _ltpAtExit), fillPrice: pos.isFutures ? exitSpot : exitOptLtp,
     favPts: (exitSpot - pos.entrySpot) * (pos.side === "CE" ? 1 : -1), pnlRs: _pnlRes.gross,
     candlesHeld: (Date.now() - pos.entryTimeMs) / (RES_MIN * 60000),
     nowMs: Date.now(),
