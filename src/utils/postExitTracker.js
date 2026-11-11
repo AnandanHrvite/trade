@@ -14,6 +14,9 @@
  * markets, 23:30 IST for MCX. Both tables are this file's own small copy of
  * the market list; src/config/markets.js will own them once it lands.
  *
+ * Each record carries the trade's `tradeId` (tradeLogger: the trade journal's
+ * id; null for a trade with no journal) — the join key back to the trade.
+ *
  * At the close each trade gets ONE summary line in the server log (tagged with
  * the strategy, so the Server Logs strategy filter shows it) and one JSON line
  * in ~/trading-data/post_exit/YYYY-MM-DD.jsonl for later analysis.
@@ -166,6 +169,7 @@ function track(mode, trade, tags) {
   const entrySpot = Number(trade.spotAtEntry != null ? trade.spotAtEntry : trade.entrySpot);
   trackers.push({
     mode: String(mode), market, strategy: (tags && tags.strategy) || String(mode).toUpperCase(),
+    tradeId: (tags && tags.tradeId) || null,
     sym, dir, closeMin,
     side: trade.side, symbol: trade.symbol || null,
     exitSpot, exitMs: now, exitTime: trade.exitTime || ist.hms,
@@ -223,6 +227,7 @@ function summarise(k) {
   return {
     type: "post_exit", date: k.date, mode: k.mode,
     market: k.market || "NIFTY", strategy: k.strategy || String(k.mode).toUpperCase(),
+    tradeId: k.tradeId || null,
     underlying: k.sym, marketClose: hhmmOf(k.closeMin != null ? k.closeMin : NSE_CLOSE_MIN),
     side: k.side, symbol: k.symbol, entryTime: k.entryTime, spotAtEntry: k.spotAtEntry,
     entryReason: k.entryReason != null ? k.entryReason : null,
