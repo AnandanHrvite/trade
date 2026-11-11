@@ -302,7 +302,8 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   check("the paper route actually WRITES the funnel to the skip log", () => {
     for (const f of ["orbPaper.js"]) {
       const src = fs.readFileSync(path.join(__dirname, "../src/routes", f), "utf-8");
-      const m = src.match(/appendSkipLog\("orb",\s*\{\s*gate:\s*"signal_none"[^}]*\}/);
+      // The route is a create(pair) builder: the skip-log mode is the pair's MODE ("orb" on NIFTY).
+      const m = src.match(/appendSkipLog\((?:"orb"|MODE),\s*\{\s*gate:\s*"signal_none"[^}]*\}/);
       assert.ok(m, `${f} has no signal_none skip log`);
       assert.ok(/funnel:\s*orbStrategy\.summarizeGates\(sig\)/.test(m[0]),
         `${f} logs signal_none WITHOUT the funnel — the README claim would be false`);
@@ -352,9 +353,24 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   check("paper persists a position for crash recovery", () => {
     for (const f of ["orbPaper.js"]) {
       const src = fs.readFileSync(path.join(__dirname, "../src/routes", f), "utf-8");
-      assert.ok(/saveOrbPosition/.test(src),  `${f} never persists — a restart mid-trade leaves an untracked position`);
-      assert.ok(/clearOrbPosition/.test(src), `${f} never clears the snapshot — stale orphan warnings on every boot`);
+      // Persisted through the pair runtime: on NIFTY rt.persist is positionPersist's
+      // saveOrbPosition / clearOrbPosition (checked below), elsewhere the pair's own snapshot.
+      assert.ok(/rt\.persist\.save\(/.test(src),  `${f} never persists — a restart mid-trade leaves an untracked position`);
+      assert.ok(/rt\.persist\.clear\(/.test(src), `${f} never clears the snapshot — stale orphan warnings on every boot`);
     }
+  });
+
+  check("the NIFTY instance persists through saveOrbPosition / clearOrbPosition", () => {
+    const pp = require("../src/utils/positionPersist");
+    const rt = require("../src/utils/pairRuntime").forStrategy("orb", "NIFTY");
+    const calls = [];
+    const saved = { s: pp.saveOrbPosition, c: pp.clearOrbPosition };
+    assert.strictEqual(typeof saved.s, "function"); assert.strictEqual(typeof saved.c, "function");
+    pp.saveOrbPosition = (p) => calls.push(["save", p.side]);
+    pp.clearOrbPosition = () => calls.push(["clear"]);
+    try { rt.persist.save({ side: "CE" }, {}); rt.persist.clear(); }
+    finally { pp.saveOrbPosition = saved.s; pp.clearOrbPosition = saved.c; }
+    assert.deepStrictEqual(calls, [["save", "CE"], ["clear"]]);
   });
 
   check("the paper entry path guards the await window against a duplicate entry", () => {
@@ -411,7 +427,7 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   // now a hard gate: an entry the pool cannot fund is refused and skip-logged, so
   // the paper book can never spend money it does not have.
   check("the paper capital gate REFUSES an unfunded entry instead of entering anyway", () => {
-    const i = PAPER_SRC.indexOf('capitalPool.gate("orb"');
+    const i = PAPER_SRC.indexOf("capitalPool.gate(MODE");   // MODE = "orb" on NIFTY
     assert.ok(i >= 0, "orbPaper does not run capitalPool.gate() before entering");
     assert.ok(!/capitalPool\.check\(/.test(PAPER_SRC), "orbPaper still uses the advisory capitalPool.check()");
     assert.ok(!/entry taken anyway/.test(PAPER_SRC), "orbPaper still enters when the pool cannot fund the trade");
