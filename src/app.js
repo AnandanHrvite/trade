@@ -896,6 +896,7 @@ const OPEN_PATHS = [
   "/login-logs/clear",      // reset login logs
   "/settings",              // settings page (read-only view)
   "/settings/data",         // AJAX poll for current values
+  "/settings/markets",      // read-only next expiry per market (Settings → Markets)
   "/settings/audit",        // read-only settings-change audit view
   "/trade-logs",            // per-trade JSONL viewer (read-only)
   "/trade-logs/list",       // JSON: list of daily JSONL files
