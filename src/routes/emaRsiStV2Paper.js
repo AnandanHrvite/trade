@@ -47,6 +47,7 @@ const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistory
 const { isTradingAllowed } = require("../services/marketData");
 const vixFilter = require("../services/vixFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const tradeJournal = require("../utils/tradeJournal");
 const chartBackfill = require("../utils/chartBackfill");
 const aiExport    = require("../utils/aiExport");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -325,6 +326,58 @@ require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => ptState
 // ── Simulation clock ────────────────────────────────────────────────────────
 let _simClockMs = 0;
 function simNow() { return ptState._simMode ? _simClockMs : Date.now(); }
+
+// ── Trade journal (utils/tradeJournal) — OBSERVER ONLY ───────────────────────
+// Everything below writes pos.journal and nothing reads it back into a decision.
+// V2 has no stop variable of its own: its only automatic exits are the profit
+// lock / premium stop (options, on the premium) and the futures stop (on the
+// index). The journal's "stop" is the level that exit fills at, recomputed with
+// the same inputs the per-tick check uses, and recorded whenever it moves.
+let _jStopLvl = null;   // last level handed to onStopChange for the open position
+
+function _jStop(pos, spot, ltp) {
+  try {
+    let lvl = null, kind, why, dir = 1;   // dir: the way a tighter stop moves
+    if (rt.instrumentName() === "NIFTY_FUTURES") {
+      dir  = pos.side === "PE" ? -1 : 1;   // a short's stop trails DOWN
+      lvl = tradeGuards.futuresStopLevel(pos.side, pos.entryPrice, pos.mfeSpotPts);
+      kind = _jStopLvl == null ? "initial" : "trail";
+      why  = `futures stop (best ${pos.mfeSpotPts || 0}pt)`;
+    } else if (pos.optionEntryLtp) {
+      const e = pos.optionEntryLtp, b = pos.bestOptionLtp;
+      lvl = tradeGuards.exitLevelLtp(e, b);
+      const stop = tradeGuards.premiumStopLtp(e, b);
+      if (lvl != null && lvl !== stop) { kind = "lock"; why = `profit lock floor (peak ₹${b}, entry ₹${e})`; }
+      else { kind = _jStopLvl == null ? "initial" : "trail"; why = `premium stop (peak ₹${b || e}, entry ₹${e})`; }
+    }
+    if (lvl == null || lvl === _jStopLvl) return;
+    // Only a settings change can loosen it (every level here only ratchets tighter).
+    if (_jStopLvl != null && (lvl - _jStopLvl) * dir < 0) kind = "manual";
+    tradeJournal.onStopChange(pos, { from: _jStopLvl, to: lvl, kind, reason: why, spot, ltp, nowMs: simNow() });
+    _jStopLvl = lvl;
+  } catch (_) {}
+}
+
+// A NIFTY option's entry premium is known only at the contract's first poll
+// (~1 s after the position opens) — complete the journal's entry fill there.
+function _jEntryPremium(pos, ltp) {
+  try {
+    const e = pos && pos.journal && pos.journal.entry;
+    if (!e || e.optionLtp != null || !(ltp > 0)) return;
+    e.optionLtp = ltp;
+    e.fill = ltp;
+    // A bought option: paying above the price the signal saw is adverse.
+    if (e.expectedPrice != null) e.slippagePts = Math.round((ltp - e.expectedPrice) * 100) / 100;
+  } catch (_) {}
+}
+
+function _jExitKind(reason) {
+  const r = String(reason || "");
+  if (/^Profit lock/i.test(r) || /^Stop-loss trail/i.test(r)) return "trail";
+  if (/^Stop-loss/i.test(r)) return "sl";
+  if (/^Manual/i.test(r))    return "manual";
+  return "eod";   // EOD square-off, auto-stop, shutdown, simulation end
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -627,6 +680,7 @@ function _publishOptionLtp(symbol, ltp, at) {
   if (!ptState.position.optionEntryLtp) {
     ptState.position.optionEntryLtp = ltp;
     ptState.position.optionEntryLtpTime = istNow();
+    _jEntryPremium(ptState.position, ltp);
     // Real premium known — replace the estimate blocked at entry.
     capitalPool.updateBlock(MODE, (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
     log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry})`);
@@ -955,6 +1009,27 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
     }
   }
 
+  // Trade journal entry (observer only). An option bought at its first LTP gets
+  // its fill from _jEntryPremium once that poll lands; futures fill at the index.
+  _jStopLvl = null;
+  {
+    const _jp  = ptState.position;
+    const _jeq = entryMeta.entryQuote || null;
+    const _jFut = rt.instrumentName() === "NIFTY_FUTURES";
+    tradeJournal.onEntry(_jp, {
+      reason, signal: side === "CE" ? "BUY_CE" : "BUY_PE",
+      indicators: { rsi: _jp.rsiAtEntry, ema20: _jp.ema20AtEntry, ema50: _jp.ema50AtEntry,
+        supertrend: _jp.supertrendAtEntry, stTrend: _jp.stTrendAtEntry, trendSource: _jp.trendSource,
+        signalStrength: _signalStrength },
+      spot: _entrySpot, optionLtp: _jFut ? null : (_jp.optionEntryLtp || null),
+      bid: _jeq ? _jeq.bid : null, ask: _jeq ? _jeq.ask : null,
+      vix: _vixAtEntry, expiry: _jp.optionExpiry,
+      market: rt.marketKey, mode: MODE, isFutures: _jFut, qty,
+      expectedPrice: _jFut ? price : (_jeq ? _jeq.ltp : null),
+      candles: ptState.candles, nowMs: simNow(),
+    });
+  }
+
   // Crash-recovery snapshot: written on entry, cleared on exit. app.js reconciles it against the broker book on boot.
   if (!ptState._simMode && !ptState._simSession) {
     try { rt.persist.save(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
@@ -1059,6 +1134,30 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   let _exitInd = {};
   try { _exitInd = engine.getSignal(ptState.candles, ENG({ silent: true, skipTimeCheck: true })) || {}; } catch (_) {}
 
+  // Trade journal exit (observer only). A profit-lock / stop exit aimed at the
+  // level _jStop last recorded; any other exit at the quote's LTP (bid fill) or
+  // the price it filled at.
+  {
+    const _jp    = ptState.position;
+    const _jKind = _jExitKind(reason);
+    const _jSpot = spotAtExit || exitPrice;
+    const _jQ    = !isFutures && _exitFill === "bid" && ptState.optionQuote ? ptState.optionQuote : null;
+    const _jFill = isFutures ? exitPrice : (exitOptionLtp || null);
+    tradeJournal.onExit(_jp, {
+      reason, kind: _jKind,
+      indicators: { rsi: _exitInd.rsi, ema20: _exitInd.ema20, ema50: _exitInd.ema50,
+        supertrend: _exitInd.supertrend, stTrend: _exitInd.stTrend },
+      spot: _jSpot, optionLtp: isFutures ? null : (exitOptionLtp || null),
+      bid: _jQ ? _jQ.bid : null, ask: _jQ ? _jQ.ask : null,
+      expectedPrice: (_jKind === "sl" || _jKind === "trail") && _jStopLvl != null ? _jStopLvl : (_jQ ? _jQ.ltp : _jFill),
+      fillPrice: _jFill,
+      favPts: (_jSpot - (spotAtEntry || entryPrice)) * (side === "CE" ? 1 : -1),
+      pnlRs: rawPnl, candlesHeld: _jp.candlesHeld || 0,
+      candles: ptState.candles, nowMs: simNow(),
+    });
+    _jStopLvl = null;
+  }
+
   const trade = {
     side,
     symbol,
@@ -1116,6 +1215,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     isFutures:        isFutures,
     isManual:         _isManualEntry,
     instrument:       INSTR,
+    ...tradeJournal.fields(ptState.position),   // { journal } — observer only
   };
   // Other markets: the record names its market, strategy and spot (consolidation,
   // post-exit tracking and the MCP read them) and how each leg was filled.
@@ -1292,6 +1392,9 @@ async function onCandleClose(candle) {
     // TRADE_STOP_TIME session auto-stop. Deleted, not toggled off.
 
     const _p    = ptState.position;
+    // Trade journal (observer only): its minute rows take a route candle only when
+    // the candles ARE 1-minute; on 5/15-minute candles it builds them from ticks.
+    if (TRADE_RES === 1) tradeJournal.onCandle(_p, { candle, indicators, nowMs: simNow() });
     const _est  = _p.side === "CE" ? (candle.close - _p.spotAtEntry).toFixed(1) : (_p.spotAtEntry - candle.close).toFixed(1);
     const _optEntry = _p.optionEntryLtp ? `₹${_p.optionEntryLtp}` : "—";
     const _optNow   = ptState.optionLtp  ? `₹${ptState.optionLtp}`  : "—";
@@ -1775,6 +1878,13 @@ function onTick(tick) {
     // Favourable spot extreme (best price seen) — observer-only, for the UI/log.
     if (_exPos.side === "CE") { if (!_exPos.bestPrice || ltp > _exPos.bestPrice) _exPos.bestPrice = ltp; }
     else                      { if (!_exPos.bestPrice || ltp < _exPos.bestPrice) _exPos.bestPrice = ltp; }
+    // Trade journal (observer only): this tick, then the exit level if it moved.
+    const _jFut = rt.instrumentName() === "NIFTY_FUTURES";
+    const _jLtp = _jFut ? null : (ptState.optionLtp || null);
+    const _jRs  = _jFut ? _favPts * (_exPos.qty || 0)
+                : (_exPos.optionEntryLtp && _jLtp ? (_jLtp - _exPos.optionEntryLtp) * (_exPos.qty || 0) : null);
+    tradeJournal.onTick(_exPos, { favPts: _favPts, pnlRs: _jRs, spot: ltp, ltp: _jLtp, nowMs: simNow() });
+    _jStop(_exPos, ltp, _jLtp);
   }
 
   // ── Global profit lock (shared across every strategy — see tradeGuards) ──
