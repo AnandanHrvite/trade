@@ -75,10 +75,14 @@ check("BANKNIFTY / NIFTY_FUT keep the old twins' paths and data files", () => {
   assert.deepStrictEqual([fut.paperPath, fut.tradesFile, fut.modeKey], ["/fut_ema_rsi_st_v2-paper", "fut_ema_rsi_st_v2_paper_trades.json", "fut_ema_rsi_st_v2"]);
   assert.strictEqual(rtOf("SENSEX").paperPath, "/sensex_ema_rsi_st_v2-paper");
 });
-check("running pairs = every offered non-home V2 pair; none other runs", () => {
-  const ids = pairs.runnable().map(p => p.marketKey);
+check("running pairs = every offered non-home V2 / ORB pair; none other runs", () => {
+  const ids = pairs.runnable().filter(p => p.strategyId === "emaRsiStV2").map(p => p.marketKey);
   assert.deepStrictEqual(ids, ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"]);
-  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2"));
+  // ORB needs the 09:15 index open — never offered on MCX.
+  assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === "orb").map(p => p.marketKey), ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"]);
+  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2" || p.strategyId === "orb"));
+  assert.strictEqual(pairs.byReplayMode("sensex_orb-paper").marketKey, "SENSEX");
+  assert.strictEqual(pairs.byReplayMode("orb-paper"), null, "ORB's home mode is the registry's");
   assert.strictEqual(pairs.byReplayMode("bn_ema_rsi_st_v2-paper").marketKey, "BANKNIFTY");
   assert.strictEqual(pairs.byReplayMode("ema_rsi_st_v2-paper"), null, "the home mode is the registry's");
 });
@@ -238,7 +242,7 @@ check("logs: a pair logs under its own mode key; the registry maps are untouched
   assert.ok(sl.filePathFor("bn_ema_rsi_st_v2", "2026-11-12").endsWith("skips/bn_ema_rsi_st_v2_paper_skips_2026-11-12.jsonl"));
   assert.ok(!("sensex_ema_rsi_st_v2" in tl.DAILY_PREFIX_BY_MODE));
   assert.ok(tl.modes().includes("sensex_ema_rsi_st_v2") && sl.modes().includes("fut_ema_rsi_st_v2"));
-  assert.throws(() => tl.dailyFilePathFor("bn_orb"), /unknown mode/, "a pair that does not run has no log");
+  assert.throws(() => tl.dailyFilePathFor("bn_st_rsi_piv_bb"), /unknown mode/, "a pair that does not run has no log");
 });
 check("market tags: a pair names its market and its strategy", () => {
   const tags = require("../src/utils/logTags");
@@ -270,7 +274,77 @@ check("SENSEX stays marketOnly until a running SENSEX pair is switched on", () =
     assert.strictEqual(require("../src/config/markets").get("SENSEX").traded, true);
   });
   // A pair that does not run lifts nothing.
-  withEnv({ SENSEX_ORB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
+  withEnv({ SENSEX_ST_RSI_PIV_BB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
+  // A running ORB pair does.
+  withEnv({ SENSEX_ORB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), true));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("ORB runs as a pair (routes/orbPaper.js)");
+
+const orbOf = (mk) => pairRuntime.forStrategy("orb", mk);
+check("NIFTY is the registry's ORB; other markets get their own path, file, slot", () => {
+  const n = orbOf("NIFTY"), bn = orbOf("BANKNIFTY");
+  assert.deepStrictEqual(
+    [n.home, n.modeKey, n.envPrefix, n.paperPath, n.replayMode, n.tradesFile, n.socketSlot.mode, n.notifyMode, n.sidebarKey, n.historySidebarKey, n.spotLabel, n.oiApplies],
+    [true, "orb", "ORB", "/orb-paper", "orb-paper", "orb_paper_trades.json", "ORB_PAPER", "ORB-PAPER", "orbPaper", "orbHistory", "NIFTY", true]);
+  assert.deepStrictEqual([bn.paperPath, bn.tradesFile, bn.modeKey, bn.socketSlot.mode, bn.notifyMode, bn.oiApplies],
+    ["/bn_orb-paper", "bn_orb_paper_trades.json", "bn_orb", "BN_ORB_PAPER", "BN_ORB-PAPER", false]);
+  assert.strictEqual(orbOf("SENSEX").paperPath, "/sensex_orb-paper");
+  assert.strictEqual(orbOf("NIFTY_FUT").instrumentName(), "NIFTY_FUTURES");
+  assert.strictEqual(orbOf("CRUDE"), null, "ORB is not offered on MCX");
+  for (const mk of ["BANKNIFTY", "SENSEX", "NIFTY_FUT", "SAIL"]) assert.strictEqual(orbOf(mk).enabled(), false, `${mk} ships OFF`);
+});
+check("the NIFTY instance holds ORB's own named slot; a pair holds its own", () => {
+  const sss = require("../src/utils/sharedSocketState");
+  const slot = orbOf("NIFTY").socketSlot;
+  slot.set();
+  try { assert.ok(sss.isOrbActive() && !orbOf("BANKNIFTY").socketSlot.isActive()); }
+  finally { slot.clear(); }
+  assert.ok(!sss.isOrbActive());
+  const bn = orbOf("BANKNIFTY").socketSlot;
+  bn.set();
+  try { assert.ok(bn.isActive() && !sss.isOrbActive() && !rtOf("BANKNIFTY").socketSlot.isActive(), "V2's BANKNIFTY slot is a different one"); }
+  finally { bn.clear(); }
+});
+check("engine: a pair prefix reads its own ORB keys, else NIFTY's; no prefix reads NIFTY only", () => {
+  const eng = require("../src/strategies/orb_breakout");
+  const t = Math.floor(istMs("2026-11-12", 9, 20) / 1000);
+  const c = [{ time: t - 300, open: 1, high: 1, low: 1, close: 1 }, { time: t, open: 1, high: 1, low: 1, close: 1 }];
+  withEnv({ ORB_RANGE_END: "09:30", BN_ORB_RANGE_END: undefined, SENSEX_ORB_RANGE_END: "09:45" }, () => {
+    assert.strictEqual(eng.getSignal(c, { silent: true }).reason, "Building opening range (waiting for 09:30 IST)");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "BN_ORB" }).reason, "Building opening range (waiting for 09:30 IST)", "inherits NIFTY's");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "SENSEX_ORB" }).reason, "Building opening range (waiting for 09:45 IST)", "own value wins");
+  });
+  const t10 = Math.floor(istMs("2026-11-12", 10, 0) / 1000);
+  const c10 = [{ time: t10 - 300, open: 1, high: 1, low: 1, close: 1 }, { time: t10, open: 1, high: 1, low: 1, close: 1 }];
+  withEnv({ ORB_ENTRY_END: undefined, BN_ORB_ENTRY_END: "09:50", ORB_RANGE_END: undefined, ORB_ENTRY_START: undefined }, () => {
+    assert.ok(!/^Past /.test(eng.getSignal(c10, { silent: true }).reason), "NIFTY never reads a pair key");
+    assert.strictEqual(eng.getSignal(c10, { silent: true, prefix: "BN_ORB" }).reason, "Past 09:50 IST — no new ORB entries (breakout is stale)");
+  });
+  // the opening range itself follows the pair's window
+  const day = [9 * 60 + 15, 9 * 60 + 20, 9 * 60 + 25, 9 * 60 + 30].map((m, i) => ({ time: Math.floor(istMs("2026-11-12", 0, m) / 1000), open: 100, high: 100 + i, low: 100 - i, close: 100 }));
+  withEnv({ ORB_RANGE_END: undefined, SENSEX_ORB_RANGE_END: "09:35" }, () => {
+    assert.deepStrictEqual([eng.computeOpeningRange(day).high, eng.computeOpeningRange(day, "SENSEX_ORB").high], [102, 103]);
+  });
+});
+check("route: one builder serves every offered market; NIFTY is the default export", () => {
+  const route = require("../src/routes/orbPaper");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.pairRuntime.home, true);
+  const bn = route.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== route && typeof bn.stopSession === "function" && typeof route.stopSession === "function");
+  assert.strictEqual(bn.pairRuntime.modeKey, "bn_orb");
+  assert.strictEqual(route.forMarket("BANKNIFTY"), bn, "one instance per pair");
+  assert.strictEqual(route.forMarket("CRUDE"), null);
+  for (const p of pairs.runnable().filter(x => x.strategyId === "orb")) assert.ok(route.forPair(p), p.id);
+});
+check("route source: market facts come from the runtime, the journal is hooked, OI stays NIFTY-only", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../src/routes/orbPaper.js"), "utf8");
+  assert.ok(!/NSE:NIFTY50-INDEX/.test(src), "a spot symbol is typed in the route");
+  assert.ok(!/(capitalPool|skipLogger|tradeLogger)\.\w+\("orb"/.test(src), "the mode key is typed in the route");
+  assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(src) && /if \(rt\.oiApplies\) await oiFilter\.recordOiSample/.test(src));
+  for (const h of ["onEntry", "onTick", "onStopChange", "onExit", "fields"]) assert.ok(src.includes(`tradeJournal.${h}(`), `tradeJournal.${h} not hooked`);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
