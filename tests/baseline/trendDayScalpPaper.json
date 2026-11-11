@@ -1,0 +1,493 @@
+{
+  "baselineVersion": 1,
+  "strategy": "trendDayScalpPaper",
+  "mode": "trend-day-scalp-paper",
+  "totalTrades": 2,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 502.43,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O0624150CE",
+          "strike": 24150,
+          "qty": 65,
+          "entryTime": "5/10/2026, 12:55:00",
+          "exitTime": "5/10/2026, 12:56:40",
+          "entrySpot": 24201.25,
+          "exitSpot": 24215.3,
+          "entryLtp": 95.95,
+          "exitLtp": 104.65,
+          "reason": "Profit lock trail 85% — premium Rs104.65 fell to the trailed floor Rs105.56 (keeps 85% of the gain to peak Rs107.25, entry Rs95.95)",
+          "pnl": 502.43
+        }
+      ],
+      "skips": {
+        "total": 10,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 10,
+        "byGate": [
+          {
+            "gate": "setup_incomplete",
+            "count": 10
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O0624150CE",
+          "qty": 65,
+          "entryPrice": 24201.25,
+          "exitPrice": 24215.3,
+          "spotAtEntry": 24201.25,
+          "spotAtExit": 24215.3,
+          "optionEntryLtp": 95.95,
+          "optionExitLtp": 104.65,
+          "bestOptionLtp": 107.25,
+          "entryTime": "5/10/2026, 12:55:00",
+          "exitTime": "5/10/2026, 12:56:40",
+          "entryBarTime": 1791185100,
+          "exitBarTime": 1791185100,
+          "pnl": 502.43,
+          "pnlMode": "option premium: entry ₹95.95 → exit ₹104.65",
+          "exitReason": "Profit lock trail 85% — premium Rs104.65 fell to the trailed floor Rs105.56 (keeps 85% of the gain to peak Rs107.25, entry Rs95.95)",
+          "entryReason": "TREND DAY SCALP CE: CE day (range 144.5pt, ext 60.37pt) → pullback to zone 24191.4 (EMA20 24191.4) → reclaim close 24201.4, body 30.65pt >= 9.05pt (depth 38.35pt)",
+          "optionStrike": 24150,
+          "optionExpiry": "26O06",
+          "optionType": "CE",
+          "optionEntrySymbol": "NSE:NIFTY26O0624150CE",
+          "signalStrength": "STRONG",
+          "slRawPts": 38.35,
+          "zone": 24191.4,
+          "vwapAtEntry": 24165.49,
+          "emaAtEntry": 24191.4,
+          "atrAtEntry": 22.63,
+          "bodyPts": 30.65,
+          "pullbackLow": 24163.05,
+          "pullbackHigh": 24204.6,
+          "gateSide": "CE",
+          "gateRangePts": 144.5,
+          "gateRangePct": 0.6,
+          "gateVwap": 24089.83,
+          "gateExtensionPts": 60.37,
+          "mfeSpotPts": 18.25,
+          "mfePnl": 734.5,
+          "maeSpotPts": 0,
+          "maePnl": 0,
+          "secsToMFE": 72,
+          "secsToMAE": 0,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 8,
+          "pathPts": [
+            8.3,
+            14.4,
+            16.2
+          ],
+          "durationMs": 100000,
+          "charges": 63.07,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -211.94,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1924150CE",
+          "strike": 24150,
+          "qty": 65,
+          "entryTime": "14/10/2026, 14:00:00",
+          "exitTime": "14/10/2026, 15:30:00",
+          "entrySpot": 24220.35,
+          "exitSpot": 24218.15,
+          "entryLtp": 205.95,
+          "exitLtp": 203.9,
+          "reason": "Session stopped",
+          "pnl": -211.94
+        }
+      ],
+      "skips": {
+        "total": 34,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 34,
+        "byGate": [
+          {
+            "gate": "setup_incomplete",
+            "count": 33
+          },
+          {
+            "gate": "sl_too_wide",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1924150CE",
+          "qty": 65,
+          "entryPrice": 24220.35,
+          "exitPrice": 24218.15,
+          "spotAtEntry": 24220.35,
+          "spotAtExit": 24218.15,
+          "optionEntryLtp": 205.95,
+          "optionExitLtp": 203.9,
+          "bestOptionLtp": 215.7,
+          "entryTime": "14/10/2026, 14:00:00",
+          "exitTime": "14/10/2026, 15:30:00",
+          "entryBarTime": 1791966600,
+          "exitBarTime": 1791972000,
+          "pnl": -211.94,
+          "pnlMode": "option premium: entry ₹205.95 → exit ₹203.9",
+          "exitReason": "Session stopped",
+          "entryReason": "TREND DAY SCALP CE: CE day (range 128.55pt, ext 64.17pt) → pullback to zone 24216.93 (VWAP 24216.93) → reclaim close 24220.6, body 6.6pt >= 4.76pt (depth 12.8pt)",
+          "optionStrike": 24150,
+          "optionExpiry": "26O19",
+          "optionType": "CE",
+          "optionEntrySymbol": "NSE:NIFTY26O1924150CE",
+          "signalStrength": "STRONG",
+          "slRawPts": 12.8,
+          "zone": 24216.93,
+          "vwapAtEntry": 24216.93,
+          "emaAtEntry": 24193.66,
+          "atrAtEntry": 11.89,
+          "bodyPts": 6.6,
+          "pullbackLow": 24207.8,
+          "pullbackHigh": 24220.95,
+          "gateSide": "CE",
+          "gateRangePts": 128.55,
+          "gateRangePct": 0.53,
+          "gateVwap": 24252.13,
+          "gateExtensionPts": 64.17,
+          "mfeSpotPts": 18.75,
+          "mfePnl": 633.75,
+          "maeSpotPts": -3.9,
+          "maePnl": -204.75,
+          "secsToMFE": 932,
+          "secsToMAE": 5020,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 90,
+          "pathPts": [
+            1.2,
+            1.5,
+            3.05,
+            4.3,
+            5.65,
+            6.5,
+            6.55,
+            7.45,
+            7.7,
+            7.35,
+            7.45,
+            9.05,
+            9.3,
+            9.8,
+            10.6,
+            10.95,
+            11.1,
+            11.3,
+            12.15,
+            13.3,
+            12.85,
+            13.2,
+            15.05,
+            15.55,
+            16,
+            16.3,
+            16.85,
+            17.55,
+            17.3,
+            17.9
+          ],
+          "durationMs": 5400000,
+          "charges": 78.69,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_gate",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    }
+  ]
+}

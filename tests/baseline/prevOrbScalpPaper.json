@@ -1,0 +1,671 @@
+{
+  "baselineVersion": 1,
+  "strategy": "prevOrbScalpPaper",
+  "mode": "prev-orb-scalp-paper",
+  "totalTrades": 4,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 1054.14,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY2690825550PE",
+          "strike": 25550,
+          "qty": 65,
+          "entryTime": "7/9/2026, 10:03:06",
+          "exitTime": "7/9/2026, 10:09:38",
+          "entrySpot": 25510,
+          "exitSpot": 25480.65,
+          "entryLtp": 115.3,
+          "exitLtp": 132.55,
+          "reason": "Profit lock trail 85% — premium Rs132.55 fell to the trailed floor Rs132.56 (keeps 85% of the gain to peak Rs135.6, entry Rs115.3)",
+          "pnl": 1054.14
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY2690825550PE",
+          "qty": 65,
+          "entryPrice": 25510,
+          "exitPrice": 25480.65,
+          "spotAtEntry": 25510,
+          "spotAtExit": 25480.65,
+          "indexAtEntry": 25510,
+          "spotSymbol": "NSE:NIFTY50-INDEX",
+          "optionEntryLtp": 115.3,
+          "optionExitLtp": 132.55,
+          "bestOptionLtp": 135.6,
+          "entryTime": "7/9/2026, 10:03:06",
+          "exitTime": "7/9/2026, 10:09:38",
+          "entryBarTime": 1788755580,
+          "exitBarTime": 1788755940,
+          "pnl": 1054.14,
+          "pnlMode": "option premium: entry ₹115.3 → exit ₹132.55 (levels measured on NIFTY 50 spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs132.55 fell to the trailed floor Rs132.56 (keeps 85% of the gain to peak Rs135.6, entry Rs115.3)",
+          "entryReason": "PREV ORB PE: 09:15 candle closed 25529.8 below yesterday's LOW 25774.65 → PE day · 10:00 3-min candle closed 25508.3 below 25514 (candle size 18.05pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 25550,
+          "optionExpiry": "26908",
+          "optionType": "PE",
+          "optionEntrySymbol": "NSE:NIFTY2690825550PE",
+          "signalStrength": "STRONG",
+          "candleSize": 18.05,
+          "breakLevel": 25514,
+          "prevHigh": 25928.8,
+          "prevLow": 25774.65,
+          "prevDate": "2026-09-04",
+          "orHigh": 25604.05,
+          "orLow": 25514,
+          "orClose": 25529.8,
+          "signalRawHigh": 25526.35,
+          "signalRawLow": 25508.3,
+          "signalBarTime": 1788755400,
+          "mfeSpotPts": 33.95,
+          "mfePnl": 1319.5,
+          "maeSpotPts": -2.6,
+          "maePnl": -84.5,
+          "secsToMFE": 362,
+          "secsToMAE": 12,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 42,
+          "pathPts": [
+            -0.3,
+            11.35,
+            17.6,
+            19.7,
+            22.4,
+            20.5,
+            22.05,
+            27.3,
+            26.75,
+            26.2,
+            30.5,
+            33.35,
+            30.15
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 392000,
+          "charges": 67.11,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 585.27,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26SEP24050CE",
+          "strike": 24050,
+          "qty": 65,
+          "entryTime": "28/9/2026, 10:33:06",
+          "exitTime": "28/9/2026, 10:39:14",
+          "entrySpot": 24086.45,
+          "exitSpot": 24105.05,
+          "entryLtp": 105.65,
+          "exitLtp": 115.65,
+          "reason": "Profit lock trail 85% — premium Rs115.65 fell to the trailed floor Rs116.28 (keeps 85% of the gain to peak Rs118.15, entry Rs105.65)",
+          "pnl": 585.27
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26SEP24050CE",
+          "qty": 65,
+          "entryPrice": 24086.45,
+          "exitPrice": 24105.05,
+          "spotAtEntry": 24086.45,
+          "spotAtExit": 24105.05,
+          "indexAtEntry": 24086.45,
+          "spotSymbol": "NSE:NIFTY50-INDEX",
+          "optionEntryLtp": 105.65,
+          "optionExitLtp": 115.65,
+          "bestOptionLtp": 118.15,
+          "entryTime": "28/9/2026, 10:33:06",
+          "exitTime": "28/9/2026, 10:39:14",
+          "entryBarTime": 1790571780,
+          "exitBarTime": 1790572140,
+          "pnl": 585.27,
+          "pnlMode": "option premium: entry ₹105.65 → exit ₹115.65 (levels measured on NIFTY 50 spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs115.65 fell to the trailed floor Rs116.28 (keeps 85% of the gain to peak Rs118.15, entry Rs105.65)",
+          "entryReason": "PREV ORB CE: 09:15 candle closed 24069.2 above yesterday's HIGH 23907.35 → CE day · 10:30 3-min candle closed 24088.35 above 24088.05 (candle size 8.5pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 24050,
+          "optionExpiry": "26SEP",
+          "optionType": "CE",
+          "optionEntrySymbol": "NSE:NIFTY26SEP24050CE",
+          "signalStrength": "STRONG",
+          "candleSize": 8.5,
+          "breakLevel": 24088.05,
+          "prevHigh": 23907.35,
+          "prevLow": 23771.5,
+          "prevDate": "2026-09-25",
+          "orHigh": 24088.05,
+          "orLow": 23986.4,
+          "orClose": 24069.2,
+          "signalRawHigh": 24088.6,
+          "signalRawLow": 24080.1,
+          "signalBarTime": 1790571600,
+          "mfeSpotPts": 22.8,
+          "mfePnl": 812.5,
+          "maeSpotPts": -0.9,
+          "maePnl": -39,
+          "secsToMFE": 350,
+          "secsToMAE": 42,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 64,
+          "pathPts": [
+            0.95,
+            1.75,
+            4.35,
+            3.55,
+            4.05,
+            9.6,
+            8.2,
+            6.4,
+            16.75,
+            16.45,
+            19.9,
+            19.5
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 368000,
+          "charges": 64.73,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 623.77,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1324250CE",
+          "strike": 24250,
+          "qty": 65,
+          "entryTime": "9/10/2026, 10:06:06",
+          "exitTime": "9/10/2026, 10:13:58",
+          "entrySpot": 24275.5,
+          "exitSpot": 24295.4,
+          "entryLtp": 150.5,
+          "exitLtp": 161.2,
+          "reason": "Profit lock trail 85% — premium Rs161.2 fell to the trailed floor Rs161.55 (keeps 85% of the gain to peak Rs163.5, entry Rs150.5)",
+          "pnl": 623.77
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1324250CE",
+          "qty": 65,
+          "entryPrice": 24275.5,
+          "exitPrice": 24295.4,
+          "spotAtEntry": 24275.5,
+          "spotAtExit": 24295.4,
+          "indexAtEntry": 24275.5,
+          "spotSymbol": "NSE:NIFTY50-INDEX",
+          "optionEntryLtp": 150.5,
+          "optionExitLtp": 161.2,
+          "bestOptionLtp": 163.5,
+          "entryTime": "9/10/2026, 10:06:06",
+          "exitTime": "9/10/2026, 10:13:58",
+          "entryBarTime": 1791520560,
+          "exitBarTime": 1791520920,
+          "pnl": 623.77,
+          "pnlMode": "option premium: entry ₹150.5 → exit ₹161.2 (levels measured on NIFTY 50 spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs161.2 fell to the trailed floor Rs161.55 (keeps 85% of the gain to peak Rs163.5, entry Rs150.5)",
+          "entryReason": "PREV ORB CE: 09:15 candle closed 24259.15 above yesterday's HIGH 24142.9 → CE day · 10:03 3-min candle closed 24274.95 above 24269.3 (candle size 17.45pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 24250,
+          "optionExpiry": "26O13",
+          "optionType": "CE",
+          "optionEntrySymbol": "NSE:NIFTY26O1324250CE",
+          "signalStrength": "STRONG",
+          "candleSize": 17.45,
+          "breakLevel": 24269.3,
+          "prevHigh": 24142.9,
+          "prevLow": 23885.85,
+          "prevDate": "2026-10-08",
+          "orHigh": 24269.3,
+          "orLow": 24188.2,
+          "orClose": 24259.15,
+          "signalRawHigh": 24275.4,
+          "signalRawLow": 24257.95,
+          "signalBarTime": 1791520380,
+          "mfeSpotPts": 24.5,
+          "mfePnl": 845,
+          "maeSpotPts": 0,
+          "maePnl": 0,
+          "secsToMFE": 442,
+          "secsToMAE": 0,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 12,
+          "pathPts": [
+            9.55,
+            11.95,
+            14.15,
+            12.9,
+            14.5,
+            19,
+            19.65,
+            20.55,
+            19.1,
+            21.2,
+            18.6,
+            15.05,
+            17.75,
+            22.05,
+            23.45
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 472000,
+          "charges": 71.73,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 925.18,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O1324100PE",
+          "strike": 24100,
+          "qty": 65,
+          "entryTime": "12/10/2026, 10:03:06",
+          "exitTime": "12/10/2026, 10:12:54",
+          "entrySpot": 24035.4,
+          "exitSpot": 24010.85,
+          "entryLtp": 131.05,
+          "exitLtp": 146.35,
+          "reason": "Profit lock trail 85% — premium Rs146.35 fell to the trailed floor Rs146.73 (keeps 85% of the gain to peak Rs149.5, entry Rs131.05)",
+          "pnl": 925.18
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O1324100PE",
+          "qty": 65,
+          "entryPrice": 24035.4,
+          "exitPrice": 24010.85,
+          "spotAtEntry": 24035.4,
+          "spotAtExit": 24010.85,
+          "indexAtEntry": 24035.4,
+          "spotSymbol": "NSE:NIFTY50-INDEX",
+          "optionEntryLtp": 131.05,
+          "optionExitLtp": 146.35,
+          "bestOptionLtp": 149.5,
+          "entryTime": "12/10/2026, 10:03:06",
+          "exitTime": "12/10/2026, 10:12:54",
+          "entryBarTime": 1791779580,
+          "exitBarTime": 1791780120,
+          "pnl": 925.18,
+          "pnlMode": "option premium: entry ₹131.05 → exit ₹146.35 (levels measured on NIFTY 50 spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs146.35 fell to the trailed floor Rs146.73 (keeps 85% of the gain to peak Rs149.5, entry Rs131.05)",
+          "entryReason": "PREV ORB PE: 09:15 candle closed 24041.65 below yesterday's LOW 24188.2 → PE day · 10:00 3-min candle closed 24035.2 below 24035.7 (candle size 23.05pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 24100,
+          "optionExpiry": "26O13",
+          "optionType": "PE",
+          "optionEntrySymbol": "NSE:NIFTY26O1324100PE",
+          "signalStrength": "STRONG",
+          "candleSize": 23.05,
+          "breakLevel": 24035.7,
+          "prevHigh": 24386.05,
+          "prevLow": 24188.2,
+          "prevDate": "2026-10-09",
+          "orHigh": 24120.85,
+          "orLow": 24035.7,
+          "orClose": 24041.65,
+          "signalRawHigh": 24058.25,
+          "signalRawLow": 24035.2,
+          "signalBarTime": 1791779400,
+          "mfeSpotPts": 30,
+          "mfePnl": 1199.25,
+          "maeSpotPts": 0,
+          "maePnl": 0,
+          "secsToMFE": 576,
+          "secsToMAE": 0,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 8,
+          "pathPts": [
+            6.4,
+            6.2,
+            8.35,
+            8.3,
+            9.35,
+            15.15,
+            17,
+            16.85,
+            21.05,
+            22.4,
+            22.85,
+            23.65,
+            26.45,
+            26.9,
+            25.5,
+            26.35,
+            27.45,
+            25.7,
+            29.2
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 588000,
+          "charges": 69.32,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    }
+  ]
+}

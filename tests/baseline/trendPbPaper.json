@@ -1,0 +1,491 @@
+{
+  "baselineVersion": 1,
+  "strategy": "trendPbPaper",
+  "mode": "trend-pb-paper",
+  "totalTrades": 2,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 478.08,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY2690825500PE",
+          "strike": 25500,
+          "qty": 65,
+          "entryTime": "7/9/2026, 13:20:00",
+          "exitTime": "7/9/2026, 13:37:06",
+          "entrySpot": 25432.25,
+          "exitSpot": 25419.25,
+          "entryLtp": 127.65,
+          "exitLtp": 136.05,
+          "reason": "Profit lock trail 85% — premium Rs136.05 fell to the trailed floor Rs136.49 (keeps 85% of the gain to peak Rs138.05, entry Rs127.65)",
+          "pnl": 478.08
+        }
+      ],
+      "skips": {
+        "total": 44,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 44,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 44
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY2690825500PE",
+          "qty": 65,
+          "entryPrice": 25432.25,
+          "exitPrice": 25419.25,
+          "spotAtEntry": 25432.25,
+          "spotAtExit": 25419.25,
+          "optionEntryLtp": 127.65,
+          "optionExitLtp": 136.05,
+          "bestOptionLtp": 138.05,
+          "entryTime": "7/9/2026, 13:20:00",
+          "exitTime": "7/9/2026, 13:37:06",
+          "entryBarTime": 1788767400,
+          "exitBarTime": 1788768300,
+          "pnl": 478.08,
+          "pnlMode": "option premium: entry ₹127.65 → exit ₹136.05",
+          "exitReason": "Profit lock trail 85% — premium Rs136.05 fell to the trailed floor Rs136.49 (keeps 85% of the gain to peak Rs138.05, entry Rs127.65)",
+          "entryReason": "TREND PB PE: 15m DOWN (HH/HL→LH/LL, EMA20<EMA50, slope dn, spot < VWAP 25464.55) → healthy 5m pullback to EMA20 (low 25432.6) → resumption close 25432.25 beyond prev low, body 10.55pt ≥ 6.66pt [STRONG]",
+          "optionStrike": 25500,
+          "optionExpiry": "26908",
+          "optionType": "PE",
+          "optionEntrySymbol": "NSE:NIFTY2690825500PE",
+          "signalStrength": "STRONG",
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "oiAtEntry": null,
+          "oiRegime": null,
+          "trendBias": "DOWN",
+          "pullbackLow": 25432.6,
+          "pullbackHigh": 25454.65,
+          "atr5AtEntry": 13.32,
+          "vwapAligned": true,
+          "mfeSpotPts": 16.75,
+          "mfePnl": 676,
+          "maeSpotPts": -9.4,
+          "maePnl": -357.5,
+          "secsToMFE": 1002,
+          "secsToMAE": 518,
+          "firstMoveDir": "DOWN",
+          "secsToFirstMove": 64,
+          "pathPts": [
+            -0.4,
+            -2.65,
+            -2.9,
+            -5.2,
+            -6.2,
+            -7.5,
+            -7.65,
+            -4.95,
+            -6.7,
+            -4.8,
+            -5.4,
+            -6.8,
+            -5.4,
+            -5.3,
+            -3.4,
+            -1.9,
+            -8.4,
+            -6.75,
+            -4.85,
+            -1.45,
+            -2.15,
+            0.25,
+            1.6,
+            3.95,
+            7.85,
+            10.15,
+            13.9,
+            10.4,
+            12.6,
+            10.2
+          ],
+          "durationMs": 1026000,
+          "charges": 67.92,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 585.76,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26SEP24050CE",
+          "strike": 24050,
+          "qty": 65,
+          "entryTime": "28/9/2026, 13:25:00",
+          "exitTime": "28/9/2026, 13:29:30",
+          "entrySpot": 24124.5,
+          "exitSpot": 24140.35,
+          "entryLtp": 123.5,
+          "exitLtp": 133.55,
+          "reason": "Profit lock trail 85% — premium Rs133.55 fell to the trailed floor Rs133.74 (keeps 85% of the gain to peak Rs135.55, entry Rs123.5)",
+          "pnl": 585.76
+        }
+      ],
+      "skips": {
+        "total": 47,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 47,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 47
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26SEP24050CE",
+          "qty": 65,
+          "entryPrice": 24124.5,
+          "exitPrice": 24140.35,
+          "spotAtEntry": 24124.5,
+          "spotAtExit": 24140.35,
+          "optionEntryLtp": 123.5,
+          "optionExitLtp": 133.55,
+          "bestOptionLtp": 135.55,
+          "entryTime": "28/9/2026, 13:25:00",
+          "exitTime": "28/9/2026, 13:29:30",
+          "entryBarTime": 1790582100,
+          "exitBarTime": 1790582100,
+          "pnl": 585.76,
+          "pnlMode": "option premium: entry ₹123.5 → exit ₹133.55",
+          "exitReason": "Profit lock trail 85% — premium Rs133.55 fell to the trailed floor Rs133.74 (keeps 85% of the gain to peak Rs135.55, entry Rs123.5)",
+          "entryReason": "TREND PB CE: 15m UP (HH/HL, EMA20>EMA50, slope up, spot > VWAP 24093.89) → healthy 5m pullback to EMA20 (low 24109.05) → resumption close 24125.4 beyond prev high, body 7.95pt ≥ 6.35pt [STRONG]",
+          "optionStrike": 24050,
+          "optionExpiry": "26SEP",
+          "optionType": "CE",
+          "optionEntrySymbol": "NSE:NIFTY26SEP24050CE",
+          "signalStrength": "STRONG",
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "oiAtEntry": null,
+          "oiRegime": null,
+          "trendBias": "UP",
+          "pullbackLow": 24109.05,
+          "pullbackHigh": 24125.6,
+          "atr5AtEntry": 12.69,
+          "vwapAligned": true,
+          "mfeSpotPts": 19.5,
+          "mfePnl": 783.25,
+          "maeSpotPts": -0.05,
+          "maePnl": -3.25,
+          "secsToMFE": 218,
+          "secsToMAE": 30,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 46,
+          "pathPts": [
+            -0.05,
+            3.95,
+            6.75,
+            9.3,
+            14.3,
+            16.1,
+            18.15,
+            16.3,
+            15.85
+          ],
+          "durationMs": 270000,
+          "charges": 67.49,
+          "isFutures": false,
+          "instrument": "NIFTY_OPTIONS"
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 47
+          },
+          {
+            "gate": "premium_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    }
+  ]
+}

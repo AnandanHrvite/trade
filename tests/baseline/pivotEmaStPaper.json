@@ -1,0 +1,523 @@
+{
+  "baselineVersion": 1,
+  "strategy": "pivotEmaStPaper",
+  "mode": "pivot_ema_st-paper",
+  "totalTrades": 8,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 124,
+        "dropped": 0,
+        "noSignalCandles": 124,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 124,
+        "dropped": 0,
+        "noSignalCandles": 124,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -1830.15,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O0624050PE",
+          "strike": 24050,
+          "qty": null,
+          "entryTime": "30/09/2026, 12:45:00",
+          "exitTime": "30/09/2026, 13:37:40",
+          "entrySpot": 24051.05,
+          "exitSpot": 24102.45,
+          "entryLtp": 182.15,
+          "exitLtp": 155.1,
+          "reason": "Stop-loss trail 20% — premium Rs155.1 fell to the trailed stop Rs155.48 (peak Rs194.35, entry Rs182.15)",
+          "pnl": -1830.15
+        }
+      ],
+      "skips": {
+        "total": 106,
+        "dropped": 0,
+        "noSignalCandles": 106,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 24050,
+          "expiry": "06 OCT 2026",
+          "entry": "30/09/2026, 12:45:00",
+          "exit": "30/09/2026, 13:37:40",
+          "eSpot": 24051.05,
+          "eOpt": 182.15,
+          "eSl": null,
+          "xSpot": 24102.45,
+          "xOpt": 155.1,
+          "pnl": -1830.15,
+          "reason": "Stop-loss trail 20% — premium Rs155.1 fell to the trailed stop Rs155.48 (peak Rs194.35, entry Rs182.15)",
+          "symbol": "NSE:NIFTY26O0624050PE",
+          "entryBarTime": 1790752500,
+          "exitBarTime": 1790755560,
+          "durationMs": 3060000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 124,
+        "dropped": 0,
+        "noSignalCandles": 124,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 124,
+        "dropped": 0,
+        "noSignalCandles": 124,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 124,
+        "dropped": 0,
+        "noSignalCandles": 124,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -1951.6,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O1324000PE",
+          "strike": 24000,
+          "qty": null,
+          "entryTime": "08/10/2026, 12:51:00",
+          "exitTime": "08/10/2026, 13:27:00",
+          "entrySpot": 23975.75,
+          "exitSpot": 24029.25,
+          "entryLtp": 170.45,
+          "exitLtp": 141.5,
+          "reason": "Stop-loss trail 20% — premium Rs141.5 fell to the trailed stop Rs142.36 (peak Rs177.95, entry Rs170.45)",
+          "pnl": -1951.6
+        }
+      ],
+      "skips": {
+        "total": 111,
+        "dropped": 0,
+        "noSignalCandles": 111,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 24000,
+          "expiry": "13 OCT 2026",
+          "entry": "08/10/2026, 12:51:00",
+          "exit": "08/10/2026, 13:27:00",
+          "eSpot": 23975.75,
+          "eOpt": 170.45,
+          "eSl": null,
+          "xSpot": 24029.25,
+          "xOpt": 141.5,
+          "pnl": -1951.6,
+          "reason": "Stop-loss trail 20% — premium Rs141.5 fell to the trailed stop Rs142.36 (peak Rs177.95, entry Rs170.45)",
+          "symbol": "NSE:NIFTY26O1324000PE",
+          "entryBarTime": 1791444060,
+          "exitBarTime": 1791446220,
+          "durationMs": 2160000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 124,
+        "dropped": 0,
+        "noSignalCandles": 124,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 124,
+        "dropped": 0,
+        "noSignalCandles": 124,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": -412.29,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O1323950PE",
+          "strike": 23950,
+          "qty": null,
+          "entryTime": "13/10/2026, 10:15:00",
+          "exitTime": "13/10/2026, 10:17:20",
+          "entrySpot": 23944.3,
+          "exitSpot": 23957.2,
+          "entryLtp": 36.4,
+          "exitLtp": 29.8,
+          "reason": "Stop-loss trail 20% — premium Rs29.8 fell to the trailed stop Rs30.2 (peak Rs37.75, entry Rs36.4)",
+          "pnl": -480.99
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1324000CE",
+          "strike": 24000,
+          "qty": null,
+          "entryTime": "13/10/2026, 12:42:00",
+          "exitTime": "13/10/2026, 12:43:06",
+          "entrySpot": 24005.05,
+          "exitSpot": 24008.5,
+          "entryLtp": 26.75,
+          "exitLtp": 28.6,
+          "reason": "Profit lock trail 85% — premium Rs28.6 fell to the trailed floor Rs28.66 (keeps 85% of the gain to peak Rs29, entry Rs26.75)",
+          "pnl": 68.7
+        }
+      ],
+      "skips": {
+        "total": 122,
+        "dropped": 0,
+        "noSignalCandles": 122,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 23950,
+          "expiry": "13 OCT 2026",
+          "entry": "13/10/2026, 10:15:00",
+          "exit": "13/10/2026, 10:17:20",
+          "eSpot": 23944.3,
+          "eOpt": 36.4,
+          "eSl": null,
+          "xSpot": 23957.2,
+          "xOpt": 29.8,
+          "pnl": -480.99,
+          "reason": "Stop-loss trail 20% — premium Rs29.8 fell to the trailed stop Rs30.2 (peak Rs37.75, entry Rs36.4)",
+          "symbol": "NSE:NIFTY26O1323950PE",
+          "entryBarTime": 1791866700,
+          "exitBarTime": 1791866700,
+          "durationMs": null
+        },
+        {
+          "side": "CE",
+          "strike": 24000,
+          "expiry": "13 OCT 2026",
+          "entry": "13/10/2026, 12:42:00",
+          "exit": "13/10/2026, 12:43:06",
+          "eSpot": 24005.05,
+          "eOpt": 26.75,
+          "eSl": null,
+          "xSpot": 24008.5,
+          "xOpt": 28.6,
+          "pnl": 68.7,
+          "reason": "Profit lock trail 85% — premium Rs28.6 fell to the trailed floor Rs28.66 (keeps 85% of the gain to peak Rs29, entry Rs26.75)",
+          "symbol": "NSE:NIFTY26O1324000CE",
+          "entryBarTime": 1791875520,
+          "exitBarTime": 1791875520,
+          "durationMs": null
+        }
+      ]
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 977.96,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1924250CE",
+          "strike": 24250,
+          "qty": null,
+          "entryTime": "14/10/2026, 11:57:00",
+          "exitTime": "14/10/2026, 12:16:50",
+          "entrySpot": 24246.6,
+          "exitSpot": 24281.65,
+          "entryLtp": 167.55,
+          "exitLtp": 183.75,
+          "reason": "Profit lock trail 85% — premium Rs183.75 fell to the trailed floor Rs184.08 (keeps 85% of the gain to peak Rs187, entry Rs167.55)",
+          "pnl": 977.96
+        }
+      ],
+      "skips": {
+        "total": 117,
+        "dropped": 0,
+        "noSignalCandles": 117,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 24250,
+          "expiry": "19 OCT 2026",
+          "entry": "14/10/2026, 11:57:00",
+          "exit": "14/10/2026, 12:16:50",
+          "eSpot": 24246.6,
+          "eOpt": 167.55,
+          "eSl": null,
+          "xSpot": 24281.65,
+          "xOpt": 183.75,
+          "pnl": 977.96,
+          "reason": "Profit lock trail 85% — premium Rs183.75 fell to the trailed floor Rs184.08 (keeps 85% of the gain to peak Rs187, entry Rs167.55)",
+          "symbol": "NSE:NIFTY26O1924250CE",
+          "entryBarTime": 1791959220,
+          "exitBarTime": 1791960300,
+          "durationMs": 1080000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 835.11,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1924250CE",
+          "strike": 24250,
+          "qty": null,
+          "entryTime": "15/10/2026, 11:30:00",
+          "exitTime": "15/10/2026, 11:37:30",
+          "entrySpot": 24273.8,
+          "exitSpot": 24301.9,
+          "entryLtp": 189.35,
+          "exitLtp": 203.4,
+          "reason": "Profit lock trail 85% — premium Rs203.4 fell to the trailed floor Rs204.18 (keeps 85% of the gain to peak Rs206.8, entry Rs189.35)",
+          "pnl": 835.11
+        }
+      ],
+      "skips": {
+        "total": 121,
+        "dropped": 0,
+        "noSignalCandles": 121,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 24250,
+          "expiry": "19 OCT 2026",
+          "entry": "15/10/2026, 11:30:00",
+          "exit": "15/10/2026, 11:37:30",
+          "eSpot": 24273.8,
+          "eOpt": 189.35,
+          "eSl": null,
+          "xSpot": 24301.9,
+          "xOpt": 203.4,
+          "pnl": 835.11,
+          "reason": "Profit lock trail 85% — premium Rs203.4 fell to the trailed floor Rs204.18 (keeps 85% of the gain to peak Rs206.8, entry Rs189.35)",
+          "symbol": "NSE:NIFTY26O1924250CE",
+          "entryBarTime": 1792044000,
+          "exitBarTime": 1792044360,
+          "durationMs": 360000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": -1002.41,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O1924200PE",
+          "strike": 24200,
+          "qty": null,
+          "entryTime": "16/10/2026, 10:57:00",
+          "exitTime": "16/10/2026, 11:07:20",
+          "entrySpot": 24198.75,
+          "exitSpot": 24179.3,
+          "entryLtp": 142.75,
+          "exitLtp": 153.15,
+          "reason": "Profit lock trail 85% — premium Rs153.15 fell to the trailed floor Rs153.25 (keeps 85% of the gain to peak Rs155.1, entry Rs142.75)",
+          "pnl": 605.51
+        },
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O1924200PE",
+          "strike": 24200,
+          "qty": null,
+          "entryTime": "16/10/2026, 12:48:00",
+          "exitTime": "16/10/2026, 13:28:20",
+          "entrySpot": 24181.4,
+          "exitSpot": 24225.35,
+          "entryLtp": 150.4,
+          "exitLtp": 126.7,
+          "reason": "Stop-loss trail 20% — premium Rs126.7 fell to the trailed stop Rs126.92 (peak Rs158.65, entry Rs150.4)",
+          "pnl": -1607.92
+        }
+      ],
+      "skips": {
+        "total": 106,
+        "dropped": 0,
+        "noSignalCandles": 106,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 24200,
+          "expiry": "19 OCT 2026",
+          "entry": "16/10/2026, 10:57:00",
+          "exit": "16/10/2026, 11:07:20",
+          "eSpot": 24198.75,
+          "eOpt": 142.75,
+          "eSl": null,
+          "xSpot": 24179.3,
+          "xOpt": 153.15,
+          "pnl": 605.51,
+          "reason": "Profit lock trail 85% — premium Rs153.15 fell to the trailed floor Rs153.25 (keeps 85% of the gain to peak Rs155.1, entry Rs142.75)",
+          "symbol": "NSE:NIFTY26O1924200PE",
+          "entryBarTime": 1792128420,
+          "exitBarTime": 1792128960,
+          "durationMs": 540000
+        },
+        {
+          "side": "PE",
+          "strike": 24200,
+          "expiry": "19 OCT 2026",
+          "entry": "16/10/2026, 12:48:00",
+          "exit": "16/10/2026, 13:28:20",
+          "eSpot": 24181.4,
+          "eOpt": 150.4,
+          "eSl": null,
+          "xSpot": 24225.35,
+          "xOpt": 126.7,
+          "pnl": -1607.92,
+          "reason": "Stop-loss trail 20% — premium Rs126.7 fell to the trailed stop Rs126.92 (peak Rs158.65, entry Rs150.4)",
+          "symbol": "NSE:NIFTY26O1924200PE",
+          "entryBarTime": 1792135080,
+          "exitBarTime": 1792137420,
+          "durationMs": 2340000
+        }
+      ]
+    }
+  ]
+}

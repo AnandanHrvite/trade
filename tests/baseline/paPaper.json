@@ -1,0 +1,367 @@
+{
+  "baselineVersion": 1,
+  "strategy": "paPaper",
+  "mode": "pa-paper",
+  "totalTrades": 3,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": 2087.78,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O0624100PE",
+          "strike": 24100,
+          "qty": 65,
+          "entryTime": "30/09/2026, 13:45:00",
+          "exitTime": "30/09/2026, 14:00:10",
+          "entrySpot": 24091.95,
+          "exitSpot": 24067.25,
+          "entryLtp": 184.55,
+          "exitLtp": 198.35,
+          "reason": "Profit lock trail 85% — premium Rs198.35 fell to the trailed floor Rs198.36 (keeps 85% of the gain to peak Rs200.8, entry Rs184.55)",
+          "pnl": 819.65
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O0624050CE",
+          "strike": 24050,
+          "qty": 65,
+          "entryTime": "30/09/2026, 11:10:00",
+          "exitTime": "30/09/2026, 11:44:56",
+          "entrySpot": 24039,
+          "exitSpot": 24084.15,
+          "entryLtp": 179,
+          "exitLtp": 199.7,
+          "reason": "Profit lock trail 85% — premium Rs199.7 fell to the trailed floor Rs200 (keeps 85% of the gain to peak Rs203.7, entry Rs179)",
+          "pnl": 1268.13
+        }
+      ],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 38,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26O0624100PE",
+          "strike": 24100,
+          "expiry": "06 OCT 2026",
+          "optionType": "PE",
+          "qty": 65,
+          "entry": "30/09/2026, 13:45:00",
+          "exit": "30/09/2026, 14:00:10",
+          "entryBarTime": 1790756100,
+          "exitBarTime": 1790757000,
+          "eSpot": 24091.95,
+          "eOpt": 184.55,
+          "eSl": null,
+          "xSpot": 24067.25,
+          "xOpt": 198.35,
+          "peakOpt": 200.8,
+          "pnl": 819.65,
+          "pnlMode": "option: ₹184.55 → ₹198.35",
+          "entryReason": "PE: Bearish OB retest below 24093 | SL=24111.25 | Target=24028.35",
+          "reason": "Profit lock trail 85% — premium Rs198.35 fell to the trailed floor Rs198.36 (keeps 85% of the gain to peak Rs200.8, entry Rs184.55)"
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O0624050CE",
+          "strike": 24050,
+          "expiry": "06 OCT 2026",
+          "optionType": "CE",
+          "qty": 65,
+          "entry": "30/09/2026, 11:10:00",
+          "exit": "30/09/2026, 11:44:56",
+          "entryBarTime": 1790746800,
+          "exitBarTime": 1790748600,
+          "eSpot": 24039,
+          "eOpt": 179,
+          "eSl": null,
+          "xSpot": 24084.15,
+          "xOpt": 199.7,
+          "peakOpt": 203.7,
+          "pnl": 1268.13,
+          "pnlMode": "option: ₹179 → ₹199.7",
+          "entryReason": "CE: Bullish OB retest above 24042 | SL=24022.45 | Target=24112.45",
+          "reason": "Profit lock trail 85% — premium Rs199.7 fell to the trailed floor Rs200 (keeps 85% of the gain to peak Rs203.7, entry Rs179)"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 1427.5,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1924200CE",
+          "strike": 24200,
+          "qty": 65,
+          "entryTime": "16/10/2026, 11:10:00",
+          "exitTime": "16/10/2026, 11:45:20",
+          "entrySpot": 24182.85,
+          "exitSpot": 24232.55,
+          "entryLtp": 134.1,
+          "exitLtp": 157.15,
+          "reason": "Profit lock trail 80% — premium Rs157.15 fell to the trailed floor Rs157.34 (keeps 80% of the gain to peak Rs163.15, entry Rs134.1)",
+          "pnl": 1427.5
+        }
+      ],
+      "skips": {
+        "total": 40,
+        "dropped": 0,
+        "noSignalCandles": 40,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26O1924200CE",
+          "strike": 24200,
+          "expiry": "19 OCT 2026",
+          "optionType": "CE",
+          "qty": 65,
+          "entry": "16/10/2026, 11:10:00",
+          "exit": "16/10/2026, 11:45:20",
+          "entryBarTime": 1792129200,
+          "exitBarTime": 1792131300,
+          "eSpot": 24182.85,
+          "eOpt": 134.1,
+          "eSl": null,
+          "xSpot": 24232.55,
+          "xOpt": 157.15,
+          "peakOpt": 163.15,
+          "pnl": 1427.5,
+          "pnlMode": "option: ₹134.1 → ₹157.15",
+          "entryReason": "CE: Bullish OB retest above 24188 | SL=24165.7 | Target=24260.5",
+          "reason": "Profit lock trail 80% — premium Rs157.15 fell to the trailed floor Rs157.34 (keeps 80% of the gain to peak Rs163.15, entry Rs134.1)"
+        }
+      ]
+    }
+  ]
+}
