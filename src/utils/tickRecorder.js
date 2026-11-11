@@ -451,8 +451,13 @@ const _SETTINGS_KEY_MATCHERS = [
 
 function snapshotSettings() {
   const out = {};
+  // A running (strategy, market) pair's own keys (BN_EMA_RSI_ST_V2_*,
+  // SENSEX_EMA_RSI_ST_V2_* …) too, so a snapshot replay of that pair uses the
+  // values it ran with. Its inherited NIFTY keys are already matched above.
+  let pairPrefixes = [];
+  try { pairPrefixes = require("../config/pairs").runnable().map(p => p.envPrefix + "_"); } catch (_) {}
   for (const k of Object.keys(process.env)) {
-    if (_SETTINGS_KEY_MATCHERS.some(re => re.test(k))) {
+    if (_SETTINGS_KEY_MATCHERS.some(re => re.test(k)) || pairPrefixes.some(p => k.startsWith(p))) {
       out[k] = process.env[k];
     }
   }
