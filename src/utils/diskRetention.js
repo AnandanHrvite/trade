@@ -16,7 +16,7 @@
  *                              setting. startAutoCleanup() schedules it.
  *
  * Safety rules (the regression suite tests/diskRetention.regression.js pins them):
- *   - Trade logs (trades/), post_exit/, backups, the *.json books and tokens at
+ *   - Trade logs (trades/), post_exit/, exports/, backups, the *.json books and tokens at
  *     the ~/trading-data root are PROTECTED: shown on the panel, never deleted.
  *   - Anything dated today (IST) is never deleted. Keep N days = a file exactly
  *     N days old is kept; N+1 days old is deleted (same rule as tickRecorder).
@@ -122,6 +122,8 @@ function folders(ctx) {
       note: "Price path after each exit. Protected — never deleted here." },
     { key: "trade_logs", label: "Trade logs", bases: [path.join(d, "trades")], unit: "file", protected: true,
       note: "Per-day trade audit logs. Protected — never deleted here." },
+    { key: "exports", label: "Daily exports", bases: [path.join(d, "exports")], unit: "file", protected: true,
+      note: "Daily trade CSV + summary JSON (utils/dailyExport). Protected — never deleted here." },
     { key: "backups", label: "Backups", bases: [path.join(d, "_backups")], unit: "file", protected: true,
       note: "Daily backup snapshots — managed under Settings → Backup & Restore." },
   ];
@@ -131,7 +133,7 @@ function folderByKey(key, ctx) { return folders(ctx).find(f => f.key === key) ||
 // Paths no code path in this module may ever remove, whatever a plan says.
 function protectedRoots(ctx) {
   const c = ctxOf(ctx);
-  return ["trades", "post_exit", "_backups"].map(n => path.join(c.dataDir, n));
+  return ["trades", "post_exit", "_backups", "exports"].map(n => path.join(c.dataDir, n));
 }
 function isInside(p, dir) {
   const rp = path.resolve(p), rd = path.resolve(dir);

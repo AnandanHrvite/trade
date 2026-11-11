@@ -138,7 +138,26 @@ function flattenSessions(mode, data, out) {
   }
 }
 
+// Per-row extras kept OFF the row itself (so the shared /data rows stay as
+// they were): the trade journal's id (utils/tradeJournal) and the route's own
+// mfe / mae, for the trade-detail sheet and the daily export. The journal
+// itself is read from the book on demand (journalsFor), never held in memory.
+const _rowExtra = new WeakMap();
+const _numOrNull = (v) => (v != null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+function extraOf(row) { return (row && _rowExtra.get(row)) || null; }
+
 function flatRow(mode, sessionDate, s, t) {
+  const row = _flatRow(mode, sessionDate, s, t);
+  const j = t && t.journal && typeof t.journal === "object" ? t.journal : null;
+  _rowExtra.set(row, {
+    journalId: j && j.id ? String(j.id) : null,
+    mfe: _numOrNull(t.mfeSpotPts != null ? t.mfeSpotPts : t.mfe),
+    mae: _numOrNull(t.maeSpotPts != null ? t.maeSpotPts : t.mae),
+  });
+  return row;
+}
+
+function _flatRow(mode, sessionDate, s, t) {
   return {
           mode:        mode,
           date:        sessionDate,
@@ -260,6 +279,8 @@ function loadPostExitIndex() {
       let r;
       try { r = JSON.parse(line); } catch (_) { continue; }
       if (!r || !r.mode || !r.date) continue;
+      // Journal-era records carry the trade's id — the exact join.
+      if (r.tradeId) idx.set(`id:${r.tradeId}`, r);
       const base = `${String(r.mode).toLowerCase()}|${r.date}|${String(r.side || "").toUpperCase()}`;
       if (r.exitTime) idx.set(`${base}|t:${r.exitTime}`, r);
       if (r.spotAtExit != null) idx.set(`${base}|s:${Number(r.spotAtExit)}`, r);
@@ -318,9 +339,12 @@ function loadConsolidatedTrades() {
     const charges = CC.num(t.charges);
     const grossOwn = CC.num(t.grossPnl);
     const side = String(t.side || "").toUpperCase();
-    const peRec = pe.get(`${logKey}|${t.date}|${side}|t:${t.exitTime}`)
+    const ex = extraOf(t);
+    const jid = ex && ex.journalId;
+    const peRec = (jid && pe.get(`id:${jid}`))
+               || pe.get(`${logKey}|${t.date}|${side}|t:${t.exitTime}`)
                || (t.spotAtExit != null ? pe.get(`${logKey}|${t.date}|${side}|s:${Number(t.spotAtExit)}`) : null);
-    rows.push({
+    const row = {
       ...t,
       logKey,
       market,
@@ -332,10 +356,56 @@ function loadConsolidatedTrades() {
       charges,
       gross: grossOwn != null ? grossOwn : (charges != null ? t.pnl + charges : t.pnl),
       postExit: _peFields(peRec, t.exitTime),
-    });
+      // The trade journal's id (null = recorded before journals / route not
+      // hooked yet) — the detail sheet fetches the journal by it.
+      journalId: jid || null,
+    };
+    if (ex) _rowExtra.set(row, ex);
+    rows.push(row);
   }
   rows.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   return { trades: rows, retiredBooks: retired.books };
+}
+
+/** Book files to search for `mode` (null = every live + retired book). */
+function _bookFilesFor(mode) {
+  const out = [];
+  for (const src of SOURCES) if (!mode || src.mode === mode) out.push({ file: src.file, kind: "sessions" });
+  for (const b of retiredBooks()) if (!mode || b.mode === mode) out.push({ file: b.file, kind: b.kind });
+  return out;
+}
+
+/**
+ * Journals by id, read from the books on demand (a Map id → journal). `mode`
+ * narrows the search to that strategy's book (the detail sheet); without it
+ * every book is read (the daily export, once a day).
+ */
+function journalsFor(ids, mode) {
+  const want = new Set((ids || []).filter(Boolean).map(String));
+  const found = new Map();
+  if (!want.size) return found;
+  const take = (t) => {
+    const j = t && t.journal;
+    if (j && j.id != null && want.has(String(j.id))) found.set(String(j.id), j);
+  };
+  for (const b of _bookFilesFor(mode)) {
+    const data = safeRead(b.file);
+    if (b.kind === "days") for (const d of Object.values((data && data.days) || {})) for (const t of ((d && d.trades) || [])) take(t);
+    else for (const s of ((data && data.sessions) || [])) for (const t of (s.trades || [])) take(t);
+    if (found.size === want.size) break;
+  }
+  return found;
+}
+
+/** The full post-exit record for a consolidated row (by trade id first). */
+function postExitRecordFor(row) {
+  if (!row) return null;
+  const pe = loadPostExitIndex();
+  const side = String(row.side || "").toUpperCase();
+  return (row.journalId && pe.get(`id:${row.journalId}`))
+      || pe.get(`${row.logKey}|${row.date}|${side}|t:${row.exitTime}`)
+      || (row.spotAtExit != null ? pe.get(`${row.logKey}|${row.date}|${side}|s:${Number(row.spotAtExit)}`) : null)
+      || null;
 }
 
 // Display order for the Market filter; any other market a record names is
@@ -625,6 +695,51 @@ router.get("/", (req, res) => {
       .tbl-wrap{max-height:none;}
       :root[data-theme="light"] #tradesTbl tr{border-color:#e0e4ea;}
     }
+
+    /* ── Trade detail sheet (tap a trade) ─────────────────────────────────── */
+    #tradesTbl tbody tr{cursor:pointer;}
+    .td-btns{display:flex;gap:6px;justify-content:flex-end;}
+    .td-btns .btn{min-width:44px;min-height:32px;}
+    .td-backdrop{display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,0.55);}
+    .td-sheet{position:fixed;top:0;right:0;bottom:0;z-index:410;width:min(460px,100%);background:#07111f;border-left:0.5px solid #0e1e36;
+      transform:translateX(100%);visibility:hidden;transition:transform 0.2s ease,visibility 0s linear 0.2s;display:flex;flex-direction:column;}
+    body.td-on .td-backdrop{display:block;}
+    body.td-on .td-sheet{transform:none;visibility:visible;transition:transform 0.2s ease;}
+    body.td-on{overflow:hidden;}
+    .td-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:0.5px solid #0e1e36;padding-top:max(12px,env(safe-area-inset-top));}
+    .td-title{flex:1;min-width:0;font-size:0.82rem;font-weight:700;overflow-wrap:anywhere;}
+    .td-close{min-width:44px;min-height:44px;font-size:0.9rem;}
+    .td-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 14px calc(24px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch;}
+    .td-sec{margin:0 0 14px;}
+    .td-sec h4{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin:0 0 6px;font-family:'IBM Plex Mono',monospace;}
+    .td-why{font-size:0.8rem;line-height:1.4;margin-bottom:6px;overflow-wrap:anywhere;}
+    .td-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
+    .td-kv div{display:flex;justify-content:space-between;gap:6px;min-width:0;border-bottom:0.5px solid #0b1728;padding:3px 0;}
+    .td-kv span:first-child{color:var(--muted-2,#6d85a8);flex-shrink:0;}
+    .td-kv span:last-child{text-align:right;overflow-wrap:anywhere;min-width:0;}
+    .td-nr{font-size:0.72rem;color:var(--muted-1,#8ba1c2);font-style:italic;}
+    .td-tl{list-style:none;margin:0;padding:0;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;}
+    .td-tl li{padding:6px 0 6px 12px;border-left:2px solid #1e3a5f;margin-left:4px;overflow-wrap:anywhere;}
+    .td-tl li b{color:#e0eaf8;}
+    .td-tl .k-trail,.td-tl .k-lock{border-color:#f59e0b;}
+    .td-tl .k-breakeven{border-color:#10b981;}
+    .td-tl .k-target{border-color:#3b82f6;}
+    .td-spark{width:100%;height:60px;display:block;}
+    .td-export{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;}
+    .td-export input{min-height:44px;font-size:16px;background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;border-radius:6px;padding:0 10px;}
+    .td-export .btn{min-height:44px;}
+    .td-export-msg{font-size:0.7rem;color:var(--muted-1,#8ba1c2);overflow-wrap:anywhere;}
+    @media(max-width:768px){
+      .td-sheet{top:auto;left:0;right:0;width:100%;max-height:88vh;border-left:0;border-top:0.5px solid #0e1e36;border-radius:14px 14px 0 0;transform:translateY(100%);}
+      .td-head{padding-top:12px;}
+      .td-btns .btn{min-height:44px;}
+      .td-kv{grid-template-columns:minmax(0,1fr);}
+    }
+    :root[data-theme="light"] .td-sheet{background:#fff;border-color:#e0e4ea;}
+    :root[data-theme="light"] .td-head{border-color:#e0e4ea;}
+    :root[data-theme="light"] .td-kv div{border-color:#eef1f5;}
+    :root[data-theme="light"] .td-tl li b{color:#1e293b;}
+    :root[data-theme="light"] .td-export input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
   </style>
 </head>
 <body>
@@ -988,11 +1103,32 @@ router.get("/", (req, res) => {
       </div>
       <div id="emptyState" class="empty" style="display:none;">No trades match your filters.</div>
     </div>
+
+    <div class="panel">
+      <h3>Daily export (CSV + summary)</h3>
+      <div class="td-export-msg">Written automatically after 16:30 IST on trading days to ~/trading-data/exports/. Never runs 09:00–15:30 IST on a weekday.</div>
+      <div class="td-export">
+        <input type="date" id="expDate" aria-label="Export date"/>
+        <button type="button" class="btn" id="expBtn" onclick="exportDay()">Write export</button>
+        <span class="td-export-msg" id="expMsg"></span>
+      </div>
+    </div>
   </div>
+</div>
+
+<!-- Trade detail sheet: right panel on desktop, bottom sheet on a phone -->
+<div class="td-backdrop" id="tdBackdrop" onclick="closeTrade()"></div>
+<div class="td-sheet" id="tdSheet" role="dialog" aria-modal="true" aria-labelledby="tdTitle" aria-hidden="true">
+  <div class="td-head">
+    <div class="td-title" id="tdTitle">Trade</div>
+    <button type="button" class="btn td-close" onclick="closeTrade()" aria-label="Close trade details">✕</button>
+  </div>
+  <div class="td-body" id="tdBody"></div>
 </div>
 
 <script>
 ${aiExportJS()}
+${modalJS()}
 ${CC.clientScript()}
 const TRADES = ${JSON.stringify(trades).replace(/</g, "\\u003c")};
 // Modes TRADES holds, in page order: the strategies enabled in Settings, then
@@ -1255,7 +1391,7 @@ function renderTradesTable(rows){
   const startNo = st.pageSize ? (pg.page - 1) * st.pageSize : 0;
   // data-label feeds the phone card layout (each cell prints its own heading).
   tb.innerHTML = pg.slice.map((t, i) => \`
-    <tr style="background:\${pnlRowBg(t.pnl)};">
+    <tr data-i="\${i}" style="background:\${pnlRowBg(t.pnl)};">
       <td data-label="#" class="c-no">\${startNo + i + 1}</td>
       <td data-label="Strategy" class="c-strat"><span class="badge-mode badge-\${esc(t.mode)}" title="\${esc(MODE_LABEL[t.mode] || t.mode)}">\${esc(stratLabel(t.strategyId))}</span>\${t.retired ? ' <span class="retired-tag" title="Retired copy book — kept for its history">retired</span>' : ''}</td>
       <td data-label="Market" class="c-mkt"><span class="mkt-pill">\${esc(mktLabel(t.market))}</span>\${t.isExpiry === true ? ' <span class="exp-tag" title="Expiry day">EXP</span>' : ''}</td>
@@ -1270,7 +1406,7 @@ function renderTradesTable(rows){
       <td data-label="P&amp;L" class="num c-pnl \${pnlCls(t.pnl)}" style="font-weight:700;">\${t.pnl >= 0 ? '+' : ''}\${fmtINR(t.pnl)}\${t.charges != null ? '<div class="sub-num">chg ' + fmtINR(t.charges) + '</div>' : ''}</td>
       <td data-label="Exit reason" class="c-reason" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.65rem;" title="\${esc(t.exitReason)}">\${esc(t.exitReason) || '—'}</td>
       <td data-label="After exit" class="num c-pe">\${postExitHtml(t.postExit)}</td>
-      <td data-label="" class="c-copy"><button class="btn" onclick="copyOne(\${i})" aria-label="Copy trade">📋</button></td>
+      <td data-label="" class="c-copy"><div class="td-btns"><button class="btn" onclick="openTrade(\${i})" aria-label="Trade details">🔍</button><button class="btn" onclick="copyOne(\${i})" aria-label="Copy trade">📋</button></div></td>
     </tr>\`).join('');
   updatePagerUI('tradesTbl', sorted.length, pg.slice.length, pg.page, pg.totalPages);
 }
@@ -1406,6 +1542,169 @@ function copyOne(idx){
   const t = _rendered.tradesTbl[idx];
   if (!t) return;
   copyText(tradesToText([t], '# Trade'), event.target);
+}
+
+// ── Trade detail sheet (tap a trade) ────────────────────────────────────────
+// Row fields render at once; the trade journal (utils/tradeJournal) is fetched
+// by id. Trades from before journals (or from a route not hooked yet) show
+// "not recorded" for the journal parts.
+let _tdSeq = 0;
+function tdNum(v, d){ if (v == null || v === '' || isNaN(v)) return null; return Number(v).toFixed(d == null ? 2 : d); }
+function tdRs(v){ return (v == null || v === '' || isNaN(v)) ? null : fmtINR(Number(v)); }
+function tdP(v){ return (v == null || v === '' || isNaN(v)) ? null : fmtPts(v) + ' pts'; }
+function tdAt(ist, mins){ if (!ist) return null; return esc(ist) + (mins != null ? ' <span class="sub-num">(+' + esc(mins) + ' min)</span>' : ''); }
+function tdNR(what){ return '<div class="td-nr">' + esc(what) + ' — not recorded</div>'; }
+function tdSec(title, body){ return '<div class="td-sec"><h4>' + esc(title) + '</h4>' + body + '</div>'; }
+function tdKv(pairs){
+  let h = '';
+  pairs.forEach(function(p){ if (p[1] == null || p[1] === '') return; h += '<div><span>' + esc(p[0]) + '</span><span>' + p[1] + '</span></div>'; });
+  return h ? '<div class="td-kv">' + h + '</div>' : '';
+}
+function tdObj(o){
+  if (!o || typeof o !== 'object') return '';
+  return tdKv(Object.keys(o).slice(0, 40).map(function(k){
+    const v = o[k];
+    return [k, esc(v != null && typeof v === 'object' ? JSON.stringify(v) : v)];
+  }));
+}
+function tdSpark(vals, label){
+  const pts = (vals || []).filter(function(v){ return v != null && !isNaN(v); }).map(Number);
+  if (pts.length < 2) return '';
+  let lo = Math.min.apply(null, pts.concat([0])), hi = Math.max.apply(null, pts.concat([0]));
+  if (hi === lo) hi = lo + 1;
+  const W = 300, H = 60, y = function(v){ return (H - 4 - (v - lo) / (hi - lo) * (H - 8)).toFixed(1); };
+  const line = pts.map(function(v, i){ return (i / (pts.length - 1) * W).toFixed(1) + ',' + y(v); }).join(' ');
+  return '<svg class="td-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="' + esc(label) + '">'
+    + '<line x1="0" x2="' + W + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="#4a6080" stroke-dasharray="3 3" stroke-width="1"/>'
+    + '<polyline fill="none" stroke="#3b82f6" stroke-width="1.6" points="' + line + '"/></svg>';
+}
+function tdCandles(list, label){
+  if (!list || !list.length) return '';
+  const rows = list.map(function(c){
+    return '<li><b>' + esc(c.t || '—') + '</b> O ' + esc(tdNum(c.o) || '—') + ' H ' + esc(tdNum(c.h) || '—') + ' L ' + esc(tdNum(c.l) || '—') + ' C ' + esc(tdNum(c.c) || '—')
+      + (c.v != null ? ' V ' + esc(c.v) : '') + (c.ind ? ' <span class="sub-num">' + esc(JSON.stringify(c.ind)) + '</span>' : '') + '</li>';
+  }).join('');
+  return '<details><summary class="td-nr" style="cursor:pointer;min-height:32px;">' + esc(label) + ' (' + list.length + ')</summary><ul class="td-tl">' + rows + '</ul></details>';
+}
+function tdStops(j){
+  if (!j.stops || !j.stops.length) return '<div class="td-nr">No stop / trail changes were recorded for this trade.</div>';
+  const items = j.stops.map(function(s){
+    const mv = (s.from != null ? esc(s.from) + ' → ' : '') + '<b>' + esc(s.to != null ? s.to : 'removed') + '</b>';
+    return '<li class="k-' + esc(s.kind) + '"><b>#' + esc(s.n) + ' ' + esc(s.kind) + '</b> ' + mv + ' · ' + (tdAt(s.ist, s.minFromEntry) || '')
+      + (s.reason ? '<div>' + esc(s.reason) + '</div>' : '')
+      + '<div class="sub-num">' + [s.favPts != null ? 'trade then ' + fmtPts(s.favPts) + ' pts' : '', s.peakPts != null ? 'peak so far ' + fmtPts(s.peakPts) + ' pts' : '',
+         s.spot != null ? 'spot ' + esc(s.spot) : '', s.ltp != null ? 'LTP ' + esc(s.ltp) : ''].filter(Boolean).join(' · ') + '</div></li>';
+  }).join('');
+  return (j.stopsDropped ? '<div class="td-nr">' + esc(j.stopsDropped) + ' earlier move(s) not kept (list capped).</div>' : '') + '<ul class="td-tl">' + items + '</ul>';
+}
+function tdBars(j){
+  const bars = j.bars || [];
+  if (!bars.length) return '<div class="td-nr">No minute rows were recorded.</div>';
+  const rows = bars.map(function(b){
+    return '<li><b>' + esc(b.t) + '</b>' + (b.partial ? ' (partial)' : '') + ' spot ' + esc(b.s ? b.s[3] : '—') + (b.o ? ' · opt ' + esc(b.o[3]) : '')
+      + (b.pnl != null ? ' · ' + fmtINR(b.pnl) : '') + (b.sl != null ? ' · SL ' + esc(b.sl) : '') + (b.tg != null ? ' · TG ' + esc(b.tg) : '') + '</li>';
+  }).join('');
+  return tdSpark(bars.map(function(b){ return b.pnl; }), 'Unrealised P&L by minute')
+    + '<div class="td-nr">' + bars.length + ' minute row(s) from ' + esc(j.barSource || '—') + (j.barsDropped ? ' · ' + esc(j.barsDropped) + ' middle row(s) dropped (cap)' : '') + '</div>'
+    + '<details><summary class="td-nr" style="cursor:pointer;min-height:32px;">Show minute rows</summary><ul class="td-tl">' + rows + '</ul></details>';
+}
+function tdPostExit(t, pe){
+  if (pe && (pe.bestAfterExit || pe.worstAfterExit)) {
+    const b = pe.bestAfterExit || {}, w = pe.worstAfterExit || {}, l = pe.lastBeforeClose || {};
+    const mk = function(k){ return pe[k] ? fmtPts(pe[k].pts) + ' pts' : null; };
+    return tdKv([['Best after exit', b.pts != null ? fmtPts(b.pts) + ' pts at ' + esc(b.time || '—') + (b.minutesAfterExit != null ? ' (+' + esc(b.minutesAfterExit) + ' min)' : '') : null],
+                 ['Worst after exit', w.pts != null ? fmtPts(w.pts) + ' pts at ' + esc(w.time || '—') : null],
+                 ['+5 min', mk('plus5m')], ['+15 min', mk('plus15m')], ['+30 min', mk('plus30m')], ['+60 min', mk('plus60m')],
+                 ['Last before close', l.pts != null ? fmtPts(l.pts) + ' pts at ' + esc(l.time || '—') : null],
+                 ['Restarts while watching', pe.restarts ? esc(pe.restarts) + ' (~' + esc(pe.downtimeMin) + ' min unwatched)' : null]]);
+  }
+  const p = t.postExit;
+  if (p) return tdKv([['Best after exit', p.bestPts != null ? fmtPts(p.bestPts) + ' pts' + (p.bestTime ? ' at ' + esc(p.bestTime) : '') : null],
+                      ['Worst after exit', p.worstPts != null ? fmtPts(p.worstPts) + ' pts' : null],
+                      ['+5 / +15 / +30 / +60 min', [p.p5, p.p15, p.p30, p.p60].map(fmtPts).join(' / ')]]);
+  return tdNR('Post-exit move');
+}
+function renderTrade(t, j, pe, loading){
+  document.getElementById('tdTitle').textContent = [stratLabel(t.strategyId), mktLabel(t.market), t.side, t.symbol].filter(Boolean).join(' · ');
+  const e = j && j.entry, x = j && j.exit;
+  let h = tdSec('Trade', tdKv([['Date', esc(t.date)], ['Qty', esc(t.qty || '—')], ['Entry', esc(fmtDateTime(t.entryTime)) + ' @ ' + fmtINR(t.entryPrice)],
+    ['Exit', esc(fmtDateTime(t.exitTime)) + ' @ ' + fmtINR(t.exitPrice)], ['P&L', '<span class="' + pnlCls(t.pnl) + '">' + fmtSigned(t.pnl) + '</span>'],
+    ['Charges', tdRs(t.charges)]]));
+  const nr = loading ? function(w){ return '<div class="td-nr">' + esc(w) + ' — loading…</div>'; } : tdNR;
+  h += tdSec('Entry — why', '<div class="td-why">' + esc((e && e.reason) || t.entryReason || '—') + '</div>'
+    + (e ? tdKv([['Time (IST)', esc(e.ist)], ['Spot', esc(tdNum(e.spot))], ['Option LTP', esc(tdNum(e.optionLtp))],
+        ['Bid / Ask', e.bid != null || e.ask != null ? esc(tdNum(e.bid) || '—') + ' / ' + esc(tdNum(e.ask) || '—') : null],
+        ['Spread', e.spread != null ? esc(tdNum(e.spread)) + ' (' + esc(tdNum(e.spreadPct)) + '%)' : null], ['VIX', esc(tdNum(e.vix))],
+        ['Expiry', e.expiry ? esc(e.expiry) + (e.dte != null ? ' (' + esc(e.dte) + ' DTE)' : '') : null], ['Initial SL', esc(e.sl)], ['Target', esc(e.target)],
+        ['Wanted / filled', e.expectedPrice != null ? esc(tdNum(e.expectedPrice)) + ' / ' + esc(tdNum(e.fill)) : null], ['Entry slippage', tdP(e.slippagePts)]])
+      + (e.indicators ? '<h4 style="margin-top:8px;">Indicators</h4>' + tdObj(e.indicators) : '')
+      + (e.signal && typeof e.signal === 'object' ? '<h4 style="margin-top:8px;">Signal</h4>' + tdObj(e.signal) : '')
+      + tdCandles(e.candles, 'Spot candles before entry') + tdCandles(e.optionCandles, 'Option candles before entry')
+      : nr('Entry snapshot')));
+  h += tdSec('Peak profit & drawdown', j ? tdKv([
+      ['Peak', j.peak ? tdP(j.peak.pts) + (j.peak.rs != null ? ' · ' + fmtINR(j.peak.rs) : '') + ' at ' + tdAt(j.peak.ist, j.peak.minFromEntry) : null],
+      ['Peak ₹', j.peakRs && (!j.peak || j.peakRs.ms !== j.peak.ms) ? fmtINR(j.peakRs.rs) + ' at ' + tdAt(j.peakRs.ist, j.peakRs.minFromEntry) : null],
+      ['Worst', j.worst ? tdP(j.worst.pts) + (j.worst.rs != null ? ' · ' + fmtINR(j.worst.rs) : '') + ' at ' + tdAt(j.worst.ist, j.worst.minFromEntry) : null],
+      ['First move', j.path && j.path.firstMoveDir ? esc(j.path.firstMoveDir) + ' after ' + esc(j.path.secsToFirstMove) + ' s' : null],
+      ['Ticks seen', esc(j.ticks)]]) + tdSpark(j.path && j.path.pathPts, 'Favourable points every 30 s')
+    : nr('Peak and drawdown'));
+  h += tdSec('Stop / trail timeline', j ? tdStops(j) : nr('Stop history'));
+  h += tdSec('Minute path', j ? tdBars(j) : nr('Minute path'));
+  h += tdSec('Exit — why', '<div class="td-why">' + esc((x && x.reason) || t.exitReason || '—') + '</div>'
+    + (x ? tdKv([['Time (IST)', esc(x.ist)], ['Kind', esc(x.kind)], ['Spot', esc(tdNum(x.spot))], ['Option LTP', esc(tdNum(x.optionLtp))],
+        ['Bid / Ask', x.bid != null || x.ask != null ? esc(tdNum(x.bid) || '—') + ' / ' + esc(tdNum(x.ask) || '—') : null],
+        ['Wanted / filled', x.expectedPrice != null ? esc(tdNum(x.expectedPrice)) + ' / ' + esc(tdNum(x.fill)) : null],
+        ['Slippage', x.slippagePts != null ? tdP(x.slippagePts) + (x.slippageRs != null ? ' · ' + fmtINR(x.slippageRs) : '') : null],
+        ['Held', x.holdMin != null ? esc(x.holdMin) + ' min' + (x.candlesHeld != null ? ' · ' + esc(x.candlesHeld) + ' candles' : '') : null],
+        ['Final stop', esc(x.finalStop)],
+        ['Gave back from peak', x.givebackPts != null ? tdP(x.givebackPts) + (x.givebackRs != null ? ' · ' + fmtINR(x.givebackRs) : '') + (x.givebackPctOfPeak != null ? ' (' + esc(x.givebackPctOfPeak) + '% of peak)' : '') : 'never in profit']])
+      + (x.indicators ? '<h4 style="margin-top:8px;">Indicators at exit</h4>' + tdObj(x.indicators) : '')
+      + tdCandles(x.candles, 'Spot candles at exit') + tdCandles(x.optionCandles, 'Option candles at exit')
+      : nr('Exit snapshot')));
+  h += tdSec('After exit', tdPostExit(t, pe));
+  document.getElementById('tdBody').innerHTML = h;
+}
+async function openTrade(idx){
+  const t = _rendered.tradesTbl[idx];
+  if (!t) return;
+  const seq = ++_tdSeq;
+  renderTrade(t, null, null, !!t.journalId);
+  document.body.classList.add('td-on');
+  document.getElementById('tdSheet').setAttribute('aria-hidden', 'false');
+  if (!t.journalId) return;
+  try {
+    const r = await fetch('/consolidation/trade-detail?id=' + encodeURIComponent(t.journalId) + '&mode=' + encodeURIComponent(t.mode), { cache: 'no-store' });
+    const d = await r.json();
+    if (seq !== _tdSeq) return;
+    renderTrade(t, d && d.journal, d && d.postExit, false);
+  } catch (e) {
+    if (seq === _tdSeq) renderTrade(t, null, null, false);
+  }
+}
+function closeTrade(){
+  _tdSeq++;
+  document.body.classList.remove('td-on');
+  document.getElementById('tdSheet').setAttribute('aria-hidden', 'true');
+}
+document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && document.body.classList.contains('td-on')) closeTrade(); });
+document.querySelector('#tradesTbl tbody').addEventListener('click', function(e){
+  if (e.target.closest('button, a, summary')) return;
+  const tr = e.target.closest('tr[data-i]');
+  if (tr) openTrade(Number(tr.getAttribute('data-i')));
+});
+
+// ── Daily export on demand ──────────────────────────────────────────────────
+(function(){ const el = document.getElementById('expDate'); if (el) el.value = new Date(Date.now() + 19800000).toISOString().slice(0, 10); })();
+async function exportDay(){
+  const msg = document.getElementById('expMsg');
+  const date = document.getElementById('expDate').value;
+  msg.textContent = 'Writing…';
+  try {
+    const r = await secretFetch('/consolidation/export-day', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: date }) });
+    if (!r) { msg.textContent = 'Cancelled.'; return; }
+    const d = await r.json();
+    msg.textContent = d.success ? ('Wrote ' + d.csv + ' and ' + d.summary + ' (' + d.trades + ' trade(s), net ' + fmtSigned(d.net || 0) + ').') : ('Not written: ' + d.error);
+  } catch (e) { msg.textContent = 'Export failed: ' + e.message; }
 }
 
 function copyBucket(tableId, idx){
@@ -2637,6 +2936,32 @@ router.get("/data", (req, res) => {
   res.send(_dataBody);
 });
 
+// ── Trade detail (the sheet a tapped trade opens) ────────────────────────────
+// Returns the trade's journal (read from its own book) and its full post-exit
+// record. Old trades have no journal: { journal: null } and the sheet shows
+// "not recorded" for those parts.
+router.get("/trade-detail", (req, res) => {
+  const id = String(req.query.id || "").slice(0, 200);
+  const mode = String(req.query.mode || "").slice(0, 80) || null;
+  if (!id) return res.status(400).json({ success: false, error: "id required" });
+  try {
+    const journal = journalsFor([id], mode).get(id) || (mode ? journalsFor([id], null).get(id) : null) || null;
+    const row = loadConsolidatedTrades().trades.find((t) => t.journalId === id) || null;
+    res.json({ success: true, journal, postExit: postExitRecordFor(row) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Daily export on demand (utils/dailyExport — CSV + summary JSON) ──────────
+router.post("/export-day", express.json({ limit: "2kb" }), (req, res) => {
+  const date = String((req.body && req.body.date) || req.query.date || "").trim() || null;
+  const out = require("../utils/dailyExport").writeDay(date);
+  if (!out.ok) return res.status(out.error && out.error.startsWith("Exports never run") ? 409 : 400).json({ success: false, error: out.error });
+  res.json({ success: true, date: out.date, trades: out.trades,
+    csv: path.basename(out.csvPath), summary: path.basename(out.summaryPath), net: out.summary.net });
+});
+
 // ── Helper used in the outer HTML template (server-side) ──────────────────────
 function fmtINR(n) {
   if (typeof n !== "number" || isNaN(n)) return "—";
@@ -2651,3 +2976,7 @@ module.exports.loadAllTrades = loadAllTrades;
 // The consolidated page's own set (enabled + retired copy books, annotated) —
 // exported for tests/consolidation.regression.js.
 module.exports.loadConsolidatedTrades = loadConsolidatedTrades;
+// Trade journals / per-row extras — for the detail sheet, utils/dailyExport and tests.
+module.exports.journalsFor = journalsFor;
+module.exports.extraOf = extraOf;
+module.exports.postExitRecordFor = postExitRecordFor;

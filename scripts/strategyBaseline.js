@@ -7,6 +7,9 @@
  * and records every trade it books. The output is one golden JSON per strategy
  * under tests/baseline/. The purpose is a refactor safety net: a change that is
  * meant to leave paper decisions untouched must leave these files byte-identical.
+ * One exception, by name: a trade's `journal` key (utils/tradeJournal — an
+ * observer nothing decides on) is dropped before building / comparing; see
+ * OBSERVER_KEYS below.
  *
  * PAIRS: the same harness also replays the (strategy, market) pairs a create(pair)
  * builder runs (PAIRS below) through synthetic SENSEX / BANKNIFTY / NIFTY-futures
@@ -221,7 +224,25 @@ function compactTrade(t) {
   };
 }
 
+// Keys on a trade that are pure observers and so are left OUT of the golden:
+//   journal — utils/tradeJournal's per-trade story (entry snapshot, peak /
+//             drawdown, stop history, exit, giveback, slippage). Nothing reads
+//             it back into a decision, and it carries wall-clock-ish detail
+//             (ids, per-tick peaks) that routes will start writing as each one
+//             is hooked. Ignoring it lets those hooks land without touching the
+//             golden files, while every OTHER field — every decision, fill and
+//             exit — is still compared byte for byte.
+// Only these exact top-level keys are dropped; never add a decision field here.
+const OBSERVER_KEYS = ["journal"];
+function stripObserverKeys(t) {
+  if (!t || typeof t !== "object" || !OBSERVER_KEYS.some(k => k in t)) return t;
+  const out = {};
+  for (const k of Object.keys(t)) if (!OBSERVER_KEYS.includes(k)) out[k] = t[k];
+  return out;
+}
+
 function buildGolden(strategy, runs) {
+  runs = runs.map(r => (r && Array.isArray(r.trades) ? { ...r, trades: r.trades.map(stripObserverKeys) } : r));
   const sessions = runs.map(r => ({
     date: r.date,
     regime: r.regime,
@@ -266,7 +287,7 @@ function firstDiff(a, b, p = "") {
 const short = (v) => { const s = JSON.stringify(v); return s === undefined ? "undefined" : (s.length > 300 ? s.slice(0, 300) + "…" : s); };
 
 // ── main ─────────────────────────────────────────────────────────────────────
-(async () => {
+async function main() {
   const t0 = Date.now();
   const strategies = STRATEGIES.filter(s => !ONLY || ONLY.has(s.route) || ONLY.has(s.mode));
   // A pair runs with --only naming its own name ("emaRsiStV2Paper.SENSEX") or
@@ -393,4 +414,8 @@ const short = (v) => { const s = JSON.stringify(v); return s === undefined ? "un
     else fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
   process.exit(exitCode);
-})();
+}
+
+if (require.main === module) main();
+// For tests/tradeJournal.regression.js (no run when required).
+module.exports = { OBSERVER_KEYS, stripObserverKeys, buildGolden, compactTrade, firstDiff };

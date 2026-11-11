@@ -1045,6 +1045,7 @@ const OPEN_PATHS = [
   // Its one caller uses secretFetch.
   "/consolidation",       // read-only cross-mode trade history + analytics
   "/consolidation/data",
+  "/consolidation/trade-detail", // one trade's journal + post-exit record (read-only); /consolidation/export-day stays protected
   "/oi-monitor",          // read-only per-strike OI ladder — no position, no order
   "/oi-monitor/data",
   // Swing Scanner reads. /swing-scanner/order is deliberately NOT here — it
@@ -4684,6 +4685,10 @@ server.listen(PORT, HOST, () => {
   // ── Boot: resume post-exit watches a restart interrupted (observer only) ───
   try { require("./utils/postExitTracker").resume(); }
   catch (e) { console.error(`[STARTUP] post-exit resume failed: ${e.message}`); }
+
+  // ── Daily trade CSV + summary JSON → ~/trading-data/exports (≥16:30 IST) ───
+  try { require("./utils/dailyExport").start(); }
+  catch (e) { console.error(`[STARTUP] daily export scheduler failed: ${e.message}`); }
 
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();

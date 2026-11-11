@@ -15,6 +15,7 @@ const fsp = fs.promises;
 const path = require("path");
 const { isNonTradingDay } = require("./nseHolidays");
 const logTags = require("./logTags");
+const tradeJournal = require("./tradeJournal");
 const _HOME = require("os").homedir();
 const DATA_DIR   = path.join(_HOME, "trading-data");
 const TRADES_DIR = path.join(DATA_DIR, "trades");
@@ -180,11 +181,20 @@ async function appendSettingsSnapshot(mode, snapshot, meta = {}) {
 // strategy id, and the entry / exit signal reasons as explicit keys (null when
 // a route did not supply one, so "no reason" is visible rather than a missing
 // key). Built as a NEW object — the route's in-memory trade is never touched.
+// `journal` (utils/tradeJournal, spread in by a hooked route) is written as its
+// persisted record, and `tradeId` — the journal's id unless the trade names its
+// own, null when neither exists — is the key post-exit records carry, so the
+// consolidated page can join a trade to what the market did after it.
 function _tradeRecord(mode, ts, trade) {
   const t = trade && typeof trade === "object" ? trade : {};
   const rec = { mode, loggedAt: new Date(ts).toISOString(), ...logTags.tagsFor(mode, t), ...t };
   rec.entryReason = t.entryReason != null ? t.entryReason : null;
   rec.exitReason  = t.exitReason  != null ? t.exitReason  : null;
+  if (t.journal != null) {
+    const j = tradeJournal.normalize(t.journal);
+    if (j) rec.journal = j; else delete rec.journal;
+  }
+  rec.tradeId = t.tradeId != null ? t.tradeId : ((rec.journal && rec.journal.id) || null);
   return rec;
 }
 
@@ -204,7 +214,7 @@ function appendTradeLog(mode, trade) {
       console.warn(`[tradeLogger] daily append failed (mode=${mode}): ${err.message}`);
     });
     // Watch the market after this exit until that market's close (observer only).
-    try { require("./postExitTracker").track(mode, trade, { market: rec.market, strategy: rec.strategy }); } catch (_) {}
+    try { require("./postExitTracker").track(mode, trade, { market: rec.market, strategy: rec.strategy, tradeId: rec.tradeId }); } catch (_) {}
   } catch (err) {
     // Logging must never break the trade flow.
     console.warn(`[tradeLogger] append failed (mode=${mode}): ${err.message}`);

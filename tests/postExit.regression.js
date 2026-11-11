@@ -360,7 +360,7 @@ check("the /post-exit reader's day-file pattern never matches _pending.json", ()
 
 check("tracker is wired: tradeLogger passes tags, app.js resumes at boot", () => {
   const tlSrc = fs.readFileSync(path.join(UTILS, "tradeLogger.js"), "utf-8");
-  assert.ok(/postExitTracker"\)\.track\(mode, trade, \{ market: rec\.market, strategy: rec\.strategy \}\)/.test(tlSrc));
+  assert.ok(/postExitTracker"\)\.track\(mode, trade, \{ market: rec\.market, strategy: rec\.strategy, tradeId: rec\.tradeId \}\)/.test(tlSrc));
   const app = fs.readFileSync(path.join(SRC, "app.js"), "utf-8");
   assert.ok(app.includes('require("./utils/postExitTracker").resume()'));
 });
