@@ -14,6 +14,7 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 const { isNonTradingDay } = require("./nseHolidays");
+const logTags = require("./logTags");
 const _HOME = require("os").homedir();
 const DATA_DIR   = path.join(_HOME, "trading-data");
 const TRADES_DIR = path.join(DATA_DIR, "trades");
@@ -198,11 +199,24 @@ async function appendSettingsSnapshot(mode, snapshot, meta = {}) {
   });
 }
 
+// The persisted line = the trade plus the labels every reader needs: market,
+// strategy id, and the entry / exit signal reasons as explicit keys (null when
+// a route did not supply one, so "no reason" is visible rather than a missing
+// key). Built as a NEW object — the route's in-memory trade is never touched.
+function _tradeRecord(mode, ts, trade) {
+  const t = trade && typeof trade === "object" ? trade : {};
+  const rec = { mode, loggedAt: new Date(ts).toISOString(), ...logTags.tagsFor(mode, t), ...t };
+  rec.entryReason = t.entryReason != null ? t.entryReason : null;
+  rec.exitReason  = t.exitReason  != null ? t.exitReason  : null;
+  return rec;
+}
+
 function appendTradeLog(mode, trade) {
   try {
     const ts = Date.now();
     _ensureDailyHeader(mode, ts);
-    const line = JSON.stringify({ mode, loggedAt: new Date(ts).toISOString(), ...trade }) + "\n";
+    const rec = _tradeRecord(mode, ts, trade);
+    const line = JSON.stringify(rec) + "\n";
     // Fire-and-forget async append. POSIX O_APPEND makes each short write
     // atomic, so concurrent exits cannot interleave lines.
     // Write to both the cumulative file (legacy, unchanged) and the daily file.
@@ -212,8 +226,8 @@ function appendTradeLog(mode, trade) {
     fsp.appendFile(dailyFilePathFor(mode, istDateString(ts)), line).catch(err => {
       console.warn(`[tradeLogger] daily append failed (mode=${mode}): ${err.message}`);
     });
-    // Watch the market after this exit until 15:30 (observer only).
-    try { require("./postExitTracker").track(mode, trade); } catch (_) {}
+    // Watch the market after this exit until that market's close (observer only).
+    try { require("./postExitTracker").track(mode, trade, { market: rec.market, strategy: rec.strategy }); } catch (_) {}
   } catch (err) {
     // Logging must never break the trade flow.
     console.warn(`[tradeLogger] append failed (mode=${mode}): ${err.message}`);
@@ -249,6 +263,7 @@ module.exports = {
   listDailyDates,
   readDailyTrades,
   istDateString,
+  _tradeRecord,
   FILE_BY_MODE,
   DAILY_PREFIX_BY_MODE,
   TRADES_DIR,

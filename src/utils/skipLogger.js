@@ -29,6 +29,7 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 const _HOME = require("os").homedir();
+const logTags = require("./logTags");
 
 const DATA_DIR  = path.join(_HOME, "trading-data");
 const SKIPS_DIR = path.join(DATA_DIR, "skips");
@@ -101,18 +102,31 @@ function listDates(mode) {
 }
 
 /**
+ * The persisted skip row: every row names its market, strategy id and a
+ * reason. A caller that passes no reason gets the gate name, so a row is never
+ * reasonless. Built as a NEW object — the caller's entry is never touched.
+ */
+function _skipRecord(mode, ts, entry) {
+  const e = entry && typeof entry === "object" ? entry : {};
+  const rec = {
+    ts: new Date(ts).toISOString(),
+    istDate: istDateString(ts),
+    mode,
+    ...logTags.tagsFor(mode, e),
+    ...e,
+  };
+  if (rec.reason == null || rec.reason === "") rec.reason = e.gate != null ? String(e.gate) : null;
+  return rec;
+}
+
+/**
  * Append a skip entry for the given mode. Fire-and-forget async write.
  * Caller supplies: { gate, reason, spot?, rsi?, adx?, audit?, ...any extras }.
  */
 function appendSkipLog(mode, entry) {
   try {
     const ts = Date.now();
-    const line = JSON.stringify({
-      ts: new Date(ts).toISOString(),
-      istDate: istDateString(ts),
-      mode,
-      ...entry,
-    }) + "\n";
+    const line = JSON.stringify(_skipRecord(mode, ts, entry)) + "\n";
     fsp.appendFile(filePathFor(mode, istDateString(ts)), line).catch(err => {
       console.warn(`[skipLogger] append failed (mode=${mode}): ${err.message}`);
     });
@@ -145,6 +159,7 @@ module.exports = {
   listDates,
   readDailySkips,
   istDateString,
+  _skipRecord,
   SKIPS_DIR,
   FILE_PREFIX_BY_MODE,
 };
