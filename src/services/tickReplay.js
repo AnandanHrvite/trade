@@ -894,23 +894,10 @@ function _applySettingsOverride(settings) {
 // loaded once at the start of each replay run. Matches by closest sessionStart
 // timestamp within a 60-second window — accounts for the ~ms-level skew between
 // state.sessionStart (ISO toISOString()) and state._sessionId (Date.now()).
-const _MODE_TO_CANONICAL_FILE = {
-  "pa-paper":       "pa_paper_trades.json",
-  "bb_rsi-paper":    "bb_rsi_paper_trades.json",
-  "ema_rsi_st-paper":    "ema_rsi_st_paper_trades.json",
-  "ema_rsi_st_v2-paper": "ema_rsi_st_v2_paper_trades.json",
-  "orb-paper":      "orb_paper_trades.json",
-  "ema9vwap-paper": "ema9vwap_paper_trades.json",
-  "trend-pb-paper": "trend_pb_paper_trades.json",
-  "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
-  "ha-scalp-paper":        "ha_scalp_paper_trades.json",
-  "prev-orb-scalp-paper":  "prev_orb_scalp_paper_trades.json",
-  "itm20-scalp-paper":     "itm20_scalp_paper_trades.json",
-  "early-bird-paper":      "early_bird_paper_trades.json",
-  "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
-  "sail_vwap_st-paper":    "sail_vwap_st_paper_trades.json",
-  "simple930-paper":       "simple930_paper_trades.json",
-};
+// Replay mode ("<slug>-paper") → the paper route's trades file, for every
+// replayable registry entry (ORDERS.replay keeps the historic order).
+const _MODE_TO_CANONICAL_FILE = Object.fromEntries(require("../config/strategyRegistry").inOrder("replay")
+  .map(s => [s.paper.path.slice(1), s.tradesFile]));
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
   if (!fname) return null;
@@ -2032,24 +2019,11 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
 }
 
 // ── Mode → route module mapping ─────────────────────────────────────────────
-const MODE_TO_MODULE = {
-  "pa-paper":       "../routes/paPaper",
-  "bb_rsi-paper":    "../routes/bbRsiPaper",
-  "ema_rsi_st-paper":    "../routes/emaRsiStPaper",
-  "ema_rsi_st_v2-paper": "../routes/emaRsiStV2Paper",
-  "orb-paper":      "../routes/orbPaper",
-  "ema9vwap-paper": "../routes/ema9vwapPaper",
-  "trend-pb-paper": "../routes/trendPbPaper",
-  "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
-  "ha-scalp-paper":        "../routes/haScalpPaper",
-  "prev-orb-scalp-paper":  "../routes/prevOrbScalpPaper",
-  "itm20-scalp-paper":     "../routes/itm20ScalpPaper",
-  "early-bird-paper":      "../routes/earlyBirdPaper",
-  "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
-  // SAIL stock options — fed ONLY NSE:SAIL-EQ ticks (_MODE_TO_SPOT_INDEX).
-  "sail_vwap_st-paper":    "../routes/sailVwapStPaper",
-  "simple930-paper":       "../routes/simple930Paper",
-};
+// Same keys as _MODE_TO_CANONICAL_FILE; the value is the paper route module,
+// relative to this file. SAIL stock options are fed ONLY NSE:SAIL-EQ ticks
+// (_MODE_TO_SPOT_INDEX).
+const MODE_TO_MODULE = Object.fromEntries(require("../config/strategyRegistry").inOrder("replay")
+  .map(s => [s.paper.path.slice(1), "../" + s.paper.module]));
 
 // Every NIFTY / BANK NIFTY strategy sizes off the one common LOT_MULTIPLIER, so
 // pinning that is enough — except EarlyBird, whose own lot count multiplies on
@@ -2976,5 +2950,5 @@ module.exports = {
   // getQuotes and write replay-clock data into today's real recording.
   isReplayInProgress: () => _replayInProgress,
   // exposed for tests
-  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _resolveReplayExpiryEnv, _resolveReplayInstrumentEnv, _buildReplayCacheKey },
+  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _MODE_TO_CANONICAL_FILE, _resolveReplayExpiryEnv, _resolveReplayInstrumentEnv, _buildReplayCacheKey },
 };

@@ -93,8 +93,10 @@ check("a strategy mounted AFTER the first discovery is picked up on the next cal
 });
 
 check("modeOfMount maps every real mount to the file-name mode key tradeLogger uses", () => {
-  const tl = decomment(read("utils/tradeLogger.js"));
-  const known = new Set([...tl.matchAll(/^\s*([a-z0-9_]+):\s*"\1_paper_trades_"/gm)].map(m => m[1]));
+  // The map is built from the strategy registry, so read it at runtime.
+  const { DAILY_PREFIX_BY_MODE } = require("../src/utils/tradeLogger");
+  const known = new Set(Object.entries(DAILY_PREFIX_BY_MODE)
+    .filter(([k, v]) => v === `${k}_paper_trades_`).map(([k]) => k));
   assert(known.size >= 14, `only ${known.size} modes parsed from tradeLogger DAILY_PREFIX_BY_MODE`);
   const unmapped = paperMounts
     .map(m => m.mount).filter(m => !known.has(paperReset.modeOfMount(m)));

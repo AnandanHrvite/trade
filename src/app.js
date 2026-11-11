@@ -4664,27 +4664,8 @@ async function gracefulShutdown(signal) {
 
     // Call stopSession() on each active route. Routes without a stopSession
     // export are skipped by the guard below.
-    const routeMap = {
-      "EMA_RSI_ST_PAPER":require("./routes/emaRsiStPaper"),
-      "BB_RSI_PAPER":    require("./routes/bbRsiPaper"),
-      "PA_PAPER":       require("./routes/paPaper"),
-      "ORB_PAPER":      require("./routes/orbPaper"),
-      "EMA9VWAP_PAPER": require("./routes/ema9vwapPaper"),
-      "TREND_PB_PAPER": require("./routes/trendPbPaper"),
-      "TREND_DAY_SCALP_PAPER": require("./routes/trendDayScalpPaper"),
-      "HA_SCALP_PAPER":        require("./routes/haScalpPaper"),
-      "PREV_ORB_SCALP_PAPER":  require("./routes/prevOrbScalpPaper"),
-      "ITM20_SCALP_PAPER":     require("./routes/itm20ScalpPaper"),
-      "EARLY_BIRD_PAPER":      require("./routes/earlyBirdPaper"),
-      "SIMPLE930_PAPER":       require("./routes/simple930Paper"),
-      "RSI_PIVOT_ST_PAPER":    require("./routes/rsiPivotStPaper"),
-      "EMA_RSI_ST_V2_PAPER":   require("./routes/emaRsiStV2Paper"),
-      "ST_RSI_PIV_BB_PAPER":   require("./routes/stRsiPivBbPaper"),
-      "SAIL_VWAP_ST_PAPER":    require("./routes/sailVwapStPaper"),
-      "PIVOT_EMA_ST_PAPER":      require("./routes/pivotEmaStPaper"),
-      "GAP_RUNAWAY_PAPER":       require("./routes/gapRunawayPaper"),
-      "GAP_RUNAWAY_STK_PAPER":   require("./routes/gapRunawayStkPaper"),
-    };
+    const routeMap = Object.fromEntries(require("./config/strategyRegistry").all()
+      .map((s) => [s.socket.mode, require("./" + s.paper.module)]));
     for (const mode of activeModes) {
       const route = routeMap[mode];
       if (route && typeof route.stopSession === "function") {

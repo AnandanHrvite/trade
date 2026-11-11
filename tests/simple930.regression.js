@@ -779,7 +779,7 @@ check("snapshot-mode replay pins this strategy's settings", () => {
 check("replay knows the mode, its module and its canonical trade file", () => {
   const replay = require("../src/services/tickReplay");
   assert.ok("simple930-paper" in replay._internals.MODE_TO_MODULE);
-  assert.ok(/"simple930-paper":\s*"simple930_paper_trades\.json"/.test(read("services/tickReplay.js")));
+  assert.strictEqual(replay._internals._MODE_TO_CANONICAL_FILE["simple930-paper"], "simple930_paper_trades.json");
 });
 check("replay stubs BOTH of this strategy's sharedSocketState mutators", () => {
   // A mutator the harness forgets to stub lets a replay leak the real mutex and

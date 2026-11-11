@@ -68,13 +68,10 @@ function enabledStrategies() {
 }
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
-// EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
-const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
-BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.GAP_RUNAWAY = 'ZERODHA'; BROKER_OF.GAP_RUNAWAY_STK = 'ZERODHA';
-BROKER_OF.ITM20_SCALP = 'ZERODHA'; // paper only — charges modelled on Zerodha, like PREV_ORB_SCALP
+// The pool is the registry's capitalPool broker (Fyers candles + Zerodha
+// orders count as ZERODHA).
+const BROKER_OF = Object.fromEntries(require("../config/strategyRegistry").all()
+  .map(s => [s.key, s.broker.toUpperCase()]));
 const brokerOfKey = (key) => BROKER_OF[key];
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.

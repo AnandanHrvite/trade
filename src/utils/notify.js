@@ -160,10 +160,10 @@ function modeGroup(mode) {
 // until it has been paper-validated, and without this it would fire Telegram
 // alerts and appear in the consolidated report while Settings still showed it
 // disabled (the Settings schema, sharedNav, realtime and app.js all default it
-// to "false").
-const DEFAULT_OFF_GROUPS = new Set(["EMA_RSI_ST_V2"]);
-DEFAULT_OFF_GROUPS.add("ST_RSI_PIV_BB"); // ships dark like V2 (Settings defaults it to "false")
-DEFAULT_OFF_GROUPS.add("SAIL_VWAP_ST"); // ships dark (Settings defaults it to "false")
+// to "false"). ST_RSI_PIV_BB and SAIL_VWAP_ST ship dark the same way. Read from
+// the registry: every group whose *_MODE_ENABLED default is "false".
+const DEFAULT_OFF_GROUPS = new Set(require("../config/strategyRegistry").all()
+  .filter(s => s.modeEnabled.default === "false").map(s => s.key));
 
 function isModeEnabled(group) {
   const v = process.env[`${group}_MODE_ENABLED`];

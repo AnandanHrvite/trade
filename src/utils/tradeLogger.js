@@ -18,57 +18,14 @@ const _HOME = require("os").homedir();
 const DATA_DIR   = path.join(_HOME, "trading-data");
 const TRADES_DIR = path.join(DATA_DIR, "trades");
 
-const FILE_BY_MODE = {
-  ema_rsi_st:    "ema_rsi_st_paper_trades_log.jsonl",
-  bb_rsi:    "bb_rsi_paper_trades_log.jsonl",
-  pa:       "pa_paper_trades_log.jsonl",
-  orb:      "orb_paper_trades_log.jsonl",
-  ema9vwap: "ema9vwap_paper_trades_log.jsonl",
-  trend_pb: "trend_pb_paper_trades_log.jsonl",
-  trend_day_scalp: "trend_day_scalp_paper_trades_log.jsonl",
-  ha_scalp: "ha_scalp_paper_trades_log.jsonl",
-  prev_orb_scalp: "prev_orb_scalp_paper_trades_log.jsonl",
-  itm20_scalp: "itm20_scalp_paper_trades_log.jsonl",
-  early_bird: "early_bird_paper_trades_log.jsonl",
-  rsi_pivot_st: "rsi_pivot_st_paper_trades_log.jsonl",
-  // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop.
-  ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_log.jsonl",
-  // ST_RSI_PIV_BB — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
-  st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_log.jsonl",
-  // SAIL_VWAP_ST — SAIL stock options: VWAP cross + breakout, SuperTrend stop.
-  sail_vwap_st: "sail_vwap_st_paper_trades_log.jsonl",
-  // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend (NIFTY / BANK NIFTY / SAIL).
-  pivot_ema_st: "pivot_ema_st_paper_trades_log.jsonl",
-  // GAP_RUNAWAY (NIFTY options) + GAP_RUNAWAY_STK (stock scanner, paper only).
-  gap_runaway: "gap_runaway_paper_trades_log.jsonl",
-  gap_runaway_stk: "gap_runaway_stk_paper_trades_log.jsonl",
-  simple930: "simple930_paper_trades_log.jsonl",
-};
-
-const DAILY_PREFIX_BY_MODE = {
-  ema_rsi_st:    "ema_rsi_st_paper_trades_",
-  bb_rsi:    "bb_rsi_paper_trades_",
-  pa:       "pa_paper_trades_",
-  orb:      "orb_paper_trades_",
-  ema9vwap: "ema9vwap_paper_trades_",
-  trend_pb: "trend_pb_paper_trades_",
-  trend_day_scalp: "trend_day_scalp_paper_trades_",
-  ha_scalp: "ha_scalp_paper_trades_",
-  prev_orb_scalp: "prev_orb_scalp_paper_trades_",
-  itm20_scalp: "itm20_scalp_paper_trades_",
-  early_bird: "early_bird_paper_trades_",
-  rsi_pivot_st: "rsi_pivot_st_paper_trades_",
-  // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
-  ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_",
-  st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_",
-  sail_vwap_st: "sail_vwap_st_paper_trades_",
-  // PIVOT_EMA_ST family — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
-  pivot_ema_st: "pivot_ema_st_paper_trades_",
-  // GAP_RUNAWAY — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
-  gap_runaway: "gap_runaway_paper_trades_",
-  gap_runaway_stk: "gap_runaway_stk_paper_trades_",
-  simple930: "simple930_paper_trades_",
-};
+// Mode key → file names, one row per registry entry (strategyRegistry ORDERS.logs
+// keeps the historic key order — Object.keys(DAILY_PREFIX_BY_MODE) is the mode
+// list tradeSources / the trade-results MCP report). File names are on disk:
+// `${modeKey}_paper_trades_log.jsonl` (cumulative) and
+// `${modeKey}_paper_trades_YYYY-MM-DD.jsonl` (per day, under trades/).
+const _LOG_MODES = require("../config/strategyRegistry").inOrder("logs").map(s => s.modeKey);
+const FILE_BY_MODE = Object.fromEntries(_LOG_MODES.map(m => [m, `${m}_paper_trades_log.jsonl`]));
+const DAILY_PREFIX_BY_MODE = Object.fromEntries(_LOG_MODES.map(m => [m, `${m}_paper_trades_`]));
 
 // One-time dir ensure at module load — keeps the hot-path append sync-free.
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) {}

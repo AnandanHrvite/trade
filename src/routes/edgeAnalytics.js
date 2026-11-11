@@ -43,36 +43,10 @@ const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
 // Mirror the source map used by consolidation.js (paper).
-const PAPER_SOURCES = [
-  { mode: "EMA_RSI_ST",    file: "ema_rsi_st_paper_trades.json" },
-  // NIFTY FUTURES twin — same rules on the future (CE = LONG, PE = SHORT): a separate edge.
-  // EMA_RSI_ST_V2 — different rules, so a separate edge; never merged with V1.
-  { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_paper_trades.json" },
-  // Same engine, NIFTY BANK — a different underlying is a different edge.
-  // ST_RSI_PIV_BB — its own rules, its own edge.
-  { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
-  // SAIL_VWAP_ST — a different underlying (SAIL stock) is a different edge.
-  { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
-  // PIVOT_EMA_ST family — one rule set, three underlyings = three edges.
-  { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
-  // GAP_RUNAWAY — NIFTY options and the stock scanner are two different edges.
-  { mode: "GAP_RUNAWAY", file: "gap_runaway_paper_trades.json" },
-  { mode: "GAP_RUNAWAY_STK", file: "gap_runaway_stk_paper_trades.json" },
-  { mode: "BB_RSI",    file: "bb_rsi_paper_trades.json" },
-  { mode: "PA",       file: "pa_paper_trades.json" },
-  { mode: "ORB",      file: "orb_paper_trades.json" },
-  { mode: "EMA9VWAP", file: "ema9vwap_paper_trades.json" },
-  { mode: "TREND_PB", file: "trend_pb_paper_trades.json" },
-  { mode: "TDS",      file: "trend_day_scalp_paper_trades.json" },
-  { mode: "HA_SCALP", file: "ha_scalp_paper_trades.json" },
-  { mode: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
-  { mode: "ITM20_SCALP", file: "itm20_scalp_paper_trades.json" },
-  { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
-  // NIFTY BANK, monthly options — same rules, separate edge.
-  { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
-  // EarlyBird: cash equity, sides are LONG/SHORT rather than CE/PE.
-  { mode: "EARLYBIRD", file: "early_bird_paper_trades.json" },
-];
+// One { mode, file } row per registry entry — mode = group key, file = its
+// paper trades file — in the report pages' historic order (ORDERS.reports).
+const PAPER_SOURCES = require("../config/strategyRegistry").inOrder("reports")
+  .map(s => ({ mode: s.key, file: s.tradesFile }));
 
 // Which market a strategy trades — the same split the Consolidation Report tables use.
 function groupOf(mode) {

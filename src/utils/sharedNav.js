@@ -13,41 +13,29 @@
 const { resolveTheme } = require('./theme');
 const demoMode = require('./demoMode');   // read-only stakeholder session
 
-// Canonical strategy list + their Settings toggle keys, in sidebar order.
+// Canonical strategy list + their Settings toggle keys, in roster order.
 // Single source of truth for "which strategies is this install running?" so
 // cross-strategy screens (Edge Analytics, Consolidation Report) stay in step
-// with the sidebar instead of hard-coding their own strategy lists.
-const STRATEGY_MODES = [
-  { mode: 'EMA_RSI_ST', label: 'EMA_RSI_ST',   envKey: 'EMA_RSI_ST_MODE_ENABLED' },
-  { mode: 'BB_RSI',     label: 'BB_RSI',       envKey: 'BB_RSI_MODE_ENABLED'     },
-  { mode: 'PA',         label: 'Price Action', envKey: 'PA_MODE_ENABLED'         },
-  { mode: 'ORB',        label: 'ORB',          envKey: 'ORB_MODE_ENABLED'        },
-  { mode: 'EMA9VWAP',   label: 'EMA9+VWAP',    envKey: 'EMA9VWAP_MODE_ENABLED'   },
-  { mode: 'TREND_PB',   label: 'Trend_PB',     envKey: 'TREND_PB_MODE_ENABLED'   },
-  // `slug` is only needed when the mode key is not the route slug (TDS lives at
-  // /trend-day-scalp-*). startAllRoster.js matches key→slug otherwise.
-  { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED', slug: 'trend-day-scalp' },
-  { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
-  { mode: 'PREV_ORB_SCALP', label: 'Prev ORB Scalp', envKey: 'PREV_ORB_SCALP_MODE_ENABLED' },
-  { mode: 'ITM20_SCALP', label: 'ITM20 Scalp', envKey: 'ITM20_SCALP_MODE_ENABLED' },
-  { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
-  // envDefault 'false': V2 ships dark. Without it enabledStrategies() below would
-  // default it ON and Start-All, the consolidated report and edge analytics would
-  // all include a strategy the sidebar and Settings show as disabled.
-  { mode: 'EMA_RSI_ST_V2', label: 'EMA_RSI_ST_V2', envKey: 'EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
-  // ST_RSI_PIV_BB ships dark like V2 (envDefault 'false') for the same reason.
-  { mode: 'ST_RSI_PIV_BB', label: 'ST_RSI_PIV_BB', envKey: 'ST_RSI_PIV_BB_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
-  // SAIL_VWAP_ST (SAIL stock options) ships dark (envDefault 'false').
-  { mode: 'SAIL_VWAP_ST', label: 'SAIL VWAP+ST', envKey: 'SAIL_VWAP_ST_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
-  // PIVOT_EMA_ST ships ON (envDefault 'true') — the user wants Start All to start it.
-  { mode: 'PIVOT_EMA_ST', label: 'PIVOT_EMA_ST', envKey: 'PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
-  // GAP_RUNAWAY (GAP_runAway__Kirubakaran) ships ON — the user wants Start All (Paper) to start it,
-  // and its stock scanner beside it (paper only).
-  { mode: 'GAP_RUNAWAY', label: 'GAP_runAway__Kirubakaran', envKey: 'GAP_RUNAWAY_MODE_ENABLED', envDefault: 'true' },
-  { mode: 'GAP_RUNAWAY_STK', label: 'GAP_runAway Stocks', envKey: 'GAP_RUNAWAY_STK_MODE_ENABLED', envDefault: 'true' },
-  { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
-  { mode: 'EARLYBIRD',  label: 'EarlyBird',    envKey: 'EARLYBIRD_MODE_ENABLED'  },
-];
+// with the sidebar instead of hard-coding their own strategy lists. The rows
+// are derived from src/config/strategyRegistry.js:
+//   mode         the group key (TDS, EARLYBIRD, …)
+//   envKey       its *_MODE_ENABLED toggle; envDefault = that toggle's default
+//                (V2 / ST_RSI_PIV_BB / SAIL ship dark — without it
+//                enabledStrategies() below would default them ON and Start-All,
+//                the consolidated report and edge analytics would include a
+//                strategy the sidebar and Settings show as disabled)
+//   paperDefault only on rows whose own *_PAPER_ENABLED gate ships off
+//   slug         only when the mode key is not the route slug (TDS lives at
+//                /trend-day-scalp-*). startAllRoster.js matches key→slug otherwise.
+const _slugNorm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const STRATEGY_MODES = require('../config/strategyRegistry').all().map((s) => {
+  const row = { mode: s.key, label: s.nav.rosterLabel, envKey: s.modeEnabled.key };
+  const slug = s.paper.path.replace(/^\//, '').replace(/-paper$/, '');
+  if (_slugNorm(slug) !== _slugNorm(s.key)) row.slug = slug;
+  row.envDefault = s.modeEnabled.default;
+  if (s.paperEnabled && s.paperEnabled.default === 'false') row.paperDefault = 'false';
+  return row;
+});
 
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
 // Read from process.env on every call — Settings saves mutate process.env live,
