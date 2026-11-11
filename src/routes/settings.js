@@ -1416,6 +1416,9 @@ function pairFieldsFor(pair) {
     const key = pairs.pairKey(pair, f.key);
     if (!key) { shared.push(f.key); continue; }
     if (/_LIVE_|_POS_FILE$/.test(f.key)) continue;   // pairs are paper + backtest only
+    // A strategy with its own spread key (TREND_PB_MAX_SPREAD_PTS): a RUNNING
+    // pair's spread limit is the generated pair-only row below (one row per key).
+    if (pair.runs && !pair.home && key === `${pair.envPrefix}_MAX_SPREAD_PTS`) continue;
     const pf = { ...f, key, homeKey: f.key };
     if (/_EXPIRY_DAY_ONLY$/.test(f.key)) { pf.type = "select"; pf.options = TRADE_DAYS_OPTIONS; pf.label = "Trade days"; }
     pf.group = pairGroupOf(pf);

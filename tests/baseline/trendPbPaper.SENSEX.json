@@ -1,0 +1,421 @@
+{
+  "baselineVersion": 1,
+  "strategy": "trendPbPaper.SENSEX",
+  "mode": "sensex_trend_pb-paper",
+  "totalTrades": 1,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 46
+          },
+          {
+            "gate": "premium_range",
+            "count": 2
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 47
+          },
+          {
+            "gate": "premium_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 47
+          },
+          {
+            "gate": "premium_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 47
+          },
+          {
+            "gate": "premium_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 76.28,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578500CE",
+          "strike": 78500,
+          "qty": 20,
+          "entryTime": "15/10/2026, 13:40:00",
+          "exitTime": "15/10/2026, 13:43:26",
+          "entrySpot": 78592.35,
+          "exitSpot": 78611.4,
+          "entryLtp": 132.05,
+          "exitLtp": 138.55,
+          "reason": "Profit lock trail 85% — premium Rs139.05 fell to the trailed floor Rs146.54 (keeps 85% of the gain to peak Rs149.1, entry Rs132.05)",
+          "pnl": 76.28
+        }
+      ],
+      "skips": {
+        "total": 47,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 47,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 47
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578500CE",
+          "qty": 20,
+          "entryPrice": 78592.35,
+          "exitPrice": 78611.4,
+          "spotAtEntry": 78592.35,
+          "spotAtExit": 78611.4,
+          "optionEntryLtp": 132.05,
+          "optionExitLtp": 138.55,
+          "bestOptionLtp": 149.1,
+          "entryTime": "15/10/2026, 13:40:00",
+          "exitTime": "15/10/2026, 13:43:26",
+          "entryBarTime": 1792051800,
+          "exitBarTime": 1792051800,
+          "pnl": 76.28,
+          "pnlMode": "option premium: entry ₹132.05 → exit ₹138.55",
+          "exitReason": "Profit lock trail 85% — premium Rs139.05 fell to the trailed floor Rs146.54 (keeps 85% of the gain to peak Rs149.1, entry Rs132.05)",
+          "entryReason": "TREND PB CE: 15m UP (HH/HL, EMA20>EMA50, slope up, spot > VWAP 78338.06) → healthy 5m pullback to EMA20 (low 78375.35) → resumption close 78591.9 beyond prev high, body 127.1pt ≥ 50.46pt [STRONG]",
+          "optionStrike": 78500,
+          "optionExpiry": "26O15",
+          "optionType": "CE",
+          "optionEntrySymbol": "BSE:SENSEX26O1578500CE",
+          "signalStrength": "STRONG",
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "oiAtEntry": null,
+          "oiRegime": null,
+          "trendBias": "UP",
+          "pullbackLow": 78375.35,
+          "pullbackHigh": 78581.2,
+          "atr5AtEntry": 100.92,
+          "vwapAligned": true,
+          "mfeSpotPts": 25.75,
+          "mfePnl": 341,
+          "maeSpotPts": -38.1,
+          "maePnl": -510,
+          "secsToMFE": 200,
+          "secsToMAE": 50,
+          "firstMoveDir": "DOWN",
+          "secsToFirstMove": 2,
+          "pathPts": [
+            -22.6,
+            -28.85,
+            -26.65,
+            -6.35,
+            -8.75,
+            -0.3
+          ],
+          "durationMs": 206000,
+          "charges": 53.72,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "TREND_PB",
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 131.05,
+            "ask": 132.05,
+            "ltp": 131.55
+          },
+          "exitQuote": {
+            "bid": 138.55,
+            "ask": 139.55,
+            "ltp": 139.05
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 48,
+        "byGate": [
+          {
+            "gate": "signal_none",
+            "count": 48
+          }
+        ]
+      },
+      "raw": []
+    }
+  ]
+}

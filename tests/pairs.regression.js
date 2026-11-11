@@ -250,8 +250,13 @@ check("pair fields are generated from the home section (one per own key), groupe
     const { section: sec, fields: allFields, shared } = PS.pairFieldsFor(p);
     // A running pair adds its own pair-only fields (no NIFTY twin) — checked below.
     const fields = allFields.filter(f => !f.pairOnly);
-    const own = sec.fields.filter(f => pairs.pairKey(p, f.key) && !/_LIVE_|_POS_FILE$/.test(f.key));
+    // A running pair's spread limit is its pair-only row, also when the strategy
+    // has a spread key of its own (TREND_PB_MAX_SPREAD_PTS) — one row per key.
+    const own = sec.fields.filter(f => pairs.pairKey(p, f.key) && !/_LIVE_|_POS_FILE$/.test(f.key)
+      && !(p.runs && pairs.pairKey(p, f.key) === `${p.envPrefix}_MAX_SPREAD_PTS`));
     assert.strictEqual(fields.length, own.length, p.id);
+    const keys = allFields.map(f => f.key);
+    assert.deepStrictEqual(keys.filter((k, i) => keys.indexOf(k) !== i), [], `${p.id}: a key appears twice in its pane`);
     assert.strictEqual(fields.length + shared.length + (sec.fields.length - own.length - shared.length), sec.fields.length);
     for (const f of fields) {
       assert.strictEqual(f.key, pairs.pairKey(p, f.homeKey));

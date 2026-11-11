@@ -75,10 +75,14 @@ check("BANKNIFTY / NIFTY_FUT keep the old twins' paths and data files", () => {
   assert.deepStrictEqual([fut.paperPath, fut.tradesFile, fut.modeKey], ["/fut_ema_rsi_st_v2-paper", "fut_ema_rsi_st_v2_paper_trades.json", "fut_ema_rsi_st_v2"]);
   assert.strictEqual(rtOf("SENSEX").paperPath, "/sensex_ema_rsi_st_v2-paper");
 });
-check("running pairs = every offered non-home V2 pair; none other runs", () => {
-  const ids = pairs.runnable().map(p => p.marketKey);
-  assert.deepStrictEqual(ids, ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"]);
-  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2"));
+check("running pairs = every offered non-home V2 / Trend Pullback pair; none other runs", () => {
+  const ALL = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
+  for (const id of ["emaRsiStV2", "trendPb"]) {
+    assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), ALL, id);
+  }
+  assert.ok(pairs.all().filter(p => p.runs).every(p => p.strategyId === "emaRsiStV2" || p.strategyId === "trendPb"));
+  assert.strictEqual(pairs.byReplayMode("bn_trend_pb-paper").marketKey, "BANKNIFTY");
+  assert.strictEqual(pairs.byReplayMode("trend-pb-paper"), null, "Trend Pullback's home mode is the registry's");
   assert.strictEqual(pairs.byReplayMode("bn_ema_rsi_st_v2-paper").marketKey, "BANKNIFTY");
   assert.strictEqual(pairs.byReplayMode("ema_rsi_st_v2-paper"), null, "the home mode is the registry's");
 });
@@ -271,6 +275,65 @@ check("SENSEX stays marketOnly until a running SENSEX pair is switched on", () =
   });
   // A pair that does not run lifts nothing.
   withEnv({ SENSEX_ORB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("Trend Pullback runs as a pair (routes/trendPbPaper.js)");
+
+const tpbOf = (mk) => pairRuntime.forStrategy("trendPb", mk);
+check("NIFTY is the registry's Trend Pullback; other markets get their own path, file, slot", () => {
+  const n = tpbOf("NIFTY"), bn = tpbOf("BANKNIFTY");
+  assert.deepStrictEqual(
+    [n.home, n.modeKey, n.envPrefix, n.paperPath, n.replayMode, n.tradesFile, n.socketSlot.mode, n.notifyMode, n.sidebarKey, n.historySidebarKey, n.spotLabel, n.oiApplies],
+    [true, "trend_pb", "TREND_PB", "/trend-pb-paper", "trend-pb-paper", "trend_pb_paper_trades.json", "TREND_PB_PAPER", "TREND_PB-PAPER", "trendPbPaper", "trendPbHistory", "NIFTY", true]);
+  assert.deepStrictEqual([bn.paperPath, bn.tradesFile, bn.modeKey, bn.socketSlot.mode, bn.notifyMode, bn.oiApplies],
+    ["/bn_trend_pb-paper", "bn_trend_pb_paper_trades.json", "bn_trend_pb", "BN_TREND_PB_PAPER", "BN_TREND_PB-PAPER", false]);
+  assert.strictEqual(tpbOf("SENSEX").paperPath, "/sensex_trend_pb-paper");
+  assert.strictEqual(tpbOf("NIFTY_FUT").instrumentName(), "NIFTY_FUTURES");
+  for (const mk of ["BANKNIFTY", "SENSEX", "NIFTY_FUT", "CRUDE", "SAIL"]) assert.strictEqual(tpbOf(mk).enabled(), false, `${mk} ships OFF`);
+});
+check("the NIFTY instance holds Trend Pullback's own named slot; a pair holds its own", () => {
+  const sss = require("../src/utils/sharedSocketState");
+  const slot = tpbOf("NIFTY").socketSlot;
+  slot.set();
+  try { assert.ok(sss.isTrendPbActive() && !tpbOf("BANKNIFTY").socketSlot.isActive()); }
+  finally { slot.clear(); }
+  assert.ok(!sss.isTrendPbActive());
+  const bn = tpbOf("BANKNIFTY").socketSlot;
+  bn.set();
+  try { assert.ok(bn.isActive() && !sss.isTrendPbActive() && !rtOf("BANKNIFTY").socketSlot.isActive(), "V2's BANKNIFTY slot is a different one"); }
+  finally { bn.clear(); }
+});
+check("engine: a pair prefix reads its own TREND_PB keys, else NIFTY's; no prefix reads NIFTY only", () => {
+  const eng = require("../src/strategies/trend_pb");
+  const t = Math.floor(istMs("2026-11-12", 10, 0) / 1000);
+  const c = [{ time: t - 300, open: 1, high: 1, low: 1, close: 1 }, { time: t, open: 1, high: 1, low: 1, close: 1 }];
+  withEnv({ TREND_PB_ENTRY_START: "12:00", BN_TREND_PB_ENTRY_START: undefined, SENSEX_TREND_PB_ENTRY_START: "11:00" }, () => {
+    assert.strictEqual(eng.getSignal(c, { silent: true }).reason, "Before entry window (12:00 IST)");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "BN_TREND_PB" }).reason, "Before entry window (12:00 IST)", "inherits NIFTY's");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "SENSEX_TREND_PB" }).reason, "Before entry window (11:00 IST)", "own value wins");
+  });
+  withEnv({ TREND_PB_ENTRY_START: undefined, TREND_PB_ENTRY_END: undefined, BN_TREND_PB_ENTRY_START: "09:20", BN_TREND_PB_ENTRY_END: "09:50" }, () => {
+    assert.ok(!/entry window/.test(eng.getSignal(c, { silent: true }).reason), "NIFTY never reads a pair key");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "BN_TREND_PB" }).reason, "Past entry window (09:50 IST) — no new entries");
+  });
+});
+check("route: one builder serves every offered market; NIFTY is the default export", () => {
+  const route = require("../src/routes/trendPbPaper");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.pairRuntime.home, true);
+  const bn = route.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== route && typeof bn.stopSession === "function" && typeof route.stopSession === "function");
+  assert.strictEqual(bn.pairRuntime.modeKey, "bn_trend_pb");
+  assert.strictEqual(route.forMarket("BANKNIFTY"), bn, "one instance per pair");
+  for (const p of pairs.runnable().filter(x => x.strategyId === "trendPb")) assert.ok(route.forPair(p), p.id);
+});
+check("route source: market facts come from the runtime, the journal is hooked, OI stays NIFTY-only", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../src/routes/trendPbPaper.js"), "utf8");
+  assert.ok(!/NSE:NIFTY50-INDEX/.test(src), "a spot symbol is typed in the route");
+  assert.ok(!/(capitalPool|skipLogger|tradeLogger)\.\w+\("trend_pb"/.test(src), "the mode key is typed in the route");
+  assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(src) && /if \(rt\.oiApplies\) await oiFilter\.recordOiSample/.test(src));
+  for (const h of ["onEntry", "onTick", "onStopChange", "onExit", "fields"]) assert.ok(src.includes(`tradeJournal.${h}(`), `tradeJournal.${h} not hooked`);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
