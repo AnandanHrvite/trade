@@ -373,6 +373,25 @@ check("a merged batch the broker rejects falls back to each caller's own direct 
   assert.strictEqual(calls.length, 3, "1 merged attempt + 1 direct call per caller");
 });
 
+check("a merged batch that fails as a whole (pacer/timeout) is NOT retried per caller", async () => {
+  let calls = 0;
+  fyers.getQuotes = async () => {
+    calls++;
+    await sleep(5);
+    throw new Error("request limit reached, no free slot within 15s");
+  };
+  const results = await Promise.all(["NSE:X1", "NSE:X2", "NSE:X3"].map((s) =>
+    md.getQuotes([s]).then(() => "ok", (e) => e.message)));
+  assert.deepStrictEqual(results, Array(3).fill("request limit reached, no free slot within 15s"));
+  assert.strictEqual(calls, 1, "one merged attempt, no extra direct calls behind the pacer");
+
+  calls = 0;
+  fyers.getQuotes = async () => { calls++; await sleep(5); return { s: "error", code: -429, message: "rate limit" }; };
+  const r2 = await Promise.all([md.getQuotes(["NSE:Y1"]), md.getQuotes(["NSE:Y2"])]);
+  assert.deepStrictEqual(r2, [{ s: "error", code: -429, message: "rate limit" }, { s: "error", code: -429, message: "rate limit" }]);
+  assert.strictEqual(calls, 1, "a top-level non-symbol error is shared, not retried");
+});
+
 check("a symbol missing from a merged reply falls back to a direct call for that caller", async () => {
   const calls = [];
   fyers.getQuotes = async (symbols) => {

@@ -1567,7 +1567,9 @@ app.get("/", (req, res) => {
   const startAllEndpointLabels = {};
   for (const m of startAllModes) startAllEndpointLabels[m.paper] = `${m.label} Paper`;
   // How many /start calls the Start-All button runs at once (Settings → Server & Broker).
-  const startAllConcurrency = Math.max(1, Math.min(10, parseInt(process.env.START_ALL_CONCURRENCY || "5", 10) || 5));
+  // A hand-edited 0 or negative means one-at-a-time (clamped to 1), not the default.
+  const _saC = parseInt(process.env.START_ALL_CONCURRENCY || "5", 10);
+  const startAllConcurrency = Number.isFinite(_saC) ? Math.max(1, Math.min(10, _saC)) : 5;
 
   // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
   // top-bar date range, summed over every ENABLED strategy that trades through

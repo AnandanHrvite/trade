@@ -395,6 +395,12 @@ function _enqueueQuote(sym) {
   return p;
 }
 
+// Fyers -50 = an invalid/unknown symbol in the request: one bad symbol can sink a
+// merged batch, so that error alone is retried per caller.
+function _isSymbolError(resp) {
+  return !!resp && (resp.code === -50 || /invalid symbol/i.test(String(resp.message || "")));
+}
+
 function _sameList(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
@@ -442,6 +448,16 @@ async function _hubRequest(list, opts) {
   }
   if (parts.every((p) => p.ok)) {
     return { ...deepCopy(first.top), d: parts.map((p) => deepCopy(p.row)) };
+  }
+  // A merged call that failed as a WHOLE (pacer "no free slot", timeout, auth,
+  // rate limit) failed for this caller too: hand back that same outcome rather
+  // than queuing a second direct call behind the already-full pacer, which would
+  // double the wait at exactly the busiest moment. Only a symbol-level failure
+  // (a missing row, or the broker rejecting a symbol in the batch) falls back.
+  const whole = parts.find((p) => !p.ok && !p.recent && (p.threw || (p.resp && p.resp.s !== "ok" && !_isSymbolError(p.resp))));
+  if (whole) {
+    if (whole.threw) throw whole.err;
+    return deepCopy(whole.resp);
   }
   _qStats.fallbacks++;
   return fyers.getQuotes(list);
