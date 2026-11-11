@@ -1,0 +1,1035 @@
+{
+ "settings": {
+  "ema-rsi-st": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode &amp; Session",
+    "Filters &amp; Limits",
+    "Entry Signal"
+   ],
+   "keys": [
+    "TRADE_EXPIRY_DAY_ONLY",
+    "TRADE_ENTRY_START",
+    "TRADE_ENTRY_END",
+    "VIX_FILTER_ENABLED",
+    "VIX_MAX_ENTRY",
+    "EMA_RSI_ST_EMA_FAST",
+    "EMA_RSI_ST_EMA_SLOW",
+    "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED",
+    "EMA_RSI_ST_EMA_FASTEST",
+    "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED",
+    "EMA_RSI_ST_MAX_EMA_DIST_PTS",
+    "EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED",
+    "EMA_RSI_ST_FRESH_SIGNAL_ENABLED",
+    "RSI_CE_MIN",
+    "RSI_CE_MAX",
+    "RSI_PE_MAX",
+    "RSI_PE_MIN",
+    "EMA_RSI_ST_CONFIRM_CANDLE_ENABLED",
+    "EMA_RSI_ST_SUPERTREND_PERIOD",
+    "EMA_RSI_ST_SUPERTREND_MULT"
+   ]
+  },
+  "bb-rsi": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode, Session &amp; VIX",
+    "Entry Signal",
+    "Chop Guards",
+    "Divergence"
+   ],
+   "keys": [
+    "BB_RSI_EXPIRY_DAY_ONLY",
+    "BB_RSI_VIX_ENABLED",
+    "BB_RSI_VIX_MAX_ENTRY",
+    "BB_RSI_VIX_STRONG_ONLY",
+    "BB_RSI_RESOLUTION",
+    "BB_RSI_ENTRY_START",
+    "BB_RSI_ENTRY_END",
+    "BB_RSI_DIRECTION",
+    "BB_RSI_BB_PERIOD",
+    "BB_RSI_BB_STDDEV",
+    "BB_RSI_RSI_PERIOD",
+    "BB_RSI_RSI_CE_THRESHOLD",
+    "BB_RSI_RSI_PE_THRESHOLD",
+    "BB_RSI_RSI_TURNING",
+    "BB_RSI_CONFIRM_CANDLE_ENABLED",
+    "BB_RSI_CONFIRM_ON_CLOSE",
+    "BB_RSI_MAX_ENTRY_SL_PTS",
+    "BB_RSI_BAND_WIDTH_ENABLED",
+    "BB_RSI_MIN_BAND_WIDTH_PTS",
+    "BB_RSI_RSI_RANGE_ENABLED",
+    "BB_RSI_RSI_RANGE_LOOKBACK",
+    "BB_RSI_RSI_RANGE_MIN",
+    "BB_RSI_ADX_ENABLED",
+    "BB_RSI_ADX_MAX",
+    "BB_RSI_DIVERGENCE_ENABLED",
+    "BB_RSI_DIV_LOOKBACK",
+    "BB_RSI_DIV_PIVOT_BARS"
+   ]
+  },
+  "price-action": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode &amp; Session",
+    "Smart Money Setup",
+    "Exits &amp; Risk"
+   ],
+   "keys": [
+    "PA_EXPIRY_DAY_ONLY",
+    "PA_VIX_ENABLED",
+    "PA_VIX_MAX_ENTRY",
+    "PA_ENTRY_START",
+    "PA_ENTRY_END",
+    "PA_PATTERN_BULL_OB",
+    "PA_PATTERN_BEAR_OB",
+    "PA_SMC_SWING_BARS",
+    "PA_SMC_MAX_AGE",
+    "PA_SMC_REACT_WAIT",
+    "PA_SMC_BLOCK_LIQUIDITY",
+    "PA_SMC_MIN_RR",
+    "PA_SL_BUFFER_PTS",
+    "PA_MIN_SL_PTS",
+    "PA_MAX_SL_PTS"
+   ]
+  },
+  "orb": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode &amp; Entry",
+    "Option Selection",
+    "Risk &amp; Regime",
+    "Debug"
+   ],
+   "keys": [
+    "ORB_RANGE_START",
+    "ORB_RANGE_END",
+    "ORB_ENTRY_START",
+    "ORB_ENTRY_END",
+    "ORB_OR_ATR_MAX",
+    "ORB_OR_MAX_PTS",
+    "ORB_GAP_OR_MULT",
+    "ORB_BODY_ATR_MULT",
+    "ORB_BODY_OR_CAP",
+    "ORB_BUFFER_OR_MULT",
+    "ORB_BUFFER_ATR_MULT",
+    "ORB_BUFFER_MIN_PTS",
+    "ORB_VWAP_FILTER_ENABLED",
+    "ORB_CONFIRM_MODE",
+    "ORB_RSI_ENABLED",
+    "ORB_RSI_PERIOD",
+    "ORB_RSI_CE_MIN",
+    "ORB_RSI_PE_MAX",
+    "ORB_ST_ENABLED",
+    "ORB_ST_PERIOD",
+    "ORB_ST_MULT",
+    "ORB_BREAKOUT_RESCAN",
+    "ORB_RETEST_MAX_WAIT",
+    "ORB_ITM_STEPS",
+    "ORB_PREMIUM_GATE_ENABLED",
+    "ORB_PREMIUM_MIN",
+    "ORB_PREMIUM_MAX",
+    "ORB_MAX_SPREAD_PTS",
+    "ORB_EXPIRY_DAY_ONLY",
+    "ORB_VIX_ENABLED",
+    "ORB_VIX_MAX_ENTRY",
+    "ORB_VIX_STRONG_ONLY",
+    "ORB_DEBUG_TRACE"
+   ]
+  },
+  "ema9-vwap": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode &amp; Session",
+    "Entry Signal",
+    "Risk &amp; Filters"
+   ],
+   "keys": [
+    "EMA9VWAP_VWAP_SESSION_START",
+    "EMA9VWAP_ENTRY_START",
+    "EMA9VWAP_ENTRY_END",
+    "EMA9VWAP_BAND_MULT",
+    "EMA9VWAP_EMA_PERIOD",
+    "EMA9VWAP_CONFIRM_CANDLE_ENABLED",
+    "EMA9VWAP_INTRACANDLE_ENTRY",
+    "EMA9VWAP_STRENGTH_FILTER",
+    "EMA9VWAP_STRONG_MIN_SIGMA",
+    "EMA9VWAP_VIX_ENABLED",
+    "EMA9VWAP_VIX_MAX_ENTRY"
+   ]
+  },
+  "trend-pullback": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode &amp; Entry",
+    "Exits",
+    "Option &amp; Risk"
+   ],
+   "keys": [
+    "TREND_PB_SWING_LOOKBACK",
+    "TREND_PB_BODY_ATR_MULT",
+    "TREND_PB_PULLBACK_MAX_ATR",
+    "TREND_PB_PULLBACK_WINDOW",
+    "TREND_PB_MIN_PULLBACK_BARS",
+    "TREND_PB_ENTRY_START",
+    "TREND_PB_ENTRY_END",
+    "TREND_PB_ATR_FLOOR_PTS",
+    "TREND_PB_ATR_PERIOD",
+    "TREND_PB_ITM_STEPS",
+    "TREND_PB_PREMIUM_MIN",
+    "TREND_PB_PREMIUM_MAX",
+    "TREND_PB_MAX_SPREAD_PTS",
+    "TREND_PB_VIX_ENABLED",
+    "TREND_PB_VIX_MAX_ENTRY",
+    "TREND_PB_OI_ENABLED"
+   ]
+  },
+  "trend-day-scalp": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "Day Gate (decided once, then frozen)",
+    "Entry (pullback + reclaim)",
+    "Risk (fixed stop, fixed target)",
+    "Sizing &amp; Day Breakers"
+   ],
+   "keys": [
+    "TDS_PAPER_ENABLED",
+    "TDS_GATE_TIME",
+    "TDS_SESSION_START",
+    "TDS_MIN_RANGE_PCT",
+    "TDS_VWAP_STREAK_BARS",
+    "TDS_EXTENSION_MULT",
+    "TDS_EMA_PERIOD",
+    "TDS_ATR_PERIOD",
+    "TDS_BODY_ATR_MULT",
+    "TDS_PULLBACK_WINDOW",
+    "TDS_ENTRY_END",
+    "TDS_RESOLUTION",
+    "TDS_MAX_SL_PTS",
+    "TDS_ITM_STEPS"
+   ]
+  },
+  "ha-scalp": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "The chart (Heikin Ashi, NIFTY 50 spot)",
+    "The trend gate (hard directional filter)",
+    "The entry candle",
+    "Exits (there is NO fixed target)",
+    "Session window",
+    "Risk",
+    "Sizing &amp; Day Breakers",
+    "Data plumbing"
+   ],
+   "keys": [
+    "HA_SCALP_PAPER_ENABLED",
+    "HA_SCALP_RESOLUTION",
+    "HA_SCALP_HA_CONTINUOUS",
+    "HA_SCALP_HA_WARMUP_BARS",
+    "HA_SCALP_WARMUP_DAYS",
+    "HA_SCALP_MA_PERIOD",
+    "HA_SCALP_MA_TYPE",
+    "HA_SCALP_MAX_WICK_PCT",
+    "HA_SCALP_MIN_BODY_PTS",
+    "HA_SCALP_DOJI_BODY_PCT",
+    "HA_SCALP_SESSION_START",
+    "HA_SCALP_ENTRY_START",
+    "HA_SCALP_ENTRY_END",
+    "HA_SCALP_MAX_MA_DIST_PTS",
+    "HA_SCALP_ITM_STEPS",
+    "HA_SCALP_POLL_MS",
+    "HA_SCALP_HISTORY_LAG_MS"
+   ]
+  },
+  "prev-orb-scalp": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "The chart (NIFTY 50 spot)",
+    "Session window",
+    "Sizing &amp; Breakers",
+    "Data plumbing"
+   ],
+   "keys": [
+    "PREV_ORB_SCALP_PAPER_ENABLED",
+    "PREV_ORB_SCALP_RESOLUTION",
+    "PREV_ORB_SCALP_OR_MINS",
+    "PREV_ORB_SCALP_WARMUP_DAYS",
+    "PREV_ORB_SCALP_SESSION_START",
+    "PREV_ORB_SCALP_ENTRY_END",
+    "PREV_ORB_SCALP_ITM_STEPS",
+    "PREV_ORB_SCALP_POLL_MS",
+    "PREV_ORB_SCALP_HISTORY_LAG_MS"
+   ]
+  },
+  "itm20-scalp": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "Session window",
+    "Signal",
+    "Exits &amp; day limits",
+    "Data plumbing"
+   ],
+   "keys": [
+    "ITM20_SCALP_PAPER_ENABLED",
+    "ITM20_SCALP_SESSION_START",
+    "ITM20_SCALP_ENTRY_START",
+    "ITM20_SCALP_ENTRY_END",
+    "ITM20_SCALP_SQUARE_OFF",
+    "ITM20_SCALP_TRADE_EXPIRY_DAY",
+    "ITM20_SCALP_EMA_PERIOD",
+    "ITM20_SCALP_RETEST_TOL_PTS",
+    "ITM20_SCALP_RETEST_CANDLES",
+    "ITM20_SCALP_TARGET_PTS",
+    "ITM20_SCALP_SL_PTS",
+    "ITM20_SCALP_MAX_TRADES",
+    "ITM20_SCALP_DAILY_LOSS_PTS",
+    "ITM20_SCALP_WARMUP_DAYS",
+    "ITM20_SCALP_POLL_MS",
+    "ITM20_SCALP_HISTORY_LAG_MS"
+   ]
+  },
+  "earlybird": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "What to trade",
+    "The signal candle (the day's first bar)",
+    "Confirmation (NIFTY must agree with the stock)",
+    "Entry, stop and target",
+    "Session window",
+    "Sizing &amp; Day Breakers",
+    "Data plumbing",
+    "Paper cost model (equity intraday)",
+    "Backtest cost model (equity intraday)"
+   ],
+   "keys": [
+    "EARLYBIRD_PAPER_ENABLED",
+    "EARLYBIRD_TRADE_MODE",
+    "EARLYBIRD_OPTION_LOTS",
+    "EARLYBIRD_ITM_STEPS",
+    "EARLYBIRD_RESOLUTION",
+    "EARLYBIRD_MAX_OPPOSING_WICK_PCT",
+    "EARLYBIRD_MIN_BODY_PCT",
+    "EARLYBIRD_MIN_RANGE_PTS",
+    "EARLYBIRD_UNIVERSE",
+    "EARLYBIRD_MIN_CONFIRMING_STOCKS",
+    "EARLYBIRD_MAX_GAP_PCT",
+    "EARLYBIRD_ENTRY_BUFFER_PTS",
+    "EARLYBIRD_SESSION_START",
+    "EARLYBIRD_ENTRY_START",
+    "EARLYBIRD_ENTRY_END",
+    "EARLYBIRD_QTY",
+    "EARLYBIRD_MAX_CONCURRENT",
+    "EARLYBIRD_POLL_MS",
+    "EARLYBIRD_HISTORY_LAG_MS",
+    "EARLYBIRD_WARMUP_DAYS",
+    "EARLYBIRD_SCAN_CONCURRENCY",
+    "EARLYBIRD_SCAN_RPS",
+    "EARLYBIRD_SCAN_RPM",
+    "EARLYBIRD_QUOTE_CHUNK",
+    "EARLYBIRD_OPTION_LTP_RETRY_MS",
+    "EARLYBIRD_QUOTE_STALE_SEC",
+    "EARLYBIRD_BROKERAGE_PER_ORDER",
+    "EARLYBIRD_STT_PCT",
+    "EARLYBIRD_TXN_PCT",
+    "EARLYBIRD_SEBI_PCT",
+    "EARLYBIRD_STAMP_PCT",
+    "EARLYBIRD_CHG_STT_PCT",
+    "EARLYBIRD_CHG_EXCHANGE_PCT",
+    "EARLYBIRD_CHG_BROKERAGE_PCT",
+    "EARLYBIRD_CHG_BROKERAGE_CAP",
+    "EARLYBIRD_CHG_GST_PCT",
+    "EARLYBIRD_CHG_STAMP_PCT",
+    "EARLYBIRD_CHG_SEBI_PER_CRORE"
+   ]
+  },
+  "simple-9-30": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "The 09:25 pick",
+    "Entry window",
+    "Optional guards (all OFF by default)",
+    "Data plumbing"
+   ],
+   "keys": [
+    "SIMPLE930_PAPER_ENABLED",
+    "SIMPLE930_SELECTION_TIME",
+    "SIMPLE930_TRIGGER_PREMIUM",
+    "SIMPLE930_SCAN_ITM_STRIKES",
+    "SIMPLE930_SCAN_OTM_STRIKES",
+    "SIMPLE930_ENTRY_START",
+    "SIMPLE930_ENTRY_END",
+    "SIMPLE930_SUSTAIN_POLLS",
+    "SIMPLE930_MAX_PREMIUM_DIST",
+    "SIMPLE930_MIN_PREMIUM",
+    "SIMPLE930_POLL_MS",
+    "SIMPLE930_LTP_STALE_MS"
+   ]
+  },
+  "rsi-pivot-st": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "Signal (RSI + Pivot cross)",
+    "Session window",
+    "Strike",
+    "Stops"
+   ],
+   "keys": [
+    "RSI_PIVOT_ST_PAPER_ENABLED",
+    "RSI_PIVOT_ST_RESOLUTION",
+    "RSI_PIVOT_ST_RSI_PERIOD",
+    "RSI_PIVOT_ST_RSI_CE_MIN",
+    "RSI_PIVOT_ST_RSI_PE_MAX",
+    "RSI_PIVOT_ST_PIVOT_BUFFER_PTS",
+    "RSI_PIVOT_ST_CONFIRM_ENABLED",
+    "RSI_PIVOT_ST_SESSION_START",
+    "RSI_PIVOT_ST_ENTRY_START",
+    "RSI_PIVOT_ST_ENTRY_END",
+    "RSI_PIVOT_ST_STRIKE_MODE",
+    "RSI_PIVOT_ST_STRIKE_PCT",
+    "RSI_PIVOT_ST_ST_PERIOD",
+    "RSI_PIVOT_ST_ST_MULT",
+    "RSI_PIVOT_ST_ST_SIDES"
+   ]
+  },
+  "pivot-ema-st": {
+   "group": "NIFTY",
+   "tabs": [
+    "Chart &amp; signal",
+    "Session window"
+   ],
+   "keys": [
+    "PIVOT_EMA_ST_TF",
+    "PIVOT_EMA_ST_EMA_FAST",
+    "PIVOT_EMA_ST_EMA_SLOW",
+    "PIVOT_EMA_ST_ST_PERIOD",
+    "PIVOT_EMA_ST_ST_MULT",
+    "PIVOT_EMA_ST_ENTRY_START",
+    "PIVOT_EMA_ST_ENTRY_END",
+    "PIVOT_EMA_ST_WARMUP_DAYS"
+   ]
+  },
+  "gap-runaway": {
+   "group": "NIFTY",
+   "tabs": [
+    "Reference",
+    "Daily setup (yesterday's closed bar)",
+    "Entry &amp; exits",
+    "Size &amp; capital"
+   ],
+   "keys": [
+    "GAP_RUNAWAY_REFERENCE_URL",
+    "GAP_RUNAWAY_EMA_LENGTH",
+    "GAP_RUNAWAY_RSI_LENGTH",
+    "GAP_RUNAWAY_RSI_UPPER",
+    "GAP_RUNAWAY_RSI_LOWER",
+    "GAP_RUNAWAY_MIN_GAP_PTS",
+    "GAP_RUNAWAY_ENTRY_START",
+    "GAP_RUNAWAY_ENTRY_END",
+    "GAP_RUNAWAY_LOTS"
+   ]
+  },
+  "gap-runaway-stocks": {
+   "group": "STOCKS",
+   "tabs": [
+    "Reference",
+    "Daily setup (yesterday's closed bar)",
+    "Entry &amp; exits",
+    "Universe &amp; size"
+   ],
+   "keys": [
+    "GAP_RUNAWAY_STK_REFERENCE_URL",
+    "GAP_RUNAWAY_STK_EMA_LENGTH",
+    "GAP_RUNAWAY_STK_RSI_LENGTH",
+    "GAP_RUNAWAY_STK_RSI_UPPER",
+    "GAP_RUNAWAY_STK_RSI_LOWER",
+    "GAP_RUNAWAY_STK_MIN_GAP_PTS",
+    "GAP_RUNAWAY_STK_ENTRY_START",
+    "GAP_RUNAWAY_STK_ENTRY_END",
+    "GAP_RUNAWAY_STK_UNIVERSE",
+    "GAP_RUNAWAY_STK_TRADE_AMOUNT",
+    "GAP_RUNAWAY_STK_MAX_TRADES"
+   ]
+  }
+ },
+ "sidebar": {
+  "settings": {
+   "parents": [
+    "nav-parent-nifty",
+    "nav-parent-stocks"
+   ],
+   "groups": [
+    {
+     "gid": "nav-ema_rsi_st",
+     "header": "EMA_RSI_ST",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ema_rsi_st-paper/status",
+       "Paper",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-bb_rsi",
+     "header": "BB_RSI",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/bb_rsi-paper/status",
+       "Paper",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-pa",
+     "header": "PRICE ACTION",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/pa-paper/status",
+       "Paper",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-orb",
+     "header": "ORB",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/orb-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/orb-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-ema9vwap",
+     "header": "EMA9+VWAP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ema9vwap-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/ema9vwap-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-trend-pb",
+     "header": "TREND PULLBACK",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/trend-pb-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/trend-pb-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-trend-day-scalp",
+     "header": "TREND DAY SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/trend-day-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/trend-day-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-ha-scalp",
+     "header": "HA SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ha-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/ha-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-prev-orb-scalp",
+     "header": "PREV ORB SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/prev-orb-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/prev-orb-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-itm20-scalp",
+     "header": "ITM20 SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/itm20-scalp-backtest",
+       "Backtest",
+       false
+      ],
+      [
+       "/itm20-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/itm20-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-rsi-pivot-st",
+     "header": "RSI PIVOT ST",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/rsi-pivot-st-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/rsi-pivot-st-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-simple930",
+     "header": "SIMPLE 9:30",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/simple930-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/simple930-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-early-bird",
+     "header": "EARLYBIRD",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/early-bird-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/early-bird-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-pivot_ema_st",
+     "header": "PIVOT_EMA_ST",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/pivot_ema_st-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/pivot_ema_st-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-gap_runaway",
+     "header": "GAP_RUNAWAY",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/gap_runaway-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/gap_runaway-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-gap_runaway_stk",
+     "header": "GAP_RUNAWAY SCANNER",
+     "parent": "nav-parent-stocks",
+     "collapsed": true,
+     "items": [
+      [
+       "/gap_runaway_stk-paper/status",
+       "Scanner Paper",
+       false
+      ],
+      [
+       "/gap_runaway_stk-paper/history",
+       "History",
+       false
+      ]
+     ]
+    }
+   ]
+  },
+  "orbPaper": {
+   "parents": [
+    "nav-parent-nifty",
+    "nav-parent-stocks"
+   ],
+   "groups": [
+    {
+     "gid": "nav-ema_rsi_st",
+     "header": "EMA_RSI_ST",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ema_rsi_st-paper/status",
+       "Paper",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-bb_rsi",
+     "header": "BB_RSI",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/bb_rsi-paper/status",
+       "Paper",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-pa",
+     "header": "PRICE ACTION",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/pa-paper/status",
+       "Paper",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-orb",
+     "header": "ORB",
+     "parent": "nav-parent-nifty",
+     "collapsed": false,
+     "items": [
+      [
+       "/orb-paper/status",
+       "Paper",
+       true
+      ],
+      [
+       "/orb-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-ema9vwap",
+     "header": "EMA9+VWAP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ema9vwap-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/ema9vwap-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-trend-pb",
+     "header": "TREND PULLBACK",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/trend-pb-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/trend-pb-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-trend-day-scalp",
+     "header": "TREND DAY SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/trend-day-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/trend-day-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-ha-scalp",
+     "header": "HA SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ha-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/ha-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-prev-orb-scalp",
+     "header": "PREV ORB SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/prev-orb-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/prev-orb-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-itm20-scalp",
+     "header": "ITM20 SCALP",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/itm20-scalp-backtest",
+       "Backtest",
+       false
+      ],
+      [
+       "/itm20-scalp-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/itm20-scalp-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-rsi-pivot-st",
+     "header": "RSI PIVOT ST",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/rsi-pivot-st-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/rsi-pivot-st-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-simple930",
+     "header": "SIMPLE 9:30",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/simple930-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/simple930-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-early-bird",
+     "header": "EARLYBIRD",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/early-bird-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/early-bird-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-pivot_ema_st",
+     "header": "PIVOT_EMA_ST",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/pivot_ema_st-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/pivot_ema_st-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-gap_runaway",
+     "header": "GAP_RUNAWAY",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/gap_runaway-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/gap_runaway-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-gap_runaway_stk",
+     "header": "GAP_RUNAWAY SCANNER",
+     "parent": "nav-parent-stocks",
+     "collapsed": true,
+     "items": [
+      [
+       "/gap_runaway_stk-paper/status",
+       "Scanner Paper",
+       false
+      ],
+      [
+       "/gap_runaway_stk-paper/history",
+       "History",
+       false
+      ]
+     ]
+    }
+   ]
+  }
+ }
+}
