@@ -64,17 +64,27 @@ const NAME        = "BB_RSI_MEAN_REVERSION_V8";
 const DESCRIPTION = "BB fade + RSI extreme";
 
 // ── Env-prefix parameterisation ──────────────────────────────────────────────
-// This ONE engine serves the BB_RSI options strategy and its NIFTY FUTURES twin
-// (FUT_BB_RSI). Every strategy-own key is read as `<prefix>_<NAME>`, so the twin
-// tunes independently on FUT_BB_RSI_* while the rules stay one implementation.
-// The module's own exports are bound to the default prefix and read exactly the
-// BB_RSI_* keys they always did; forPrefix("FUT_BB_RSI") returns the same API
-// bound to the twin. Common keys (TRADE_RESOLUTION) are not prefixed.
+// This ONE engine serves BB_RSI on every market (config/pairs.js): NIFTY reads
+// BB_RSI_*, another market's pair reads its own prefix (BN_BB_RSI_*, SENSEX_BB_RSI_*,
+// FUT_BB_RSI_* …) — getSignal(candles, { prefix }) — with an unset pair key
+// inheriting NIFTY's value. Every strategy-own key is read as `<prefix>_<NAME>`, so a
+// pair tunes independently while the rules stay one implementation. The module's own
+// exports are bound to the default prefix and read exactly the BB_RSI_* keys they
+// always did; forPrefix("FUT_BB_RSI") returns the same API bound to that prefix.
+// Common keys (TRADE_RESOLUTION) are not prefixed.
 const DEFAULT_PREFIX = "BB_RSI";
 const PREFIXES = { BB_RSI: "NIFTY", FUT_BB_RSI: "NIFTY" };
 function _P(prefix) { return prefix || DEFAULT_PREFIX; }
 
-function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
+// Env read with (strategy, market) pair inheritance: a pair prefix's unset key
+// (BN_BB_RSI_BB_PERIOD) reads its home pair's value (BB_RSI_BB_PERIOD). A NIFTY key
+// reads exactly process.env (config/pairs.js envGet), so BB_RSI_* behave as before.
+var _pairsMod = null;
+function _env(key) {
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(key);
+}
+function cfg(key, fb) { var v = _env(key); return v !== undefined ? v : fb; }
 function cfgOn(key, fb) { return String(cfg(key, fb)).toLowerCase() === "true"; }
 
 // ── Strict numeric config reads ──────────────────────────────────────────────
@@ -155,7 +165,7 @@ function _hhmm(s) {
 // bound makes BOTH window comparisons false, which silently removes the entry window
 // altogether and trades the entire session.
 function _parseMins(envKey, fallback) {
-  var v = _hhmm(process.env[envKey]);
+  var v = _hhmm(_env(envKey));
   return v == null ? _hhmm(fallback) : v;
 }
 function _fmtTime(mins) {
