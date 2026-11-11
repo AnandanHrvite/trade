@@ -497,6 +497,14 @@ check("EMA_RSI_ST BANKNIFTY expiry-day-only trades only on BANKNIFTY's own (mont
     }
     assert.strictEqual(process.env.EMA_RSI_ST_EXPIRY_DAY_ONLY, undefined, "the pair value leaked into the real env");
   } finally { delete process.env.BN_EMA_RSI_ST_EXPIRY_DAY_ONLY; }
+  // Paper's pair reads <PAIR>_EXPIRY_DAY_ONLY → EMA_RSI_ST_EXPIRY_DAY_ONLY, never
+  // NIFTY's shared TRADE_EXPIRY_DAY_ONLY — and neither does the backtest.
+  const hadT = process.env.TRADE_EXPIRY_DAY_ONLY;
+  process.env.TRADE_EXPIRY_DAY_ONLY = "true";
+  try {
+    const neu = await withVixOff(() => runNew({ strategy: "emaRsiSt", market: "BANKNIFTY", settings: "current", from: FROM, to: TO, resolution: "5" }));
+    assert.strictEqual(neu.result.trades.length, V1_RUNS.BANKNIFTY.result.trades.length, "TRADE_EXPIRY_DAY_ONLY reached a BANKNIFTY run");
+  } finally { if (hadT === undefined) delete process.env.TRADE_EXPIRY_DAY_ONLY; else process.env.TRADE_EXPIRY_DAY_ONLY = hadT; }
 });
 
 check("the old EMA_RSI_ST page stays NIFTY: NIFTY candles, NIFTY lot, no market field", async () => {

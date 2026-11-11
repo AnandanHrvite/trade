@@ -125,10 +125,11 @@ async function _runJob(id, p) {
       const expirySet = new Set();
       for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
       _expiryDates = expirySet;
-    } else if (!home && (process.env.EMA_RSI_ST_EXPIRY_DAY_ONLY || process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+    } else if (!home && (process.env.EMA_RSI_ST_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
       // Another market's <PAIR>_EXPIRY_DAY_ONLY (mapped onto EMA_RSI_ST_EXPIRY_DAY_ONLY
-      // by the /backtest page; else NIFTY's, as paper inherits it) against THAT
-      // market's rule expiry (weekly SENSEX, monthly BANKNIFTY, futures roll).
+      // by the /backtest page; unset = NIFTY's EMA_RSI_ST_EXPIRY_DAY_ONLY, exactly
+      // what paper's rt.expiryDayOnly() reads — not the shared TRADE_EXPIRY_DAY_ONLY)
+      // against THAT market's rule expiry (weekly SENSEX, monthly BANKNIFTY, futures roll).
       const firstBar = new Map();
       for (const c of _candles) {
         const d = new Date((c.time + 19800) * 1000).toISOString().slice(0, 10);
