@@ -17,9 +17,10 @@
  *      run on anything else is refused;
  *   3. NIFTY parity — a run through /backtest and a run through the strategy's
  *      OLD page produce byte-identical job results (trades + stats);
- *   4. EMA_RSI_ST_V2 is market-aware — SENSEX / BANKNIFTY / NIFTY_FUT fetch the
- *      market's own candles and price with its lot, its exchange's charges and
- *      (futures) futures P&L, and read the market's pair settings;
+ *   4. EMA_RSI_ST_V2 and TREND DAY SCALP are market-aware — SENSEX / BANKNIFTY /
+ *      NIFTY_FUT fetch the market's own candles and price with its lot, its
+ *      exchange's charges and (futures) futures P&L, and read the market's pair
+ *      settings;
  *   5. custom settings apply to the run only — never to process.env;
  *   6. saved results record strategy, market and the exact settings used, and
  *      re-open.
@@ -38,7 +39,7 @@ const say = console.log.bind(console);   // console.log is muted while a check r
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), "backtest-page-"));
 process.chdir(SANDBOX);   // Settings reads <cwd>/.env — there is none here
 for (const k of Object.keys(process.env)) {
-  if (/^(EMA_RSI_ST_V2|SENSEX_|BN_|FUT_|ORB_|TREND_PB_|PROFIT_LOCK_|PREMIUM_SL_|BACKTEST_|UI_SHOW_|API_SECRET|LOGIN_SECRET|DEMO_)/.test(k)) delete process.env[k];
+  if (/^(EMA_RSI_ST_V2|TDS_|SENSEX_|BN_|FUT_|ORB_|TREND_PB_|PROFIT_LOCK_|PREMIUM_SL_|BACKTEST_|UI_SHOW_|API_SECRET|LOGIN_SECRET|DEMO_)/.test(k)) delete process.env[k];
 }
 process.env.ACCESS_TOKEN = "test-token";   // the page refuses to start without a Fyers login
 
@@ -86,7 +87,7 @@ function check(name, fn) { _queue.push({ name, fn }); }
 
 // ── HTTP harness: the old pages + the new page on one throwaway server ──────
 const app = express();
-const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp"];
+const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "trendDayScalp"];
 for (const id of OLD) {
   const s = registry.byId(id);
   app.use(s.backtest.path, require(registry.srcPath(s.backtest.module)));
@@ -231,13 +232,17 @@ check("only pairs.js-offered markets are listed (no MCX for a strategy that need
   assert.ok(page.marketOptions("emaRsiStV2").some((m) => m.key === "CRUDE"), "V2 is offered on MCX (not runnable yet)");
 });
 
+const MULTI_MARKET = ["emaRsiStV2", "trendDayScalp"];
 check("enabled = the engine runs there; everything else is 'coming soon'", () => {
-  const v2 = page.marketOptions("emaRsiStV2");
-  const on = v2.filter((m) => m.enabled).map((m) => m.key);
-  assert.deepStrictEqual(on.sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
-  for (const m of v2) if (!m.enabled) assert.strictEqual(m.note, "coming soon");
+  for (const id of MULTI_MARKET) {
+    const opts = page.marketOptions(id);
+    const on = opts.filter((m) => m.enabled).map((m) => m.key);
+    assert.deepStrictEqual(on.sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"], id);
+    for (const m of opts) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `${id} ${m.key}`);
+  }
+  assert.ok(page.marketOptions("trendDayScalp").some((m) => m.key === "CRUDE" && !m.enabled), "TDS on MCX is offered, coming soon");
   for (const s of page.strategies()) {
-    if (s.id === "emaRsiStV2") continue;
+    if (MULTI_MARKET.includes(s.id)) continue;
     const on2 = page.marketOptions(s.id).filter((m) => m.enabled).map((m) => m.key);
     assert.deepStrictEqual(on2, [pairs.homeMarket(s.id)], `${s.id} runs only on its home market today`);
   }
@@ -264,6 +269,7 @@ const PARITY = [
   { id: "ema9vwap",   qs: `from=${FROM}&to=${TO}&resolution=5` },
   { id: "trendPb",    qs: `from=${FROM}&to=${TO}` },
   { id: "haScalp",    qs: `from=${FROM}&to=${TO}` },
+  { id: "trendDayScalp", qs: `from=${FROM}&to=${TO}` },
 ];
 const parityNotes = [];
 for (const P of PARITY) {
@@ -383,6 +389,60 @@ check("pair settings: a SENSEX-own key reaches the engine (as its home key) for 
 check("the old V2 page is untouched by markets: NIFTY run reads NIFTY's candles and lot", async () => {
   const mark = fetchLog.length;
   const oldRes = await runOld("emaRsiStV2", `from=${FROM}&to=${TO}`);
+  assert.ok(fetchLog.slice(mark).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
+  assert.strictEqual(oldRes.meta.market, undefined, "a NIFTY result must not grow a market field");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4b. TREND DAY SCALP is market-aware");
+
+const TDS_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`TDS ${mk}: fetches its own candles, prices with its lot + exchange charges, records the market`, async () => {
+    const mark = fetchLog.length;
+    const neu = await runNew({ strategy: "trendDayScalp", market: mk, settings: "current", from: FROM, to: TO });
+    TDS_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const asked = fetchLog.slice(mark).map((f) => f.symbol);
+    assert.ok(asked.length && asked.every((s) => s === ctx.spotSymbol), `fetched ${asked.join(",")} for ${mk}`);
+    assert.strictEqual(neu.result.meta.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    for (const t of neu.result.trades) {
+      const charges = getCharges({ broker: "fyers", isFutures: ctx.isFutures, exchange: ctx.exchange, entryPremium: t.eOpt, exitPremium: t.xOpt, qty: ctx.lotQty });
+      const want = (t.xOpt - t.eOpt) * ctx.lotQty - charges;
+      assert.ok(Math.abs(t.pnl - want) <= ctx.lotQty * 0.005 + 0.02, `${mk} trade ${t.entry}: pnl ${t.pnl} ≠ (${t.xOpt}−${t.eOpt})×${ctx.lotQty}−${charges}`);
+      if (ctx.isFutures) assert.ok(Math.abs(t.eOpt - t.ePrice) < 50, `${mk}: futures entry ${t.eOpt} is not the index level ${t.ePrice}`);
+    }
+    assert.strictEqual(!!neu.result.stats.isFutures, ctx.isFutures);
+    assert.strictEqual(neu.result.stats.optionSim, !ctx.isFutures);
+    assert.ok(!legacySaves.slice(-1).includes("TREND_DAY_SCALP_BACKTEST"), "a non-NIFTY run overwrote NIFTY's legacy slot");
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+  });
+}
+check("TDS: the market runs scanned their own scaled series (and at least one traded)", () => {
+  const S = TDS_RUNS.SENSEX, B = TDS_RUNS.BANKNIFTY, F = TDS_RUNS.NIFTY_FUT;
+  assert.ok(S && B && F, "market runs missing");
+  for (const r of [S, B, F]) assert.ok(r.result.meta.days > 0, "no sessions scanned");
+  assert.ok(S.result.trades.every((t) => t.ePrice > 50000), "SENSEX trades should be on the SENSEX (scaled) series");
+  assert.ok(F.result.trades.every((t) => t.eOpt > 1000), "futures entries should be index levels, not option premiums");
+  const n = [S, B, F].reduce((a, r) => a + r.result.trades.length, 0);
+  say(`       TDS trades: SENSEX ${S.result.trades.length} · BANKNIFTY ${B.result.trades.length} · NIFTY_FUT ${F.result.trades.length}`);
+  assert.ok(n > 0, "no TDS market run traded — the pricing checks above proved nothing");
+});
+check("TDS pair settings: a SENSEX-own key reaches the engine (as its TDS_* key) for that run only", async () => {
+  process.env.SENSEX_TDS_ENTRY_END = "11:00";
+  try {
+    const { overrides } = page.buildOverrides("trendDayScalp", "SENSEX", null);
+    assert.strictEqual(overrides.TDS_ENTRY_END, "11:00");
+    const neu = await runNew({ strategy: "trendDayScalp", market: "SENSEX", settings: "current", from: FROM, to: TO });
+    assert.ok(neu.record.overriddenKeys.includes("TDS_ENTRY_END"));
+    for (const t of neu.result.trades) assert.ok(t.entry.split(", ")[1].slice(0, 5) < "11:00", `SENSEX TDS entered at ${t.entry}`);
+    assert.strictEqual(process.env.TDS_ENTRY_END, undefined, "the pair value leaked into the real env");
+  } finally { delete process.env.SENSEX_TDS_ENTRY_END; }
+});
+check("the old TDS page is untouched by markets: NIFTY run reads NIFTY's candles, no market field", async () => {
+  const mark = fetchLog.length;
+  const oldRes = await runOld("trendDayScalp", `from=${FROM}&to=${TO}`);
   assert.ok(fetchLog.slice(mark).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
   assert.strictEqual(oldRes.meta.market, undefined, "a NIFTY result must not grow a market field");
 });
