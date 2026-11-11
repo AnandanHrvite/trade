@@ -99,6 +99,18 @@ const _isPreMarket = (bucketMs) => {
   if (!rt.isMcx) return isPreMarketBucket(bucketMs);
   return Math.floor((Math.floor(bucketMs / 1000) + 19800) / 60) % 1440 < rt.sessionOpenMin();
 };
+// VIX gate: another market reads its own <PAIR>_VIX_ENABLED / _VIX_MAX_ENTRY /
+// _VIX_STRONG_ONLY (Settings → that market), else NIFTY's BB_RSI_VIX_*. vixFilter
+// reads the BB_RSI_* names, so the pair's values are handed to it through scopedEnv —
+// the same mapping the /backtest page applies. NIFTY's calls are unchanged.
+const _VIX_KEYS = ["VIX_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY"];
+const _vixScoped = (fn) => {
+  if (rt.home) return fn();
+  const o = {};
+  for (const k of _VIX_KEYS) { const v = _env(`${PREFIX}_${k}`); o[`BB_RSI_${k}`] = v === undefined ? null : v; }
+  return require("../utils/scopedEnv").run(o, fn);
+};
+const _vixOn = () => _vixScoped(() => process.env.BB_RSI_VIX_ENABLED === "true");
 rt.registerCapital();
 
 // ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
@@ -1061,9 +1073,9 @@ async function onCandleClose(bar) {
   const _signalSide = result.signal === "BUY_CE" ? "CE" : "PE";
 
   // VIX — post-strategy check with derived strength (skip in sim mode)
-  if (!state._simMode && process.env.BB_RSI_VIX_ENABLED === "true") {
+  if (!state._simMode && _vixOn()) {
     const _strength = deriveBbRsiStrength(result);
-    const _vixCheck = await checkLiveVix(_strength, { mode: "bb_rsi" });
+    const _vixCheck = await _vixScoped(() => checkLiveVix(_strength, { mode: "bb_rsi" }));
     if (!_vixCheck.allowed) {
       log(`⏭️ ${TAG} SKIP: ${_vixCheck.reason}`);
       skipLogger.appendSkipLog(MODE, {
@@ -1376,7 +1388,7 @@ router.get("/start", async (req, res) => {
   await preloadHistory();
 
   // Start VIX polling
-  if (process.env.BB_RSI_VIX_ENABLED === "true") {
+  if (_vixOn()) {
     resetVixCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
@@ -1776,8 +1788,8 @@ router.get("/status", (req, res) => {
 
   // VIX details for top-bar display (bb_rsi-specific threshold)
   const _vix          = getCachedVix();
-  const _vixEnabled   = process.env.BB_RSI_VIX_ENABLED === "true";
-  const _vixMaxEntry  = vixFilter.getVixMaxEntry("bb_rsi");
+  const _vixEnabled   = _vixOn();
+  const _vixMaxEntry  = _vixScoped(() => vixFilter.getVixMaxEntry("bb_rsi"));
   const _vixStrongOnly = Infinity; // bb_rsi does not use STRONG_ONLY — disable that branch in the badge
 
   // Unrealised PnL (minus charges to match exit P&L)

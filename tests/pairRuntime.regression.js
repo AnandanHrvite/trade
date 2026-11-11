@@ -324,6 +324,24 @@ check("bbRsiPaper: per-market facts come from rt; journal hooks + NIFTY-only OI 
   }
   assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(code), "the OI gate must stay NIFTY-only");
 });
+check("bbRsiPaper: a pair's own VIX switch (Settings → that market) drives its gate, as in its backtest", () => {
+  const R = require("../src/routes/bbRsiPaper");
+  const vixOn = (router) => {
+    const layer = router.stack.find(l => l.route && l.route.path === "/status" && l.route.methods.get);
+    let html = "";
+    layer.route.stack[0].handle({ query: {}, headers: {} }, { send: (h) => { html = h; }, setHeader() {}, set() {}, status() { return this; }, json() {} });
+    return /VIX (n\/a|\d)/.test(html);
+  };
+  const S = R.forMarket("SENSEX");
+  withEnv({ BB_RSI_VIX_ENABLED: undefined, SENSEX_BB_RSI_VIX_ENABLED: undefined }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [false, false]));
+  withEnv({ BB_RSI_VIX_ENABLED: undefined, SENSEX_BB_RSI_VIX_ENABLED: "true" }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [false, true], "SENSEX's own key ON must not need NIFTY's"));
+  withEnv({ BB_RSI_VIX_ENABLED: "true", SENSEX_BB_RSI_VIX_ENABLED: undefined }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, true], "an unset pair key inherits NIFTY's"));
+  withEnv({ BB_RSI_VIX_ENABLED: "true", SENSEX_BB_RSI_VIX_ENABLED: "false" }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, false], "SENSEX's own key OFF wins over NIFTY's"));
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Async checks above return promises; wait for them before reporting.

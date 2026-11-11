@@ -4,9 +4,11 @@ Engine: `src/strategies/bb_rsi.js` · Routes: `bbRsi*.js` · Env prefix: `BB_RSI
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — Pair VIX gate: a non-NIFTY pair's paper engine now reads its own `<PAIR>_VIX_ENABLED` / `_VIX_MAX_ENTRY` / `_VIX_STRONG_ONLY` (Settings offered them, but paper read only NIFTY's while its backtest honoured them), else NIFTY's `BB_RSI_VIX_*`. NIFTY unchanged.
+
 - 2026-11-11 — `bbRsiBacktest.js` runs on BANKNIFTY, SENSEX and NIFTY_FUT from the /backtest page (`backtestMarket.context`): that market's spot candles, lot and exchange charges; NIFTY_FUT books ₹ (index pts × lot − futures charges, no δ/θ); `<PAIR>_EXPIRY_DAY_ONLY` uses the pair's `rt.isExpiryDay` (the paper /start rule). Non-NIFTY runs never write the legacy `BB_RSI_BACKTEST` slot. MCX / SAIL stay "coming soon". NIFTY results byte-identical.
 
-- 2026-11-11 — `bbRsiPaper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same `/bb_rsi-paper` path, files, keys, logs — golden byte-identical); every other offered market's BB_RSI pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`), has its own spread limit / expiry-day switch, and its exchange's charges (BSE for SENSEX). The engine reads `<PAIR>_BB_RSI_*` keys with NIFTY inheritance (`pairs.envGet`). OI gate stays NIFTY-only; VIX gate stays on the shared `BB_RSI_VIX_*` keys.
+- 2026-11-11 — `bbRsiPaper.js` is a `create(pair)` builder (utils/pairRuntime.js): the default export is the NIFTY instance (same `/bb_rsi-paper` path, files, keys, logs — golden byte-identical); every other offered market's BB_RSI pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`), has its own spread limit / expiry-day switch, and its exchange's charges (BSE for SENSEX). The engine reads `<PAIR>_BB_RSI_*` keys with NIFTY inheritance (`pairs.envGet`). OI gate stays NIFTY-only; VIX gate reads India VIX with the pair's own `<PAIR>_VIX_*` thresholds, else NIFTY's `BB_RSI_VIX_*`.
 
 - 2026-11-08 — Engine prefix support for the NIFTY FUTURES twin: `bb_rsi.forPrefix("FUT_BB_RSI")` returns the same API reading `FUT_BB_RSI_*` keys (own indicator cache per prefix); the default exports still read `BB_RSI_*` and are output-identical (verified on 7.6k synthetic calls). New routes `futBbRsiPaper.js` / `futBbRsiBacktest.js` use it; the options strategy is unchanged.
 
