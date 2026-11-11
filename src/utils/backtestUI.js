@@ -106,6 +106,12 @@ function renderBacktestResults(opts) {
     extraTradeColumns = [],   // [{ key, label, render?: function (t) { return string } }]
     activePage = "orbBacktest",
     notes = "",
+    // ── Unified /backtest page only (defaults leave every per-strategy page
+    //    byte-for-byte as it was) ──
+    endpointQuery = "",       // extra query (e.g. "strategy=orb&market=NIFTY&") Run Again keeps
+    preface = "",             // HTML shown above the run bar (strategy · market · settings used)
+    mobileCards = false,      // ≤640px: trade rows become cards, 44px controls
+    openPanels = false,       // open Day P&L + Analytics (equity curve) on load
   } = opts;
 
   // Embed trades safely
@@ -117,6 +123,9 @@ function renderBacktestResults(opts) {
   // build the cell HTML inline in the client by reading fields from each
   // trade row, so just pass the key list.
   const extraKeys = JSON.stringify(extraTradeColumns.map(c => ({ key: c.key, label: c.label })));
+
+  // Run Again / split runs: ENDPOINT?from=…, plus the unified page's own query.
+  const _runHref = endpointQuery ? "ENDPOINT+'?'+ENDPOINT_Q+'from='" : "ENDPOINT+'?from='";
 
   const fmt = n => n != null ? Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
   const fmtPnl = n => `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -220,7 +229,26 @@ tbody td{padding:6px 10px;font-size:0.72rem;color:var(--muted-1,#8ba1c2);}
 .dw-table tfoot td{padding:8px 10px;font-size:0.72rem;font-weight:700;border-top:1px solid #1a2236;background:#04060e;}
 
 ${sidebarCSS()}
-${modalCSS()}
+${modalCSS()}${mobileCards ? `
+/* Phone (≤640px): each trade row is a card of label/value lines, no sideways
+   scroll; every control is a 44px tap target. */
+@media(max-width:640px){
+  .page{padding:12px max(12px,env(safe-area-inset-right)) 40px max(12px,env(safe-area-inset-left));}
+  .bt-crumb{flex-wrap:wrap;margin:-12px -12px 12px !important;padding:6px 12px !important;}
+  .run-bar>div{flex:1 1 140px;}
+  .run-bar input{min-height:44px;width:100%;}
+  .run-btn,.preset-btn,.dw-toggle,.copy-btn,.pag button,.tbar select,.tbar input,.tbar button{min-height:44px;}
+  .tbar input{width:100% !important;}
+  .bt-cards{border:0;overflow:visible;}
+  .bt-cards table{min-width:0 !important;}
+  .bt-cards thead{display:none;}
+  .bt-cards table,.bt-cards tbody,.bt-cards tr,.bt-cards td{display:block;width:100%;}
+  .bt-cards tbody tr{border:0.5px solid #0e1428;border-radius:8px;margin:0 0 10px;padding:6px 12px;background:#08091a;}
+  .bt-cards tbody td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 0;border:0;text-align:right;word-break:break-word;}
+  .bt-cards tbody td::before{content:attr(data-label);color:var(--muted-2,#6d85a8);font-size:0.6rem;text-transform:uppercase;letter-spacing:0.6px;text-align:left;flex:0 0 auto;}
+  .bt-cards .bt-eye-btn{min-height:44px;min-width:44px;}
+  :root[data-theme="light"] .bt-cards tbody tr{background:#ffffff;border-color:#e0e4ea;}
+}` : ""}
 
 :root[data-theme="light"] body{background:#f5f6fa;color:#1e293b;}
 :root[data-theme="light"] .sc{background:#ffffff;border-color:#e0e4ea;}
@@ -238,7 +266,7 @@ ${buildSidebar(activePage, false)}
 <div class="page">
 
 <!-- Breadcrumb -->
-<div style="background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 20px;display:flex;align-items:center;gap:7px;margin:-16px -20px 14px;position:sticky;top:0;z-index:90;">
+<div${mobileCards ? ' class="bt-crumb"' : ""} style="background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 20px;display:flex;align-items:center;gap:7px;margin:-16px -20px 14px;position:sticky;top:0;z-index:90;">
   <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:${accent}22;color:${accent};border:0.5px solid ${accent}55;text-transform:uppercase;letter-spacing:0.5px;">${mode} BACKTEST</span>
   <span style="color:var(--muted-2,#6d85a8);font-size:10px;">›</span>
   <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(16,185,129,0.1);color:#34d399;border:0.5px solid rgba(16,185,129,0.2);text-transform:uppercase;">${strategyName}</span>
@@ -247,7 +275,7 @@ ${buildSidebar(activePage, false)}
   <span style="margin-left:auto;font-size:0.6rem;color:var(--muted-2,#6d85a8);">${trades.length.toLocaleString()} trades · 5-min</span>
 </div>
 
-<!-- Run-bar -->
+${preface}<!-- Run-bar -->
 <div class="run-bar">
   <div><label>From</label><input type="date" id="f" value="${from}"/></div>
   <div><label>To</label><input type="date" id="t" value="${to}"/></div>
@@ -349,7 +377,7 @@ ${extraStats.length ? `<div class="stat-grid">${extraStats.map(e => `<div class=
 </div>
 
 <!-- Table -->
-<div class="tw">
+<div class="tw${mobileCards ? " bt-cards" : ""}">
   <table>
     <thead><tr>
       <th onclick="doSort('side')" id="h-side">Side ▼</th>
@@ -390,7 +418,7 @@ ${aiExportScriptTag({ mode, strategyName, from, to, optionSim: !!(s && s.optionS
 ${modalJS()}
 ${clearCacheJS()}
 var ACCENT = '${accent}';
-var ENDPOINT = '${endpoint}';
+var ENDPOINT = '${endpoint}';${endpointQuery ? `\nvar ENDPOINT_Q = ${JSON.stringify(String(endpointQuery).replace(/&?$/, "&")).replace(/</g, "\\u003c")};` : ""}
 var EXTRA_COLS = ${extraKeys};
 var MODE_LABEL = '${mode}';
 
@@ -428,7 +456,7 @@ document.getElementById('runBtn').onclick = function(){
     var fy=parseInt(f.split('-')[0]), ty=parseInt(t.split('-')[0]);
     for(var y=fy;y<=ty;y++){
       var yf=(y===fy)?f:y+'-01-01', yt=(y===ty)?t:y+'-12-31';
-      window.open(ENDPOINT+'?from='+yf+'&to='+yt,'_blank');
+      window.open(${_runHref}+yf+'&to='+yt,'_blank');
     }
   } else if(document.getElementById('splitMonths').checked){
     var fd=new Date(f), td=new Date(t);
@@ -438,10 +466,10 @@ document.getElementById('runBtn').onclick = function(){
       var mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01';
       var last=new Date(yr,mo+1,0);
       var mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');
-      window.open(ENDPOINT+'?from='+mf+'&to='+mt,'_blank');
+      window.open(${_runHref}+mf+'&to='+mt,'_blank');
     }
   } else {
-    window.location = ENDPOINT+'?from='+f+'&to='+t;
+    window.location = ${_runHref}+f+'&to='+t;
   }
 };
 
@@ -540,7 +568,7 @@ function render(){
       +'<td style="text-align:center;padding:6px 8px;"><button data-idx="'+i+'" class="bt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:'+ACCENT+';font-size:0.85rem;">👁</button></td>'
       +'</tr>';
   }
-  tbody.innerHTML=rows;
+  tbody.innerHTML=rows;${mobileCards ? "\n  labelCells(tbody);" : ""}
   Array.from(tbody.querySelectorAll('.bt-eye-btn')).forEach(function(btn){
     btn.addEventListener('click',function(){ showBTModal(window._btSlice[parseInt(this.getAttribute('data-idx'))]); });
   });
@@ -697,14 +725,57 @@ function renderAnalytics(){
   document.getElementById('anaDowBody').innerHTML = [1,2,3,4,5].map(function(d){ var x=dow[d]; if(!x) return '<tr><td>'+dowNames[d]+'</td><td>0</td><td>—</td><td>—</td></tr>'; var wr=((x.wins/x.cnt)*100).toFixed(0); var pc=x.pnl>=0?'#10b981':'#ef4444'; return '<tr><td>'+dowNames[d]+'</td><td>'+x.cnt+'</td><td>'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAna(x.pnl)+'</td></tr>'; }).join('');
 }
 
-// Newest trade first. doSort2() sorts with the defaults already declared
+${mobileCards ? `// Phone cards: each cell carries its column name (CSS shows it as the label).
+function labelCells(tbody){
+  var ths=Array.prototype.map.call(document.querySelectorAll('.bt-cards thead th'),function(th){ return th.textContent.replace(/[▲▼]/g,'').trim(); });
+  Array.prototype.forEach.call(tbody.querySelectorAll('tr'),function(tr){
+    Array.prototype.forEach.call(tr.children,function(td,i){ if(ths[i]) td.setAttribute('data-label', ths[i]); });
+  });
+}
+` : ""}// Newest trade first. doSort2() sorts with the defaults already declared
 // (entry, descending); calling doSort('entry') here would see sortCol already
 // set to 'entry' and *flip* the direction, which is what used to land the page
 // on oldest-first with a ▲ header that disagreed with the markup.
-doSort2();
+doSort2();${openPanels ? "\nif(TRADES.length){ toggleDayWise(); toggleAnalytics(); }" : ""}
 </script>
 </body>
 </html>`;
 }
 
-module.exports = { computeBacktestStats, renderBacktestResults };
+/**
+ * renderBacktestResults() options for a backtest whose engine returns
+ * { summary, trades } (backtestEngine-style) and whose old page renders it
+ * with its own template. `rows` are the trades already mapped by that page's
+ * own row mapping, oldest first. Stats are computeBacktestStats() — the same
+ * stat code every shared-renderer page uses; the engine's own summary extras
+ * (candles, capital, STRONG/MARGINAL split, VIX blocks, top rejection) ride
+ * along as extra stat cards. Used by the unified /backtest page.
+ */
+function engineResultView({ result, rows, mode, accent, strategyName, endpoint, activePage, from, to, extraTradeColumns }) {
+  const r = result || {};
+  const s = r.summary || {};
+  const esc = (v) => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const stats = computeBacktestStats(rows);
+  stats.optionSim = !!s.optionSim;
+  const inr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString("en-IN")}`;
+  const extraStats = [];
+  if (r.candleCount) extraStats.push({ label: "Candles", value: Number(r.candleCount).toLocaleString("en-IN") });
+  if (s.finalCapital != null) extraStats.push({ label: "Final capital", value: inr(s.finalCapital) });
+  if (s.strongTrades != null) extraStats.push({ label: "STRONG trades", value: s.strongTrades, sub: `WR ${esc(s.strongWinRate)} · ${inr(s.strongPnl)}` });
+  if (s.marginalTrades) extraStats.push({ label: "MARGINAL trades", value: s.marginalTrades, sub: `WR ${esc(s.marginalWinRate)} · ${inr(s.marginalPnl)}` });
+  if (s.vixEnabled) extraStats.push({ label: "VIX-blocked entries", value: s.vixBlocked || 0 });
+  const rej = Array.isArray(s.rejectBreakdown) ? s.rejectBreakdown[0] : null;
+  if (rej) extraStats.push({ label: "Top rejection", value: `${rej.count}×`, sub: esc(rej.reason) });
+  return {
+    mode, accent, strategyName: s.strategy || strategyName, endpoint, from, to,
+    summary: stats, trades: rows, activePage,
+    extraTradeColumns: extraTradeColumns || [],
+    extraStats,
+    notes: `${s.description ? `<b>${esc(s.strategy || strategyName)}</b> — ${esc(s.description)}. ` : ""}` +
+      (s.optionSim
+        ? `P&L is simulated option premium (δ ${esc(s.delta)}, θ ₹${esc(s.thetaPerDay)}/day) — treat ₹ as directional, not exact.`
+        : "P&L is in spot points (option simulation off)."),
+  };
+}
+
+module.exports = { computeBacktestStats, renderBacktestResults, engineResultView };
