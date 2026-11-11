@@ -559,8 +559,12 @@ async function _runJob(id, p) {
         for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
       } else {
         // That market's own rule expiry (weekly / monthly / futures month-end).
+        // Futures: paper's rule (the month contract's own expiry day). contractAt
+        // has already rolled to next month's contract by then, so it never matches.
+        const _futRt = M.isFutures ? require("../utils/pairRuntime").forStrategy("pa", M.key) : null;
         for (const d of uniqueDates) {
           const t = Math.floor(Date.parse(`${d}T09:15:00+05:30`) / 1000);
+          if (_futRt) { if (_futRt.isExpiryDay(t * 1000)) expirySet.add(d); continue; }
           const c = backtestMarket.contractAt(M, M.strikeStep || 100, "CE", t);
           if (c && c.expiry === d) expirySet.add(d);
         }

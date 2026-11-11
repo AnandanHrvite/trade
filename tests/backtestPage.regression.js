@@ -438,6 +438,25 @@ for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
   });
 }
 
+check("PA NIFTY_FUT expiry-day-only uses paper's expiry rule (the month contract's own expiry day)", async () => {
+  // futuresContractAt has already rolled to next month's contract on expiry day,
+  // so matching its expiry found no expiry day at all: the run never traded.
+  const rt = require("../src/utils/pairRuntime").forStrategy("pa", "NIFTY_FUT");
+  const ymd = (ms) => new Date(ms + 19800000).toISOString().slice(0, 10);
+  assert.ok(rt.isExpiryDay(Date.parse("2026-09-29T09:15:00+05:30")), "paper: 29 Sep 2026 is the NIFTY futures expiry");
+  // The synthetic market's PA trades fall on 30 Sep / 16 Oct: make 30 Sep paper's
+  // expiry day, and the backtest must trade it and nothing else.
+  const real = rt.isExpiryDay;
+  rt.isExpiryDay = (ms) => ymd(ms) === "2026-09-30";
+  process.env.FUT_PA_EXPIRY_DAY_ONLY = "true";
+  try {
+    const neu = await runNew({ strategy: "pa", market: "NIFTY_FUT", settings: "current", from: FROM, to: TO, resolution: "5" });
+    const days = neu.result.trades.map((t) => ymd(t.entryTs * 1000));
+    assert.ok(days.length > 0, "an expiry-day-only NIFTY_FUT run found no expiry day");
+    assert.ok(days.every((d) => d === "2026-09-30"), `traded off paper's expiry day: ${days.join(",")}`);
+  } finally { rt.isExpiryDay = real; delete process.env.FUT_PA_EXPIRY_DAY_ONLY; }
+});
+
 check("PA: a SENSEX run is priced with the SENSEX lot and BSE charges (not NIFTY's)", () => {
   const S = PA_RUNS.SENSEX;
   assert.ok(S, "SENSEX run missing");
