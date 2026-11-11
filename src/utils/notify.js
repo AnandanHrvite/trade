@@ -165,6 +165,39 @@ function modeGroup(mode) {
 const DEFAULT_OFF_GROUPS = new Set(require("../config/strategyRegistry").all()
   .filter(s => s.modeEnabled.default === "false").map(s => s.key));
 
+// ── (strategy, market) pairs ─────────────────────────────────────────────────
+// A pair's mode tag is "<PAIR ENV PREFIX>-PAPER" ("BN_EMA_RSI_ST_V2-PAPER").
+// Without this, modeGroup()'s fallback would file it under EMA_RSI_ST (V1) and
+// fire on V1's toggles. A pair is gated by its OWN on/off switch
+// (<PAIR>_MODE_ENABLED, default OFF) and by its strategy's TG_* toggles (a pair
+// has no Telegram keys of its own), and is labelled with its market.
+function _pairOfMode(mode) {
+  const m = String(mode || "").toUpperCase();
+  if (!m) return null;
+  try {
+    const pairs = require("../config/pairs");
+    for (const p of pairs.runnable()) {
+      if (m === p.envPrefix || m.startsWith(`${p.envPrefix}-`)) return p;
+    }
+  } catch (_) {}
+  return null;
+}
+/** [group whose TG_* keys gate it, is it switched on?, label] for a mode tag. */
+function _gate(mode) {
+  const pr = _pairOfMode(mode);
+  if (!pr) { const g = modeGroup(mode); return { group: g, on: isModeEnabled(g), pair: null }; }
+  const s = require("../config/strategyRegistry").byId(pr.strategyId);
+  return { group: s ? s.key : modeGroup(mode), on: require("../config/pairs").isEnabled(pr), pair: pr };
+}
+function _labelFor(mode, gate) {
+  if (!gate || !gate.pair) return modeLabel(mode);
+  let mk = gate.pair.marketKey;
+  try { mk = require("../config/markets").get(gate.pair.marketKey).label; } catch (_) {}
+  const s = require("../config/strategyRegistry").byId(gate.pair.strategyId);
+  const rest = String(mode).toUpperCase().slice(gate.pair.envPrefix.length).replace(/^-PAPER/, "");
+  return `📄 ${mk} · ${s ? s.label : gate.pair.envPrefix} PAPER${rest}`;
+}
+
 function isModeEnabled(group) {
   const v = process.env[`${group}_MODE_ENABLED`];
   if (DEFAULT_OFF_GROUPS.has(group)) return String(v || "").toLowerCase() === "true";
@@ -455,8 +488,8 @@ function nowISTString() {
  * Gated by TG_{group}_STARTED. Caller pre-composes `text`.
  */
 function notifyStarted({ mode, text }) {
-  const group = modeGroup(mode);
-  if (!isModeEnabled(group)) return;
+  const { group, on } = _gate(mode);
+  if (!on) return;
   if (!canSend(`TG_${group}_STARTED`)) return;
   sendTelegram(text);
 }
@@ -487,8 +520,9 @@ function _isFuturesAlert(p) {
 }
 
 function notifyEntry(p) {
-  const group = modeGroup(p.mode);
-  if (!isModeEnabled(group)) return;
+  const gate = _gate(p.mode);
+  const group = gate.group;
+  if (!gate.on) return;
   if (!canSend(`TG_${group}_ENTRY`)) return;
 
   // A futures position is a LONG/SHORT on the index, not a bought CE/PE, and it
@@ -501,7 +535,7 @@ function notifyEntry(p) {
   const strikeStr = (!isFut && p.strike) ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
 
   const lines = [
-    `${modeLabel(p.mode)} — ENTRY`,
+    `${_labelFor(p.mode, gate)} — ENTRY`,
     ``,
     `${sideEmoji}`,
     `Symbol : ${p.symbol || "—"}`,
@@ -538,8 +572,9 @@ function notifyEntry(p) {
  *   candlesHeld  — completed candles held; fallback when heldMs is absent
  */
 function notifyExit(p) {
-  const group = modeGroup(p.mode);
-  if (!isModeEnabled(group)) return;
+  const gate = _gate(p.mode);
+  const group = gate.group;
+  if (!gate.on) return;
   if (!canSend(`TG_${group}_EXIT`)) return;
 
   const isFut     = _isFuturesAlert(p);
@@ -562,7 +597,7 @@ function notifyExit(p) {
   ].filter(Boolean);
 
   const lines = [
-    `${modeLabel(p.mode)} — EXIT`,
+    `${_labelFor(p.mode, gate)} — EXIT`,
     ``,
     `${sideEmoji}`,
     `Symbol : ${p.symbol || "—"}`,
@@ -591,12 +626,13 @@ function notifyExit(p) {
  * Sent on candle close when flat — explains why a trade was or wasn't taken.
  */
 function notifySignal({ mode, signal, reason, strength, spot, time }) {
-  const group = modeGroup(mode);
-  if (!isModeEnabled(group)) return;
+  const gate = _gate(mode);
+  const group = gate.group;
+  if (!gate.on) return;
   if (!canSend(`TG_${group}_SIGNALS`)) return;
 
   const lines = [
-    `${modeLabel(mode)} — SIGNAL`,
+    `${_labelFor(mode, gate)} — SIGNAL`,
     ``,
     `Signal   : ${signal || "NONE"}${strength ? ` [${strength}]` : ""}`,
     spot != null ? `Spot     : ${inr(spot)}` : null,
@@ -613,8 +649,9 @@ function notifySignal({ mode, signal, reason, strength, spot, time }) {
  * Fires per-mode when that mode's session stops. Gated by TG_{group}_DAYREPORT.
  */
 function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessionEnd }) {
-  const group = modeGroup(mode);
-  if (!isModeEnabled(group)) return;
+  const gate = _gate(mode);
+  const group = gate.group;
+  if (!gate.on) return;
   if (!canSend(`TG_${group}_DAYREPORT`)) return;
 
   const list = Array.isArray(sessionTrades) ? sessionTrades : [];
@@ -630,7 +667,7 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 
   const { date, time } = nowISTString();
   const lines = [
-    `${modeLabel(mode)} — DAY REPORT`,
+    `${_labelFor(mode, gate)} — DAY REPORT`,
     ``,
     `📅 ${date}`,
     `🕐 Ended ${time} IST`,

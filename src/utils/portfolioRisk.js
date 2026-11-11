@@ -65,7 +65,10 @@ function getTodayRealized() {
   }
   const byMode = {};
   let total = 0;
-  for (const mode of PAPER_MODES) {
+  // Every running (strategy, market) pair counts toward the same portfolio cap.
+  let _pairModes = [];
+  try { _pairModes = require("../config/pairs").runnable().map((p) => p.modeKey); } catch (_) {}
+  for (const mode of PAPER_MODES.concat(_pairModes)) {
     let sum = 0;
     try {
       for (const t of tradeLogger.readDailyTrades(mode, dateStr)) {

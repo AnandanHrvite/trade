@@ -32,10 +32,30 @@ const DAILY_PREFIX_BY_MODE = Object.fromEntries(_LOG_MODES.map(m => [m, `${m}_pa
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) {}
 try { fs.mkdirSync(TRADES_DIR, { recursive: true }); } catch (_) {}
 
+// A RUNNING (strategy, market) pair (config/pairs.js runnable — bn_ema_rsi_st_v2,
+// sensex_ema_rsi_st_v2 …) logs under its own mode key with the same file names.
+// Resolved lazily: the registry maps above stay exactly the registry's modes,
+// and pairs.js (markets → instrument) is only loaded for a key they lack.
+function _pairMode(mode) {
+  try {
+    const p = require("../config/pairs").byModeKey(mode);
+    return p && p.runs && !p.home ? p.modeKey : null;
+  } catch (_) { return null; }
+}
+/** Every logging mode: the registry's, then each running pair's. */
+function modes() {
+  let extra = [];
+  try { extra = require("../config/pairs").runnable().map((p) => p.modeKey); } catch (_) {}
+  return [...Object.keys(DAILY_PREFIX_BY_MODE), ...extra];
+}
+
 function filePathFor(mode) {
-  const name = FILE_BY_MODE[mode];
+  const name = FILE_BY_MODE[mode] || (_pairMode(mode) ? `${mode}_paper_trades_log.jsonl` : null);
   if (!name) throw new Error(`tradeLogger: unknown mode "${mode}"`);
   return path.join(DATA_DIR, name);
+}
+function _dailyPrefix(mode) {
+  return DAILY_PREFIX_BY_MODE[mode] || (_pairMode(mode) ? `${mode}_paper_trades_` : null);
 }
 
 // IST date string "YYYY-MM-DD" from unix ms (or now).
@@ -49,7 +69,7 @@ function istDateString(unixMs) {
 }
 
 function dailyFilePathFor(mode, dateStr) {
-  const p = DAILY_PREFIX_BY_MODE[mode];
+  const p = _dailyPrefix(mode);
   if (!p) throw new Error(`tradeLogger: unknown mode "${mode}"`);
   const ds = dateStr || istDateString();
   return path.join(TRADES_DIR, `${p}${ds}.jsonl`);
@@ -60,7 +80,7 @@ function dailyFilePathFor(mode, dateStr) {
  * Returns [{ date, size, mtimeMs }, ...]
  */
 function listDailyDates(mode) {
-  const pref = DAILY_PREFIX_BY_MODE[mode];
+  const pref = _dailyPrefix(mode);
   if (!pref) throw new Error(`tradeLogger: unknown mode "${mode}"`);
   let names;
   try { names = fs.readdirSync(TRADES_DIR); }
@@ -211,6 +231,7 @@ function readDailyTrades(mode, dateStr) {
 }
 
 module.exports = {
+  modes,
   appendTradeLog,
   appendSettingsSnapshot,
   setSettingsProvider,

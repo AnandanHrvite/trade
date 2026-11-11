@@ -185,10 +185,10 @@ for (const [k, s] of Object.entries(STOCK_DEFS)) UNDERLYING_DEFS[k] = _stockRow(
  * SENSEX — BSE's index. Registered for the market list (src/config/markets.js)
  * but `marketOnly`: no strategy trades it yet, so listUnderlyings() and
  * isUnderlyingEnabled() leave it out, and the spot recorder, the expiry health
- * roll and the market-context snapshot never touch it. The order builders in
- * this file (validateAndGetOptionSymbol, getSymbol) still spell `NSE:` and must
- * not be handed SENSEX until a strategy is wired to it — markets.optionSymbol()
- * is the exchange-aware builder.
+ * roll and the market-context snapshot never touch it — until a RUNNING pair on
+ * the SENSEX market is switched on (see _runningPairOn), which lifts the flag.
+ * The symbol builders here (validateAndGetOptionSymbol, getSymbol) spell the
+ * row's own exchange (`BSE:` for SENSEX, `NSE:` for every other row).
  *
  * VERIFIED 2026-11-11 against Fyers' symbol master (public.fyers.in/sym_details/
  * BSE_FO.csv and BSE_CM.csv):
@@ -275,7 +275,10 @@ function underlyingOf(u) {
     label:       def.label,
     exchange:    def.exchange || "NSE",
     expiryDow:   def.expiryDow != null ? def.expiryDow : WEEKLY_EXPIRY_DOW,
-    marketOnly:  !!def.marketOnly,
+    // A marketOnly row (SENSEX, a stock no strategy uses) is lifted while a
+    // RUNNING pair on that market is switched on — its spot is then recorded,
+    // its expiry rolled and its market context captured like any traded index.
+    marketOnly:  !!def.marketOnly && !_runningPairOn(def.key),
     spot:        def.spot,
     optPrefix:   def.optPrefix,
     futPrefix:   def.futPrefix,
@@ -301,6 +304,22 @@ function underlyingOf(u) {
   };
 }
 
+/**
+ * Is a running (strategy, market) pair switched on for a market traded on this
+ * underlying (config/pairs.js runnable)? Lazy require — pairs → markets → this
+ * file. Read live, so a Settings switch applies on the next call.
+ */
+function _runningPairOn(underlyingKey) {
+  try {
+    const pairs = require("./pairs");
+    const markets = require("./markets");
+    return pairs.runnable({ enabledOnly: true }).some((p) => {
+      const d = markets.MARKET_DEFS[p.marketKey];
+      return d && d.underlying === underlyingKey;
+    });
+  } catch (_) { return false; }
+}
+
 /** Strike offset: integer for the index grids (unchanged), fractional for SAIL. */
 function _offsetOf(raw, fractional) {
   if (!fractional) return parseInt(raw || "0", 10) || 0;
@@ -319,6 +338,7 @@ function isUnderlyingEnabled(u) {
   // nothing that runs may stream, roll or alert on it yet.
   if (r.marketOnly) return false;
   if (!r.enabledEnv) return true;
+  if (_runningPairOn(r.key)) return true;
   // Optional extra [key, default-when-unset] toggles that also enable it.
   for (const [k, dflt] of r.alsoEnabledEnv || []) {
     if (String(process.env[k] || dflt).trim().toLowerCase() === "true") return true;
@@ -334,8 +354,8 @@ function isUnderlyingEnabled(u) {
  */
 function listUnderlyings({ includeMarketOnly = false } = {}) {
   return Object.keys(UNDERLYING_DEFS)
-    .filter((k) => includeMarketOnly || !UNDERLYING_DEFS[k].marketOnly)
-    .map((k) => underlyingOf(k));
+    .map((k) => underlyingOf(k))
+    .filter((u) => includeMarketOnly || !u.marketOnly);
 }
 
 const LOT_SIZE_DEFAULT = 65;
@@ -659,8 +679,8 @@ function calcATMStrike(spot, side, underlying) {
 async function getSymbol(side = "CE", underlying, instrument) {
   const u = underlyingOf(underlying);
   if (resolveInstrument(instrument) === "NIFTY_FUTURES") {
-    const expiry = getFuturesExpiry();
-    const symbol = `NSE:${u.futPrefix}${expiry}FUT`;
+    const expiry = futuresContractAt(nowIST(), u).code;   // NIFTY: = getFuturesExpiry()
+    const symbol = `${u.exchange}:${u.futPrefix}${expiry}FUT`;
     console.log(`📌 Futures symbol: ${symbol}`);
     return symbol;
   }
@@ -669,7 +689,7 @@ async function getSymbol(side = "CE", underlying, instrument) {
   const spot   = await getLiveSpot(u);
   const strike = calcATMStrike(spot, side, u);  // ATM or ITM — never OTM
   const expiry = getNearestThursdayExpiry(u);
-  const symbol = `NSE:${u.optPrefix}${expiry}${strike}${side}`;
+  const symbol = `${u.exchange}:${u.optPrefix}${expiry}${strike}${side}`;
 
   console.log(`📌 Options symbol: ${symbol} (Spot: ${spot} → Strike: ${strike}, Expiry: ${expiry})`);
   return symbol;
@@ -682,13 +702,13 @@ async function getSymbol(side = "CE", underlying, instrument) {
 function getSymbolSync(side = "CE", underlying, instrument) {
   const u = underlyingOf(underlying);
   if (resolveInstrument(instrument) === "NIFTY_FUTURES") {
-    return `NSE:${u.futPrefix}${getFuturesExpiry()}FUT`;
+    return `${u.exchange}:${u.futPrefix}${futuresContractAt(nowIST(), u).code}FUT`;
   }
   const cached = _spotCache[u.key] && _spotCache[u.key].spot;
   const spot   = cached || u.spotFallback || u.spotDefault || (u.key === "BANKNIFTY" ? 54000 : 24000);
   const strike = calcATMStrike(spot, side, u);
   const expiry = getNearestThursdayExpiry(u);
-  return `NSE:${u.optPrefix}${expiry}${strike}${side}`;
+  return `${u.exchange}:${u.optPrefix}${expiry}${strike}${side}`;
 }
 
 function getLotQty(underlying, instrument) {
@@ -980,7 +1000,7 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
       // 25-Aug-2026 must not build the non-existent NIFTY26825 symbol.
       code = expiryCodeFor(d, U);
     }
-    const symbol = `NSE:${U.optPrefix}${code}${strike}${side}`;
+    const symbol = `${U.exchange}:${U.optPrefix}${code}${strike}${side}`;
     console.log(`${TAG} ✅ MANUAL EXPIRY (${expiryType}): ${manualExpiry} → ${code} → ${symbol}`);
     return { symbol, expiry: code, expiryDate: manualExpiry, strike, side, underlying: U.key };
     }
@@ -1006,7 +1026,7 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
       return null;
     }
     const code   = expiryCodeFor(eff, U);
-    const symbol = `NSE:${U.optPrefix}${code}${strike}${side}`;
+    const symbol = `${U.exchange}:${U.optPrefix}${code}${strike}${side}`;
     if (await isSymbolValidViaQuotes(symbol)) {
       console.log(`${TAG} ✅ ${label} validated: ${code} (${formatDateToYYYYMMDD(eff)}) → ${symbol}`);
       return { symbol, expiry: code, expiryDate: formatDateToYYYYMMDD(eff), strike, side, underlying: U.key };
@@ -1037,7 +1057,7 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
   // ── Step 2: Computed weekly expiry (this/next Tuesday) with holiday check ──
   const weeklyDate   = getNearestWeeklyExpiryDate(U);
   const weeklyExpiry = expiryCodeFor(weeklyDate, U);           // reported if every step fails
-  const weeklySymbol = `NSE:${U.optPrefix}${weeklyExpiry}${strike}${side}`;
+  const weeklySymbol = `${U.exchange}:${U.optPrefix}${weeklyExpiry}${strike}${side}`;
   const fromWeekly   = await tryExpiryDate(
     weeklyDate,
     U.weekly ? "Computed weekly expiry" : "Computed MONTHLY expiry (this index has no weeklies)"
@@ -1051,11 +1071,13 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
   // day rolls here exactly when it rolls there; ISO strings compare by calendar
   // day, which the Date objects themselves would not (they carry different times).
   console.warn(`${TAG} ⚠️  ${U.weekly ? "Weekly" : "Computed"} expiry ${weeklyExpiry} not available, trying the month contract...`);
-  let monthlyDate = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
+  // The underlying's own expiry weekday (Tuesday on NSE, Thursday on SENSEX).
+  let monthlyDate = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth(), U.expiryDow);
   if (formatDateToYYYYMMDD(monthlyDate) < formatDateToYYYYMMDD(weeklyDate)) {
     monthlyDate = lastExpiryWeekdayOf(
       ist.getMonth() === 11 ? ist.getFullYear() + 1 : ist.getFullYear(),
-      ist.getMonth() === 11 ? 0 : ist.getMonth() + 1
+      ist.getMonth() === 11 ? 0 : ist.getMonth() + 1,
+      U.expiryDow
     );
   }
   const fromMonthly = await tryExpiryDate(monthlyDate, "Monthly expiry");
@@ -1085,7 +1107,7 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
     if (await isNonTradingDay(tryDate)) continue;
 
     const expCode    = expiryCodeFor(tryDate, U);
-    const testSymbol = `NSE:${U.optPrefix}${expCode}${strike}${side}`;
+    const testSymbol = `${U.exchange}:${U.optPrefix}${expCode}${strike}${side}`;
 
     if (await isSymbolValidViaQuotes(testSymbol)) {
       console.warn(`${TAG} ✅ Found valid expiry +${offset}d: ${testSymbol} (${formatDateToYYYYMMDD(tryDate)})`);

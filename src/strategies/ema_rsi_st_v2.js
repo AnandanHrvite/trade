@@ -78,8 +78,17 @@ const DESCRIPTION = "EMA_RSI_ST_V2 | EMA20/EMA50(close) + RSI(14) + SuperTrend(1
 // ── Trading window ────────────────────────────────────────────────────────
 // V2 owns its OWN window keys — it must not inherit V1's TRADE_ENTRY_START/END,
 // which are shared globals V1 reads.
+// Env read with (strategy, market) pair inheritance: a pair prefix's unset key
+// (BN_EMA_RSI_ST_V2_EMA_FAST) reads its home pair's value (EMA_RSI_ST_V2_EMA_FAST).
+// A NIFTY key reads exactly process.env. See config/pairs.js envGet.
+var _pairsMod = null;
+function _env(k) {
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(k);
+}
+
 function _parseMins(envKey, fallback) {
-  var v = process.env[envKey] || fallback;
+  var v = (envKey ? _env(envKey) : undefined) || fallback;
   var parts = String(v).split(":");
   var h = parseInt(parts[0], 10);
   var m = parseInt(parts[1], 10);
@@ -111,14 +120,13 @@ function isInTradingWindow(unixSec, prefix) {
  */
 function getConfig(prefix) {
   var P = prefix || DEFAULT_PREFIX;
-  var e = process.env;
-  var emaFast = parseInt(e[P + "_EMA_FAST"] || "20", 10);
-  var emaSlow = parseInt(e[P + "_EMA_SLOW"] || "50", 10);
-  var rsiPeriod = parseInt(e[P + "_RSI_PERIOD"] || "14", 10);
-  var stPeriod  = parseInt(e[P + "_SUPERTREND_PERIOD"] || "10", 10);
-  var stMult    = parseFloat(e[P + "_SUPERTREND_MULT"] || "2");
-  var rsiCeMin  = parseFloat(e[P + "_RSI_CE_MIN"] || "52");
-  var rsiPeMax  = parseFloat(e[P + "_RSI_PE_MAX"] || "48");
+  var emaFast = parseInt(_env(P + "_EMA_FAST") || "20", 10);
+  var emaSlow = parseInt(_env(P + "_EMA_SLOW") || "50", 10);
+  var rsiPeriod = parseInt(_env(P + "_RSI_PERIOD") || "14", 10);
+  var stPeriod  = parseInt(_env(P + "_SUPERTREND_PERIOD") || "10", 10);
+  var stMult    = parseFloat(_env(P + "_SUPERTREND_MULT") || "2");
+  var rsiCeMin  = parseFloat(_env(P + "_RSI_CE_MIN") || "52");
+  var rsiPeMax  = parseFloat(_env(P + "_RSI_PE_MAX") || "48");
   return {
     PREFIX: P,
     EMA_FAST:   Number.isFinite(emaFast) && emaFast   > 0 ? emaFast   : 20,
@@ -304,7 +312,7 @@ function getSignal(candles, opts) {
 
   var _istTime = new Date(signalCandle.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   if (!silent) console.log(
-    "[" + (prefix === DEFAULT_PREFIX ? "V2" : prefix === "FUT_EMA_RSI_ST_V2" ? "FUT-V2" : "BN-V2") + " " + _istTime + "] EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) +
+    "[" + (prefix === DEFAULT_PREFIX ? "V2" : prefix.replace(/_EMA_RSI_ST_V2$/, "") + "-V2") + " " + _istTime + "] EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) +
     "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")" +
     " | RSI=" + rsi.toFixed(1) +
     " | ST=" + stVal + "(" + (currST.trend === 1 ? "BULL" : "BEAR") + ", stop only)" +

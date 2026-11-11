@@ -33,6 +33,17 @@
  * a strategy that needs the 09:15 index open (needsIndexOpen) on an MCX market —
  * commodities have no NSE index open. The GAP_RUNAWAY stock scanner (kind:"tool")
  * is not paired; it stays under STOCKS as it is.
+ *
+ * RUNNING PAIRS: a strategy listed in RUNS_AS_PAIR has a paper route built by a
+ * create(pair) builder (routes/<id>Paper.js — see utils/pairRuntime.js), so
+ * every offered pair of it RUNS: its own route /<modeKey>-paper, trades file
+ * <modeKey>_paper_trades.json, JSONL / skip logs under <modeKey>, socket slot
+ * <ENVPREFIX>_PAPER and replay mode <modeKey>-paper. A strategy not listed
+ * still has its pairs' keys and Settings panes, but nothing runs them.
+ *
+ * envGet(key): read a strategy key WITH pair inheritance — a non-home pair's
+ * own value when set, else its home pair's value. Engines that take an env
+ * prefix use it, so BN_EMA_RSI_ST_V2_EMA_FAST unset reads EMA_RSI_ST_V2_EMA_FAST.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -54,6 +65,10 @@ const HOME_MARKET = { sailVwapSt: "SAIL" };
 const SHARED_LEGACY_KEYS = new Set(["TRADE_EXPIRY_DAY_ONLY"]);
 
 const MARKET_KEYS = Object.keys(markets.MARKET_DEFS);
+
+// Strategies whose paper route is a create(pair) builder — every offered pair of
+// these runs. Add a strategy's id here when its route is converted.
+const RUNS_AS_PAIR = new Set(["emaRsiStV2"]);
 
 function marketPrefix(marketKey) {
   const k = String(marketKey || "").toUpperCase();
@@ -100,6 +115,7 @@ function get(strategyId, marketKey) {
     enabledKey = `${envPrefix}_MODE_ENABLED`;
     enabledDefault = "false";
   }
+  const runs = RUNS_AS_PAIR.has(s.id);
   return {
     id: `${s.id}@${mk}`,
     strategyId: s.id,
@@ -114,6 +130,16 @@ function get(strategyId, marketKey) {
     label: s.label,
     // URL/DOM-safe id: the Settings page anchor (#pair-<slug>).
     slug: modeKey.replace(/[^a-z0-9]+/g, "-"),
+    // Does a route run this pair (RUNS_AS_PAIR)? The identity below is the
+    // one it runs under; a home pair's is the registry's own.
+    runs,
+    paperPath:  home ? s.paper.path : `/${modeKey}-paper`,
+    replayMode: home ? s.paper.path.slice(1) : `${modeKey}-paper`,
+    tradesFile: home ? s.tradesFile : `${modeKey}_paper_trades.json`,
+    socketMode: home ? s.socket.mode : `${envPrefix}_PAPER`,
+    // Upper-case tag for logs / notify ("BN_EMA_RSI_ST_V2"); home = its key.
+    tag:        home ? s.key : envPrefix,
+    broker:     home ? s.broker : "fyers",
   };
 }
 
@@ -127,10 +153,81 @@ function forMarket(marketKey) {
 }
 
 /** Every offered pair, market by market (markets.js display order). */
-function all() { return MARKET_KEYS.flatMap(forMarket); }
+// The pair list is static (registry × markets), so it is built once; callers
+// get the same frozen objects every time.
+let _all = null;
+function all() {
+  if (!_all) _all = MARKET_KEYS.flatMap(forMarket).map((p) => Object.freeze(p));
+  return _all;
+}
 
 /** A pair by its mode key (bn_orb, ema_rsi_st …), or null. */
-function byModeKey(modeKey) { return all().find((p) => p.modeKey === modeKey) || null; }
+let _byMode = null;
+function byModeKey(modeKey) {
+  if (!_byMode) _byMode = new Map(all().map((p) => [p.modeKey, p]));
+  return _byMode.get(String(modeKey || "")) || null;
+}
+
+/** A RUNNING non-home pair by its replay mode ("bn_ema_rsi_st_v2-paper"), or null. */
+function byReplayMode(mode) {
+  return all().find((p) => p.runs && !p.home && p.replayMode === mode) || null;
+}
+
+/**
+ * Non-home pairs a route runs (RUNS_AS_PAIR), market by market. Pass
+ * { enabledOnly: true } for the ones switched ON. This — not a hand-typed list —
+ * is what Start All, the monitors, the logs, the consolidated page, replay and
+ * the MCP mode list add to the registry's own strategies.
+ */
+function runnable(opts = {}, env = process.env) {
+  const list = all().filter((p) => p.runs && !p.home);
+  return opts.enabledOnly ? list.filter((p) => isEnabled(p, env)) : list;
+}
+
+// Longest-first non-home env prefixes, for envGet (BN_EMA_RSI_ST_V2 must win
+// over BN_EMA_RSI_ST for "BN_EMA_RSI_ST_V2_EMA_FAST").
+// Indexed by the key's first "_" token, so a NIFTY key (EMA_RSI_ST_V2_…) that
+// no pair prefix can match costs one Map lookup — envGet runs on engine hot paths.
+let _prefixIndex = null;
+function _prefixesFor(key) {
+  if (!_prefixIndex) {
+    _prefixIndex = new Map();
+    const list = all().filter((p) => !p.home)
+      .map((p) => [p.envPrefix + "_", p])
+      .sort((a, b) => b[0].length - a[0].length);
+    for (const row of list) {
+      const t = row[0].slice(0, row[0].indexOf("_"));
+      if (!_prefixIndex.has(t)) _prefixIndex.set(t, []);
+      _prefixIndex.get(t).push(row);
+    }
+  }
+  const i = key.indexOf("_");
+  return i > 0 ? (_prefixIndex.get(key.slice(0, i)) || []) : [];
+}
+
+/**
+ * Value of one strategy env key with pair inheritance: the key's own value when
+ * set (non-empty); for a non-home pair's key that is unset, the home pair's
+ * value for the same setting. A key that belongs to no pair reads as itself.
+ * Returns undefined when nothing is set (callers apply their own default).
+ */
+function envGet(key, env = process.env) {
+  const k = String(key || "");
+  const v = env[k];
+  if (v !== undefined && v !== "") return v;
+  for (const [pre, p] of _prefixesFor(k)) {
+    if (!k.startsWith(pre)) continue;
+    const s = _strategy(p.strategyId);
+    const rest = k.slice(pre.length);
+    for (const hp of [s.envPrefix, s.legacyEnvPrefix]) {
+      if (!hp) continue;
+      const hv = env[`${hp}_${rest}`];            // EMA_RSI_ST also maps its legacy TRADE_* keys
+      if (hv !== undefined && hv !== "") return hv;
+    }
+    return undefined;
+  }
+  return v;
+}
 
 /** ON/OFF of a pair — non-home pairs default OFF. Read live. */
 function isEnabled(pair, env = process.env) {
@@ -177,6 +274,10 @@ function resolve(pair, homeKey, env = process.env, fallback) {
 module.exports = {
   MARKET_PREFIX,
   HOME_MARKET,
+  RUNS_AS_PAIR,
+  byReplayMode,
+  runnable,
+  envGet,
   marketPrefix,
   homeMarket,
   isOffered,

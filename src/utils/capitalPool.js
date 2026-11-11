@@ -145,6 +145,17 @@ function baseCapital(broker) {
   return Number.isFinite(v) && v >= 0 ? v : 100000;
 }
 
+/**
+ * Add a paper book to the pools at run time — a (strategy, market) pair's own
+ * key (utils/pairRuntime.js registerCapital). Idempotent; never replaces one of
+ * the built-in rows above.
+ */
+function register(key, { broker, label, file } = {}) {
+  if (!key || STRATEGIES[key]) return;
+  if (!BROKER_ENV[broker] || !file) return;
+  STRATEGIES[key] = { broker, label: label || key, file };
+}
+
 function brokerOf(key) {
   return STRATEGIES[key] ? STRATEGIES[key].broker : null;
 }
@@ -485,6 +496,7 @@ function clear(strategyKey) {
 // (getPool / brokerOf / baseCapital / realizedFor / blockedFor) stay internal;
 // snapshot() already hands out everything a reader needs.
 module.exports = {
+  register,           // add a (strategy, market) pair's book at run time
   isEnabled,          // settings/UI: is the pool being tracked at all
   estimatedPremium,   // engines that decide before their option quote arrives
   check,              // pure affordability report (no side effects)

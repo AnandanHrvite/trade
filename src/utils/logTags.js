@@ -30,9 +30,26 @@ const STRATEGY_ID_BY_MODE = {
 
 const _str = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
-/** Strategy id for a logger mode key, e.g. "bb_rsi" → "BB_RSI". */
+// A non-home (strategy, market) pair's mode key (bn_ema_rsi_st_v2) names its
+// market and its strategy — read from config/pairs.js, lazily (it loads markets).
+// Only consulted for a mode the maps above do not cover.
+function _pairOf(mode) {
+  const m = String(mode || "");
+  if (!m || MARKET_BY_MODE[m] || STRATEGY_ID_BY_MODE[m]) return null;
+  try {
+    const p = require("../config/pairs").byModeKey(m);
+    return p && !p.home ? p : null;
+  } catch (_) { return null; }
+}
+
+/** Strategy id for a logger mode key, e.g. "bb_rsi" → "BB_RSI", "bn_ema_rsi_st_v2" → "EMA_RSI_ST_V2". */
 function strategyIdFor(mode) {
   const m = String(mode || "");
+  const p = _pairOf(m);
+  if (p) {
+    const s = require("../config/strategyRegistry").byId(p.strategyId);
+    if (s) return s.key;
+  }
   return STRATEGY_ID_BY_MODE[m] || m.toUpperCase() || null;
 }
 
@@ -45,6 +62,8 @@ function marketFor(mode, rec) {
   if (own) return own.toUpperCase();
   const fixed = MARKET_BY_MODE[String(mode || "")];
   if (fixed) return fixed;
+  const pr = _pairOf(mode);
+  if (pr) return pr.marketKey;
   const instr = rec && _str(rec.instrument);
   if (instr && instr.toUpperCase().startsWith("NSE_EQUITY")) return "STOCKS";
   return DEFAULT_MARKET;
