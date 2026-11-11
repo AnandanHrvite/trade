@@ -179,6 +179,15 @@ check("the BN_ / FUT_ spellings the engines' forPrefix twins already read are un
     assert.strictEqual(pairs.get(id, "NIFTY_FUT").envPrefix, `FUT_${reg.byId(id).envPrefix}`);
   }
 });
+check("TREND DAY SCALP runs as a pair: TDS-prefixed keys, long mode keys, every market offered", () => {
+  assert.ok(pairs.RUNS_AS_PAIR.has("trendDayScalp"));
+  const p = pairs.get("trendDayScalp", "SENSEX");
+  assert.deepStrictEqual([p.envPrefix, p.modeKey, p.enabledKey, p.paperPath, p.runs], ["SENSEX_TDS", "sensex_trend_day_scalp", "SENSEX_TDS_MODE_ENABLED", "/sensex_trend_day_scalp-paper", true]);
+  assert.strictEqual(pairs.pairKey(p, "TDS_MAX_SL_PTS"), "SENSEX_TDS_MAX_SL_PTS");
+  assert.strictEqual(pairs.envGet("BN_TDS_MAX_SL_PTS", { TDS_MAX_SL_PTS: "40" }), "40");
+  assert.strictEqual(pairs.get("trendDayScalp", "NIFTY").runs, true, "the home pair is the builder's default export");
+  assert.ok(pairs.isOffered("trendDayScalp", "CRUDE"), "TDS does not need the 09:15 index open");
+});
 check("every non-NIFTY pair defaults OFF", () => {
   for (const p of pairs.all().filter(p => !p.home)) {
     assert.strictEqual(p.enabledDefault, "false", p.id);

@@ -24,11 +24,23 @@
  * Uses LIVE NIFTY data (Fyers WebSocket) but SIMULATES orders locally.
  * Endpoints: /start /stop /exit /status /status/data /status/chart-data
  *            /history /reset /session/:i /download/... /view/...
+ *
+ * MARKETS. This file is a create(pair) builder (see utils/pairRuntime.js and
+ * routes/emaRsiStV2Paper.js, the pilot). The default export is the NIFTY
+ * instance: /trend-day-scalp-paper, the same files, keys, logs and decisions.
+ * forMarket(key) builds the same engine for every other market pairs.js offers
+ * it on (SENSEX, BANKNIFTY, NIFTY futures, MCX, SAIL), each with its own route
+ * /<modeKey>-paper, trades file, logs, crash snapshot, socket slot and capital
+ * book. Every per-market fact (spot, strike grid, lot, option symbol, expiry,
+ * session, futures, fills) comes from pairRuntime; the rules never branch on
+ * the market. Pair-only behaviour sits behind `!rt.home`: its own ON switch
+ * (<PAIR>_MODE_ENABLED, default off), <PAIR>_EXPIRY_DAY_ONLY on that market's
+ * expiry, the spread limit and fill at the ask / bid of a fresh quote
+ * (<PAIR>_PAPER_FILL_AT_QUOTE, default on off NIFTY).
  */
 
 const express = require("express");
 const { trackPath, pathFields } = require("../utils/tradePath");
-const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 
@@ -55,28 +67,107 @@ const { istDayFromAny, istIsoFromAny, getISTMinutes, getBucketStart } = require(
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
 const tradeGuards = require("../utils/tradeGuards");
+const pairs        = require("../config/pairs");
+const pairRuntime  = require("../utils/pairRuntime");
 
-const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
-const CALLBACK_ID        = "trendDayScalpPaper";
-const MODE_KEY           = "trend_day_scalp";     // tradeLogger / skipLogger key
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUILDER: one paper engine per (strategy, market) pair. create(pair) returns an
+// Express router holding ALL of that pair's state. See the MARKETS note above.
+// ═══════════════════════════════════════════════════════════════════════════════
+function create(pair) {
+const rt     = pairRuntime.forPair(pair);
+const router = express.Router();
+const MODE        = rt.modeKey;      // "trend_day_scalp" on NIFTY: tradeLogger / skipLogger / capitalPool key
+const PREFIX      = rt.envPrefix;    // "TDS" on NIFTY
+const ROUTE       = rt.paperPath;    // "/trend-day-scalp-paper" on NIFTY
+const OWNER       = rt.ownerId;      // "trend-day-scalp-paper" on NIFTY: option feed, recorder, session id
+const CALLBACK_ID = rt.home ? "trendDayScalpPaper" : OWNER;   // socketManager callback id
+const TAG         = rt.home ? "[TDS-PAPER]" : `[${rt.tag}-PAPER]`;
+const NOTIFY_MODE = rt.home ? "TREND-DAY-SCALP-PAPER" : rt.notifyMode;
+const TITLE       = rt.home ? "Trend Day Scalp" : `${rt.market().label} · Trend Day Scalp`;
+const SPOT_LABEL  = rt.spotLabel;    // "NIFTY" on NIFTY
+// A non-home pair's own keys read with pair inheritance (its value, else NIFTY's);
+// NIFTY reads process.env exactly as it always did.
+const _env = (k) => (rt.home ? process.env[k] : pairs.envGet(k));
+// Spot symbol the candles are built from: resolved at /start (MCX: the series' future).
+let _spotSym = null;
+const SPOT = () => _spotSym || rt.spotSymbol();
+rt.registerCapital();
 
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const PT_FILE  = path.join(DATA_DIR, "trend_day_scalp_paper_trades.json");
+const PT_FILE  = path.join(DATA_DIR, rt.tradesFile);
 
 // ── Config readers (Settings mutates process.env live — never cache) ──────────
 function _resMin() {
-  const v = parseInt(process.env.TDS_RESOLUTION || "5", 10);
+  const v = parseInt(_env(`${PREFIX}_RESOLUTION`) || "5", 10);
   return [1, 3, 5, 10, 15, 30, 60].includes(v) ? v : 5;
 }
 function _parseMins(envKey, fallback) {
-  return tdsStrategy._parseHHMM(process.env[envKey], tdsStrategy._parseHHMM(fallback, 0));
+  return tdsStrategy._parseHHMM(_env(envKey), tdsStrategy._parseHHMM(fallback, 0));
 }
-function _envStr(key, fallback) { return String(process.env[key] || fallback); }
+function _envStr(key, fallback) { return String(_env(key) || fallback); }
 
-/** Position size — the one common Lot Multiplier (Settings → Common Rules). */
+/**
+ * The engine's config. NIFTY: getConfig() exactly as before (and engine calls
+ * pass no cfg, so they read it themselves). Another market: its own keys with
+ * inheritance; on MCX the day's first hour starts at that market's open unless
+ * the pair sets its own <PAIR>_SESSION_START.
+ */
+function _cfg() {
+  if (rt.home) return tdsStrategy.getConfig();
+  const c = tdsStrategy.getConfig(PREFIX);
+  if (rt.isMcx && !process.env[`${PREFIX}_SESSION_START`]) c.sessionStartMin = rt.sessionOpenMin();
+  return c;
+}
+/** Engine opts: unchanged on NIFTY; another market adds its own cfg. */
+const ENG = (o) => (rt.home ? o : Object.assign({ cfg: _cfg() }, o));
+
+/** Position size — the one common Lot Multiplier (Settings → Common Rules), on this market's lot. */
 function tdsLotQty() {
-  return instrumentConfig.getLotQty();
+  return rt.lotQty();
+}
+
+// ── Instrument maths. NIFTY: instrumentMode (options) exactly as before. Another
+//    market: its own instrument (NIFTY_FUT trades the month future at the index
+//    level) and its exchange's charges (BSE for SENSEX). ──────────────────────
+const _isFut = rt.instrumentName() === "NIFTY_FUTURES";
+function _dir(side) { return _isFut && side === "PE" ? -1 : 1; }
+function _r2(x) { return parseFloat(x.toFixed(2)); }
+function _computePnl(o) {
+  if (rt.home) return instrumentMode.computePnl(o);
+  const qty = o.qty || 0;
+  const exchange = rt.market().exchange;
+  if (_isFut) {
+    const gross = (o.exitSpot - o.entrySpot) * _dir(o.side) * qty;
+    const charges = getCharges({ broker: o.broker, isFutures: _isFut, exchange, entryPremium: o.entrySpot, exitPremium: o.exitSpot, qty });
+    return { gross: _r2(gross), charges, pnl: _r2(gross - charges), pnlMode: `futures: entry ₹${o.entrySpot} → exit ₹${o.exitSpot} (${_dir(o.side) > 0 ? "LONG" : "SHORT"})`, isFutures: _isFut };
+  }
+  const gross = (o.exitPremium - o.entryPremium) * qty;
+  const charges = getCharges({ broker: o.broker, isFutures: _isFut, exchange, entryPremium: o.entryPremium, exitPremium: o.exitPremium, qty });
+  return { gross: _r2(gross), charges, pnl: _r2(gross - charges), pnlMode: `option premium: entry ₹${o.entryPremium} → exit ₹${o.exitPremium}`, isFutures: _isFut };
+}
+function _unrealisedPnl(o) {
+  if (rt.home || !_isFut) return instrumentMode.unrealisedPnl(o);
+  return _r2((o.currentSpot - o.entrySpot) * _dir(o.side) * (o.qty || 0));
+}
+function _capitalRequired(qty, price) {
+  if (rt.home || !_isFut) return instrumentMode.capitalRequired(qty, price);
+  const pct = instrumentConfig.underlyingOf(rt.underlyingKey).marginPct;
+  return _r2((qty || 0) * (price || 0) * (pct / 100));
+}
+/**
+ * Another market's entry contract. Options keep TDS's slightly-ITM strike
+ * (<PAIR>_ITM_STEPS, else TDS_ITM_STEPS, default 1 step of THIS market's grid);
+ * futures take the month contract; MCX its series' ATM option.
+ */
+async function _resolvePairEntry(spot, side) {
+  if (_isFut || rt.isMcx) return rt.resolveEntrySymbol(spot, side);
+  const U = rt.U();
+  const base = instrumentConfig.calcATMStrike(spot, side, U.key);
+  const steps = parseInt(_env(`${PREFIX}_ITM_STEPS`) || "1", 10);
+  const strike = steps > 0 ? _r2(side === "CE" ? base - steps * U.strikeStep : base + steps * U.strikeStep) : base;
+  return instrumentConfig.validateAndGetOptionSymbol(spot, side, MODE, { underlying: U.key, strikeOverride: strike });
 }
 
 function ensureDir() {
@@ -95,7 +186,7 @@ function loadData() {
   }
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
-    console.error("[tds-paper] trend_day_scalp_paper_trades.json corrupt — resetting:", e.message);
+    console.error(`[tds-paper] ${rt.tradesFile} corrupt — resetting:`, e.message);
     _dataCache = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
@@ -128,6 +219,8 @@ function _freshState() {
     position:       null,
     optionLtp:      null,
     optionLtpUpdatedAt: null,
+    optionQuote:    null,   // another market: latest bid/ask of the held contract (fill at the bid)
+    _expiryDayBlocked: false, // another market: <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day
     log:            [],
     _sessionId:     null,
     _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms)
@@ -161,7 +254,7 @@ function rehydrateSessionFromJsonl() {
     const data = loadData();
     const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades(MODE_KEY, today)
+    const all = tradeLogger.readDailyTrades(MODE, today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) for (const t of (s.trades || [])) seen.add(keyOf(t));
@@ -184,19 +277,19 @@ function rehydrateSessionFromJsonl() {
     state.tradesTaken   = trades.length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ [TDS-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
+    console.log(`♻️ ${TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
-    console.warn(`[TDS-PAPER] session rehydrate failed: ${err.message}`);
+    console.warn(`${TAG} session rehydrate failed: ${err.message}`);
   }
 }
 rehydrateSessionFromJsonl();
-require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[TDS-PAPER]");
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, TAG);
 
 // Capital pool realized P&L = file totalPnl + this session's unsaved closed trades.
 // A replay re-requires this module — it must not replace the live instance's getter.
 let _replayLoad = false;
 try { _replayLoad = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
-if (!_replayLoad) capitalPool.trackSession(MODE_KEY, () => (state._unsaved ? state.sessionPnl : 0));
+if (!_replayLoad) capitalPool.trackSession(MODE, () => (state._unsaved ? state.sessionPnl : 0));
 
 /**
  * Realised P&L for the current ISO week (Mon → today) from the per-day JSONL
@@ -215,7 +308,7 @@ function weeklyPnl() {
       const d = new Date(nowIst.getTime() - i * 86400000);
       const ds = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
       if (ds === todayStr && state.running) { total += state.sessionPnl; continue; }
-      const trades = tradeLogger.readDailyTrades(MODE_KEY, ds) || [];
+      const trades = tradeLogger.readDailyTrades(MODE, ds) || [];
       for (const t of trades) if (t && !t.type && typeof t.pnl === "number") total += t.pnl;
     }
     return parseFloat(total.toFixed(2));
@@ -230,7 +323,7 @@ const OPTION_POLL_MS = 3000;
 // optionFeed, so the REST call below fires only when the stream is quiet or
 // unavailable. The loop itself stays — it renews the optionFeed lease, and it is
 // the fallback that keeps behaviour identical if the stream is down.
-const OPTION_FEED_OWNER = "trend-day-scalp-paper";
+const OPTION_FEED_OWNER = OWNER;
 let _optionPollTimer = null;
 let _optionPollStopped = true;
 
@@ -247,7 +340,7 @@ function _applyOptionLtp(symbol, ltp, at, record) {
   // Premium bars for the option chart (display only — never read by the engine).
   state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp, at);
   state.optionLtpUpdatedAt = at || Date.now();
-  if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, "trend-day-scalp-paper"); } catch (_) {} }
+  if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, OWNER); } catch (_) {} }
 }
 
 function startOptionPolling() {
@@ -261,16 +354,26 @@ function startOptionPolling() {
         if (state.position && state.position.symbol === symbol) _applyOptionLtp(symbol, ltp, at, false);
       });
       const streamed = optionFeed.getFresh(symbol);
-      if (streamed) {
+      // Another market filling at the quote also needs a fresh bid/ask for its
+      // exit, which the stream does not carry: one REST quote at most ~5 s old.
+      const _q = state.optionQuote;
+      const _needQuote = !rt.home && rt.fillAtQuote() && !(_q && _q.symbol === symbol && Date.now() - _q.at <= 5000);
+      if (streamed && !_needQuote) {
         _applyOptionLtp(symbol, streamed.ltp, streamed.at, false);
       } else {
+        let _got = false;
         try {
           const r = await require("../services/marketData").getQuotes([symbol]);
           if (r && r.s === "ok" && r.d && r.d.length) {
             const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
-            if (typeof ltp === "number" && ltp > 0) _applyOptionLtp(symbol, ltp, Date.now(), true);
+            if (typeof ltp === "number" && ltp > 0) { _applyOptionLtp(symbol, ltp, Date.now(), true); _got = true; }
+            if (!rt.home && _got) {
+              const v = r.d[0].v, _b = Number(v.bid || v.bid_price || 0), _a = Number(v.ask || v.ask_price || 0);
+              if (_b > 0 && _a > 0 && state.position && state.position.symbol === symbol) state.optionQuote = { symbol, bid: _b, ask: _a, ltp, at: Date.now() };
+            }
           }
         } catch (_) {}
+        if (!_got && streamed) _applyOptionLtp(symbol, streamed.ltp, streamed.at, false);
       }
     }
     if (!_optionPollStopped) _optionPollTimer = setTimeout(poll, OPTION_POLL_MS);
@@ -289,24 +392,25 @@ async function simulateBuy(side, sig) {
   if (!spot || !side) return;
   const _sid = state._sessionId;
 
-  const _isFut = instrumentMode.isFutures();
-
   let optInfo;
   try {
-    optInfo = _isFut
-      ? await instrumentMode.resolveEntryInstrument(spot, side, "TDS")
-      : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "TDS");
+    optInfo = rt.home
+      ? (_isFut
+        ? await instrumentMode.resolveEntryInstrument(spot, side, "TDS")
+        : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "TDS"))
+      : await _resolvePairEntry(spot, side);
   } catch (e) {
-    log(`❌ [TDS-PAPER] Symbol resolve failed: ${e.message}`);
+    log(`❌ ${TAG} Symbol resolve failed: ${e.message}`);
     return;
   }
   if (!optInfo || optInfo.invalid) {
-    log(`❌ [TDS-PAPER] No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: _isFut ? "no valid futures contract" : "no valid option expiry", side, spot });
+    log(`❌ ${TAG} No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
+    skipLogger.appendSkipLog(MODE, { gate: "expiry", reason: _isFut ? "no valid futures contract" : "no valid option expiry", side, spot });
     return;
   }
 
   let optionEntryLtp = null;
+  let _entryQuote = null;   // another market: the quote its spread limit and ask fill read
   if (_isFut) {
     // Futures trade AT the index level — there is no premium to quote.
     optionEntryLtp = spot;
@@ -318,18 +422,41 @@ async function simulateBuy(side, sig) {
         const ltp = v.lp || v.ltp;
         if (typeof ltp === "number" && ltp > 0) {
           optionEntryLtp = ltp;
-          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "trend-day-scalp-paper"); } catch (_) {}
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, OWNER); } catch (_) {}
+          if (!rt.home) _entryQuote = { ltp, bid: Number(v.bid || v.bid_price || 0), ask: Number(v.ask || v.ask_price || 0), at: Date.now() };
         }
       }
     } catch (e) {
-      log(`⚠️ [TDS-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
+      log(`⚠️ ${TAG} Option LTP fetch failed: ${e.message} — entry blocked`);
       return;
     }
     if (!optionEntryLtp) {
-      log(`❌ [TDS-PAPER] Option LTP not available — entry skipped`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot });
+      log(`❌ ${TAG} Option LTP not available — entry skipped`);
+      skipLogger.appendSkipLog(MODE, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot });
       return;
     }
+    // Another market: its bid-ask spread limit (<PAIR>_MAX_SPREAD_PTS) on this
+    // quote. A refusal is a failed fill, so the pending setup retries it; the
+    // skip is logged once per bar.
+    if (!rt.home && _entryQuote) {
+      const _sp = tradeGuards.checkSpread(_entryQuote.bid, _entryQuote.ask, rt.maxSpreadPts());
+      if (!_sp.ok) {
+        if (state._spreadSkipBar !== state.barStartTime) {
+          state._spreadSkipBar = state.barStartTime;
+          log(`⏭️ ${TAG} SKIP ${side} entry — spread too wide (${_sp.reason}, limit ${rt.maxSpreadPts()}pt)`);
+          skipLogger.appendSkipLog(MODE, { gate: "spread", reason: _sp.reason, symbol: optInfo.symbol, side, spot, spread: _sp.spread, limit: rt.maxSpreadPts() });
+        }
+        return;
+      }
+    }
+  }
+  // Another market fills at the ASK of a fresh quote (<PAIR>_PAPER_FILL_AT_QUOTE,
+  // default on there); NIFTY fills at the LTP as it always did.
+  const _ltpAtEntry = optionEntryLtp;
+  let _askFill = null;
+  if (!rt.home && !_isFut && _entryQuote) {
+    const f = rt.entryFill(optionEntryLtp, _entryQuote, Date.now());
+    if (f.source === "ask") { _askFill = f.price; optionEntryLtp = f.price; }
   }
 
   // /stop (or a stop + restart) may have run while we awaited — opening now
@@ -342,11 +469,11 @@ async function simulateBuy(side, sig) {
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    Sits AFTER the last strategy abort path so a refusal is never logged for
   //    a signal that would have been dropped anyway.
-  const _cap = capitalPool.gate(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
+  const _cap = capitalPool.gate(MODE, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
     if (!_cap.muted) {
-      log(`❌ [TDS-PAPER] Entry REFUSED — ${_cap.reason}`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", reason: _cap.reason, spot: spot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
+      log(`❌ ${TAG} Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _cap.reason, spot: spot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
     }
     return;
   }
@@ -386,33 +513,44 @@ async function simulateBuy(side, sig) {
     mfeSpotPts:     0, mfePnl: 0, maeSpotPts: 0, maePnl: 0, secsToMFE: 0, secsToMAE: 0,
     entryReason:    sig.reason,
   };
+  // Another market: the position names its market and instrument, and how its
+  // entry was filled. NIFTY's position is exactly as above.
+  if (!rt.home) {
+    Object.assign(pos, {
+      market: rt.marketKey, instrument: rt.instrumentName(),
+      optionEntryFill: _isFut ? null : (_askFill ? "ask" : "ltp"),
+      entryQuote: _entryQuote ? { bid: _entryQuote.bid, ask: _entryQuote.ask, ltp: _entryQuote.ltp } : null,
+    });
+  }
 
   state.position = pos;
-  capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
-  try { require("../utils/positionPersist").saveTrendDayScalpPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+  capitalPool.block(MODE, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  try { rt.persist.save(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
   // Futures P&L comes from the spot feed — no option contract to poll.
   if (!_isFut) startOptionPolling();
 
-  log(`🟢 [TDS-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
+  log(`🟢 ${TAG} BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
+  if (_askFill) log(`📌 ${TAG} Entry filled at the ASK ₹${_askFill} (LTP ₹${_ltpAtEntry}, bid ₹${_entryQuote.bid}) — ${rt.fillAtQuoteKey}`);
   log(`   ├─ Day gate: ${pos.gateSide} day · first-hour range ${pos.gateRangePts}pt (${pos.gateRangePct}%) · VWAP ${pos.gateVwap} · extension ${pos.gateExtensionPts}pt`);
   log(`   ├─ Setup: pullback to zone ${pos.zone} (VWAP ${pos.vwapAtEntry} / EMA ${pos.emaAtEntry}) → reclaim, body ${pos.bodyPts}pt ≥ ${pos.bodyNeeded}pt (ATR ${pos.atrAtEntry})`);
   log(`   └─ Pullback depth ${pos.slRawPts}pt · exit = global profit lock`);
 
   notifyEntry({
-    mode: "TREND-DAY-SCALP-PAPER",
+    mode: NOTIFY_MODE,
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
     qty,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
+    ...(rt.home ? {} : { isFutures: _isFut, instrument: rt.instrumentName() }),
   });
 
   try {
     tickRecorder.recordEntry({
-      mode: "trend-day-scalp-paper",
+      mode: OWNER,
       sessionId: state._sessionId,
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
@@ -425,10 +563,19 @@ async function simulateBuy(side, sig) {
 function simulateSell(reason) {
   if (!state.position) return;
   const pos = state.position;
-  const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
+  let exitOptLtp   = state.optionLtp || pos.optionEntryLtp;
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
   const qty        = pos.qty;
-  const _pnlRes    = instrumentMode.computePnl({
+  // Another market SELLS AT THE BID of a fresh quote of the held contract when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (pairRuntime.exitFill); NIFTY unchanged.
+  let _exitFill = null, _exitQ = null;
+  if (!rt.home && !pos.isFutures) {
+    _exitQ = state.optionQuote && state.optionQuote.symbol === pos.symbol ? state.optionQuote : null;
+    const f = rt.exitFill(exitOptLtp, _exitQ, Date.now());
+    _exitFill = f.source;
+    if (f.source === "bid") exitOptLtp = f.price;
+  }
+  const _pnlRes    = _computePnl({
     side: pos.side, entrySpot: pos.entrySpot, exitSpot,
     entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
     qty, broker: "fyers",
@@ -454,7 +601,7 @@ function simulateSell(reason) {
     entryBarTime:   pos.entryBarTime,
     exitBarTime:    Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
     pnl,
-    pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
+    pnlMode:        _isFut ? _pnlRes.pnlMode : `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
     exitReason:     reason,
     entryReason:    pos.entryReason,
     optionStrike:   pos.optionStrike,
@@ -488,13 +635,27 @@ function simulateSell(reason) {
     isFutures:      !!pos.isFutures,
     instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
   };
+  // Another market: the record names its market, strategy, spot and instrument
+  // (consolidation, post-exit tracking and the MCP read them) and how each leg filled.
+  if (!rt.home) {
+    Object.assign(trade, {
+      market:          rt.marketKey,
+      strategyId:      rt.strategy.key,
+      spotSymbol:      SPOT(),
+      instrument:      rt.instrumentName(),
+      optionEntryFill: pos.isFutures ? null : (pos.optionEntryFill || "ltp"),
+      optionExitFill:  pos.isFutures ? null : _exitFill,
+      entryQuote:      pos.entryQuote || null,
+      exitQuote:       _exitFill === "bid" && _exitQ ? { bid: _exitQ.bid, ask: _exitQ.ask, ltp: _exitQ.ltp } : null,
+    });
+  }
   state.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog(MODE_KEY, trade);
+  tradeLogger.appendTradeLog(MODE, trade);
 
-  log(`🔴 [TDS-PAPER] EXIT ${pos.side} ${pos.symbol} @ optLtp=₹${exitOptLtp} spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
+  log(`🔴 ${TAG} EXIT ${pos.side} ${pos.symbol} @ optLtp=₹${exitOptLtp} spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
   notifyExit({
-    mode: "TREND-DAY-SCALP-PAPER",
+    mode: NOTIFY_MODE,
     side: pos.side, symbol: pos.symbol,
     spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
     optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitOptLtp,
@@ -503,19 +664,21 @@ function simulateSell(reason) {
     entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
     peakPremium: trade.bestOptionLtp, peakPnl: trade.mfePnl,
     maxDrawdown: trade.maePnl, heldMs: trade.durationMs,
+    ...(rt.home ? {} : { isFutures: _isFut, instrument: rt.instrumentName() }),
   });
 
   try {
     tickRecorder.recordExit({
-      mode: "trend-day-scalp-paper", sessionId: state._sessionId, ts: Date.now(),
+      mode: OWNER, sessionId: state._sessionId, ts: Date.now(),
       side: pos.side, symbol: pos.symbol, qty,
       spotExit: exitSpot, optionExit: exitOptLtp, pnl, reason,
     });
   } catch (_) {}
 
   state.position = null;
-  capitalPool.release(MODE_KEY, pnl);
-  try { require("../utils/positionPersist").clearTrendDayScalpPosition(); } catch (_) {}
+  state.optionQuote = null;
+  capitalPool.release(MODE, pnl);
+  try { rt.persist.clear(); } catch (_) {}
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
   state.optionLtp = null;
@@ -526,8 +689,8 @@ function simulateSell(reason) {
 function _closeDay(reason) {
   state.dayClosed = true;
   state.dayClosedReason = reason;
-  log(`⏸️ [TDS-PAPER] ${reason} — no more entries today`);
-  skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
+  log(`⏸️ ${TAG} ${reason} — no more entries today`);
+  skipLogger.appendSkipLog(MODE, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
 }
 
 // ── Exits (per tick) ─────────────────────────────────────────────────────────
@@ -546,7 +709,7 @@ function _checkExits(spotPrice) {
 
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
   const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  const curPnl = instrumentMode.unrealisedPnl({
+  const curPnl = _unrealisedPnl({
     side: pos.side, entrySpot: pos.entrySpot, currentSpot: spotPrice,
     entryPremium: pos.optionEntryLtp, currentPremium: optLtp, qty: pos.qty,
   });
@@ -562,7 +725,7 @@ function _checkExits(spotPrice) {
   if (!pos.isFutures && pos.optionEntryLtp && state.optionLtp) {
     const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.peakPremium);
     if (_plMsg) {
-      log(`🔒 [TDS-PAPER] ${_plMsg}`);
+      log(`🔒 ${TAG} ${_plMsg}`);
       simulateSell(_plMsg);
     }
   }
@@ -570,7 +733,7 @@ function _checkExits(spotPrice) {
   if (pos.isFutures && spotPrice > 0) {
     const _fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entrySpot, spotPrice, pos.mfeSpotPts);
     if (_fsMsg) {
-      log(`🔒 [TDS-PAPER] ${_fsMsg}`);
+      log(`🔒 ${TAG} ${_fsMsg}`);
       simulateSell(_fsMsg);
     }
   }
@@ -590,19 +753,19 @@ function _maybeDecideDayGate() {
   if (tdsStrategy._istDayOf(last.time) !== today) return;
 
   // Feed the engine the CLOSED bars only; the forming bar must never move the gate.
-  const gate = tdsStrategy.evaluateDayGate(state.candles, { silent: true });
+  const gate = tdsStrategy.evaluateDayGate(state.candles, ENG({ silent: true }));
   if (!gate.decided) return;
 
   state.dayGate = gate;
   state.gateLoggedAt = istNow();
   if (gate.tradeable) {
-    log(`🚦 [TDS-PAPER] DAY GATE PASSED — ${gate.reason}`);
+    log(`🚦 ${TAG} DAY GATE PASSED — ${gate.reason}`);
     log(`   └─ ${gate.side} only for the rest of the day. Hunting a pullback into the VWAP/EMA zone.`);
   } else {
-      log(`🚦 [TDS-PAPER] DAY GATE FAILED — ${gate.reason}`);
+      log(`🚦 ${TAG} DAY GATE FAILED — ${gate.reason}`);
       for (const c of gate.checks || []) log(`   ${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`);
       log(`   └─ Standing aside for the whole session. A zero beats a loss on a day with no trend.`);
-      skipLogger.appendSkipLog(MODE_KEY, {
+      skipLogger.appendSkipLog(MODE, {
         gate: "day_gate", reason: gate.reason,
         rangePts: gate.rangePts, rangePct: gate.rangePct, vwap: gate.vwap,
         extensionPts: gate.extensionPts, extensionNeeded: gate.extensionNeeded,
@@ -618,6 +781,7 @@ async function evaluateEntry() {
   // Every guard here is synchronous and runs before the first await, so
   // concurrent ticks can never open two positions.
   if (state.position || state._entryInFlight || state.dayClosed) return;
+  if (state._expiryDayBlocked) return;   // another market's <PAIR>_EXPIRY_DAY_ONLY (logged at /start)
   if (!state.dayGate || !state.dayGate.decided || !state.dayGate.tradeable) return;
   if (state._lastEntryAttemptMs && Date.now() - state._lastEntryAttemptMs < ENTRY_RETRY_MS) return;
 
@@ -628,16 +792,16 @@ async function evaluateEntry() {
   }
 
   // ── The signal ──────────────────────────────────────────────────────────
-  const sig = tdsStrategy.getSignal(state.candles, {
+  const sig = tdsStrategy.getSignal(state.candles, ENG({
     dayGate: state.dayGate,
-  });
+  }));
   state.lastSignal = sig;
 
   if (sig.signal === "NONE" || !sig.side) {
     // Only log the interesting near-misses — a "no pullback" bar every 5 minutes
     // would bury the day file.
     if (!sig.warmup && /reclaim|conviction|SKIPPED|wrong colour/.test(sig.reason || "")) {
-      skipLogger.appendSkipLog(MODE_KEY, {
+      skipLogger.appendSkipLog(MODE, {
         gate: /SKIPPED/.test(sig.reason) ? "sl_too_wide" : "setup_incomplete",
         reason: sig.skipReason || sig.reason,
         spot: state.lastTickPrice,
@@ -656,12 +820,12 @@ async function evaluateEntry() {
   if (state._reentryBlockUntil > Date.now()) {
     if (state._reentryBlockLogged !== state._reentryBlockUntil) {
       state._reentryBlockLogged = state._reentryBlockUntil;
-      log(`⏸️ [TDS-PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${sig.side} rejected)`);
+      log(`⏸️ ${TAG} Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${sig.side} rejected)`);
     }
     return;
   }
 
-  log(`🎯 [TDS-PAPER] SETUP: ${sig.reason}`);
+  log(`🎯 ${TAG} SETUP: ${sig.reason}`);
   state._entryInFlight = true;
   state._lastEntryAttemptMs = Date.now();
   try {
@@ -677,7 +841,7 @@ async function evaluateEntry() {
       // sharing that field would let a retry firing seconds before a bar close
       // throttle out the new bar's own evaluation.
       state._pendingEntry = { side: sig.side, sig, lastAttemptMs: Date.now() };
-      log(`⚠️ [TDS-PAPER] Entry attempt failed — retrying every ${ENTRY_RETRY_MS / 1000}s until this bar is superseded`);
+      log(`⚠️ ${TAG} Entry attempt failed — retrying every ${ENTRY_RETRY_MS / 1000}s until this bar is superseded`);
     }
   }
 }
@@ -724,8 +888,8 @@ function onCandleClose(bar) {
   // (and therefore the backtest) still accepts.
   if (!bar || typeof bar.time !== "number") return;
   const _closeMins = tdsStrategy._utcSecToIstMins(bar.time) + _resMin();
-  if (_closeMins > _parseMins("TDS_ENTRY_END", "14:00")) return;
-  evaluateEntry().catch(e => console.error(`🚨 [TDS-PAPER] entry-eval error: ${e.message}`));
+  if (_closeMins > _parseMins(`${PREFIX}_ENTRY_END`, "14:00")) return;
+  evaluateEntry().catch(e => console.error(`🚨 ${TAG} entry-eval error: ${e.message}`));
 }
 
 // ── onTick ───────────────────────────────────────────────────────────────────
@@ -754,7 +918,7 @@ function onTick(tick) {
       // Backtest disagree about the zone.
       if (state.candles.length > 300) state.candles.shift();
       try { onCandleClose(state.currentBar); }
-      catch (e) { console.error(`🚨 [TDS-PAPER] onCandleClose error: ${e.message}`); }
+      catch (e) { console.error(`🚨 ${TAG} onCandleClose error: ${e.message}`); }
     }
     const bucketSec = Math.floor(bucketMs / 1000);
     const lastPre = state.candles.length ? state.candles[state.candles.length - 1] : null;
@@ -778,7 +942,7 @@ function onTick(tick) {
   if (state.position) _checkExits(price);
 
   if (!state.position && state._pendingEntry) {
-    _retryPendingEntry().catch(e => console.error(`🚨 [TDS-PAPER] entry-retry error: ${e.message}`));
+    _retryPendingEntry().catch(e => console.error(`🚨 ${TAG} entry-retry error: ${e.message}`));
   }
 }
 
@@ -798,7 +962,7 @@ async function preloadHistory() {
     const _now = new Date();
     const istToday = _now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const istStart = new Date(_now.getTime() - lookbackDays * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(resMin), istStart, istToday, fetchCandles);
+    const candles = await fetchCandlesCached(SPOT(), String(resMin), istStart, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length > 0) {
       state.candles = candles.slice(-300);
       // Fyers history includes TODAY'S STILL-FORMING bar. Leaving it in
@@ -814,17 +978,17 @@ async function preloadHistory() {
         state.currentBar   = state.candles.pop();
         state.barStartTime = _bucketMs;
       }
-      log(`📊 [TDS-PAPER] Preloaded ${state.candles.length} × ${resMin}-min closed spot candles (${istStart}→${istToday}, ${lookbackDays}d lookback)${state.currentBar ? ` + the forming ${resMin}m bar` : ""}`);
+      log(`📊 ${TAG} Preloaded ${state.candles.length} × ${resMin}-min closed spot candles (${istStart}→${istToday}, ${lookbackDays}d lookback)${state.currentBar ? ` + the forming ${resMin}m bar` : ""}`);
       if (state.candles.length < WARM_BARS) {
-        log(`⚠️ [TDS-PAPER] Only ${state.candles.length} bars preloaded (< ${WARM_BARS}) — EMA/ATR start inside their seeding transient, so early values may differ slightly from Backtest.`);
+        log(`⚠️ ${TAG} Only ${state.candles.length} bars preloaded (< ${WARM_BARS}) — EMA/ATR start inside their seeding transient, so early values may differ slightly from Backtest.`);
       }
       // A restart after 10:15 must not lose the day's verdict.
       _maybeDecideDayGate();
     } else {
-      log(`📊 [TDS-PAPER] No intraday history available — will build from live ticks`);
+      log(`📊 ${TAG} No intraday history available — will build from live ticks`);
     }
   } catch (e) {
-    log(`⚠️ [TDS-PAPER] Intraday preload failed: ${e.message}`);
+    log(`⚠️ ${TAG} Intraday preload failed: ${e.message}`);
   }
 }
 
@@ -838,98 +1002,140 @@ function _lateStartStopMins() {
   try { if (require("../services/tickReplay").isReplayInProgress()) return 0; } catch (_) {}
   const t = (getISTMinutes() + LATE_START_GRACE_MIN) % 1440;
   const hhmm = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
-  log(`⏰ [TDS-PAPER] Session started after its stop time — will stop at ${hhmm} IST`);
+  log(`⏰ ${TAG} Session started after its stop time — will stop at ${hhmm} IST`);
   return LATE_START_GRACE_MIN;
 }
 
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
-  const raw = process.env.TRADE_STOP_TIME || "15:30";
+  // NIFTY: TRADE_STOP_TIME as always. Another market: its session end (MCX
+  // 23:30; NSE / BSE TRADE_STOP_TIME).
+  const raw = rt.home ? (process.env.TRADE_STOP_TIME || "15:30") : rt.stopTimeLabel();
   const [h, m] = raw.split(":").map(Number);
   const stopMin = h * 60 + (isNaN(m) ? 0 : m);
   let minsLeft = stopMin - getISTMinutes();
   if (minsLeft <= 0) { minsLeft = _lateStartStopMins(); if (!minsLeft) return; }
-  _autoStopTimer = setTimeout(() => { log(`⏰ [TDS-PAPER] Auto-stop @ ${raw} IST`); stopSession(); }, minsLeft * 60 * 1000);
+  _autoStopTimer = setTimeout(() => { log(`⏰ ${TAG} Auto-stop @ ${raw} IST`); stopSession(); }, minsLeft * 60 * 1000);
 }
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  if (state.running) return res.redirect("/trend-day-scalp-paper/status");
+  if (state.running) return res.redirect(`${ROUTE}/status`);
 
-  if (String(process.env.TDS_MODE_ENABLED || "true").toLowerCase() !== "true") {
-    return res.status(403).send(_errorPage("Trend Day Scalp Disabled", "Enable Trend Day Scalp Mode in Settings first", "/settings", "Go to Settings"));
-  }
-  if (String(process.env.TDS_PAPER_ENABLED || "true").toLowerCase() !== "true") {
-    return res.status(403).send(_errorPage("Trend Day Scalp Paper Disabled", "Enable Trend Day Scalp Paper Trading in Settings first", "/settings", "Go to Settings"));
+  if (rt.home) {
+    if (String(process.env.TDS_MODE_ENABLED || "true").toLowerCase() !== "true") {
+      return res.status(403).send(_errorPage("Trend Day Scalp Disabled", "Enable Trend Day Scalp Mode in Settings first", "/settings", "Go to Settings"));
+    }
+    if (String(process.env.TDS_PAPER_ENABLED || "true").toLowerCase() !== "true") {
+      return res.status(403).send(_errorPage("Trend Day Scalp Paper Disabled", "Enable Trend Day Scalp Paper Trading in Settings first", "/settings", "Go to Settings"));
+    }
+  } else {
+    // Every non-home pair ships OFF: its own switch, then the strategy's paper
+    // switch (its own value, else NIFTY's — config/pairs.js).
+    if (!rt.enabled()) {
+      return res.status(403).send(_errorPage(`${TITLE} Disabled`, `Turn on ${pair.enabledKey} in Settings → ${rt.market().label} first`, `/settings#pair-${pair.slug}`, "Go to Settings"));
+    }
+    if (!rt.paperEnabled()) {
+      return res.status(403).send(_errorPage(`${TITLE} Paper Disabled`, `${pairs.pairKey(pair, rt.strategy.paperEnabled.key)} (or TDS_PAPER_ENABLED) is off`, `/settings#pair-${pair.slug}`, "Go to Settings"));
+    }
   }
 
-  const check = sharedSocketState.canStart("TREND_DAY_SCALP_PAPER");
-  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, "/trend-day-scalp-paper/status", "← Back"));
+  const check = rt.socketSlot.canStart();
+  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, `${ROUTE}/status`, "← Back"));
 
   const auth = await verifyFyersToken();
   if (!auth.ok) return res.status(401).send(_errorPage("Not Authenticated", auth.message, "/auth/login", "Login with Fyers"));
 
-  const holiday = await isTradingAllowed();
-  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/trend-day-scalp-paper/status", "← Back"));
+  // This market's exchange calendar (NSE / BSE holidays; MCX weekends).
+  const holiday = rt.home ? await isTradingAllowed() : await rt.isTradingAllowed();
+  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, `${ROUTE}/status`, "← Back"));
+
+  // The spot the candles are built from (MCX has no index: the series' future,
+  // read from the Fyers MCX symbol master).
+  let subscribeSymbol = rt.spotSymbol();
+  if (rt.isMcx) {
+    try { subscribeSymbol = await rt.resolveSpotSymbol(); }
+    catch (e) { return res.status(400).send(_errorPage("Cannot Start", `${TITLE}: no ${rt.market().label} future resolved — ${e.message}`, `${ROUTE}/status`, "← Back")); }
+  }
+  if (!subscribeSymbol) return res.status(400).send(_errorPage("Cannot Start", `${TITLE}: no spot symbol for ${rt.market().label}`, `${ROUTE}/status`, "← Back"));
+  _spotSym = subscribeSymbol;
 
   state = _freshState();
   state.running = true;
   state._unsaved = true;
   state.sessionStart = new Date().toISOString();
-  state._sessionId = `trend-day-scalp-paper:${Date.now()}`;
+  state._sessionId = `${rt.replayMode}:${Date.now()}`;
 
-  sharedSocketState.setTrendDayScalpActive("TREND_DAY_SCALP_PAPER");
+  rt.socketSlot.set();
 
-  const cfg = tdsStrategy.getConfig();
-  log(`🟢 [TDS-PAPER] Session started — ${tdsStrategy.NAME}`);
-  log(`⚙️ [TDS-PAPER] Gate ${_envStr("TDS_GATE_TIME", "10:15")} (range ≥${cfg.minRangePct}% · ${cfg.vwapStreakBars} closes one side of VWAP · extension ≥${cfg.extensionMult}×range) · zone VWAP/EMA${cfg.emaPeriod} · body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod} · depth ≤${cfg.maxSlPts}pt · exit = global profit lock`);
-  log(`⚙️ [TDS-PAPER] Entries until ${_envStr("TDS_ENTRY_END", "14:00")} · qty ${tdsLotQty()}`);
+  const cfg = _cfg();
+  log(`🟢 ${TAG} Session started — ${tdsStrategy.NAME}`);
+  log(`⚙️ ${TAG} Gate ${_envStr(`${PREFIX}_GATE_TIME`, "10:15")} (range ≥${cfg.minRangePct}% · ${cfg.vwapStreakBars} closes one side of VWAP · extension ≥${cfg.extensionMult}×range) · zone VWAP/EMA${cfg.emaPeriod} · body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod} · depth ≤${cfg.maxSlPts}pt · exit = global profit lock`);
+  log(`⚙️ ${TAG} Entries until ${_envStr(`${PREFIX}_ENTRY_END`, "14:00")} · qty ${tdsLotQty()}`);
+  // Another market's trade days: <PAIR>_EXPIRY_DAY_ONLY against THAT market's
+  // expiry calendar. NIFTY has no expiry-day rule.
+  if (!rt.home) {
+    log(`🌐 ${TAG} ${rt.market().label} · ${subscribeSymbol} · ${rt.instrumentName()} · lot ${tdsLotQty()}`);
+    if (rt.expiryDayOnly()) {
+      const isExpiry = rt.isExpiryDay();
+      if (!isExpiry) state._expiryDayBlocked = true;
+      log(`📅 ${TAG} Expiry-only mode (${rt.market().label}): ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not this market's expiry day — entries blocked"}`);
+    }
+  }
 
   await preloadHistory();
 
   try {
     tickRecorder.recordSessionStart({
-      mode: "trend-day-scalp-paper",
+      mode: OWNER,
       sessionId: state._sessionId,
       settings: tickRecorder.snapshotSettings ? tickRecorder.snapshotSettings() : {},
       warmup: state.candles.map(c => ({ ...c })),
       meta: {
-        instrument: instrumentConfig.INSTRUMENT,
+        instrument: rt.instrumentName(),
         resolutionMin: _resMin(),
-        spotSymbol: NIFTY_INDEX_SYMBOL,
+        spotSymbol: SPOT(),
         sessionStartISO: state.sessionStart,
         recordsOptionLtps: true,
       },
     });
   } catch (_) {}
 
-  if (socketManager.isRunning()) {
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [TDS-PAPER] Piggybacking on existing WebSocket");
-  } else {
-      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+  if (rt.home) {
+    if (socketManager.isRunning()) {
       socketManager.addCallback(CALLBACK_ID, onTick, log);
-      log("📡 [TDS-PAPER] Started WebSocket");
+      log(`📡 ${TAG} Piggybacking on existing WebSocket`);
+    } else {
+        socketManager.start(subscribeSymbol, () => {}, log);
+        socketManager.addCallback(CALLBACK_ID, onTick, log);
+        log(`📡 ${TAG} Started WebSocket`);
+    }
+  } else {
+    // Bound to this market's spot: the shared socket adds it beside NIFTY.
+    const _wasRunning = socketManager.isRunning();
+    if (!_wasRunning) socketManager.start(subscribeSymbol, () => {}, log);
+    socketManager.addCallback(CALLBACK_ID, onTick, log, subscribeSymbol);
+    log(`📡 ${TAG} ${_wasRunning ? "Piggybacking on existing WebSocket" : "Started WebSocket"} — ${subscribeSymbol}`);
   }
 
   scheduleAutoStop();
 
   notifyStarted({
-    mode: "TREND-DAY-SCALP-PAPER",
+    mode: NOTIFY_MODE,
     text: [
-      `📄 TREND DAY SCALP PAPER — STARTED`,
+      `📄 ${rt.home ? "TREND DAY SCALP" : rt.title} PAPER — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
       ``,
       `Strategy  : ${tdsStrategy.NAME}`,
-      `Day gate  : ${_envStr("TDS_GATE_TIME", "10:15")} — range ≥${cfg.minRangePct}%, ${cfg.vwapStreakBars} closes one side of VWAP, extension ≥${cfg.extensionMult}×range`,
+      `Day gate  : ${_envStr(`${PREFIX}_GATE_TIME`, "10:15")} — range ≥${cfg.minRangePct}%, ${cfg.vwapStreakBars} closes one side of VWAP, extension ≥${cfg.extensionMult}×range`,
       `Entry     : pullback into VWAP/EMA${cfg.emaPeriod} then reclaim, body ≥${cfg.bodyAtrMult}×ATR${cfg.atrPeriod}`,
       `Exit      : global profit lock`,
     ].filter(Boolean).join("\n"),
   });
 
-  res.redirect("/trend-day-scalp-paper/status");
+  res.redirect(`${ROUTE}/status`);
 });
 
 function stopSession() {
@@ -938,10 +1144,10 @@ function stopSession() {
   state.running = false;
   stopOptionPolling();
 
-  try { tickRecorder.recordSessionStop({ mode: "trend-day-scalp-paper", sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
+  try { tickRecorder.recordSessionStop({ mode: OWNER, sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
 
   socketManager.removeCallback(CALLBACK_ID);
-  sharedSocketState.clearTrendDayScalp();   // clear OWN mode first (else the socket never stops → leak)
+  rt.socketSlot.clear();   // clear OWN mode first (else the socket never stops → leak)
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -954,35 +1160,35 @@ function stopSession() {
       data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
       saveData(data);
       state._unsaved = false;   // now inside totalPnl — the pool must not add it twice
-      capitalPool.sessionSaved(MODE_KEY);
-      log(`💾 [TDS-PAPER] Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
+      capitalPool.sessionSaved(MODE);
+      log(`💾 ${TAG} Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
     } catch (e) {
-      log(`⚠️ [TDS-PAPER] Save failed: ${e.message}`);
+      log(`⚠️ ${TAG} Save failed: ${e.message}`);
     }
   }
 
   const wins = state.sessionTrades.filter(t => t.pnl > 0).length;
-  log(`📋 [TDS-PAPER] Day summary — ${state.sessionTrades.length} trade(s), ${wins}W/${state.sessionTrades.length - wins}L, net ₹${state.sessionPnl}, week ₹${weeklyPnl()}`);
-  log("🔴 [TDS-PAPER] Session stopped");
+  log(`📋 ${TAG} Day summary — ${state.sessionTrades.length} trade(s), ${wins}W/${state.sessionTrades.length - wins}L, net ₹${state.sessionPnl}, week ₹${weeklyPnl()}`);
+  log(`🔴 ${TAG} Session stopped`);
 
   notifyDayReport({
-    mode: "TREND-DAY-SCALP-PAPER",
+    mode: NOTIFY_MODE,
     sessionTrades: state.sessionTrades,
     sessionPnl: state.sessionPnl,
     sessionStart: state.sessionStart,
   });
 }
 
-router.get("/stop", (req, res) => { stopSession(); res.redirect("/trend-day-scalp-paper/status"); });
-router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit"); res.redirect("/trend-day-scalp-paper/status"); });
+router.get("/stop", (req, res) => { stopSession(); res.redirect(`${ROUTE}/status`); });
+router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit"); res.redirect(`${ROUTE}/status`); });
 
 // ── /status/chart-data — candles + VWAP/EMA zone + bracket lines + markers ────
 router.get("/status/chart-data", async (req, res) => {
   try {
-    const cfg = tdsStrategy.getConfig();
+    const cfg = _cfg();
     let srcCandles = state.candles;
     if (!state.running && srcCandles.length === 0 && (state.sessionTrades || []).length > 0) {
-      srcCandles = await chartBackfill.candlesForRestoredTrades(NIFTY_INDEX_SYMBOL, _resMin(), state.sessionTrades);
+      srcCandles = await chartBackfill.candlesForRestoredTrades(SPOT(), _resMin(), state.sessionTrades);
     }
     const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
@@ -1019,11 +1225,11 @@ router.get("/status/data", (req, res) => {
   const pos = state.position;
   const optAge = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
   const data = loadData();
-  const cfg = tdsStrategy.getConfig();
+  const cfg = _cfg();
 
   let livePnl = null;
   if (pos && state.optionLtp != null) {
-    livePnl = instrumentMode.unrealisedPnl({
+    livePnl = _unrealisedPnl({
       side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
       entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: pos.qty || tdsLotQty(),
     });
@@ -1058,15 +1264,15 @@ router.get("/status/data", (req, res) => {
     gateVwap:      g ? g.vwap : null,
     gateExtensionPts:    g ? g.extensionPts : null,
     gateExtensionNeeded: g ? g.extensionNeeded : null,
-    gateTime:      _envStr("TDS_GATE_TIME", "10:15"),
+    gateTime:      _envStr(`${PREFIX}_GATE_TIME`, "10:15"),
     dayClosed:     state.dayClosed, dayClosedReason: state.dayClosedReason,
     lastSkipReason: state.lastSignal && state.lastSignal.signal === "NONE" ? (state.lastSignal.skipReason || state.lastSignal.reason) : null,
     cfg: {
-      gateTime: _envStr("TDS_GATE_TIME", "10:15"), minRangePct: cfg.minRangePct,
+      gateTime: _envStr(`${PREFIX}_GATE_TIME`, "10:15"), minRangePct: cfg.minRangePct,
       vwapStreakBars: cfg.vwapStreakBars, extensionMult: cfg.extensionMult,
       emaPeriod: cfg.emaPeriod, atrPeriod: cfg.atrPeriod, bodyAtrMult: cfg.bodyAtrMult,
       maxSlPts: cfg.maxSlPts,
-      entryEnd: _envStr("TDS_ENTRY_END", "14:00"),
+      entryEnd: _envStr(`${PREFIX}_ENTRY_END`, "14:00"),
       resMin: _resMin(),
     },
     position: pos ? {
@@ -1085,7 +1291,7 @@ router.get("/status", (req, res) => {
   const liveActive = false;
   const data = loadData();
   const pos  = state.position;
-  const cfg  = tdsStrategy.getConfig();
+  const cfg  = _cfg();
   const g    = state.dayGate;
 
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
@@ -1093,14 +1299,14 @@ router.get("/status", (req, res) => {
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
 
   const gateBadge = !g || !g.decided
-    ? `<span style="color:#94a3b8;">⏳ Waiting for the ${_envStr("TDS_GATE_TIME", "10:15")} gate</span>`
+    ? `<span style="color:#94a3b8;">⏳ Waiting for the ${_envStr(`${PREFIX}_GATE_TIME`, "10:15")} gate</span>`
     : g.tradeable
       ? `<span style="color:#10b981;">✓ ${g.side}-ONLY DAY</span>`
       : `<span style="color:#f59e0b;">✗ NO TRADE TODAY</span>`;
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Trend Day Scalp — Paper</title>${faviconLink()}
+<title>${TITLE} — Paper</title>${faviconLink()}
 <style>${sidebarCSS()}${modalCSS()}${bbRsiStyleCSS()}
 .gate-card{background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;margin-bottom:18px;}
 .gate-check{display:flex;gap:8px;align-items:flex-start;font-size:0.74rem;margin-top:6px;color:#94a3b8;}
@@ -1109,22 +1315,22 @@ router.get("/status", (req, res) => {
 </style>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head><body>
-${buildSidebar('trendDayScalpPaper', liveActive)}
+${buildSidebar(rt.sidebarKey, liveActive)}
 <div class="main-content">
 ${bbRsiTopBar({
-  title: "⚡ Trend Day Scalp — Paper",
-  metaLine: `Day gate ${_envStr("TDS_GATE_TIME", "10:15")} → pullback into VWAP/EMA${cfg.emaPeriod} → exit = global profit lock`,
+  title: `⚡ ${TITLE} — Paper`,
+  metaLine: `Day gate ${_envStr(`${PREFIX}_GATE_TIME`, "10:15")} → pullback into VWAP/EMA${cfg.emaPeriod} → exit = global profit lock`,
   running: state.running,
-  primaryAction: { href: "/trend-day-scalp-paper/start", label: "▶ Start", color: "#7e22ce" },
-  stopAction:    { href: "/trend-day-scalp-paper/stop",  label: "■ Stop" },
-  historyHref: "/trend-day-scalp-paper/history",
+  primaryAction: { href: `${ROUTE}/start`, label: "▶ Start", color: "#7e22ce" },
+  stopAction:    { href: `${ROUTE}/stop`,  label: "■ Stop" },
+  historyHref: `${ROUTE}/history`,
 })}
 
 ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 0), allTime: data.totalPnl || 0 })}
 
 <div class="gate-card">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-    <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Day Gate — decided once at ${_envStr("TDS_GATE_TIME", "10:15")}, then frozen</div>
+    <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Day Gate — decided once at ${_envStr(`${PREFIX}_GATE_TIME`, "10:15")}, then frozen</div>
     <div style="font-size:0.85rem;font-weight:600;" id="gate-badge">${gateBadge}</div>
   </div>
   <div id="gate-detail" style="font-size:0.74rem;color:#94a3b8;margin-top:8px;">${g && g.decided ? g.reason : "Most days end here with no trade — that zero is the design goal."}</div>
@@ -1143,7 +1349,7 @@ ${bbRsiStatGrid([
 ${bbRsiCurrentBar({ bar: state.currentBar, resMin: _resMin() })}
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY ${_resMin()}m — VWAP / EMA${cfg.emaPeriod} zone</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">${SPOT_LABEL} ${_resMin()}m — VWAP / EMA${cfg.emaPeriod} zone</div>
   <div id="chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:420px;">
     <div id="chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
@@ -1161,7 +1367,7 @@ ${bbRsiActivityLog({ logsJSON: JSON.stringify(state.log.slice(-200)) })}
 ${modalJS()}
 async function tdsRefresh() {
   try {
-    const r = await fetch('/trend-day-scalp-paper/status/data', { cache: 'no-store' });
+    const r = await fetch('${ROUTE}/status/data', { cache: 'no-store' });
     const d = await r.json();
     var gb = document.getElementById('gate-badge');
     if (gb) {
@@ -1204,7 +1410,7 @@ setInterval(tdsRefresh, 4000);
   var entryLine=null, _zoomed=false;
   async function fetchChart(){
     try {
-      var r = await fetch('/trend-day-scalp-paper/status/chart-data', { cache:'no-store' });
+      var r = await fetch('${ROUTE}/status/chart-data', { cache:'no-store' });
       var d = await r.json();
       if (d.candles && d.candles.length) { (function(){
         var _lt=d.candles[d.candles.length-1].time, _dk=Math.floor((_lt+19800)/86400), _cut=_lt;
@@ -1234,7 +1440,7 @@ setInterval(tdsRefresh, 4000);
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
-${optionChart.optionChartScript({ dataUrl: '/trend-day-scalp-paper/status/chart-data', id: 'tds-opt-chart' })}
+${optionChart.optionChartScript({ dataUrl: ROUTE + '/status/chart-data', id: 'tds-opt-chart' })}
 </body></html>`;
   res.send(html);
 });
@@ -1243,7 +1449,7 @@ function _positionCardHtml(pos, optLtp) {
   if (!pos) {
     return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No open position.</div>`;
   }
-  const live = optLtp != null ? ((optLtp - pos.optionEntryLtp) * pos.qty).toFixed(0) : "—";
+  const live = optLtp != null ? ((optLtp - pos.optionEntryLtp) * pos.qty * _dir(pos.side)).toFixed(0) : "—";
   return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;">
   <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px;">Open position</div>
   <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:0.8rem;color:#e2e8f0;">
@@ -1262,24 +1468,24 @@ router.get("/history", (req, res) => {
   const liveActive = false;
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
-    routePrefix: "/trend-day-scalp-paper",
-    sidebarKey: "trendDayScalpHistory",
-    pageTitle: "⚡ Trend Day Scalp Paper Trade History",
-    pageDocTitle: "Trend Day Scalp Paper — History",
-    modalLabel: "Trend Day Scalp Paper",
+    routePrefix: ROUTE,
+    sidebarKey: rt.historySidebarKey,
+    pageTitle: `⚡ ${TITLE} Paper Trade History`,
+    pageDocTitle: `${TITLE} Paper — History`,
+    modalLabel: `${TITLE} Paper`,
     liveActive,
     sessions: data.sessions || [],
     totalPnl: data.totalPnl,
     startCap,
-    emptyLabel: "Start Trend Day Scalp paper trading to record your first session.",
+    emptyLabel: `Start ${TITLE} paper trading to record your first session.`,
   }));
 });
 
 const _TDS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates(MODE_KEY);
-  const trades = tradeLogger.listDailyDates(MODE_KEY);
+  const skips  = skipLogger.listDates(MODE);
+  const trades = tradeLogger.listDailyDates(MODE);
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) { const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 }; row.tradesSize = t.size; byDate.set(t.date, row); }
@@ -1290,33 +1496,33 @@ router.get("/download/daily-files", (req, res) => {
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="trend_day_scalp_paper_skips_all_${today}.txt"`);
-  const dates = skipLogger.listDates(MODE_KEY).map(d => d.date).sort();
+  res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates(MODE).map(d => d.date).sort();
   let body = "";
-  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE_KEY, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
+  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
   res.send(body);
 });
 
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_TDS_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor(MODE_KEY, date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `trend_day_scalp_paper_skips_${date}.txt`);
+  res.download(p, `${MODE}_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_TDS_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `trend_day_scalp_paper_trades_${date}.txt`);
+  res.download(p, `${MODE}_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_TDS_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor(MODE_KEY, date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1326,7 +1532,7 @@ router.get("/view/skips/:date", (req, res) => {
 router.get("/view/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_TDS_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1334,7 +1540,7 @@ router.get("/view/trades/:date", (req, res) => {
 });
 
 router.delete("/session/:index", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop Trend Day Scalp paper trading first before deleting a session." });
+  if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading first before deleting a session.` });
   const data = loadData();
   const idx = parseInt(req.params.index, 10);
   if (isNaN(idx) || idx < 0 || idx >= (data.sessions || []).length) return res.status(400).json({ success: false, error: "Invalid session index." });
@@ -1346,10 +1552,10 @@ router.delete("/session/:index", (req, res) => {
 });
 
 router.post("/restore-session/:date", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop Trend Day Scalp paper trading before restoring." });
+  if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading before restoring.` });
   const date = String(req.params.date || "").trim();
   if (!_TDS_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
-  const allTrades = tradeLogger.readDailyTrades(MODE_KEY, date);
+  const allTrades = tradeLogger.readDailyTrades(MODE, date);
   if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   const data = loadData();
   const seen = new Set();
@@ -1364,18 +1570,18 @@ router.post("/restore-session/:date", (req, res) => {
   saveData(data);
   // Today's restored trades are the ones a restart rehydrated as unsaved — now in totalPnl.
   if (date === tradeLogger.istDateString(Date.now())) state._unsaved = false;
-  capitalPool.sessionSaved(MODE_KEY);   // drop the pool's file-P&L memo now
+  capitalPool.sessionSaved(MODE);   // drop the pool's file-P&L memo now
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
 router.get("/reset", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop Trend Day Scalp paper trading before resetting." });
+  if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading before resetting.` });
   const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
-  require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
+  require("../utils/paperReset").clearTodayFiles(MODE); // else restart rehydrates today's session
   state._unsaved = false;   // the rehydrated unsaved trades were just wiped with the history
-  capitalPool.sessionSaved(MODE_KEY);
-  return res.json({ success: true, message: `Trend Day Scalp paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
+  capitalPool.sessionSaved(MODE);
+  return res.json({ success: true, message: `${TITLE} paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
 router.post("/delete-session/:idx", (req, res) => {
@@ -1396,17 +1602,17 @@ router.get("/download/trades.jsonl", (req, res) => {
   try {
     const data = loadData();
     const records = [];
-    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE_KEY, strategy: s.strategy }, t));
+    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE, strategy: s.strategy }, t));
     const today = new Date().toISOString().slice(0, 10);
     const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
     if (ai) {
-      const md = aiExport.buildMarkdown(records, { title: "Trend Day Scalp paper trades (full log)", source: "trend-day-scalp-paper" });
+      const md = aiExport.buildMarkdown(records, { title: `${TITLE} paper trades (full log)`, source: OWNER });
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="trend_day_scalp_paper_trades_AI_${today}.md"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_AI_${today}.md"`);
       return res.send(md);
     }
     res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Content-Disposition", `attachment; filename="trend_day_scalp_paper_trades_${today}.jsonl"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_${today}.jsonl"`);
     res.send(records.map(r => JSON.stringify(r)).join("\n"));
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1422,5 +1628,23 @@ a{color:#3b82f6;text-decoration:none;border:0.5px solid #0e1e36;padding:8px 14px
 </head><body><h2>${title}</h2><p>${message}</p><a href="${backHref}">${backLabel}</a></body></html>`;
 }
 
-module.exports = router;
-module.exports.stopSession = stopSession;
+router.stopSession = stopSession;
+router.pairRuntime = rt;
+return router;
+}   // ── end create(pair) ──
+
+// One instance per pair, built on first use — the NIFTY one at load.
+const _instances = new Map();
+function forPairInstance(p) {
+  if (!p) return null;
+  if (!_instances.has(p.id)) _instances.set(p.id, create(p));
+  return _instances.get(p.id);
+}
+/** The router of this strategy on `marketKey` ("BANKNIFTY", "SENSEX", …), or null when not offered. */
+function forMarket(marketKey) { return forPairInstance(pairs.get("trendDayScalp", marketKey)); }
+
+const home = forMarket("NIFTY");
+home.create    = create;
+home.forMarket = forMarket;
+home.forPair   = forPairInstance;
+module.exports = home;
