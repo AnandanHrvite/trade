@@ -1,12 +1,17 @@
 /**
  * CONSOLIDATION — /consolidation
  * ─────────────────────────────────────────────────────────────────────────────
- * Aggregated, cross-mode trade history + analytics (EMA_RSI_ST / BB_RSI / Price Action).
- * Reads the three paper-trade JSON files, flattens every trade with its mode
- * + date, and renders a single unified view with:
- *   • Daily / Monthly / Yearly P&L roll-ups
- *   • Filters (mode, side, date range, search)
+ * Aggregated, cross-strategy, cross-market PAPER trade history + analytics.
+ * Reads every enabled strategy's paper-trade JSON book plus the retired copy
+ * books still on disk (BN_* / FUT_* / CMX_* / SAIL_PIVOT_EMA_ST), flattens every
+ * trade with its mode + date, and renders a single unified view with:
+ *   • Filters: market, strategy, date preset / custom range, side, win/loss,
+ *     exit reason, expiry day, search — combined, and kept in the URL query
+ *   • Totals for the filtered set + per-market / per-strategy breakdowns
+ *   • Daily / Monthly / Yearly P&L roll-ups, post-exit move per trade
  *   • Per-trade copy + bulk copy (daily / weekly / monthly)
+ * The filter + totals maths lives in utils/consolidationCore.js and runs here
+ * verbatim in the browser — see tests/consolidation.regression.js.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -17,6 +22,7 @@ const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, aiExportJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 const { istDayFromAny } = require("../utils/tradeUtils");
+const CC = require("../utils/consolidationCore");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -107,13 +113,27 @@ function _loadAllTradesUnfiltered() {
   const sig = _sourcesSig();
   if (_allTradesCache && sig === _allTradesSig) return _allTradesCache;
   const out = [];
-  for (const src of SOURCES) {
-    const data = safeRead(src.file);
-    for (const s of (data.sessions || [])) {
-      const sessionDate = istDayFromAny(s.date);
-      for (const t of (s.trades || [])) {
-        out.push({
-          mode:        src.mode,
+  for (const src of SOURCES) flattenSessions(src.mode, safeRead(src.file), out);
+  // Sort oldest → newest so cumulative curves read left-to-right
+  out.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  _allTradesCache = out;
+  _allTradesSig   = sig;
+  return out;
+}
+
+// One session book ({ sessions: [{ date, trades }] }) → flat rows, appended to `out`.
+// Shared by the live sources and the retired copy books below, so a retired
+// book's P&L is read exactly the way its own history page read it.
+function flattenSessions(mode, data, out) {
+  for (const s of (data.sessions || [])) {
+    const sessionDate = istDayFromAny(s.date);
+    for (const t of (s.trades || [])) out.push(flatRow(mode, sessionDate, s, t));
+  }
+}
+
+function flatRow(mode, sessionDate, s, t) {
+  return {
+          mode:        mode,
           date:        sessionDate,
           strategy:    s.strategy || "",
           // The TRADE knows what it traded; the session-level field is a coarse
@@ -140,30 +160,209 @@ function _loadAllTradesUnfiltered() {
           optionStrike: t.optionStrike,
           optionType:  t.optionType || t.side || "",
           optionExpiry: t.optionExpiry || "",
-        });
-      }
+          // Multi-market stamps — absent on older records (consolidationCore
+          // supplies the defaults). Charges / gross only where the engine wrote them.
+          market:        t.market || "",
+          strategyId:    t.strategyId || "",
+          tradeStrategy: t.strategy || "",
+          exitCategory:  t.exitCategory || t.exitType || "",
+          expiryDate:    t.expiryDate || t.optionExpiryDate || "",
+          charges:       t.charges,
+          grossPnl:      t.grossPnl,
+  };
+}
+
+// ── Retired copy books (BN_* / FUT_* / CMX_* / SAIL_PIVOT_EMA_ST) ─────────────
+// Their routes are gone but their books stay on disk, and their P&L still
+// belongs in the consolidated history. DISCOVERED from the files (never listed
+// by hand), always shown (no Settings toggle exists for them any more), and
+// kept OUT of loadAllTrades() so the dashboard curve and the EOD reports keep
+// counting only the strategies that run today.
+const CMX_DIR = path.join(DATA_DIR, "cmx");
+const RETIRED_SESSION_RE = /^((?:bn|fut|sail_pivot)_[a-z0-9_]+)_paper_trades\.json$/;
+const RETIRED_CMX_RE     = /^(cmx_[a-z0-9_]+)_paper_trades\.json$/;
+
+function _listDir(dir) { try { return fs.readdirSync(dir); } catch (_) { return []; } }
+
+function retiredBooks() {
+  const live = new Set(SOURCES.map((src) => path.basename(src.file)));
+  const out = [];
+  for (const n of _listDir(DATA_DIR)) {
+    const m = RETIRED_SESSION_RE.exec(n);
+    if (m && !live.has(n)) out.push({ mode: m[1].toUpperCase(), logKey: m[1], file: path.join(DATA_DIR, n), kind: "sessions" });
+  }
+  for (const n of _listDir(CMX_DIR)) {
+    const m = RETIRED_CMX_RE.exec(n);
+    if (m) out.push({ mode: m[1].toUpperCase(), logKey: m[1], file: path.join(CMX_DIR, n), kind: "days" });
+  }
+  return out.sort((a, b) => a.mode.localeCompare(b.mode));
+}
+
+function _fileSig(files) {
+  let sig = "";
+  for (const f of files) {
+    try { const st = fs.statSync(f); sig += `${f}:${st.mtimeMs}:${st.size}|`; }
+    catch (_) { sig += `${f}:0|`; }
+  }
+  return sig;
+}
+
+// Commodity books: { days: { 'YYYY-MM-DD': { trades: [...] } } } — the day key
+// IS the IST trading day, exactly what the commodity history page grouped by.
+function flattenDays(mode, data, out) {
+  for (const [date, d] of Object.entries((data && data.days) || {})) {
+    for (const t of ((d && d.trades) || [])) out.push(flatRow(mode, istDayFromAny(date), {}, t));
+  }
+}
+
+let _retiredCache = null, _retiredSig = null;
+function loadRetiredTrades() {
+  const books = retiredBooks();
+  const sig = _fileSig(books.map((b) => b.file));
+  if (_retiredCache && sig === _retiredSig) return _retiredCache;
+  const out = [];
+  for (const b of books) {
+    const data = safeRead(b.file);
+    if (b.kind === "days") flattenDays(b.mode, data, out);
+    else flattenSessions(b.mode, data, out);
+  }
+  out.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  _retiredCache = { books, trades: out };
+  _retiredSig = sig;
+  return _retiredCache;
+}
+
+// ── Post-exit moves (utils/postExitTracker → post_exit/YYYY-MM-DD.jsonl) ─────
+// Joined to a trade by book key + day + side + exit time (the tracker copies the
+// trade's own exitTime string), falling back to the exit spot.
+function _postExitDir() {
+  try { return require("../utils/postExitTracker").OUT_DIR; } catch (_) { return path.join(DATA_DIR, "post_exit"); }
+}
+let _peCache = null, _peSig = null;
+function loadPostExitIndex() {
+  const dir = _postExitDir();
+  const files = _listDir(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(n)).map((n) => path.join(dir, n));
+  const sig = _fileSig(files);
+  if (_peCache && sig === _peSig) return _peCache;
+  const idx = new Map();
+  for (const f of files) {
+    let text = "";
+    try { text = fs.readFileSync(f, "utf-8"); } catch (_) { continue; }
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let r;
+      try { r = JSON.parse(line); } catch (_) { continue; }
+      if (!r || !r.mode || !r.date) continue;
+      const base = `${String(r.mode).toLowerCase()}|${r.date}|${String(r.side || "").toUpperCase()}`;
+      if (r.exitTime) idx.set(`${base}|t:${r.exitTime}`, r);
+      if (r.spotAtExit != null) idx.set(`${base}|s:${Number(r.spotAtExit)}`, r);
     }
   }
-  // Sort oldest → newest so cumulative curves read left-to-right
-  out.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-  _allTradesCache = out;
-  _allTradesSig   = sig;
-  return out;
+  _peCache = idx;
+  _peSig = sig;
+  return idx;
+}
+
+function _peFields(rec, exitTime) {
+  if (!rec) return null;
+  const b = rec.bestAfterExit, w = rec.worstAfterExit;
+  if (!b && !w) return null;
+  let minsToBest = null;
+  const ex = CC.clockSecs(exitTime || rec.exitTime);
+  const bt = b ? CC.clockSecs(b.time) : null;
+  if (ex != null && bt != null) minsToBest = Math.max(0, Math.round((bt - ex) / 60));
+  const pts = (m) => (rec[m] && rec[m].pts != null ? rec[m].pts : null);
+  return {
+    bestPts: b ? b.pts : null, bestTime: b ? b.time : "", minsToBest,
+    worstPts: w ? w.pts : null, worstTime: w ? w.time : "",
+    p5: pts("plus5m"), p15: pts("plus15m"), p30: pts("plus30m"), p60: pts("plus60m"),
+  };
+}
+
+/**
+ * Every trade the consolidated page shows: the ENABLED strategies (as
+ * loadAllTrades) plus the retired copy books, each row stamped with its
+ * market, strategy id, direction, exit bucket, expiry-day flag, gross /
+ * charges and post-exit move. New objects — the cached loadAllTrades() rows
+ * (shared with /data and the EOD reports) are never mutated.
+ */
+function loadConsolidatedTrades() {
+  const live = loadAllTrades();
+  const retired = loadRetiredTrades();
+  const pe = loadPostExitIndex();
+  const logKeyOf = {};
+  for (const src of SOURCES) logKeyOf[src.mode] = path.basename(src.file).replace(/_paper_trades\.json$/, "");
+  const retiredModes = new Set();
+  for (const b of retired.books) { logKeyOf[b.mode] = b.logKey; retiredModes.add(b.mode); }
+  const known = {};
+  for (const src of SOURCES) known[CC.baseStrategyOfMode(src.mode)] = true;
+  const expMemo = new Map();
+  const rows = [];
+  for (const t of live.concat(retired.trades)) {
+    const logKey = logKeyOf[t.mode] || t.mode.toLowerCase();
+    const market = CC.marketOf(logKey, t);
+    const ek = `${market}|${t.date}|${t.expiryDate || ""}`;
+    if (!expMemo.has(ek)) expMemo.set(ek, CC.expiryFlag(market, t.date, t));
+    const charges = CC.num(t.charges);
+    const grossOwn = CC.num(t.grossPnl);
+    const side = String(t.side || "").toUpperCase();
+    const peRec = pe.get(`${logKey}|${t.date}|${side}|t:${t.exitTime}`)
+               || (t.spotAtExit != null ? pe.get(`${logKey}|${t.date}|${side}|s:${Number(t.spotAtExit)}`) : null);
+    rows.push({
+      ...t,
+      logKey,
+      market,
+      strategyId: CC.strategyOf(t.mode, t, known),
+      retired: retiredModes.has(t.mode),
+      dir: CC.dirOf(t.side),
+      exitCat: CC.exitCategory(t),
+      isExpiry: expMemo.get(ek),
+      charges,
+      gross: grossOwn != null ? grossOwn : (charges != null ? t.pnl + charges : t.pnl),
+      postExit: _peFields(peRec, t.exitTime),
+    });
+  }
+  rows.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  return { trades: rows, retiredBooks: retired.books };
+}
+
+// Display order for the Market filter; any other market a record names is
+// appended after these, so a new market needs no edit here to be filterable.
+const MARKET_ORDER = ["NIFTY", "NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL", "STOCKS"];
+const MARKET_LABEL = { NIFTY_FUT: "NIFTY FUT", BANKNIFTY: "BANK NIFTY" };
+
+// Filter dropdown contents, built from the trades the page actually holds.
+function filterOptions(trades) {
+  const label = {};
+  for (const src of SOURCES) label[src.mode] = src.label;
+  const mkts = new Set(trades.map((t) => t.market));
+  const markets = [...MARKET_ORDER.filter((m) => mkts.has(m)), ...[...mkts].filter((m) => !MARKET_ORDER.includes(m)).sort()]
+    .map((m) => ({ value: m, label: MARKET_LABEL[m] || m }));
+  const ids = new Set(enabledSources().map((src) => CC.baseStrategyOfMode(src.mode)));
+  for (const t of trades) ids.add(t.strategyId);
+  const order = SOURCES.map((src) => src.mode);
+  const strategies = [...ids].sort((a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b);
+  }).map((id) => ({ value: id, label: label[id] || id }));
+  return { markets, strategies };
+}
+
+function _escAttr(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 router.get("/", (req, res) => {
-  const trades = loadAllTrades();
-
-  const modeCounts = {};
-  let totalPnl = 0, wins = 0, losses = 0;
-  for (const t of trades) {
-    modeCounts[t.mode] = (modeCounts[t.mode] || 0) + 1;
-    totalPnl += t.pnl;
-    if (t.pnl > 0) wins++;
-    else if (t.pnl < 0) losses++;
-  }
-  const total   = trades.length;
-  const winRate = total ? ((wins / total) * 100).toFixed(1) : "0.0";
+  const { trades, retiredBooks: retired } = loadConsolidatedTrades();
+  const opts = filterOptions(trades);
+  // Modes the page has rows for, in page order: enabled strategies first, then
+  // any retired copy book that holds trades.
+  const shownModes = [...enabledSources().map((src) => src.mode),
+                      ...retired.map((b) => b.mode).filter((m) => trades.some((t) => t.mode === m))];
+  const modeLabel = {};
+  for (const src of SOURCES) modeLabel[src.mode] = src.label;
+  for (const b of retired) modeLabel[b.mode] = b.mode + " (retired)";
+  const stratLabel = Object.fromEntries(opts.strategies.map((o) => [o.value, o.label]));
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -231,7 +430,8 @@ router.get("/", (req, res) => {
     .badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:0.6rem;font-weight:700;}
     .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
-    .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
+    /* Neutral slate first; the per-mode rules below override it (retired copy books keep the slate). */
+    .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;background:rgba(148,163,184,0.12);color:#a5b4c8;border:0.5px solid rgba(148,163,184,0.3);}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
@@ -332,6 +532,87 @@ router.get("/", (req, res) => {
       .tbl{font-size:0.65rem;}
       .tbl th,.tbl td{padding:5px 6px;}
     }
+
+    /* ── Multi-market filters, totals, breakdowns ─────────────────────────── */
+    .paper-pill{display:inline-block;padding:1px 7px;margin-right:4px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.8px;background:rgba(59,130,246,0.14);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.35);vertical-align:1px;}
+    .num{text-align:right;font-variant-numeric:tabular-nums;}
+    .tbl th.num{text-align:right;}
+    .sub-num{font-size:0.58rem;font-weight:400;color:var(--muted-1,#8ba1c2);}
+    .muted{color:var(--muted-2,#6d85a8);}
+    .tbl td.pos,.tbl td .pos{color:#10b981!important;}
+    .tbl td.neg,.tbl td .neg{color:#ef4444!important;}
+    .pe-best{color:#10b981;white-space:nowrap;}
+    .pe-worst{color:#ef4444;white-space:nowrap;font-size:0.62rem;}
+    .mkt-pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.4px;background:rgba(148,163,184,0.12);color:#a5b4c8;border:0.5px solid rgba(148,163,184,0.3);white-space:nowrap;}
+    .exp-tag,.retired-tag{display:inline-block;padding:0 5px;border-radius:3px;font-size:0.52rem;font-weight:700;letter-spacing:0.5px;vertical-align:1px;}
+    .exp-tag{background:rgba(245,158,11,0.14);color:#f59e0b;}
+    .retired-tag{background:rgba(148,163,184,0.12);color:#94a3b8;}
+    .fgrp{display:flex;align-items:center;gap:6px;}
+    .fgrp.factions{gap:6px;}
+    .tbar-count{margin-left:auto;font-size:0.7rem;color:var(--muted-1,#8ba1c2);}
+    .fsheet-bar,.fsheet-head,.fsheet-backdrop{display:none;}
+    .fact-n{color:#f59e0b;font-weight:700;}
+    .bd-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media(max-width:900px){.bd-grid{grid-template-columns:1fr;}}
+    .bd-wrap{max-height:340px;}
+    .bd-key{font-weight:600;white-space:nowrap;}
+    .empty-cell{text-align:center;color:var(--muted-1,#8ba1c2);padding:18px!important;}
+    .tot-empty{grid-column:1 / -1;}
+    :root[data-theme="light"] .paper-pill{background:#eff6ff!important;color:#1d4ed8!important;border-color:#bfdbfe!important;}
+    :root[data-theme="light"] .mkt-pill{background:#f1f5f9;color:#475569;border-color:#cbd5e1;}
+    .sc-val.pos{color:#10b981!important;} .sc-val.neg{color:#ef4444!important;}
+    :root[data-theme="light"] .sc-val.pos{color:#047857!important;} :root[data-theme="light"] .sc-val.neg{color:#b91c1c!important;}
+    :root[data-theme="light"] .tbl td.pos,:root[data-theme="light"] .tbl td .pos,:root[data-theme="light"] .pe-best{color:#047857!important;}
+    :root[data-theme="light"] .tbl td.neg,:root[data-theme="light"] .tbl td .neg,:root[data-theme="light"] .pe-worst{color:#b91c1c!important;}
+    :root[data-theme="light"] .sub-num,:root[data-theme="light"] .tbar-count{color:#5c6b7f!important;}
+    :root[data-theme="light"] .fsheet{background:#fff!important;}
+
+    /* ── Phone (≤600px): filters in a bottom sheet, trades as cards ──────── */
+    @media(max-width:600px){
+      .main-content{padding:12px max(16px, env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));}
+      .btn{min-height:44px;min-width:44px;}
+      /* Sticky under any top banner; clears the fixed 44px hamburger on the left. */
+      .fsheet-bar{display:flex;align-items:center;gap:10px;position:sticky;top:var(--banner-h,0px);z-index:40;padding:8px 0 8px 50px;margin:0 0 8px;background:#040c18;}
+      :root[data-theme="light"] .fsheet-bar{background:#f4f6f9;}
+      .fsheet-open{font-weight:700;}
+      .fcount-m{font-size:0.68rem;color:var(--muted-1,#8ba1c2);font-family:'IBM Plex Mono',monospace;line-height:1.3;}
+      .tbar.fsheet{position:fixed;left:0;right:0;bottom:0;z-index:310;margin:0;border-radius:14px 14px 0 0;
+        display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;align-items:end;max-height:85vh;overflow-y:auto;
+        padding:14px max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+        transform:translateY(105%);visibility:hidden;transition:transform 0.2s ease, visibility 0s linear 0.2s;box-shadow:0 -12px 32px rgba(0,0,0,0.5);}
+      body.fsheet-on .tbar.fsheet{transform:none;visibility:visible;transition:transform 0.2s ease;}
+      body.fsheet-on{overflow:hidden;}
+      .fsheet-backdrop{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.5);}
+      body.fsheet-on .fsheet-backdrop{display:block;}
+      .fsheet-head{display:flex;grid-column:1 / -1;align-items:center;justify-content:space-between;font-size:0.9rem;}
+      .fgrp{flex-direction:column;align-items:stretch;gap:4px;}
+      .fgrp.fsearch,.fgrp.factions{grid-column:1 / -1;}
+      .fgrp.factions{flex-direction:row;}
+      .fgrp.factions .btn{flex:1;}
+      .tbar.fsheet select,.tbar.fsheet input{min-height:44px;font-size:16px;width:100%;}
+      .tbar.fsheet .tbar-count{grid-column:1 / -1;margin:0;}
+      .pager select,.pager-btn{min-height:44px;}
+      .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+      .sc{padding:10px 12px;}
+      .sc-val{font-size:1rem;overflow-wrap:anywhere;}
+      /* Trades table → one card per trade; each cell prints its own heading. */
+      #tradesTbl{font-size:0.74rem;}
+      #tradesTbl thead{display:none;}
+      #tradesTbl, #tradesTbl tbody{display:block;width:100%;}
+      #tradesTbl tr{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;padding:10px 12px;border-bottom:0.5px solid #0e1e36;}
+      #tradesTbl td{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border:0;padding:3px 0;min-width:0;max-width:none!important;}
+      #tradesTbl td::before{content:attr(data-label);font-size:0.56rem;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-2,#6d85a8);flex-shrink:0;}
+      #tradesTbl td.c-no{display:none;}
+      #tradesTbl td.c-strat{grid-column:1 / -1;justify-content:flex-start;}
+      #tradesTbl td.c-strat::before,#tradesTbl td.c-copy::before{content:none;}
+      #tradesTbl td.c-pnl{grid-column:1 / -1;font-size:0.95rem;}
+      #tradesTbl td.c-reason,#tradesTbl td.c-sym,#tradesTbl td.c-pe{grid-column:1 / -1;white-space:normal!important;}
+      #tradesTbl td.c-pe{display:flex;}
+      #tradesTbl td.c-pe .pe-best,#tradesTbl td.c-pe .pe-worst{display:inline;margin-left:8px;font-size:0.74rem;}
+      #tradesTbl td.c-copy{grid-column:1 / -1;justify-content:flex-end;}
+      .tbl-wrap{max-height:none;}
+      :root[data-theme="light"] #tradesTbl tr{border-color:#e0e4ea;}
+    }
   </style>
 </head>
 <body>
@@ -339,54 +620,87 @@ router.get("/", (req, res) => {
   ${buildSidebar('consolidation', false)}
   <div class="main-content">
     <h1 class="page-title">🧾 Consolidation</h1>
-    <div class="page-sub">Unified trade history across EMA_RSI_ST, BB_RSI &amp; Price Action — with daily / monthly / yearly analytics.</div>
+    <div class="page-sub"><span class="paper-pill">PAPER</span> Every paper trade across all strategies and markets${retired.length ? ` — including ${retired.length} retired copy book${retired.length === 1 ? "" : "s"}` : ""}. Filters combine and live in the URL, so a view can be bookmarked.</div>
 
-    <div class="stat-grid">
-      <div class="sc" style="--accent:#10b981;">
-        <div class="sc-label">Total P&amp;L</div>
-        <div class="sc-val" style="color:${totalPnl >= 0 ? '#10b981' : '#ef4444'};">${fmtINR(totalPnl)}</div>
-        <div class="sc-sub">${total} trade${total !== 1 ? 's' : ''} · ${wins}W / ${losses}L · WR ${winRate}%</div>
-      </div>
-      ${enabledSources().map((src) => `
-      <div class="sc" style="--accent:${src.color};">
-        <div class="sc-label">${src.label}</div>
-        <div class="sc-val">${modeCounts[src.mode] || 0}</div>
-        <div class="sc-sub">trades</div>
-      </div>`).join("")}
-      <div class="sc" style="--accent:#10b981;">
-        <div class="sc-label">Wins</div>
-        <div class="sc-val" style="color:#10b981;">${wins}</div>
-        <div class="sc-sub">profitable</div>
-      </div>
-      <div class="sc" style="--accent:#ef4444;">
-        <div class="sc-label">Losses</div>
-        <div class="sc-val" style="color:#ef4444;">${losses}</div>
-        <div class="sc-sub">losing</div>
-      </div>
+    <!-- Mobile: the filters live in a bottom sheet opened from this bar -->
+    <div class="fsheet-bar">
+      <button type="button" class="btn fsheet-open" id="fSheetOpen" onclick="openSheet()" aria-controls="fSheet" aria-expanded="false">⚙ Filters <span id="fActiveN" class="fact-n"></span></button>
+      <span id="fCountM" class="fcount-m"></span>
     </div>
+    <div class="fsheet-backdrop" id="fSheetBackdrop" onclick="closeSheet()"></div>
 
-    <!-- Filter bar -->
-    <div class="tbar">
-      <label>Mode</label>
-      <select id="fMode">
-        <option value="">All</option>
-        ${SOURCES.filter(src => _modeEnabled(src.mode)).map(src => `<option value="${src.mode}">${src.label}</option>`).join("\n        ")}
-      </select>
-      <label>Side</label>
+    <!-- Filter bar (a bottom sheet below 600px) -->
+    <div class="tbar fsheet" id="fSheet" role="region" aria-label="Filters">
+      <div class="fsheet-head"><strong>Filters</strong><button type="button" class="btn" onclick="closeSheet()" aria-label="Close filters">Done</button></div>
+      <div class="fgrp"><label for="fMarket">Market</label>
+      <select id="fMarket">
+        <option value="">All markets</option>
+        ${opts.markets.map((m) => `<option value="${_escAttr(m.value)}">${_escAttr(m.label)}</option>`).join("")}
+      </select></div>
+      <div class="fgrp"><label for="fStrat">Strategy</label>
+      <select id="fStrat">
+        <option value="">All strategies</option>
+        ${opts.strategies.map((o) => `<option value="${_escAttr(o.value)}">${_escAttr(o.label)}</option>`).join("")}
+      </select></div>
+      <div class="fgrp"><label for="fPreset">Date</label>
+      <select id="fPreset">
+        ${CC.PRESETS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}
+      </select></div>
+      <div class="fgrp fcustom"><label for="fFrom">From</label>
+      <input type="date" id="fFrom"/></div>
+      <div class="fgrp fcustom"><label for="fTo">To</label>
+      <input type="date" id="fTo"/></div>
+      <div class="fgrp"><label for="fSide">Side</label>
       <select id="fSide">
-        <option value="">All</option>
+        <option value="">All sides</option>
         <option value="CE">CE</option>
         <option value="PE">PE</option>
-      </select>
-      <label>From</label>
-      <input type="date" id="fFrom"/>
-      <label>To</label>
-      <input type="date" id="fTo"/>
-      <label>Search</label>
-      <input type="text" id="fSearch" placeholder="symbol / reason…" style="min-width:160px;"/>
-      <button class="btn" onclick="applyFilters()">Apply</button>
-      <button class="btn" onclick="resetFilters()">Reset</button>
-      <span class="tbar-count" id="fCount" style="margin-left:auto;font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
+        <option value="LONG">Long (CE / buy)</option>
+        <option value="SHORT">Short (PE / sell)</option>
+      </select></div>
+      <div class="fgrp"><label for="fResult">Result</label>
+      <select id="fResult">
+        <option value="">Wins &amp; losses</option>
+        <option value="win">Wins only</option>
+        <option value="loss">Losses only</option>
+      </select></div>
+      <div class="fgrp"><label for="fExit">Exit reason</label>
+      <select id="fExit">
+        <option value="">All exits</option>
+        ${CC.EXIT_CATS.map((c) => `<option value="${_escAttr(c)}">${_escAttr(c)}</option>`).join("")}
+      </select></div>
+      <div class="fgrp"><label for="fExpiry">Expiry day</label>
+      <select id="fExpiry">
+        <option value="">Any day</option>
+        <option value="expiry">Expiry day only</option>
+        <option value="non">Non-expiry days</option>
+      </select></div>
+      <div class="fgrp fsearch"><label for="fSearch">Search</label>
+      <input type="text" id="fSearch" placeholder="symbol / reason…" autocomplete="off"/></div>
+      <div class="fgrp factions">
+        <button class="btn" onclick="applyFilters()">Apply</button>
+        <button class="btn" onclick="resetFilters()">Reset</button>
+      </div>
+      <span class="tbar-count" id="fCount"></span>
+    </div>
+
+    <!-- Totals for the filtered set -->
+    <div class="stat-grid" id="totGrid" aria-live="polite"></div>
+
+    <!-- Per-market / per-strategy breakdown -->
+    <div class="bd-grid">
+      <div class="panel">
+        <h3>By market</h3>
+        <div class="tbl-wrap bd-wrap"><table class="tbl bd-tbl" id="bdMarket"><thead><tr>
+          <th>Market</th><th class="num">Trades</th><th class="num">WR</th><th class="num">Net P&amp;L</th><th class="num">PF</th><th class="num">Max DD</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="panel">
+        <h3>By strategy</h3>
+        <div class="tbl-wrap bd-wrap"><table class="tbl bd-tbl" id="bdStrat"><thead><tr>
+          <th>Strategy</th><th class="num">Trades</th><th class="num">WR</th><th class="num">Net P&amp;L</th><th class="num">PF</th><th class="num">Max DD</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
     </div>
 
     <!-- Bulk copy bar -->
@@ -415,7 +729,7 @@ router.get("/", (req, res) => {
           <thead><tr>
             <th>Date</th>
             <th>Trades</th>
-            ${enabledSources().map((src) => `<th>${src.label}</th>`).join("")}
+            ${shownModes.map((m) => `<th>${_escAttr(modeLabel[m] || m)}</th>`).join("")}
             <th>Wins</th>
             <th>Losses</th>
             <th>P&amp;L</th>
@@ -554,8 +868,8 @@ router.get("/", (req, res) => {
           <table class="tbl" id="dailyTbl">
             <thead><tr>
               <th class="sortable" data-key="key">Date</th>
-              <th class="sortable" data-key="count">Trades</th>
-              <th class="sortable" data-key="pnl">P&amp;L</th>
+              <th class="sortable num" data-key="count">Trades</th>
+              <th class="sortable num" data-key="pnl">P&amp;L</th>
               <th></th>
             </tr></thead>
             <tbody></tbody>
@@ -579,8 +893,8 @@ router.get("/", (req, res) => {
           <table class="tbl" id="monthlyTbl">
             <thead><tr>
               <th class="sortable" data-key="key">Month</th>
-              <th class="sortable" data-key="count">Trades</th>
-              <th class="sortable" data-key="pnl">P&amp;L</th>
+              <th class="sortable num" data-key="count">Trades</th>
+              <th class="sortable num" data-key="pnl">P&amp;L</th>
               <th></th>
             </tr></thead>
             <tbody></tbody>
@@ -604,8 +918,8 @@ router.get("/", (req, res) => {
           <table class="tbl" id="yearlyTbl">
             <thead><tr>
               <th class="sortable" data-key="key">Year</th>
-              <th class="sortable" data-key="count">Trades</th>
-              <th class="sortable" data-key="pnl">P&amp;L</th>
+              <th class="sortable num" data-key="count">Trades</th>
+              <th class="sortable num" data-key="pnl">P&amp;L</th>
               <th></th>
             </tr></thead>
             <tbody></tbody>
@@ -631,17 +945,19 @@ router.get("/", (req, res) => {
         <table class="tbl" id="tradesTbl">
           <thead><tr>
             <th>#</th>
-            <th class="sortable" data-key="mode">Mode</th>
+            <th class="sortable" data-key="mode">Strategy</th>
+            <th class="sortable" data-key="market">Market</th>
             <th class="sortable" data-key="date">Date</th>
             <th class="sortable" data-key="side">Side</th>
             <th class="sortable" data-key="symbol">Symbol</th>
-            <th class="sortable" data-key="qty">Qty</th>
-            <th class="sortable" data-key="entryPrice">Entry</th>
-            <th class="sortable" data-key="exitPrice">Exit</th>
+            <th class="sortable num" data-key="qty">Qty</th>
+            <th class="sortable num" data-key="entryPrice">Entry</th>
+            <th class="sortable num" data-key="exitPrice">Exit</th>
             <th class="sortable" data-key="entryTime">Entry Time</th>
             <th class="sortable" data-key="exitTime">Exit Time</th>
-            <th class="sortable" data-key="pnl">P&amp;L</th>
+            <th class="sortable num" data-key="pnl">P&amp;L</th>
             <th class="sortable" data-key="exitReason">Exit Reason</th>
+            <th class="sortable num" data-key="peBest" title="Spot points after exit, in the trade's direction (post-exit tracker)">After exit</th>
             <th>Copy</th>
           </tr></thead>
           <tbody></tbody>
@@ -665,11 +981,18 @@ router.get("/", (req, res) => {
 
 <script>
 ${aiExportJS()}
-const TRADES = ${JSON.stringify(trades)};
-// Strategies enabled in Settings, in page order. TRADES only ever holds these
-// modes; the analytics sections enumerate this list rather than a fixed trio so
-// a toggled-off strategy has no row, line or column, and a new one needs no edit.
-const ENABLED_MODES = ${JSON.stringify(enabledSources().map((src) => src.mode))};
+${CC.clientScript()}
+const TRADES = ${JSON.stringify(trades).replace(/</g, "\\u003c")};
+// Modes TRADES holds, in page order: the strategies enabled in Settings, then
+// any retired copy book with trades. The analytics sections enumerate this list
+// rather than a fixed trio so a toggled-off strategy has no row, line or column,
+// and a new one needs no edit.
+const ENABLED_MODES = ${JSON.stringify(shownModes)};
+const MODE_LABEL  = ${JSON.stringify(modeLabel).replace(/</g, "\\u003c")};
+const STRAT_LABEL = ${JSON.stringify(stratLabel).replace(/</g, "\\u003c")};
+const MARKET_LABEL = ${JSON.stringify(MARKET_LABEL)};
+function mktLabel(m){ return MARKET_LABEL[m] || m || '—'; }
+function stratLabel(id){ return STRAT_LABEL[id] || id || '—'; }
 
 function fmtINR(n){
   if (typeof n !== 'number' || isNaN(n)) return '—';
@@ -725,29 +1048,49 @@ function parseEntryTime(t){
   return new Date(+d[3], +d[2]-1, +d[1], +c[1], +c[2]);
 }
 
+// ── Filter state ⇄ form ⇄ URL ────────────────────────────────────────────────
+// The form is the editor; the URL query is the record (CC.toQuery), so a
+// bookmarked or shared link reopens the exact same view. ?mode= (one exact
+// book, e.g. a retired BN_* copy) has no control of its own but is honoured.
+const F_FIELDS = { market: 'fMarket', strategy: 'fStrat', preset: 'fPreset', from: 'fFrom', to: 'fTo',
+                   side: 'fSide', result: 'fResult', exit: 'fExit', expiry: 'fExpiry', q: 'fSearch' };
+let _modeParam = '';
 function getState(){
-  return {
-    mode:   document.getElementById('fMode').value,
-    side:   document.getElementById('fSide').value,
-    from:   document.getElementById('fFrom').value,
-    to:     document.getElementById('fTo').value,
-    search: document.getElementById('fSearch').value.trim().toLowerCase(),
-  };
+  const f = CC.emptyFilter();
+  for (const k in F_FIELDS){ const el = document.getElementById(F_FIELDS[k]); f[k] = el ? String(el.value || '').trim() : ''; }
+  f.mode = _modeParam;
+  if (!f.preset) f.preset = 'all';
+  if (f.preset !== 'custom'){ f.from = ''; f.to = ''; }
+  return f;
+}
+function setState(f){
+  for (const k in F_FIELDS){
+    const el = document.getElementById(F_FIELDS[k]);
+    if (!el) continue;
+    const v = f[k] || (k === 'preset' ? 'all' : '');
+    // A bookmarked value the dropdown no longer lists (a market with no trades
+    // yet) is still honoured — add it rather than silently widening the view.
+    if (el.tagName === 'SELECT' && v && !Array.from(el.options).some(o => o.value === v)){
+      const o = document.createElement('option'); o.value = v; o.textContent = v; el.appendChild(o);
+    }
+    el.value = v;
+  }
+  _modeParam = f.mode || '';
+  syncCustomVisibility();
+}
+function syncCustomVisibility(){
+  const custom = document.getElementById('fPreset').value === 'custom';
+  document.querySelectorAll('.fcustom').forEach(el => { el.style.display = custom ? '' : 'none'; });
+}
+function activeFilterCount(f){
+  let n = 0;
+  ['market','strategy','mode','side','result','exit','expiry','q'].forEach(k => { if (f[k]) n++; });
+  if (f.preset && f.preset !== 'all') n++;
+  return n;
 }
 
 function filterTrades(){
-  const f = getState();
-  return TRADES.filter(t => {
-    if (f.mode && t.mode !== f.mode) return false;
-    if (f.side && t.side !== f.side) return false;
-    if (f.from && t.date < f.from) return false;
-    if (f.to   && t.date > f.to)   return false;
-    if (f.search){
-      const hay = (t.symbol + ' ' + t.entryReason + ' ' + t.exitReason + ' ' + t.strategy).toLowerCase();
-      if (hay.indexOf(f.search) === -1) return false;
-    }
-    return true;
-  });
+  return CC.filterTrades(TRADES, getState(), CC.istToday());
 }
 
 function weekKey(dateStr){
@@ -798,6 +1141,7 @@ function timeStrToNum(s){
 
 function sortValue(row, key){
   if (key === 'entryTime' || key === 'exitTime') return timeStrToNum(row[key]);
+  if (key === 'peBest') return row.postExit && row.postExit.bestPts != null ? row.postExit.bestPts : null;
   return row[key];
 }
 
@@ -872,8 +1216,8 @@ function renderRollupTable(id, rows){
   tb.innerHTML = pg.slice.map((r, i) => \`
     <tr style="background:\${pnlRowBg(r.pnl)};">
       <td style="font-weight:600;">\${fmtDateTime(r.key)}</td>
-      <td>\${r.count}</td>
-      <td style="color:\${pnlColor(r.pnl)};font-weight:700;">\${r.pnl >= 0 ? '+' : ''}\${fmtINR(r.pnl)}</td>
+      <td class="num">\${r.count}</td>
+      <td class="num \${pnlCls(r.pnl)}" style="font-weight:700;">\${r.pnl >= 0 ? '+' : ''}\${fmtINR(r.pnl)}</td>
       <td><button class="btn" onclick="copyBucket('\${id}', \${i})">📋</button></td>
     </tr>\`).join('');
   updatePagerUI(id, sorted.length, pg.slice.length, pg.page, pg.totalPages);
@@ -897,21 +1241,24 @@ function renderTradesTable(rows){
   st.page = pg.page;
   _rendered.tradesTbl = pg.slice;
   const startNo = st.pageSize ? (pg.page - 1) * st.pageSize : 0;
+  // data-label feeds the phone card layout (each cell prints its own heading).
   tb.innerHTML = pg.slice.map((t, i) => \`
     <tr style="background:\${pnlRowBg(t.pnl)};">
-      <td>\${startNo + i + 1}</td>
-      <td><span class="badge-mode badge-\${t.mode}">\${t.mode}</span></td>
-      <td>\${fmtDateTime(t.date)}</td>
-      <td><span class="badge \${t.side === 'CE' ? 'badge-ce' : 'badge-pe'}">\${t.side || '—'}</span></td>
-      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="\${esc(t.symbol)}">\${esc(t.symbol) || '—'}</td>
-      <td>\${t.qty || '—'}</td>
-      <td>\${fmtINR(t.entryPrice)}</td>
-      <td>\${fmtINR(t.exitPrice)}</td>
-      <td style="font-size:0.65rem;">\${esc(fmtDateTime(t.entryTime))}</td>
-      <td style="font-size:0.65rem;">\${esc(fmtDateTime(t.exitTime))}</td>
-      <td style="color:\${pnlColor(t.pnl)};font-weight:700;">\${t.pnl >= 0 ? '+' : ''}\${fmtINR(t.pnl)}</td>
-      <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.65rem;" title="\${esc(t.exitReason)}">\${esc(t.exitReason) || '—'}</td>
-      <td><button class="btn" onclick="copyOne(\${i})">📋</button></td>
+      <td data-label="#" class="c-no">\${startNo + i + 1}</td>
+      <td data-label="Strategy" class="c-strat"><span class="badge-mode badge-\${esc(t.mode)}" title="\${esc(MODE_LABEL[t.mode] || t.mode)}">\${esc(stratLabel(t.strategyId))}</span>\${t.retired ? ' <span class="retired-tag" title="Retired copy book — kept for its history">retired</span>' : ''}</td>
+      <td data-label="Market" class="c-mkt"><span class="mkt-pill">\${esc(mktLabel(t.market))}</span>\${t.isExpiry === true ? ' <span class="exp-tag" title="Expiry day">EXP</span>' : ''}</td>
+      <td data-label="Date" class="c-date">\${fmtDateTime(t.date)}</td>
+      <td data-label="Side" class="c-side"><span class="badge \${t.dir === 'SHORT' ? 'badge-pe' : 'badge-ce'}">\${esc(t.side) || '—'}</span></td>
+      <td data-label="Symbol" class="c-sym" style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="\${esc(t.symbol)}">\${esc(t.symbol) || '—'}</td>
+      <td data-label="Qty" class="num">\${t.qty || '—'}</td>
+      <td data-label="Entry" class="num">\${fmtINR(t.entryPrice)}</td>
+      <td data-label="Exit" class="num">\${fmtINR(t.exitPrice)}</td>
+      <td data-label="Entry time" style="font-size:0.65rem;">\${esc(fmtDateTime(t.entryTime))}</td>
+      <td data-label="Exit time" style="font-size:0.65rem;">\${esc(fmtDateTime(t.exitTime))}</td>
+      <td data-label="P&amp;L" class="num c-pnl \${pnlCls(t.pnl)}" style="font-weight:700;">\${t.pnl >= 0 ? '+' : ''}\${fmtINR(t.pnl)}\${t.charges != null ? '<div class="sub-num">chg ' + fmtINR(t.charges) + '</div>' : ''}</td>
+      <td data-label="Exit reason" class="c-reason" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.65rem;" title="\${esc(t.exitReason)}">\${esc(t.exitReason) || '—'}</td>
+      <td data-label="After exit" class="num c-pe">\${postExitHtml(t.postExit)}</td>
+      <td data-label="" class="c-copy"><button class="btn" onclick="copyOne(\${i})" aria-label="Copy trade">📋</button></td>
     </tr>\`).join('');
   updatePagerUI('tradesTbl', sorted.length, pg.slice.length, pg.page, pg.totalPages);
 }
@@ -921,9 +1268,77 @@ function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
+// ── Post-exit cell: best / worst spot move after the exit (points) ──────────
+function fmtPts(v){ if (v == null || isNaN(v)) return '—'; const n = Number(v); return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(1); }
+function postExitHtml(pe){
+  if (!pe) return '<span class="muted">—</span>';
+  const best = pe.bestPts != null
+    ? '<div class="pe-best" title="Best move in the trade direction after exit' + (pe.bestTime ? ' (at ' + esc(pe.bestTime) + ')' : '') + '">▲ ' + fmtPts(pe.bestPts)
+      + (pe.minsToBest != null ? ' <span class="sub-num">' + pe.minsToBest + 'm</span>' : '') + '</div>' : '';
+  const worst = pe.worstPts != null
+    ? '<div class="pe-worst" title="Worst move against the trade after exit' + (pe.worstTime ? ' (at ' + esc(pe.worstTime) + ')' : '') + '">▼ ' + fmtPts(pe.worstPts) + '</div>' : '';
+  return best + worst || '<span class="muted">—</span>';
+}
+
+// ── Totals, breakdowns ──────────────────────────────────────────────────────
+function fmtSigned(n){ return (n >= 0 ? '+' : '') + fmtINR(n); }
+function fmtPF(pf){ return pf == null ? '—' : (pf === Infinity ? '∞' : pf.toFixed(2)); }
+// 'pos' / 'neg' classes, not inline colours: the light theme forces stat and
+// cell text colours with !important, which an inline colour cannot beat.
+function pnlCls(n){ return n > 0 ? 'pos' : (n < 0 ? 'neg' : ''); }
+function tile(label, val, sub, cls, accent){
+  return '<div class="sc" style="--accent:' + (accent || '#3b82f6') + ';"><div class="sc-label">' + label + '</div>'
+    + '<div class="sc-val num ' + (cls || '') + '">' + val + '</div>'
+    + (sub ? '<div class="sc-sub">' + sub + '</div>' : '') + '</div>';
+}
+function renderTotals(rows){
+  const o = CC.totals(rows);
+  const el = document.getElementById('totGrid');
+  if (!rows.length){
+    el.innerHTML = '<div class="sc tot-empty" style="--accent:#4a6080;"><div class="sc-label">No trades</div><div class="sc-sub">Nothing matches these filters.</div></div>';
+    return;
+  }
+  const chgSub = o.chargesN === o.trades ? 'on every trade' : (o.chargesN ? 'recorded on ' + o.chargesN + ' of ' + o.trades : 'not recorded');
+  el.innerHTML = [
+    tile('Net P&amp;L', fmtSigned(o.net), o.wins + 'W / ' + o.losses + 'L' + (o.flats ? ' / ' + o.flats + ' flat' : ''), pnlCls(o.net), o.net >= 0 ? '#10b981' : '#ef4444'),
+    tile('Gross P&amp;L', fmtSigned(o.gross), 'before charges', pnlCls(o.gross), '#38bdf8'),
+    tile('Charges', o.chargesN ? fmtINR(o.charges) : '—', chgSub, null, '#f59e0b'),
+    tile('Trades', String(o.trades), 'expectancy ' + fmtSigned(o.expectancy), null, '#3b82f6'),
+    tile('Win rate', o.winRate.toFixed(1) + '%', o.wins + ' of ' + o.trades, o.winRate >= 50 ? 'pos' : 'neg', '#a855f7'),
+    tile('Avg win / loss', o.wins ? '+' + fmtINR(o.avgWin) : '—', 'loss ' + (o.losses ? fmtINR(o.avgLoss) : '—'), o.wins ? 'pos' : null, '#14b8a6'),
+    tile('Profit factor', fmtPF(o.pf), 'gross win ÷ gross loss', o.pf == null ? null : (o.pf >= 1 ? 'pos' : 'neg'), '#e879f9'),
+    tile('Max drawdown', o.maxDD ? '−' + fmtINR(o.maxDD) : fmtINR(0), o.maxDD ? fmtDateTime(o.ddPeakDate || o.ddTroughDate) + ' → ' + fmtDateTime(o.ddTroughDate) : 'no drawdown', o.maxDD ? 'neg' : null, '#ef4444'),
+  ].join('');
+}
+function renderBreakdown(tableId, rows, keyFn, labelFn){
+  const tb = document.querySelector('#' + tableId + ' tbody');
+  const list = CC.breakdown(rows, keyFn);
+  if (!list.length){ tb.innerHTML = '<tr><td colspan="6" class="empty-cell">No data</td></tr>'; return; }
+  tb.innerHTML = list.map(r =>
+    '<tr><td data-label="" class="bd-key">' + esc(labelFn(r.key)) + '</td>'
+    + '<td data-label="Trades" class="num">' + r.trades + '</td>'
+    + '<td data-label="WR" class="num">' + r.winRate.toFixed(0) + '%</td>'
+    + '<td data-label="Net" class="num ' + pnlCls(r.net) + '" style="font-weight:700;">' + fmtSigned(r.net) + '</td>'
+    + '<td data-label="PF" class="num">' + fmtPF(r.pf) + '</td>'
+    + '<td data-label="Max DD" class="num ' + (r.maxDD ? 'neg' : '') + '">' + (r.maxDD ? '−' + fmtINR(r.maxDD) : '—') + '</td></tr>'
+  ).join('');
+}
+
+// ── Mobile filter sheet ─────────────────────────────────────────────────────
+function openSheet(){
+  document.body.classList.add('fsheet-on');
+  document.getElementById('fSheetOpen').setAttribute('aria-expanded', 'true');
+  const first = document.getElementById('fMarket'); if (first) first.focus({ preventScroll: true });
+}
+function closeSheet(){
+  document.body.classList.remove('fsheet-on');
+  document.getElementById('fSheetOpen').setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('fsheet-on')) closeSheet(); });
+
 function tradeToLine(t){
   return [
-    t.date, t.mode, t.side, t.symbol || '—',
+    t.date, t.mode, t.market || '—', t.side, t.symbol || '—',
     'qty=' + (t.qty || 0),
     'entry=' + (t.entryPrice ?? '—'),
     'exit='  + (t.exitPrice ?? '—'),
@@ -944,7 +1359,10 @@ function tradesToText(list, header){
 }
 
 function tradesToCSV(list){
-  const cols = ['date','mode','side','symbol','qty','entryPrice','exitPrice','spotAtEntry','spotAtExit','optionEntryLtp','optionExitLtp','entryTime','exitTime','pnl','pnlMode','entryReason','exitReason','optionStrike','optionType','optionExpiry','strategy','instrument','isFutures'];
+  const cols = ['date','mode','market','strategyId','side','symbol','qty','entryPrice','exitPrice','spotAtEntry','spotAtExit','optionEntryLtp','optionExitLtp','entryTime','exitTime','pnl','gross','charges','pnlMode','entryReason','exitReason','exitCat','isExpiry','optionStrike','optionType','optionExpiry','strategy','instrument','isFutures',
+                'peBestPts','peBestTime','peMinsToBest','peWorstPts','peWorstTime'];
+  const PE = { peBestPts: 'bestPts', peBestTime: 'bestTime', peMinsToBest: 'minsToBest', peWorstPts: 'worstPts', peWorstTime: 'worstTime' };
+  list = list.map(t => { if (!t.postExit) return t; const o = Object.assign({}, t); for (const k in PE) o[k] = t.postExit[PE[k]]; return o; });
   const esc = v => {
     if (v == null) return '';
     const s = String(v);
@@ -1104,8 +1522,17 @@ function renderDailyChart(){
 }
 
 function applyFilters(){
+  const f = getState();
   const rows = filterTrades();
   _lastFiltered = rows;
+  // URL is the bookmarkable record of the view; replaceState so every tweak
+  // doesn't stack a Back entry.
+  try { history.replaceState(null, '', location.pathname + CC.toQuery(f) + location.hash); } catch (_) {}
+  const nAct = activeFilterCount(f);
+  document.getElementById('fActiveN').textContent = nAct ? '(' + nAct + ')' : '';
+  renderTotals(rows);
+  renderBreakdown('bdMarket', rows, t => t.market, mktLabel);
+  renderBreakdown('bdStrat',  rows, t => t.strategyId, stratLabel);
   _lastRollups.daily   = rollup(rows, d => d);
   _lastRollups.weekly  = rollup(rows, weekKey);
   _lastRollups.monthly = rollup(rows, monthKey);
@@ -1124,8 +1551,12 @@ function applyFilters(){
   if (_anaVisible) renderAnalytics();
 
   const totalPnl = rows.reduce((a, t) => a + (t.pnl || 0), 0);
-  document.getElementById('fCount').innerHTML =
-    \`<strong>\${rows.length}</strong> trades · Net: <span style="color:\${pnlColor(totalPnl)};font-weight:700;">\${totalPnl >= 0 ? '+' : ''}\${fmtINR(totalPnl)}</span>\`;
+  const unk = CC.unknownExpiryHidden(TRADES, f, CC.istToday());
+  const countHtml =
+    \`<strong>\${rows.length}</strong> trades · Net: <span style="color:\${pnlColor(totalPnl)};font-weight:700;">\${totalPnl >= 0 ? '+' : ''}\${fmtINR(totalPnl)}</span>\`
+    + (unk ? \` · <span title="These markets have no expiry calendar yet and their records carry no expiry date">\${unk} with unknown expiry left out</span>\` : '');
+  document.getElementById('fCount').innerHTML = countHtml;
+  document.getElementById('fCountM').innerHTML = countHtml;
 }
 
 // ── Day View ─────────────────────────────────────────────────────────────────
@@ -1190,8 +1621,23 @@ function copyDayView(btn){
 }
 
 function resetFilters(){
-  ['fMode','fSide','fFrom','fTo','fSearch'].forEach(id => { document.getElementById(id).value = ''; });
+  setState(CC.emptyFilter());
   applyFilters();
+}
+
+// Filters apply as they change (search after a short pause) — Apply stays for
+// the habit, and for the custom range while both dates are being typed.
+function wireFilterControls(){
+  Object.keys(F_FIELDS).forEach(k => {
+    const el = document.getElementById(F_FIELDS[k]);
+    if (!el) return;
+    if (k === 'q'){
+      let tmr = null;
+      el.addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(applyFilters, 250); });
+    } else {
+      el.addEventListener('change', () => { if (k === 'preset') syncCustomVisibility(); applyFilters(); });
+    }
+  });
 }
 
 // Re-render a single table using cached data (used by sort / pagination handlers)
@@ -1246,6 +1692,8 @@ _MODE_COLOR.SAIL_VWAP_ST = '#fda4af';
 _MODE_COLOR.PIVOT_EMA_ST = '#38bdf8';
 _MODE_COLOR.GAP_RUNAWAY = '#a78bfa'; _MODE_COLOR.GAP_RUNAWAY_STK = '#c084fc';
 _MODE_COLOR.ITM20_SCALP = '#22d3ee';
+// Retired copy books (and any mode added later without a colour) — neutral slate.
+ENABLED_MODES.forEach(m => { if (!_MODE_COLOR[m]) _MODE_COLOR[m] = '#94a3b8'; });
 // NIFTY FUTURES twins — one amber futures accent.
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
@@ -2146,6 +2594,8 @@ function renderAnalytics(){
 }
 
 wireTableControls();
+wireFilterControls();
+setState(CC.parseQuery(location.search));
 applyFilters();
 </script>
 </body>
@@ -2186,3 +2636,6 @@ module.exports = router;
 // paper-only trade set + counting as this page (no parallel source list) —
 // keeps the two from drifting. See consolidatedEodReporter.js.
 module.exports.loadAllTrades = loadAllTrades;
+// The consolidated page's own set (enabled + retired copy books, annotated) —
+// exported for tests/consolidation.regression.js.
+module.exports.loadConsolidatedTrades = loadConsolidatedTrades;
