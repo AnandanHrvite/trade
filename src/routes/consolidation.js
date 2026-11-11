@@ -32,7 +32,6 @@ const SOURCES = [
   { mode: "FUT_EMA_RSI_ST_V2", file: path.join(DATA_DIR, "fut_ema_rsi_st_v2_paper_trades.json"), label: "FUT EMA_RSI_ST_V2", color: "#f59e0b" },
   // The same engine on NIFTY BANK — its own trades file, never merged with the
   // NIFTY one: same rules, different underlying and different settings.
-  { mode: "BN_EMA_RSI_ST_V2", file: path.join(DATA_DIR, "bn_ema_rsi_st_v2_paper_trades.json"), label: "BN EMA_RSI_ST_V2", color: "#2dd4bf" },
   // ST_RSI_PIV_BB — its own trades file.
   { mode: "ST_RSI_PIV_BB", file: path.join(DATA_DIR, "st_rsi_piv_bb_paper_trades.json"), label: "ST_RSI_PIV_BB", color: "#a3e635" },
   { mode: "FUT_ST_RSI_PIV_BB", file: path.join(DATA_DIR, "fut_st_rsi_piv_bb_paper_trades.json"), label: "FUT ST_RSI_PIV_BB", color: "#f59e0b" },
@@ -41,7 +40,6 @@ const SOURCES = [
   // PIVOT_EMA_ST family — each its own trades file (default ON).
   { mode: "PIVOT_EMA_ST", file: path.join(DATA_DIR, "pivot_ema_st_paper_trades.json"), label: "PIVOT_EMA_ST", color: "#38bdf8" },
   { mode: "FUT_PIVOT_EMA_ST", file: path.join(DATA_DIR, "fut_pivot_ema_st_paper_trades.json"), label: "FUT PIVOT_EMA_ST", color: "#f59e0b" },
-  { mode: "BN_PIVOT_EMA_ST", file: path.join(DATA_DIR, "bn_pivot_ema_st_paper_trades.json"), label: "BN PIVOT_EMA_ST", color: "#f472b6" },
   { mode: "SAIL_PIVOT_EMA_ST", file: path.join(DATA_DIR, "sail_pivot_ema_st_paper_trades.json"), label: "SAIL PIVOT_EMA_ST", color: "#fcd34d" },
   // GAP_RUNAWAY (NIFTY options) + its stock scanner (intraday shares) — each its own trades file (default ON).
   { mode: "GAP_RUNAWAY", file: path.join(DATA_DIR, "gap_runaway_paper_trades.json"), label: "GAP_runAway__Kirubakaran", color: "#a78bfa" },
@@ -60,7 +58,6 @@ const SOURCES = [
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
   { mode: "FUT_RSI_PIVOT_ST", file: path.join(DATA_DIR, "fut_rsi_pivot_st_paper_trades.json"), label: "FUT RSI PIVOT ST", color: "#f59e0b" },
   // Same rules on NIFTY BANK (monthly options) — its own trades file, never folded into RSI PIVOT ST's.
-  { mode: "BN_PIVOT_RSI_ST", file: path.join(DATA_DIR, "bn_pivot_rsi_st_paper_trades.json"), label: "BN PIVOT RSI ST", color: "#818cf8" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_paper_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
   // EarlyBird is cash equity (share counts, real intraday shorts), not options.
   { mode: "EARLYBIRD", file: path.join(DATA_DIR, "early_bird_paper_trades.json"), label: "EarlyBird", color: "#14b8a6" },
@@ -95,7 +92,7 @@ function _sourcesSig() {
 // unset). Strategies that ship OFF: an unset key means disabled, not enabled.
 // Every legacy strategy defaults ON, so the fallback below stays "true".
 // Read on every call — Settings saves mutate process.env live.
-const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
+const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2"]);
 _DEFAULT_OFF_MODES.add("ST_RSI_PIV_BB"); // ships OFF like V2
 _DEFAULT_OFF_MODES.add("FUT_EMA_RSI_ST_V2"); _DEFAULT_OFF_MODES.add("FUT_ST_RSI_PIV_BB"); // futures twins ship OFF like their originals
 _DEFAULT_OFF_MODES.add("SAIL_VWAP_ST"); // ships OFF
@@ -248,13 +245,11 @@ router.get("/", (req, res) => {
     .badge-FUT_EMA_RSI_ST{background:rgba(245,158,11,0.12);color:#3b82f6;border:0.5px solid #f59e0b;}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-FUT_EMA_RSI_ST_V2{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
-    .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;border:0.5px solid rgba(45,212,191,0.3);}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
     .badge-FUT_ST_RSI_PIV_BB{background:rgba(245,158,11,0.12);color:#a3e635;border:0.5px solid #f59e0b;}
     .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;border:0.5px solid rgba(253,164,175,0.3);}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-FUT_PIVOT_EMA_ST{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
-    .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;border:0.5px solid rgba(244,114,182,0.3);}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;border:0.5px solid rgba(252,211,77,0.3);}
     .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);}
     .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;border:0.5px solid rgba(192,132,252,0.3);}
@@ -1260,10 +1255,10 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', EMA_RSI_ST_V2: '#38bdf8', BN_EMA_RSI_ST_V2: '#2dd4bf', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', PREV_ORB_SCALP: '#e879f9', RSI_PIVOT_ST: '#facc15', BN_PIVOT_RSI_ST: '#818cf8', SIMPLE930: '#fb923c', EARLYBIRD: '#14b8a6' };
+const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', EMA_RSI_ST_V2: '#38bdf8', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', PREV_ORB_SCALP: '#e879f9', RSI_PIVOT_ST: '#facc15', SIMPLE930: '#fb923c', EARLYBIRD: '#14b8a6' };
 _MODE_COLOR.ST_RSI_PIV_BB = '#a3e635';
 _MODE_COLOR.SAIL_VWAP_ST = '#fda4af';
-_MODE_COLOR.PIVOT_EMA_ST = '#38bdf8'; _MODE_COLOR.BN_PIVOT_EMA_ST = '#f472b6'; _MODE_COLOR.SAIL_PIVOT_EMA_ST = '#fcd34d';
+_MODE_COLOR.PIVOT_EMA_ST = '#38bdf8'; _MODE_COLOR.SAIL_PIVOT_EMA_ST = '#fcd34d';
 _MODE_COLOR.GAP_RUNAWAY = '#a78bfa'; _MODE_COLOR.GAP_RUNAWAY_STK = '#c084fc';
 _MODE_COLOR.ITM20_SCALP = '#22d3ee';
 // NIFTY FUTURES twins — one amber futures accent.

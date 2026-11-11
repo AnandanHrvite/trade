@@ -51,13 +51,6 @@ const STRATEGY_DEFS = [
   { key:'ITM20_SCALP', label:'ITM20 SCALP', accentClass:'itm20scalp', accent:'#22d3ee', paperPrefix:'/itm20-scalp-paper', hasDayLog:true, modeFlag:'ITM20_SCALP_MODE_ENABLED' },
   { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
   { key:'FUT_RSI_PIVOT_ST', label:'FUT RSI PIVOT ST', accentClass:'futrsipivotst', accent:'#f59e0b', paperPrefix:'/fut-rsi-pivot-st-paper', hasDayLog:true, modeFlag:'FUT_RSI_PIVOT_ST_MODE_ENABLED', futures:true },
-  // Same rules as RSI_PIVOT_ST, different underlying: BN_PIVOT_RSI_ST (NIFTY BANK,
-  // monthly options). Its Entry/Live Spot come from its OWN /status/data — this page
-  // never sources a spot price of its own, so the NIFTY BANK level it shows is the one
-  // the BN paper engine actually decided on.
-  { key:'BN_PIVOT_RSI_ST', label:'BN PIVOT RSI ST', accentClass:'bnpivotrsist', accent:'#818cf8', paperPrefix:'/bn-pivot-rsi-st-paper', hasDayLog:true, modeFlag:'BN_PIVOT_RSI_ST_MODE_ENABLED' },
-  // BN_EMA_RSI_ST_V2: EMA_RSI_ST_V2's rules on NIFTY BANK. defaultOff like its sibling.
-  { key:'BN_EMA_RSI_ST_V2', label:'BN EMA_RSI_ST_V2', accentClass:'bnemarsistv2', accent:'#2dd4bf', paperPrefix:'/bn_ema_rsi_st_v2-paper', hasDayLog:true, modeFlag:'BN_EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
   // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. defaultOff like V2.
   { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
   { key:'FUT_ST_RSI_PIV_BB', label:'FUT ST_RSI_PIV_BB', accentClass:'futstrsipivbb', accent:'#f59e0b', paperPrefix:'/fut_st_rsi_piv_bb-paper', hasDayLog:true, modeFlag:'FUT_ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true, futures:true },
@@ -68,7 +61,6 @@ const STRATEGY_DEFS = [
   // PIVOT_EMA_ST family: pivot zone + EMA20/50 cross + SuperTrend. Default ON (no defaultOff).
   { key:'PIVOT_EMA_ST', label:'PIVOT_EMA_ST', accentClass:'pivotemast', accent:'#38bdf8', paperPrefix:'/pivot_ema_st-paper', hasDayLog:true, modeFlag:'PIVOT_EMA_ST_MODE_ENABLED' },
   { key:'FUT_PIVOT_EMA_ST', label:'FUT PIVOT_EMA_ST', accentClass:'futpivotemast', accent:'#f59e0b', paperPrefix:'/fut_pivot_ema_st-paper', hasDayLog:true, modeFlag:'FUT_PIVOT_EMA_ST_MODE_ENABLED', futures:true },
-  { key:'BN_PIVOT_EMA_ST', label:'BN PIVOT_EMA_ST', accentClass:'bnpivotemast', accent:'#f472b6', paperPrefix:'/bn_pivot_ema_st-paper', hasDayLog:true, modeFlag:'BN_PIVOT_EMA_ST_MODE_ENABLED' },
   // SAIL: Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
   { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
   // GAP_RUNAWAY (GAP_runAway__Kirubakaran): NIFTY options.
@@ -105,12 +97,12 @@ function enabledStrategies() {
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
-const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
+const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 // NIFTY FUTURES twins draw from the same pool as their original (FUT_BB_RSI: Fyers, like BB_RSI).
 BROKER_OF.FUT_EMA_RSI_ST = 'ZERODHA'; BROKER_OF.FUT_EMA_RSI_ST_V2 = 'ZERODHA'; BROKER_OF.FUT_BB_RSI = 'FYERS'; BROKER_OF.FUT_EMA9VWAP = 'ZERODHA'; BROKER_OF.FUT_RSI_PIVOT_ST = 'ZERODHA';
 BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; BROKER_OF.FUT_ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
-BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.FUT_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.BN_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
+BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.FUT_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.GAP_RUNAWAY = 'ZERODHA'; BROKER_OF.GAP_RUNAWAY_STK = 'ZERODHA';
 BROKER_OF.ITM20_SCALP = 'ZERODHA'; // paper only — charges modelled on Zerodha, like PREV_ORB_SCALP
 // COMMODITY pages (CMX_* keys) draw from the Fyers pool — their prices come from Fyers.
@@ -322,14 +314,11 @@ ${faviconLink()}
   .card.futrsipivotst { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.emarsistv2 { border-top-color:#38bdf8; }
   .card.futemarsistv2 { border-top-color:#f59e0b; border-top-style:dashed; }
-  .card.bnpivotrsist { border-top-color:#818cf8; }
-  .card.bnemarsistv2 { border-top-color:#2dd4bf; }
   .card.strsipivbb { border-top-color:#a3e635; }
   .card.futstrsipivbb { border-top-color:#f59e0b; border-top-style:dashed; }
   .card.sailvwapst { border-top-color:#fda4af; }
   .card.pivotemast { border-top-color:#38bdf8; }
   .card.futpivotemast { border-top-color:#f59e0b; border-top-style:dashed; }
-  .card.bnpivotemast { border-top-color:#f472b6; }
   .card.sailpivotemast { border-top-color:#fcd34d; }
   .card.gaprunaway { border-top-color:#a78bfa; }
   .card.gaprunawaystk { border-top-color:#c084fc; }
@@ -356,8 +345,6 @@ ${faviconLink()}
   .card.futrsipivotst .card-title { color:#fde047; }
   .card.emarsistv2 .card-title { color:#7dd3fc; }
   .card.futemarsistv2 .card-title { color:#7dd3fc; }
-  .card.bnpivotrsist .card-title { color:#a5b4fc; }
-  .card.bnemarsistv2 .card-title { color:#5eead4; }
   .card.simple930 .card-title { color:#fdba74; }
   .card.earlybird .card-title { color:#5eead4; }
   .card.cmx .card-title { color:#fde68a; }
@@ -450,8 +437,6 @@ ${faviconLink()}
   .card.futrsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.emarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
   .card.futemarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
-  .card.bnpivotrsist .act-btn:not(.act-btn-disabled):hover { border-color:#818cf8; }
-  .card.bnemarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#2dd4bf; }
   .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
   .card.earlybird .act-btn:not(.act-btn-disabled):hover { border-color:#14b8a6; }
   .card.cmx .act-btn:not(.act-btn-disabled):hover { border-color:#eab308; }
@@ -480,8 +465,6 @@ ${faviconLink()}
   .rollup tr.futrsipivotst td:first-child { color:#fde047; box-shadow:inset 3px 0 0 #f59e0b; }
   .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
   .rollup tr.futemarsistv2 td:first-child { color:#7dd3fc; box-shadow:inset 3px 0 0 #f59e0b; }
-  .rollup tr.bnpivotrsist td:first-child { color:#a5b4fc; }
-  .rollup tr.bnemarsistv2 td:first-child { color:#5eead4; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
   .rollup tr.earlybird td:first-child { color:#5eead4; }
   .rollup tr.cmx td:first-child { color:#fde68a; }
@@ -520,8 +503,6 @@ ${faviconLink()}
   :root[data-theme="light"] .card.futrsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.futemarsistv2 .card-title { color:#0369a1; }
-  :root[data-theme="light"] .card.bnpivotrsist .card-title { color:#4338ca; }
-  :root[data-theme="light"] .card.bnemarsistv2 .card-title { color:#0f766e; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.earlybird .card-title { color:#0f766e; }
   :root[data-theme="light"] .card.cmx .card-title { color:#a16207; }
@@ -569,8 +550,6 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.futrsipivotst td:first-child { color:#a16207; }
   :root[data-theme="light"] .rollup tr.emarsistv2 td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.futemarsistv2 td:first-child { color:#0369a1; }
-  :root[data-theme="light"] .rollup tr.bnpivotrsist td:first-child { color:#4338ca; }
-  :root[data-theme="light"] .rollup tr.bnemarsistv2 td:first-child { color:#0f766e; }
   :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }
   :root[data-theme="light"] .rollup tr.earlybird td:first-child { color:#0f766e; }
   :root[data-theme="light"] .rollup tr.cmx td:first-child { color:#a16207; }

@@ -63,19 +63,14 @@ const STRATEGIES = [
   { group: "TREND_PB",     label: "Trend Pullback",    module: "../routes/trendPbPaper",     overlay: "vwapLine" },
   { group: "TDS",          label: "Trend Day Scalp",   module: "../routes/trendDayScalpPaper" },
   { group: "RSI_PIVOT_ST", label: "RSI Pivot ST",      module: "../routes/rsiPivotStPaper" },
-  // Same engine on NIFTY BANK.
-  { group: "BN_PIVOT_RSI_ST", label: "BN Pivot RSI ST", module: "../routes/bnPivotRsiStPaper" },
   // The EMA_RSI_ST clone with a SuperTrend-only stop — its own paper route.
   { group: "EMA_RSI_ST_V2", label: "EMA_RSI_ST_V2", module: "../routes/emaRsiStV2Paper" },
-  // The same engine on NIFTY BANK — its own paper route, its own chart.
-  { group: "BN_EMA_RSI_ST_V2", label: "BN_EMA_RSI_ST_V2 (NIFTY BANK)", module: "../routes/bnEmaRsiStV2Paper" },
   // SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
   { group: "ST_RSI_PIV_BB", label: "ST_RSI_PIV_BB", module: "../routes/stRsiPivBbPaper" },
   // SAIL stock options: VWAP cross + breakout, SuperTrend stop.
   { group: "SAIL_VWAP_ST", label: "SAIL_VWAP_ST", module: "../routes/sailVwapStPaper" },
   // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend.
   { group: "PIVOT_EMA_ST", label: "PIVOT_EMA_ST", module: "../routes/pivotEmaStPaper" },
-  { group: "BN_PIVOT_EMA_ST", label: "BN_PIVOT_EMA_ST (NIFTY BANK)", module: "../routes/bnPivotEmaStPaper" },
   { group: "SAIL_PIVOT_EMA_ST", label: "SAIL_PIVOT_EMA_ST", module: "../routes/sailPivotEmaStPaper" },
   // GAP_RUNAWAY — NIFTY 5-min with its EMA21 trail (the stock scanner has no single chart).
   { group: "GAP_RUNAWAY", label: "GAP_runAway__Kirubakaran", module: "../routes/gapRunawayPaper", overlay: "trailEma" },

@@ -663,10 +663,9 @@ module.exports = {
   _fmtMins,
 };
 
-// The prefix plumbing is attached NON-enumerable on purpose:
-// tests/bnPivotRsiSt.regression.js pins this module's enumerable export surface
-// key-for-key to BN_PIVOT_RSI_ST's (the two must expose the same RULES), and an
-// env-prefix binding is not a rule. `require(...).forPrefix` works as usual.
+// The prefix plumbing is attached NON-enumerable on purpose: the enumerable
+// export surface is the strategy's RULES, and an env-prefix binding is not a
+// rule. `require(...).forPrefix` works as usual.
 const _PREFIX_API = { forPrefix, PREFIXES, DEFAULT_PREFIX, underlyingFor };
 for (const k of Object.keys(_PREFIX_API)) {
   Object.defineProperty(module.exports, k, { value: _PREFIX_API[k], enumerable: false });

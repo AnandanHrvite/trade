@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-Indian index algorithmic trading bot with **13 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, Prev ORB Scalp, RSI Pivot ST, SIMPLE_9:30 — all NIFTY options — plus **BN Pivot RSI ST**, the same RSI Pivot ST rules on **NIFTY BANK monthly options**, and **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+Indian index algorithmic trading bot with **13 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, Prev ORB Scalp, RSI Pivot ST, SIMPLE_9:30 — all NIFTY options — plus **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -56,13 +56,10 @@ All strategies run **in parallel** on the same WebSocket — different candle re
 | **Swing Scanner** | Screens a stock universe with one active strategy on a page-local timeframe; manual **CNC/AMO** entry per row | 5m / 15m / 30m / 1h / 4h / 1w (stocks) | Zerodha (manual, real) | `/swing-scanner` |
 | **RSI Pivot ST Paper** | RSI(14) extreme + a candle crossing and closing beyond yesterday's Standard Pivot R1/S1 (single-leg OTM CE/PE) | 5-min | Simulated | `/rsi-pivot-st-paper` |
 | **RSI Pivot ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/rsi-pivot-st-backtest` |
-| **BN Pivot RSI ST Paper** | The RSI Pivot ST rules on **NIFTY BANK** — monthly options, 100-pt strike grid | 5-min | Simulated | `/bn-pivot-rsi-st-paper` |
-| **BN Pivot RSI ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/bn-pivot-rsi-st-backtest` |
 | **ST_RSI_PIV_BB Paper** | SuperTrend + RSI + a close beyond yesterday's pivot R1/S1 + a close outside the Bollinger Band, all four on one closed candle (single-leg ATM CE/PE) | 3-min, 5-min, or 3-min confirmed by 5-min | Simulated | `/st_rsi_piv_bb-paper` |
 | **SAIL_VWAP_ST Paper** | **SAIL stock options**: a candle closes across the session VWAP, then within 3 candles one closes beyond that cross candle's high (CE) / low (PE) with SuperTrend(10, 2) agreeing; SuperTrend trailing stop on candle close | 5-min (3 / 15 selectable) | Simulated | `/sail_vwap_st-paper` |
 | **SAIL_VWAP_ST Backtest** | Same engine over a date range (next-bar-open fills, SAIL-scaled δ+θ premium sim) | 5-min historical | Historical | `/sail_vwap_st-backtest` |
 | **PIVOT_EMA_ST Paper** | NIFTY: one closed candle inside yesterday's pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend(10, 3) agreeing; SuperTrend trailing stop on candle close | 3-min (5 / 15 selectable) | Simulated | `/pivot_ema_st-paper` |
-| **BN_PIVOT_EMA_ST Paper** | The PIVOT_EMA_ST rules on **NIFTY BANK** | 3-min (5 / 15 selectable) | Simulated | `/bn_pivot_ema_st-paper` |
 | **SAIL_PIVOT_EMA_ST Paper** | The PIVOT_EMA_ST rules on **SAIL stock options** | 3-min (5 / 15 selectable) | Simulated | `/sail_pivot_ema_st-paper` |
 | **GAP_runAway__Kirubakaran Paper** | NIFTY: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close, trail = 5-min close through EMA21, square-off 15:15; one trade a day | Daily signal, 5-min exits | Simulated | `/gap_runaway-paper` |
 | **GAP_runAway Stock Scanner Paper** | The same rules over the F&O stock list, biggest gaps first (max 3 a day), paper-traded as **intraday shares** (buy on gap up, short on gap down) | Daily signal, 5-min exits | Simulated | `/gap_runaway_stk-paper` |
@@ -106,7 +103,7 @@ This list is the current truth. Where an older strategy section below talks abou
 - A manual exit, `/stop`, or the session end at `TRADE_STOP_TIME`.
 - After any exit, no new entry for `EXIT_REENTRY_COOLDOWN_CANDLES` candles (default 2).
 
-**Entry** (CE = buy a call, PE = buy a put; PE is always the mirror). With the common trade window on, NIFTY / BANK NIFTY entries are only taken 10:00–14:00.
+**Entry** (CE = buy a call, PE = buy a put; PE is always the mirror). With the common trade window on, NIFTY entries are only taken 10:00–14:00.
 - **EMA_RSI_ST** — EMA20 above EMA50, RSI between 52 and 70, SuperTrend green, candle closes above EMA20; the next candle must then break that close. A signal already showing before the window opens is skipped until it goes away and comes back (`EMA_RSI_ST_FRESH_SIGNAL_ENABLED`).
 - **EMA_RSI_ST_V2** — EMA20 above EMA50, close above EMA20, RSI above 52; no SuperTrend gate, no RSI cap.
 - **BB_RSI** — `BB_RSI_DIRECTION=breakout`: close above the upper band with RSI ≥ 75 → CE. `fade`: close below the lower band with RSI ≤ 25 → CE. Skinny bands and a flat RSI are skipped.
@@ -115,7 +112,7 @@ This list is the current truth. Where an older strategy section below talks abou
 - **EMA9_VWAP** — EMA9 crosses above VWAP + 1σ (CE) or below VWAP − 1σ (PE).
 - **Trend Pullback** — 15-min trend up (higher highs/lows, EMA20 > EMA50, above VWAP), a small 5-min dip to EMA20, then a strong candle closing back above it. VWAP is a plain average (no volume).
 - **Trend Day Scalp** — by 10:15 the day must have moved a lot on one side of VWAP; then one dip to VWAP/EMA20 that is bought back.
-- **RSI Pivot ST / BN Pivot RSI ST** — RSI above 70 and a candle crosses and closes above R1; the next candle must clear that candle's high (BANK NIFTY version: same rules).
+- **RSI Pivot ST** — RSI above 70 and a candle crosses and closes above R1; the next candle must clear that candle's high.
 - **PIVOT_EMA_ST** — EMA20 crosses EMA50 inside the PP–R1 zone, SuperTrend green.
 - **ST_RSI_PIV_BB** — all four on one candle: SuperTrend green, RSI above 70, close above R1, close above the upper Bollinger band.
 - **SAIL_VWAP_ST** — a SAIL candle crosses VWAP, then within 3 candles one closes past the cross candle's high, SuperTrend green.
@@ -337,23 +334,6 @@ Two levels decide the whole day, and they are fixed before the open. Yesterday's
 - **Backtest** (`/rsi-pivot-st-backtest`, [src/routes/rsiPivotStBacktest.js](src/routes/rsiPivotStBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper is canonical). Two series are fetched — intraday 5-min bars for every decision, and a separate **daily** series, requested from a week *before* the range so the first session still has a yesterday to compute R1/S1 from. **Conservative intra-bar ordering**: the adverse stop is tested on the bar's high/low *before* anything favourable, so a bar touching both books the loss; a bar that opened beyond a level fills at the **open**; entry is the signal bar's close; the SuperTrend trail advances only on a bar **close**, matching paper. **The premium stop is the weakest number in any backtest result** — there is no historical option chain, so the premium is δ+θ simulated seeded at `BACKTEST_SEED_PREMIUM=240` and the 25% floor is applied to *that*, plus `BACKTEST_SLIPPAGE_PTS=1.5`pt each way.
 
 
-### BN Pivot RSI ST — RSI Pivot ST, on NIFTY BANK (`src/strategies/bn_pivot_rsi_st.js`)
-
-**Never traded, and never validated.** Zero paper sessions, zero live orders, zero backtests. Collect clean paper days and diff one against `/replay` before tuning.
-
-Every rule is **identical** to [RSI Pivot ST](#rsi-pivot-st--rsi-extreme--pivot-r1s1-breakout-supertrend-stopped) above — same pivots, same RSI thresholds, same asymmetric stops, same absence of a profit target — read that section for the strategy itself. Settings live under the `BN_PIVOT_RSI_ST_*` prefix and are **independent** of `RSI_PIVOT_ST_*`, so the two can be tuned separately.
-
-Only the instrument differs, and each difference is a consequence of the underlying rather than a rule change:
-
-- **Spot is `NSE:NIFTYBANK-INDEX`.** Pivots, RSI and SuperTrend are all computed on NIFTY BANK candles.
-- **Strikes are struck every 100 points** (`BANKNIFTY_STRIKE_STEP`), not 50. The 1%-of-spot strike rule therefore lands ~5 strikes out on a ~54,000 index.
-- **Options are MONTHLY only.** NSE withdrew BANKNIFTY weekly options in Nov-2024, so the symbol is always the month code (`NSE:BANKNIFTY26MAR54000CE`). A monthly contract decays far more slowly than a weekly one, which makes the 25% premium floor a materially **looser** stop in rupee terms than it is on NIFTY. That is the instrument's doing; nothing compensates for it.
-- **Lot size is `BANKNIFTY_LOT_SIZE`** (default 30), separate from `NIFTY_LOT_SIZE`.
-
-Per-index settings (strike grid, lot size, strike offsets, expiry override and type, spot fallback, futures margin %) are configured **separately for NIFTY 50 and NIFTY BANK** under Settings → Common, so a second NIFTY BANK strategy needs no further plumbing.
-
-The two indices share the **single** Fyers WebSocket: `socketManager` subscribes both and routes every tick to the callbacks bound to that index. A tick it cannot attribute is dropped and counted, never delivered to a guess.
-
 ### ST_RSI_PIV_BB — SuperTrend + RSI + Pivot R1/S1 + Bollinger, all four on one candle (`src/strategies/st_rsi_piv_bb.js`)
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. Every threshold is the user's stated rule, not a fitted value. Ships OFF.
@@ -380,7 +360,7 @@ The only strategy on a **single stock**: SAIL (`NSE:SAIL-EQ`), option buying, in
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. Every number is the user's stated rule, not a fitted value. Ships ON, so Start All starts it.
 
-One rule set on four instruments, each with its own settings and position: **PIVOT_EMA_ST** (NIFTY 50, under NIFTY in the sidebar), **BN_PIVOT_EMA_ST** (NIFTY BANK, under BANK NIFTY), **SAIL_PIVOT_EMA_ST** (SAIL stock options, under STOCKS) and three paper-only COMMODITY pages (MCX crude / gold / silver). Option buying, intraday, 1 lot. Fyers data, Zerodha orders. All indicators are read on the spot chart on a **closed** candle.
+One rule set on four instruments, each with its own settings and position: **PIVOT_EMA_ST** (NIFTY 50, under NIFTY in the sidebar), **SAIL_PIVOT_EMA_ST** (SAIL stock options, under STOCKS) and three paper-only COMMODITY pages (MCX crude / gold / silver). Option buying, intraday, 1 lot. Fyers data, Zerodha orders. All indicators are read on the spot chart on a **closed** candle.
 
 - **BUY CE** when one candle does all three: closes between yesterday's pivot **PP** and **R1**, sees EMA20 cross **above** EMA50 on that very candle (a cross on an earlier candle does not count), and has SuperTrend(10, 3) green. **BUY PE** is the mirror: closes between **S1** and **PP**, EMA20 crosses **below** EMA50, SuperTrend red. A close above R1 or below S1 never enters.
 - **Pivots** are Traditional floor pivots from the previous day's daily high/low/close and do not move during the day.
@@ -501,10 +481,9 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   prev_orb_scalp_paper_trades.json # Prev ORB Scalp paper sessions
   itm20_scalp_paper_trades.json   # ITM20 Scalp paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
-  bn_pivot_rsi_st_paper_trades.json # BN Pivot RSI ST (NIFTY BANK) paper sessions
   st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
   sail_vwap_st_paper_trades.json  # SAIL_VWAP_ST (SAIL stock options) paper sessions
-  pivot_ema_st_paper_trades.json  # PIVOT_EMA_ST paper sessions (bn_ / sail_ prefixes for BANK NIFTY / SAIL)
+  pivot_ema_st_paper_trades.json  # PIVOT_EMA_ST paper sessions (sail_ prefix for SAIL)
   gap_runaway_paper_trades.json   # GAP_RUNAWAY paper sessions (gap_runaway_stk_ for the stock scanner)
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
@@ -520,10 +499,9 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_prev_orb_scalp_position.json # Crash recovery — Prev ORB Scalp position
   .active_itm20_scalp_position.json # Crash recovery — ITM20 Scalp position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
-  .active_bn_pivot_rsi_st_position.json # Crash recovery — BN Pivot RSI ST position
   .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
   .active_sail_vwap_st_position.json # Crash recovery — SAIL_VWAP_ST position (carries the SuperTrend trail; Zerodha group)
-  .active_pivot_ema_st_position.json # Crash recovery — PIVOT_EMA_ST position (bn_ / sail_ prefixes too; SuperTrend trail; Zerodha group)
+  .active_pivot_ema_st_position.json # Crash recovery — PIVOT_EMA_ST position (sail_ prefix too; SuperTrend trail; Zerodha group)
   .active_gap_runaway_position.json # Crash recovery — GAP_RUNAWAY position (gap stop = yesterday's close; Zerodha group)
   .gap_runaway_stk_positions.json   # The stock scanner's open paper positions — resumed by the next /start the same day
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
@@ -646,13 +624,6 @@ log, so each session's trades carry the exact config that produced them.
 | `/rsi-pivot-st-paper/status` | Paper trade — NIFTY chart with the frozen PP / R1 / S1 levels and the SuperTrend line |
 | `/rsi-pivot-st-paper/history` | Sessions (per-session delete + view modal) |
 
-### BN Pivot RSI ST (NIFTY BANK)
-| URL | Description |
-|-----|-------------|
-| `/bn-pivot-rsi-st-backtest` | Date-range backtest on NIFTY BANK (5-min index bars + a padded daily series for the pivots; δ+θ premium sim) |
-| `/bn-pivot-rsi-st-paper/status` | Paper trade — NIFTY BANK chart with the frozen PP / R1 / S1 levels and the SuperTrend line |
-| `/bn-pivot-rsi-st-paper/history` | Sessions (per-session delete + view modal) |
-
 ### ST_RSI_PIV_BB
 | URL | Description |
 |-----|-------------|
@@ -666,12 +637,11 @@ log, so each session's trades carry the exact config that produced them.
 | `/sail_vwap_st-paper/status` | Paper trade — SAIL chart with session VWAP and the SuperTrend line |
 | `/sail_vwap_st-paper/history` | Sessions (per-session delete + view modal) |
 
-### PIVOT_EMA_ST (NIFTY / BANK NIFTY / SAIL / COMMODITY)
+### PIVOT_EMA_ST (NIFTY / SAIL / COMMODITY)
 | URL | Description |
 |-----|-------------|
 | `/pivot_ema_st-paper/status` | Paper trade — NIFTY chart with EMA20/50, SuperTrend and the PP / R1 / S1 lines |
 | `/pivot_ema_st-paper/history` | Sessions (per-session delete + view modal) |
-| `/bn_pivot_ema_st-paper/status`, `/history` | The same on NIFTY BANK |
 | `/sail_pivot_ema_st-paper/status`, `/history` | The same on SAIL stock options |
 | `/cmx_{crude,gold,silver}_pivot_ema_st-paper/status` | COMMODITY paper pages (MCX futures-option paper, no live) |
 

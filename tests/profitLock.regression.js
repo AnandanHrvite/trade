@@ -297,7 +297,7 @@ check("ORB honours it through the shared orbExits module", () => {
 
 check("futures legs are excluded wherever an engine can trade them", () => {
   // Same trap as above: in futures mode these engines mirror spot into optionLtp.
-  for (const f of ["bnEmaRsiStV2Paper.js", "haScalpPaper.js", "rsiPivotStPaper.js", "bnPivotRsiStPaper.js", "prevOrbScalpPaper.js"]) {
+  for (const f of ["haScalpPaper.js", "rsiPivotStPaper.js", "prevOrbScalpPaper.js"]) {
     const src = decomment(read(`routes/${f}`));
     const i = src.indexOf("checkProfitLock");
     assert.ok(i > 0, `${f} does not call checkProfitLock`);
@@ -378,7 +378,7 @@ check("a profit-lock exit is never treated as a stop-out", () => {
   // It exits in PROFIT. If any mode classified it as an SL it would start an SL
   // pause, so a run of successful locks would progressively shut the strategy down.
   for (const f of ["emaRsiStPaper.js", "ema9vwapPaper.js", "bbRsiPaper.js",
-                   "emaRsiStV2Paper.js", "bnEmaRsiStV2Paper.js"]) {
+                   "emaRsiStV2Paper.js"]) {
     const src = decomment(read(`routes/${f}`));
     const i = src.indexOf("checkProfitLock");
     assert.ok(i > 0, `${f}: no checkProfitLock call`);

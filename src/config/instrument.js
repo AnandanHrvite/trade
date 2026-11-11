@@ -44,7 +44,7 @@ function getStrikeOffsetPE(underlying) { return underlyingOf(underlying).offsetP
 /**
  * ── UNDERLYINGS ─────────────────────────────────────────────────────────────
  * Every symbol this file builds used to be spelled `NSE:NIFTY...` inline. A
- * second index (BANKNIFTY, for BN_PIVOT_RSI_ST) needs a DIFFERENT spot symbol,
+ * second index (e.g. BANKNIFTY) needs a DIFFERENT spot symbol,
  * a different strike grid and — since NSE withdrew BANKNIFTY weeklies in
  * Nov-2024 — a monthly-only expiry. Rather than fork this file, every builder
  * below takes an optional `underlying` and looks its constants up here.

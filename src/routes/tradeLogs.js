@@ -45,10 +45,10 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "prev_orb_scalp", "rsi_pivot_st", "bn_pivot_rsi_st", "bn_ema_rsi_st_v2", "simple930", "early_bird"];
+const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "prev_orb_scalp", "rsi_pivot_st", "simple930", "early_bird"];
 MODES.push("st_rsi_piv_bb"); // ST_RSI_PIV_BB
 MODES.push("sail_vwap_st"); // SAIL_VWAP_ST
-MODES.push("pivot_ema_st", "bn_pivot_ema_st", "sail_pivot_ema_st"); // PIVOT_EMA_ST family
+MODES.push("pivot_ema_st", "sail_pivot_ema_st"); // PIVOT_EMA_ST family
 MODES.push("gap_runaway", "gap_runaway_stk"); // GAP_RUNAWAY (NIFTY) + its stock scanner
 MODES.push("itm20_scalp"); // ITM20_SCALP
 // NIFTY FUTURES twins (CE = LONG future, PE = SHORT) — each its own log, never the options one.
@@ -740,8 +740,6 @@ function enabledModesFromEnv() {
     ema_rsi_st_v2: String(process.env.EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
     // Its NIFTY FUTURES twin defaults OFF like the original.
     fut_ema_rsi_st_v2: String(process.env.FUT_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
-    // Its NIFTY BANK sibling defaults OFF for the same reason.
-    bn_ema_rsi_st_v2: String(process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
     // ST_RSI_PIV_BB defaults OFF like V2.
     st_rsi_piv_bb: String(process.env.ST_RSI_PIV_BB_MODE_ENABLED || "false").toLowerCase() === "true",
     fut_st_rsi_piv_bb: String(process.env.FUT_ST_RSI_PIV_BB_MODE_ENABLED || "false").toLowerCase() === "true",
@@ -750,7 +748,6 @@ function enabledModesFromEnv() {
     // PIVOT_EMA_ST family defaults ON.
     pivot_ema_st: on(process.env.PIVOT_EMA_ST_MODE_ENABLED),
     fut_pivot_ema_st: on(process.env.FUT_PIVOT_EMA_ST_MODE_ENABLED),
-    bn_pivot_ema_st: on(process.env.BN_PIVOT_EMA_ST_MODE_ENABLED),
     sail_pivot_ema_st: on(process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED),
     // GAP_RUNAWAY + its stock scanner default ON.
     gap_runaway: on(process.env.GAP_RUNAWAY_MODE_ENABLED),
@@ -768,7 +765,6 @@ function enabledModesFromEnv() {
     prev_orb_scalp: on(process.env.PREV_ORB_SCALP_MODE_ENABLED),
     rsi_pivot_st: on(process.env.RSI_PIVOT_ST_MODE_ENABLED),
     fut_rsi_pivot_st: on(process.env.FUT_RSI_PIVOT_ST_MODE_ENABLED),
-    bn_pivot_rsi_st: on(process.env.BN_PIVOT_RSI_ST_MODE_ENABLED),
     simple930: on(process.env.SIMPLE930_MODE_ENABLED),
     early_bird: on(process.env.EARLYBIRD_MODE_ENABLED),
   };
@@ -829,13 +825,11 @@ router.get("/", (req, res) => {
     .mode-fut_ema_rsi_st { color:#f59e0b; }
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
     .mode-fut_ema_rsi_st_v2 { color:#f59e0b; }
-    .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
     .mode-st_rsi_piv_bb { color:#bef264; }
     .mode-fut_st_rsi_piv_bb { color:#f59e0b; }
     .mode-sail_vwap_st { color:#fecdd3; }
     .mode-pivot_ema_st { color:#7dd3fc; }
     .mode-fut_pivot_ema_st { color:#f59e0b; }
-    .mode-bn_pivot_ema_st { color:#f9a8d4; }
     .mode-sail_pivot_ema_st { color:#fde68a; }
     .mode-gap_runaway { color:#c4b5fd; }
     .mode-gap_runaway_stk { color:#d8b4fe; }
@@ -852,7 +846,6 @@ router.get("/", (req, res) => {
 .mode-prev_orb_scalp { color:#e879f9; }
     .mode-rsi_pivot_st { color:#facc15; }
     .mode-fut_rsi_pivot_st { color:#f59e0b; }
-    .mode-bn_pivot_rsi_st { color:#818cf8; }
     .mode-simple930 { color:#fb923c; }
     .mode-early_bird { color:#14b8a6; }
     .mode-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
@@ -1290,13 +1283,11 @@ ${buildSidebar('tradeLogs', false)}
     { key: 'fut_ema_rsi_st', label: 'FUT EMA_RSI_ST', cls: 'mode-fut_ema_rsi_st' },
     { key: 'ema_rsi_st_v2', label: 'EMA_RSI_ST_V2',     cls: 'mode-ema_rsi_st_v2' },
     { key: 'fut_ema_rsi_st_v2', label: 'FUT EMA_RSI_ST_V2', cls: 'mode-fut_ema_rsi_st_v2' },
-    { key: 'bn_ema_rsi_st_v2', label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
     { key: 'st_rsi_piv_bb', label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
     { key: 'fut_st_rsi_piv_bb', label: 'FUT ST_RSI_PIV_BB', cls: 'mode-fut_st_rsi_piv_bb' },
     { key: 'sail_vwap_st', label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
     { key: 'pivot_ema_st', label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
     { key: 'fut_pivot_ema_st', label: 'FUT PIVOT_EMA_ST', cls: 'mode-fut_pivot_ema_st' },
-    { key: 'bn_pivot_ema_st', label: 'BN PIVOT_EMA_ST', cls: 'mode-bn_pivot_ema_st' },
     { key: 'sail_pivot_ema_st', label: 'SAIL PIVOT_EMA_ST', cls: 'mode-sail_pivot_ema_st' },
     { key: 'gap_runaway', label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
     { key: 'gap_runaway_stk', label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
@@ -1313,7 +1304,6 @@ ${buildSidebar('tradeLogs', false)}
     { key: 'prev_orb_scalp', label: 'PREV ORB SCALP', cls: 'mode-prev_orb_scalp' },
     { key: 'rsi_pivot_st', label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
     { key: 'fut_rsi_pivot_st', label: 'FUT RSI PIVOT ST', cls: 'mode-fut_rsi_pivot_st' },
-    { key: 'bn_pivot_rsi_st', label: 'BN PIVOT RSI ST', cls: 'mode-bn_pivot_rsi_st' },
     { key: 'simple930', label: 'SIMPLE_9:30', cls: 'mode-simple930' },
     { key: 'early_bird', label: 'EARLYBIRD', cls: 'mode-early_bird' },
   ];
@@ -1329,12 +1319,11 @@ ${buildSidebar('tradeLogs', false)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
-  var _skipsPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
+  var _filesPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, simple930:1, early_bird:1 };
+  var _skipsPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, simple930:1, early_bird:1 };
   _filesPage.st_rsi_piv_bb = 1; _skipsPage.st_rsi_piv_bb = 1;
   _filesPage.sail_vwap_st = 1; _skipsPage.sail_vwap_st = 1;
   _filesPage.pivot_ema_st = 1; _skipsPage.pivot_ema_st = 1;
-  _filesPage.bn_pivot_ema_st = 1; _skipsPage.bn_pivot_ema_st = 1;
   _filesPage.sail_pivot_ema_st = 1; _skipsPage.sail_pivot_ema_st = 1;
   _filesPage.gap_runaway = 1; _skipsPage.gap_runaway = 1;
   _filesPage.gap_runaway_stk = 1; _skipsPage.gap_runaway_stk = 1;

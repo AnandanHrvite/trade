@@ -174,7 +174,7 @@ check("every routes/*Paper.js that has a /reset is mounted at a path ending in -
 });
 
 check("every real /reset handler answers JSON — the shared history-page Reset button parses r.json()", () => {
-  // RSI_PIVOT_ST and BN_PIVOT_RSI_ST used to redirect to /history (and 400 with an
+  // RSI_PIVOT_ST (and a NIFTY BANK copy) used to redirect to /history (and 400 with an
   // HTML page), so their own Reset button wiped the data and then showed
   // "Server error". paperHistoryUI.confirmReset() is shared by all 14 pages.
   const bad = [];

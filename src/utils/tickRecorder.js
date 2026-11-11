@@ -401,7 +401,7 @@ function recordMarketContext(ctx) {
 // the EXACT config the live session ran with, regardless of subsequent edits.
 // Tokens / secrets are excluded by construction.
 const _SETTINGS_KEY_MATCHERS = [
-  /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^EMA_RSI_ST_V2_/, /^BN_EMA_RSI_ST_V2_/, /^ORB_/, /^TREND_PB_/, /^TDS_/, /^HA_SCALP_/, /^PREV_ORB_SCALP_/, /^EARLYBIRD_/, /^RSI_PIVOT_ST_/, /^BN_PIVOT_RSI_ST_/, /^SIMPLE930_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
+  /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^EMA_RSI_ST_V2_/, /^ORB_/, /^TREND_PB_/, /^TDS_/, /^HA_SCALP_/, /^PREV_ORB_SCALP_/, /^EARLYBIRD_/, /^RSI_PIVOT_ST_/, /^SIMPLE930_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
   /^MAX_/, /^MIN_/, /^EMA_/, /^SAR_/, /^RSI_/, /^ADX_/,
   /^INSTRUMENT/, /^OPTION_/, /^FAIL_MODE/,
   /^MODE_/, /^EXPIRY/, /^STRIKE/, /^QTY/, /^LOT/, /^SIGNAL/,
@@ -435,9 +435,9 @@ const _SETTINGS_KEY_MATCHERS = [
   /^SAIL_VWAP_ST_/,
   /^SAIL_/,
   //   PIVOT_EMA_ST family — none is matched by an older prefix (/^PA_/ needs
-  //   "PA_", /^BN_PIVOT_RSI_ST_/ the RSI name); SAIL_PIVOT_EMA_ST_* is already
+  //   "PA_", /^RSI_PIVOT_ST_/ the RSI name); SAIL_PIVOT_EMA_ST_* is already
   //   inside /^SAIL_/ and listed for clarity only.
-  /^PIVOT_EMA_ST_/, /^BN_PIVOT_EMA_ST_/, /^SAIL_PIVOT_EMA_ST_/,
+  /^PIVOT_EMA_ST_/, /^SAIL_PIVOT_EMA_ST_/,
   //   GAP_RUNAWAY + GAP_RUNAWAY_STK — no older prefix matches "GAP_RUNAWAY_".
   /^GAP_RUNAWAY_/,
   //   ITM20_SCALP_* — the ITM20 Scalp strategy; no older prefix matches "ITM20_".

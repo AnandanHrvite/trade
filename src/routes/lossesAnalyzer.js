@@ -51,13 +51,11 @@ const PAPER_SOURCES = [
   { mode: "FUT_EMA_RSI_ST", file: "fut_ema_rsi_st_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "EMA_RSI_ST_V2",    file: "ema_rsi_st_v2_paper_trades.json" },
   { mode: "FUT_EMA_RSI_ST_V2", file: "fut_ema_rsi_st_v2_paper_trades.json" }, // NIFTY FUTURES twin
-  { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_paper_trades.json" },
   { mode: "ST_RSI_PIV_BB",    file: "st_rsi_piv_bb_paper_trades.json" },
   { mode: "FUT_ST_RSI_PIV_BB", file: "fut_st_rsi_piv_bb_paper_trades.json" }, // NIFTY FUTURES twin
   { mode: "SAIL_VWAP_ST",     file: "sail_vwap_st_paper_trades.json" },
   { mode: "PIVOT_EMA_ST",      file: "pivot_ema_st_paper_trades.json" },
   { mode: "FUT_PIVOT_EMA_ST", file: "fut_pivot_ema_st_paper_trades.json" }, // NIFTY FUTURES twin
-  { mode: "BN_PIVOT_EMA_ST",   file: "bn_pivot_ema_st_paper_trades.json" },
   { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   { mode: "GAP_RUNAWAY",       file: "gap_runaway_paper_trades.json" },
   { mode: "GAP_RUNAWAY_STK",   file: "gap_runaway_stk_paper_trades.json" },
@@ -74,7 +72,6 @@ const PAPER_SOURCES = [
   { mode: "ITM20_SCALP",      file: "itm20_scalp_paper_trades.json" },
   { mode: "RSI_PIVOT_ST",     file: "rsi_pivot_st_paper_trades.json" },
   { mode: "FUT_RSI_PIVOT_ST", file: "fut_rsi_pivot_st_paper_trades.json" }, // NIFTY FUTURES twin
-  { mode: "BN_PIVOT_RSI_ST",  file: "bn_pivot_rsi_st_paper_trades.json" },
   { mode: "SIMPLE930",        file: "simple930_paper_trades.json" },
   { mode: "EARLYBIRD",        file: "early_bird_paper_trades.json" },
 ];
@@ -314,13 +311,11 @@ ${multiSelectCSS()}
     .badge-FUT_EMA_RSI_ST{background:rgba(245,158,11,0.12);color:#3b82f6;border:0.5px solid #f59e0b;}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;}
     .badge-FUT_EMA_RSI_ST_V2{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
-    .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;}
     .badge-FUT_ST_RSI_PIV_BB{background:rgba(245,158,11,0.12);color:#a3e635;border:0.5px solid #f59e0b;}
     .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;}
     .badge-FUT_PIVOT_EMA_ST{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
-    .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;}
     .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;}
     .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;}
@@ -337,7 +332,6 @@ ${multiSelectCSS()}
     .badge-ITM20_SCALP{background:rgba(34,211,238,0.12);color:#22d3ee;}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
     .badge-FUT_RSI_PIVOT_ST{background:rgba(245,158,11,0.12);color:#facc15;border:0.5px solid #f59e0b;}
-    .badge-BN_PIVOT_RSI_ST{background:rgba(129,140,248,0.12);color:#818cf8;}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;}
     .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;}
     /* verdict chips — one colour per failure mode, reused by the cards + filter */

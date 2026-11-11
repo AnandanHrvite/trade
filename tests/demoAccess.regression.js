@@ -153,7 +153,7 @@ for (const p of DEMO_PAGES) {
 check("every strategy's paper + backtest pages are demo-eligible by shape", () => {
   // Matched by route SHAPE, not by name, so a strategy added later joins the
   // demo the moment it is mounted — no list to remember to extend.
-  for (const p of ["/orb-paper/status", "/bn-pivot-rsi-st-paper/status/data",
+  for (const p of ["/orb-paper/status", "/rsi-pivot-st-paper/status/data",
                    "/ema_rsi_st_v2-paper/history", "/trend-day-scalp-backtest",
                    "/a-brand-new-strategy-paper/status"]) {
     assert.strictEqual(allowed("GET", p), true, `${p} should be demo-eligible`);

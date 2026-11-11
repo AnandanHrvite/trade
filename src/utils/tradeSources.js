@@ -8,6 +8,10 @@
  *   • NIFTY / BANKNIFTY — every key in tradeLogger.DAILY_PREFIX_BY_MODE (a new
  *     strategy must register there to log trades at all). A `bn_` key is
  *     BANKNIFTY, anything else NIFTY.
+ *   • RETIRED — a strategy removed from the app no longer has a tradeLogger key,
+ *     but its old trades/<mode>_paper_trades_YYYY-MM-DD.jsonl logs stay on disk.
+ *     Any such prefix tradeLogger does not know is listed from the files alone,
+ *     so its history stays readable.
  *   • COMMODITY — every ~/trading-data/cmx/<id>_paper_trades.json book the
  *     commodity engine (services/commodityPaper.js) writes. A book's id is
  *     cmx_<commodity>_<base strategy>, e.g. cmx_gold_ema_rsi_st_v2.
@@ -29,6 +33,49 @@ function marketOf(mode) {
   return "NIFTY";
 }
 
+const RETIRED_RE = /^([a-z0-9_]+)_paper_trades_(\d{4}-\d{2}-\d{2})\.jsonl$/;
+
+function _tradeFiles() {
+  try { return fs.readdirSync(tradeLogger.TRADES_DIR); } catch (_) { return []; }
+}
+
+/** Modes that have daily logs on disk but no tradeLogger key (removed strategies). */
+function retiredModes() {
+  const live = new Set(Object.keys(tradeLogger.DAILY_PREFIX_BY_MODE));
+  const out = new Set();
+  for (const n of _tradeFiles()) {
+    const m = RETIRED_RE.exec(n);
+    if (m && !live.has(m[1])) out.add(m[1]);
+  }
+  return [...out].sort();
+}
+
+function _isRetired(mode) {
+  return !Object.prototype.hasOwnProperty.call(tradeLogger.DAILY_PREFIX_BY_MODE, mode);
+}
+
+function _retiredDates(mode) {
+  const out = [];
+  for (const n of _tradeFiles()) {
+    const m = RETIRED_RE.exec(n);
+    if (m && m[1] === mode) out.push(m[2]);
+  }
+  return out.sort((a, b) => b.localeCompare(a));
+}
+
+function _retiredRecords(mode, date) {
+  let text;
+  try { text = fs.readFileSync(path.join(tradeLogger.TRADES_DIR, `${mode}_paper_trades_${date}.jsonl`), "utf-8"); }
+  catch (_) { return []; }
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    try { out.push(JSON.parse(t)); } catch (_) { /* skip bad line */ }
+  }
+  return out;
+}
+
 function cmxModes() {
   let names;
   try { names = fs.readdirSync(CMX_DIR); } catch (_) { return []; }
@@ -37,9 +84,9 @@ function cmxModes() {
     .map((n) => n.slice(0, -CMX_SUFFIX.length));
 }
 
-/** Every known mode: [{ mode, market }], NIFTY/BANKNIFTY first, then commodity. */
+/** Every known mode: [{ mode, market }], NIFTY/BANKNIFTY first, then retired, then commodity. */
 function listModes() {
-  return [...Object.keys(tradeLogger.DAILY_PREFIX_BY_MODE), ...cmxModes()]
+  return [...Object.keys(tradeLogger.DAILY_PREFIX_BY_MODE), ...retiredModes(), ...cmxModes()]
     .map((mode) => ({ mode, market: marketOf(mode) }));
 }
 
@@ -59,6 +106,7 @@ function listDates(mode) {
   if (marketOf(mode) === "COMMODITY") {
     return Object.keys(cmxBook(mode)).sort((a, b) => b.localeCompare(a));
   }
+  if (_isRetired(mode)) return _retiredDates(mode);
   return tradeLogger.listDailyDates(mode).map((d) => d.date);
 }
 
@@ -72,6 +120,7 @@ function readRecords(mode, date) {
     const day = cmxBook(mode)[date];
     return day && Array.isArray(day.trades) ? day.trades.map((t) => ({ mode, ...t })) : [];
   }
+  if (_isRetired(mode)) return _retiredRecords(mode, date);
   return tradeLogger.readDailyTrades(mode, date);
 }
 

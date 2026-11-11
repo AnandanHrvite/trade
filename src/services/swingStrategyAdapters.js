@@ -19,9 +19,7 @@
  *   BB_RSI        Bollinger(30,2) + RSI(14)              — pure indicators
  *   PA            swing structure + chart patterns       — pure price structure
  *   RSI_PIVOT_ST  RSI + prev-day pivot cross + SuperTrend — pure, given pivots
- *   BN_PIVOT_RSI_ST  the same, tuned separately for NIFTY BANK — pure, given pivots
  *   EMA_RSI_ST_V2    a separate strategy from EMA_RSI_ST — its own rules and keys
- *   BN_EMA_RSI_ST_V2 the same engine, tuned separately for NIFTY BANK — pure indicators
  *   FUT_EMA_RSI_ST / FUT_EMA_RSI_ST_V2 / FUT_BB_RSI / FUT_RSI_PIVOT_ST
  *                    the NIFTY FUTURES twins — the same engines read through their
  *                    own FUT_* keys. The instrument only decides paper execution
@@ -80,7 +78,6 @@ const emaRsiStV2 = require("../strategies/ema_rsi_st_v2");
 const bbRsi      = require("../strategies/bb_rsi");
 const priceAction= require("../strategies/price_action");
 const rsiPivotSt = require("../strategies/rsi_pivot_st");
-const bnPivotRsiSt = require("../strategies/bn_pivot_rsi_st");
 // FUT_* twins: the same modules bound to their own FUT_* env prefix.
 const futEmaRsiSt   = emaRsiSt.forPrefix("FUT_EMA_RSI_ST");
 const futBbRsi      = bbRsi.forPrefix("FUT_BB_RSI");
@@ -511,98 +508,6 @@ const ADAPTERS = [
       };
     },
   },
-
-  {
-    key:        "BN_PIVOT_RSI_ST",
-    label:      "BN Pivot RSI ST",
-    envKey:     "BN_PIVOT_RSI_ST_MODE_ENABLED",
-    // Same rules as RSI_PIVOT_ST, but reading the BN_PIVOT_RSI_ST_* Settings keys,
-    // so the NIFTY BANK engine can be tuned without touching the NIFTY one.
-    blurb:      "Close crosses the previous day's R1 (or S1) with RSI confirming, stopped by SuperTrend.",
-    // Weekly is excluded on purpose: the levels are PREVIOUS-DAY pivots, and the
-    // module itself refuses a series that carries one bar per day. A weekly bar
-    // crossing yesterday's R1 is not a statement anyone defined.
-    timeframes: ["5", "15", "30", "60", "240"],
-    timeframeNote: "Uses previous-day pivots, so it needs intraday bars — weekly is not defined for it.",
-    needsDaily: true,
-    stateful:   false,
-    scaleKeys:  [{ key: "BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS", def: "0" }],
-    minBars() {
-      const cfg = bnPivotRsiSt.getConfig();
-      return Math.max(cfg.rsiPeriod + 2, cfg.stPeriod + 2, 20);
-    },
-    evaluate(candles, ctx) {
-      const base = bnPivotRsiSt.getConfig();
-      // Widen the entry window to the whole day. Everything else — RSI bands,
-      // SuperTrend period/multiplier, pivot buffer — stays exactly as Settings
-      // has it. resolutionMins must match the bars we are handing over, since
-      // the module derives each bar's CLOSE time from it.
-      const cfg = Object.assign({}, base, {
-        resolutionMins:  ctx.tfMinutes || base.resolutionMins,
-        sessionStartMin: 0,
-        entryStartMin:   0,
-        entryEndMin:     24 * 60,
-        pivotBufferPts:  parseFloat(process.env.BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS || "0") || 0,
-      });
-      const s = bnPivotRsiSt.getSignal(candles, {
-        cfg,
-        silent:       true,
-        dailyCandles: ctx.dailyCandles || [],
-      });
-      return {
-        side:   sideFromSignal(s.signal),
-        reason: s.reason || s.skipReason || "",
-        stop:   num(s.slSpot),
-        target: null,
-        indicators: {
-          RSI:        r2(s.rsi),
-          Pivot:      r2(s.pp),
-          R1:         r2(s.r1),
-          S1:         r2(s.s1),
-          SuperTrend: r2(s.superTrend),
-        },
-      };
-    },
-  },
-
-  {
-    key:        "BN_EMA_RSI_ST_V2",
-    label:      "BN EMA_RSI_ST_V2",
-    // Defaults OFF for the same reason as its NIFTY sibling: unproven, so it
-    // stays out of the scanner until it is switched on in Settings.
-    envKey:     "BN_EMA_RSI_ST_V2_MODE_ENABLED",
-    envDefault: "false",
-    // The SAME engine as EMA_RSI_ST_V2, read through the BN_EMA_RSI_ST_V2_* env
-    // prefix, so the NIFTY and NIFTY BANK versions tune independently. On the
-    // scanner it evaluates the same rules against whatever stock series it is
-    // handed — the underlying only decides live/paper option selection.
-    blurb:      "EMA20/50 alignment + close beyond EMA20 + single RSI threshold. SuperTrend is the stop. (NIFTY BANK tuning.)",
-    timeframes: TIMEFRAME_KEYS,                 // no absolute-point gate anywhere
-    needsDaily: false,                          // 5-minute intraday bars only
-    stateful:   false,
-    scaleKeys:  [],
-    minBars() {
-      return emaRsiStV2.warmupBars(emaRsiStV2.getConfig("BN_EMA_RSI_ST_V2")) + 5;
-    },
-    evaluate(candles) {
-      // skipTimeCheck widens the entry window to the whole day, exactly as the
-      // sibling adapters do; every other rule stays as Settings has it.
-      const s = emaRsiStV2.getSignal(candles, { silent: true, skipTimeCheck: true, prefix: "BN_EMA_RSI_ST_V2" });
-      return {
-        side:   sideFromSignal(s.signal),
-        reason: s.reason || s.skipReason || "",
-        stop:   num(s.slSpot),
-        target: null,                           // no profit target
-        indicators: {
-          RSI:        r2(s.rsi),
-          EMA20:      r2(s.ema20),
-          EMA50:      r2(s.ema50),
-          SuperTrend: r2(s.supertrend),
-          STtrend:    s.stTrendInt === 1 ? "up" : s.stTrendInt === -1 ? "down" : null,
-        },
-      };
-    },
-  },
 ];
 
 const BY_KEY = new Map(ADAPTERS.map(a => [a.key, a]));
@@ -614,7 +519,7 @@ const BY_KEY = new Map(ADAPTERS.map(a => [a.key, a]));
  */
 function activeAdapters() {
   // `envDefault` lets an adapter ship OFF. Every legacy strategy defaults ON, so
-  // the fallback stays "true"; EMA_RSI_ST_V2 and BN_EMA_RSI_ST_V2 set "false" and stay out
+  // the fallback stays "true"; EMA_RSI_ST_V2 sets "false" and stays out
   // of the scanner until it is switched on in Settings. Without this the adapter's
   // own "Defaults OFF" comment was untrue and V2 appeared here while Settings,
   // the sidebar and the monitors all showed it disabled.

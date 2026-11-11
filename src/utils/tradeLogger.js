@@ -36,13 +36,9 @@ const FILE_BY_MODE = {
   early_bird: "early_bird_paper_trades_log.jsonl",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_log.jsonl",
   fut_rsi_pivot_st: "fut_rsi_pivot_st_paper_trades_log.jsonl",
-  // BN_PIVOT_RSI_ST (NIFTY BANK) — same engine as rsi_pivot_st on a different underlying.
-  bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_trades_log.jsonl",
   // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop.
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_log.jsonl",
   fut_ema_rsi_st_v2: "fut_ema_rsi_st_v2_paper_trades_log.jsonl",
-  // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK.
-  bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_log.jsonl",
   // ST_RSI_PIV_BB — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_log.jsonl",
   fut_st_rsi_piv_bb: "fut_st_rsi_piv_bb_paper_trades_log.jsonl",
@@ -51,7 +47,6 @@ const FILE_BY_MODE = {
   // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend (NIFTY / BANK NIFTY / SAIL).
   pivot_ema_st: "pivot_ema_st_paper_trades_log.jsonl",
   fut_pivot_ema_st: "fut_pivot_ema_st_paper_trades_log.jsonl",
-  bn_pivot_ema_st: "bn_pivot_ema_st_paper_trades_log.jsonl",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_log.jsonl",
   // GAP_RUNAWAY (NIFTY options) + GAP_RUNAWAY_STK (stock scanner, paper only).
   gap_runaway: "gap_runaway_paper_trades_log.jsonl",
@@ -77,18 +72,15 @@ const DAILY_PREFIX_BY_MODE = {
   early_bird: "early_bird_paper_trades_",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_",
   fut_rsi_pivot_st: "fut_rsi_pivot_st_paper_trades_",
-  bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_trades_",
   // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_",
   fut_ema_rsi_st_v2: "fut_ema_rsi_st_v2_paper_trades_",
-  bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_",
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_",
   fut_st_rsi_piv_bb: "fut_st_rsi_piv_bb_paper_trades_",
   sail_vwap_st: "sail_vwap_st_paper_trades_",
   // PIVOT_EMA_ST family — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   pivot_ema_st: "pivot_ema_st_paper_trades_",
   fut_pivot_ema_st: "fut_pivot_ema_st_paper_trades_",
-  bn_pivot_ema_st: "bn_pivot_ema_st_paper_trades_",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_",
   // GAP_RUNAWAY — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   gap_runaway: "gap_runaway_paper_trades_",

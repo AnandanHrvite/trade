@@ -542,84 +542,8 @@ check("the chart reads the SAME config the strategy trades", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-section("Group 8 — the BANKNIFTY twin trades ITS OWN settings");
+section("Group 8 — the NIFTY V2 tick callback shares the socket safely");
 // ═══════════════════════════════════════════════════════════════════════════
-// Both variants share one engine, so the ONLY thing separating them is the
-// prefix each route passes. An engine call that omits it silently falls back to
-// DEFAULT_PREFIX and the BANKNIFTY strategy trades NIFTY's tuning — this really
-// happened in the BN backtest route, which also required a bn_ema_rsi_st_v2.js
-// engine that does not (and must not) exist.
-
-const BN_ROUTES = [
-  "routes/bnEmaRsiStV2Paper.js",
-  "routes/bnEmaRsiStV2Backtest.js",
-];
-
-check("every BN route exists and shares the ONE engine file", () => {
-  for (const f of BN_ROUTES) assert.ok(exists(f), `${f} is missing`);
-  assert.ok(!exists("strategies/bn_ema_rsi_st_v2.js"),
-    "the BN variant must share ema_rsi_st_v2.js, never copy it");
-  for (const f of BN_ROUTES) {
-    const src = read(f);
-    assert.ok(/require\("\.\.\/strategies\/ema_rsi_st_v2"\)/.test(src),
-      `${f} must require the shared engine`);
-    assert.ok(!/strategies\/bn_ema_rsi_st_v2/.test(src),
-      `${f} requires an engine file that does not exist`);
-  }
-});
-
-check("EVERY engine call in the BN routes carries the BN prefix", () => {
-  const CALL = /engine\.(getSignal|getConfig|trailStop|warmupBars|computeSeries|isInTradingWindow)\s*\(/g;
-  for (const f of BN_ROUTES) {
-    // strip comments so prose mentioning engine.trailStop() is not counted
-    const code = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    assert.ok(/PREFIX\s*=\s*"BN_EMA_RSI_ST_V2"/.test(code), `${f} must declare the BN prefix`);
-    let m, n = 0;
-    while ((m = CALL.exec(code))) {
-      // the call plus its argument list, up to the matching newline-ish window
-      const seg = code.slice(m.index, m.index + 220);
-      assert.ok(/PREFIX|stratCfg|\bcfg\b|\bc\b\s*\)/.test(seg),
-        `${f}: engine.${m[1]}() at offset ${m.index} does not pass the BN prefix — it would use NIFTY's settings`);
-      n++;
-    }
-    assert.ok(n > 0, `${f}: found no engine calls at all — the grep is wrong`);
-  }
-});
-
-check("the BN routes trade BANKNIFTY, not NIFTY 50", () => {
-  const paper = read(BN_ROUTES[0]);
-  assert.ok(!/NIFTY50/.test(paper),
-    "a hardcoded NSE:NIFTY50-INDEX would feed NIFTY prices into BANKNIFTY option trades");
-  assert.ok(/UNDERLYING\s*=\s*"BANKNIFTY"/.test(paper), "must declare the BANKNIFTY underlying");
-  assert.ok(/underlyingOf\(/.test(paper), "spot/strike/lot must come from underlyingOf(), not literals");
-});
-
-check("BN and NIFTY tune independently through the shared engine", () => {
-  clearV2Env(); clearBnEnv();
-  process.env.BN_EMA_RSI_ST_V2_RSI_CE_MIN = "70";
-  process.env.BN_EMA_RSI_ST_V2_SUPERTREND_MULT = "3.5";
-  const bn = v2.getConfig(BN), ni = v2.getConfig();
-  assert.strictEqual(bn.RSI_CE_MIN, 70);
-  assert.strictEqual(bn.ST_MULT, 3.5);
-  assert.strictEqual(ni.RSI_CE_MIN, 52, "the NIFTY variant must be untouched");
-  assert.strictEqual(ni.ST_MULT, 2);
-  clearBnEnv();
-});
-
-check("the BN tick callback is BOUND to the BANKNIFTY index", () => {
-  // socketManager is multi-index and delivers a tick only to callbacks whose
-  // symbol matches (strict positive match, socketManager.js ~line 650). A route
-  // that passes onTick to start() instead registers as the PRIMARY callback and,
-  // on a socket already pointed at NIFTY 50, would silently build NIFTY candles
-  // under a BANKNIFTY name — the highest-consequence bug in a two-index build.
-  const code = read(BN_ROUTES[0]).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.ok(/socketManager\.addCallback\(\s*SOCKET_CALLBACK_ID\s*,\s*onTick\s*,[^)]*subscribeSymbol/.test(code),
-    "onTick must be registered via addCallback() bound to the BANKNIFTY symbol");
-  assert.ok(!/socketManager\.start\(\s*subscribeSymbol\s*,\s*onTick/.test(code),
-    "passing onTick to start() registers it as the primary callback — it would receive the other index's ticks");
-  assert.ok(/socketManager\.removeCallback\(/.test(code),
-    "the callback must be removed on teardown or it leaks on the shared socket");
-});
 
 check("the NIFTY V2 tick callback never takes V1's primary socket handler", () => {
   // V1 (EMA_RSI_ST) owns socketManager's primary NIFTY handler. start() on a
@@ -635,14 +559,6 @@ check("the NIFTY V2 tick callback never takes V1's primary socket handler", () =
     "start() must be guarded by !isRunning() — even start(sym, () => {}) overwrites V1's handler");
   const removals = (code.match(/socketManager\.removeCallback\(\s*SOCKET_CALLBACK_ID\s*\)/g) || []).length;
   assert.ok(removals >= 4, `every teardown path must remove the callback (found ${removals}, want 4)`);
-});
-
-check("BANKNIFTY option symbols are parsed as BANKNIFTY, not NIFTY", () => {
-  const code = read(BN_ROUTES[0]).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.ok(!/NSE:NIFTY[0-9]/.test(code),
-    "a hardcoded NSE:NIFTY… option regex would blank strike/expiry on every BANKNIFTY trade record");
-  assert.ok(/optPrefix|strikeStep/.test(code),
-    "strike/expiry parsing must derive from the underlying, not a NIFTY literal");
 });
 
 check("V1 fresh-signal gate: a setup already true before the window is not bought at the open", () => {

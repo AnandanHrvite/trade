@@ -64,13 +64,6 @@ let rsiPivotStMode = null;
 // FUT_RSI_PIVOT_ST mode (NIFTY FUTURES twin of RSI_PIVOT_ST): "FUT_RSI_PIVOT_ST_PAPER" | null
 let futRsiPivotStMode = null;
 
-// BN Pivot RSI SuperTrend mode (NIFTY BANK):
-//   "BN_PIVOT_RSI_ST_PAPER" | null
-// Deliberately its OWN slot, independent of rsiPivotStMode: BN_PIVOT_RSI_ST is
-// the same rules on a DIFFERENT underlying (NIFTY BANK vs NIFTY 50), so the two
-// may run side by side.
-let bnPivotRsiStMode = null;
-
 // EMA_RSI_ST_V2 mode: "EMA_RSI_ST_V2_PAPER" | null
 // Its OWN slot, deliberately independent of `primaryMode` (which carries V1's
 // EMA_RSI_ST_PAPER). V2 is a separate strategy with its own rules, its own
@@ -80,13 +73,6 @@ let emaRsiStV2Mode = null;
 // FUT_EMA_RSI_ST_V2 mode (NIFTY FUTURES twin of EMA_RSI_ST_V2):
 //   "FUT_EMA_RSI_ST_V2_PAPER" | null
 let futEmaRsiStV2Mode = null;
-
-// BN_EMA_RSI_ST_V2 mode (NIFTY BANK):
-//   "BN_EMA_RSI_ST_V2_PAPER" | null
-// Its OWN slot, deliberately independent of emaRsiStV2Mode: this is the SAME
-// engine on a DIFFERENT underlying (NIFTY BANK vs NIFTY 50), so the two may run
-// side by side.
-let bnEmaRsiStV2Mode = null;
 
 // ST_RSI_PIV_BB mode: "ST_RSI_PIV_BB_PAPER" | null
 // Its OWN slot — a separate strategy with its own settings and position file,
@@ -103,11 +89,10 @@ let futStRsiPivBbMode = null;
 let sailVwapStMode = null;
 
 // PIVOT_EMA_ST family: "<P>_PAPER" | null, for P = PIVOT_EMA_ST
-// (NIFTY), BN_PIVOT_EMA_ST (BANK NIFTY), SAIL_PIVOT_EMA_ST (SAIL). Each its OWN
-// slot (own settings + position file), so all three run side by side with every
+// (NIFTY), SAIL_PIVOT_EMA_ST (SAIL). Each its OWN
+// slot (own settings + position file), so both run side by side with every
 // other strategy.
 let pivotEmaStMode = null;
-let bnPivotEmaStMode = null;
 let sailPivotEmaStMode = null;
 // FUT_PIVOT_EMA_ST (NIFTY FUTURES twin of PIVOT_EMA_ST): "FUT_PIVOT_EMA_ST_PAPER" | null
 let futPivotEmaStMode = null;
@@ -414,24 +399,6 @@ function getFutRsiPivotStMode() {
   return futRsiPivotStMode;
 }
 
-// ── BN Pivot RSI SuperTrend mode (NIFTY BANK) ───────────────────────────────
-
-function setBnPivotRsiStMode(mode) {
-  bnPivotRsiStMode = mode;
-}
-
-function clearBnPivotRsiStMode() {
-  bnPivotRsiStMode = null;
-}
-
-function isBnPivotRsiStActive() {
-  return bnPivotRsiStMode !== null;
-}
-
-function getBnPivotRsiStMode() {
-  return bnPivotRsiStMode;
-}
-
 // ── EMA_RSI_ST_V2 mode ──────────────────────────────────────────────────────
 
 function setEmaRsiStV2Mode(mode) {
@@ -466,24 +433,6 @@ function isFutEmaRsiStV2Active() {
 
 function getFutEmaRsiStV2Mode() {
   return futEmaRsiStV2Mode;
-}
-
-// ── BN_EMA_RSI_ST_V2 mode (NIFTY BANK) ──────────────────────────────────────
-
-function setBnEmaRsiStV2Mode(mode) {
-  bnEmaRsiStV2Mode = mode;
-}
-
-function clearBnEmaRsiStV2Mode() {
-  bnEmaRsiStV2Mode = null;
-}
-
-function isBnEmaRsiStV2Active() {
-  return bnEmaRsiStV2Mode !== null;
-}
-
-function getBnEmaRsiStV2Mode() {
-  return bnEmaRsiStV2Mode;
 }
 
 // ── ST_RSI_PIV_BB mode ──────────────────────────────────────────────────────
@@ -540,17 +489,12 @@ function getSailVwapStMode() {
   return sailVwapStMode;
 }
 
-// ── PIVOT_EMA_ST family modes (NIFTY / BANK NIFTY / SAIL) ──────────────────
+// ── PIVOT_EMA_ST family modes (NIFTY / SAIL) ────────────────────────────────
 
 function setPivotEmaStMode(mode) { pivotEmaStMode = mode; }
 function clearPivotEmaStMode() { pivotEmaStMode = null; }
 function isPivotEmaStActive() { return pivotEmaStMode !== null; }
 function getPivotEmaStMode() { return pivotEmaStMode; }
-
-function setBnPivotEmaStMode(mode) { bnPivotEmaStMode = mode; }
-function clearBnPivotEmaStMode() { bnPivotEmaStMode = null; }
-function isBnPivotEmaStActive() { return bnPivotEmaStMode !== null; }
-function getBnPivotEmaStMode() { return bnPivotEmaStMode; }
 
 function setSailPivotEmaStMode(mode) { sailPivotEmaStMode = mode; }
 function clearSailPivotEmaStMode() { sailPivotEmaStMode = null; }
@@ -604,12 +548,11 @@ function isAnyActive() {
          prevOrbScalpMode !== null ||
          itm20ScalpMode !== null ||
          earlyBirdMode !== null ||
-         rsiPivotStMode !== null || bnPivotRsiStMode !== null ||
+         rsiPivotStMode !== null ||
          emaRsiStV2Mode !== null ||
-         bnEmaRsiStV2Mode !== null ||
          stRsiPivBbMode !== null ||
          sailVwapStMode !== null ||
-         pivotEmaStMode !== null || bnPivotEmaStMode !== null || sailPivotEmaStMode !== null ||
+         pivotEmaStMode !== null || sailPivotEmaStMode !== null ||
          gapRunawayMode !== null || gapRunawayStkMode !== null ||
          simple930Mode !== null ||
          // FUT twins (NIFTY FUTURES) — each its own slot.
@@ -671,12 +614,6 @@ function _canStartRaw(mode) {
     case "FUT_RSI_PIVOT_ST_PAPER":
       if (futRsiPivotStMode === "FUT_RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "FUT RSI Pivot ST Paper is already running" };
       return { allowed: true };
-    // BN_PIVOT_RSI_ST is NIFTY BANK — a different underlying from RSI_PIVOT_ST,
-    // so it is checked ONLY against its own sibling. The two strategies are free
-    // to run at the same time.
-    case "BN_PIVOT_RSI_ST_PAPER":
-      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_PAPER") return { allowed: false, reason: "BN Pivot RSI ST Paper is already running" };
-      return { allowed: true };
     // EMA_RSI_ST_V2 is checked ONLY against its own sibling — it is a separate
     // strategy from EMA_RSI_ST (V1), not another mode of it, so V1 and V2 may
     // run at the same time.
@@ -685,12 +622,6 @@ function _canStartRaw(mode) {
       return { allowed: true };
     case "FUT_EMA_RSI_ST_V2_PAPER":
       if (futEmaRsiStV2Mode === "FUT_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "FUT EMA_RSI_ST_V2 Paper is already running" };
-      return { allowed: true };
-    // BN_EMA_RSI_ST_V2 is NIFTY BANK — the same engine as EMA_RSI_ST_V2 on a
-    // DIFFERENT underlying, so it is checked ONLY against its own sibling. The
-    // NIFTY and NIFTY BANK versions are free to run at the same time.
-    case "BN_EMA_RSI_ST_V2_PAPER":
-      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Paper is already running" };
       return { allowed: true };
     // ST_RSI_PIV_BB is a separate strategy, checked ONLY against its own sibling.
     case "ST_RSI_PIV_BB_PAPER":
@@ -706,9 +637,6 @@ function _canStartRaw(mode) {
     // PIVOT_EMA_ST family — each checked ONLY against its own sibling.
     case "PIVOT_EMA_ST_PAPER":
       if (pivotEmaStMode === "PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "PIVOT_EMA_ST Paper is already running" };
-      return { allowed: true };
-    case "BN_PIVOT_EMA_ST_PAPER":
-      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "BN_PIVOT_EMA_ST Paper is already running" };
       return { allowed: true };
     case "SAIL_PIVOT_EMA_ST_PAPER":
       if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Paper is already running" };
@@ -795,14 +723,10 @@ module.exports = {
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
   // FUT_RSI_PIVOT_ST (NIFTY FUTURES)
   setFutRsiPivotStActive, clearFutRsiPivotSt, isFutRsiPivotStActive, getFutRsiPivotStMode,
-  // BN Pivot RSI SuperTrend (NIFTY BANK)
-  setBnPivotRsiStMode, clearBnPivotRsiStMode, isBnPivotRsiStActive, getBnPivotRsiStMode,
   // EMA_RSI_ST_V2
   setEmaRsiStV2Mode, clearEmaRsiStV2Mode, isEmaRsiStV2Active, getEmaRsiStV2Mode,
   // FUT_EMA_RSI_ST_V2 (NIFTY FUTURES)
   setFutEmaRsiStV2Mode, clearFutEmaRsiStV2Mode, isFutEmaRsiStV2Active, getFutEmaRsiStV2Mode,
-  // BN_EMA_RSI_ST_V2 (NIFTY BANK)
-  setBnEmaRsiStV2Mode, clearBnEmaRsiStV2Mode, isBnEmaRsiStV2Active, getBnEmaRsiStV2Mode,
   // ST_RSI_PIV_BB
   setStRsiPivBbMode, clearStRsiPivBbMode, isStRsiPivBbActive, getStRsiPivBbMode,
   // FUT_ST_RSI_PIV_BB (NIFTY FUTURES)
@@ -811,7 +735,6 @@ module.exports = {
   setSailVwapStMode, clearSailVwapStMode, isSailVwapStActive, getSailVwapStMode,
   // PIVOT_EMA_ST family
   setPivotEmaStMode, clearPivotEmaStMode, isPivotEmaStActive, getPivotEmaStMode,
-  setBnPivotEmaStMode, clearBnPivotEmaStMode, isBnPivotEmaStActive, getBnPivotEmaStMode,
   setSailPivotEmaStMode, clearSailPivotEmaStMode, isSailPivotEmaStActive, getSailPivotEmaStMode,
   // FUT_PIVOT_EMA_ST (NIFTY FUTURES)
   setFutPivotEmaStMode, clearFutPivotEmaStMode, isFutPivotEmaStActive, getFutPivotEmaStMode,
@@ -830,11 +753,11 @@ const _CLEAR_SLOT = {
   clear: "EMA_RSI_ST", clearBbRsi: "BB_RSI", clearPA: "PA", clearOrb: "ORB",
   clearEma9Vwap: "EMA9VWAP", clearTrendPb: "TREND_PB", clearTrendDayScalp: "TREND_DAY_SCALP",
   clearHaScalp: "HA_SCALP", clearPrevOrbScalp: "PREV_ORB_SCALP", clearEarlyBird: "EARLY_BIRD",
-  clearRsiPivotSt: "RSI_PIVOT_ST", clearBnPivotRsiStMode: "BN_PIVOT_RSI_ST",
-  clearEmaRsiStV2Mode: "EMA_RSI_ST_V2", clearBnEmaRsiStV2Mode: "BN_EMA_RSI_ST_V2",
+  clearRsiPivotSt: "RSI_PIVOT_ST",
+  clearEmaRsiStV2Mode: "EMA_RSI_ST_V2",
   clearStRsiPivBbMode: "ST_RSI_PIV_BB",
   clearSailVwapStMode: "SAIL_VWAP_ST",
-  clearPivotEmaStMode: "PIVOT_EMA_ST", clearBnPivotEmaStMode: "BN_PIVOT_EMA_ST", clearSailPivotEmaStMode: "SAIL_PIVOT_EMA_ST",
+  clearPivotEmaStMode: "PIVOT_EMA_ST", clearSailPivotEmaStMode: "SAIL_PIVOT_EMA_ST",
   clearGapRunawayMode: "GAP_RUNAWAY", clearGapRunawayStkMode: "GAP_RUNAWAY_STK",
   clearSimple930: "SIMPLE930",
   clearItm20Scalp: "ITM20_SCALP",

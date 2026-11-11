@@ -26,7 +26,6 @@ const haScalpStrategy = require("../strategies/ha_scalp");
 const prevOrbScalpStrategy = require("../strategies/prev_orb_scalp");
 const itm20ScalpStrategy = require("../strategies/itm20_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
-const bnPivotRsiStStrategy = require("../strategies/bn_pivot_rsi_st");
 const sailVwapStStrategy = require("../strategies/sail_vwap_st");
 const emaRsiStV2Strategy = require("../strategies/ema_rsi_st_v2");
 const simple930Strategy  = require("../strategies/simple930");
@@ -44,12 +43,8 @@ const PREV_ORB_SCALP_KEY = "PREV_ORB_SCALP_BACKTEST";
 // MUST match the RESULT_KEY itm20ScalpBacktest.js saves under.
 const ITM20_SCALP_KEY = "ITM20_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
-// MUST match the RESULT_KEY bnPivotRsiStBacktest.js saves under.
-const BN_PIVOT_RSI_ST_KEY = "BN_PIVOT_RSI_ST_BACKTEST";
 // MUST match the RESULT_KEY emaRsiStV2Backtest.js saves under.
 const EMA_RSI_ST_V2_KEY = "EMA_RSI_ST_V2_BACKTEST";
-// MUST match the RESULT_KEY bnEmaRsiStV2Backtest.js saves under.
-const BN_EMA_RSI_ST_V2_KEY = "BN_EMA_RSI_ST_V2_BACKTEST";
 // MUST match the RESULT_KEY sailVwapStBacktest.js saves under.
 const SAIL_VWAP_ST_KEY = "SAIL_VWAP_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
@@ -175,11 +170,8 @@ router.get("/", (req, res) => {
   const prevOrbScalpOn = _modeOn("PREV_ORB_SCALP_MODE_ENABLED");
   const itm20ScalpOn = _modeOn("ITM20_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
-  const bnPivotRsiStOn = _modeOn("BN_PIVOT_RSI_ST_MODE_ENABLED");
   // EMA_RSI_ST_V2 defaults OFF; _modeOn() defaults ON, so it is compared here.
   const emaRsiStV2On = String(process.env.EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true";
-  // The NIFTY BANK sibling also defaults OFF, so it is compared here too.
-  const bnEmaRsiStV2On = String(process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true";
   // SAIL_VWAP_ST also defaults OFF, so it is compared here too.
   const sailVwapStOn = String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() === "true";
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
@@ -201,9 +193,7 @@ router.get("/", (req, res) => {
   const prevOrbScalpResult = prevOrbScalpOn ? loadResult(PREV_ORB_SCALP_KEY) : null;
   const itm20ScalpResult = itm20ScalpOn ? loadResult(ITM20_SCALP_KEY) : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
-  const bnPivotRsiStResult = bnPivotRsiStOn ? loadResult(BN_PIVOT_RSI_ST_KEY) : null;
   const emaRsiStV2Result = emaRsiStV2On ? loadResult(EMA_RSI_ST_V2_KEY) : null;
-  const bnEmaRsiStV2Result = bnEmaRsiStV2On ? loadResult(BN_EMA_RSI_ST_V2_KEY) : null;
   const sailVwapStResult = sailVwapStOn ? loadResult(SAIL_VWAP_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
   const earlyBirdResult  = earlyBirdOn  ? loadResult(EARLYBIRD_KEY)  : null;
@@ -263,23 +253,10 @@ router.get("/", (req, res) => {
     rsiPivotStStrategy && rsiPivotStStrategy.NAME ? rsiPivotStStrategy.NAME : "RSI_PIVOT_ST",
     RSI_PIVOT_ST_KEY, "/rsi-pivot-st-backtest", rsiPivotStResult
   ) : "";
-  // Same rules as RSI PIVOT ST on a different underlying — the label says which,
-  // because two identically-shaped panels side by side are otherwise unreadable.
-  const bnPivotRsiStPanel = bnPivotRsiStOn ? renderPanel(
-    "BN PIVOT RSI ST · NIFTY BANK", { bg: "rgba(129,140,248,0.12)", fg: "#818cf8", border: "rgba(129,140,248,0.25)" },
-    bnPivotRsiStStrategy && bnPivotRsiStStrategy.NAME ? bnPivotRsiStStrategy.NAME : "BN_PIVOT_RSI_ST",
-    BN_PIVOT_RSI_ST_KEY, "/bn-pivot-rsi-st-backtest", bnPivotRsiStResult
-  ) : "";
   const emaRsiStV2Panel = emaRsiStV2On ? renderPanel(
     "EMA_RSI_ST_V2", { bg: "rgba(56,189,248,0.12)", fg: "#38bdf8", border: "rgba(56,189,248,0.25)" },
     emaRsiStV2Strategy && emaRsiStV2Strategy.NAME ? emaRsiStV2Strategy.NAME : "EMA_RSI_ST_V2",
     EMA_RSI_ST_V2_KEY, "/ema_rsi_st_v2-backtest", emaRsiStV2Result
-  ) : "";
-  // The same engine module — it serves both underlyings — on its own panel.
-  const bnEmaRsiStV2Panel = bnEmaRsiStV2On ? renderPanel(
-    "BN EMA_RSI_ST_V2 · NIFTY BANK", { bg: "rgba(45,212,191,0.12)", fg: "#2dd4bf", border: "rgba(45,212,191,0.25)" },
-    emaRsiStV2Strategy && emaRsiStV2Strategy.NAME ? emaRsiStV2Strategy.NAME : "BN_EMA_RSI_ST_V2",
-    BN_EMA_RSI_ST_V2_KEY, "/bn_ema_rsi_st_v2-backtest", bnEmaRsiStV2Result
   ) : "";
   // SAIL STOCK options — the label says so; its P&L comes from a SAIL-scaled
   // simulated premium (SAIL_VWAP_ST_BT_*), not the NIFTY BACKTEST_* keys.
@@ -479,12 +456,10 @@ ${buildSidebar('allBacktest', false)}
   ${rsiPivotStPanel}
   ${futRsiPivotStPanel}
   ${futEma9VwapPanel}
-  ${bnPivotRsiStPanel}
-  ${bnEmaRsiStV2Panel}
   ${sailVwapStPanel}
   ${simple930Panel}
   ${earlyBirdPanel}
-  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !bnEmaRsiStV2On && !sailVwapStOn && !simple930On && !earlyBirdOn && !futEmaRsiStOn && !futEmaRsiStV2On && !futBbRsiOn && !futEma9VwapOn && !futRsiPivotStOn) ? `
+  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !sailVwapStOn && !simple930On && !earlyBirdOn && !futEmaRsiStOn && !futEmaRsiStV2On && !futBbRsiOn && !futEma9VwapOn && !futRsiPivotStOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

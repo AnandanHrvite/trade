@@ -24,7 +24,6 @@ const { renderMarkdown, escapeHtml } = require("../utils/markdown");
 const GUIDE_MODE_BY_FILE = {
   "ema_rsi_st_strategy_guide.html":    "EMA_RSI_ST",
   "ema_rsi_st_v2_strategy_guide.html": "EMA_RSI_ST_V2",
-  "bn_ema_rsi_st_v2_strategy_guide.html": "BN_EMA_RSI_ST_V2",
   "st_rsi_piv_bb_strategy_guide.html": "ST_RSI_PIV_BB",
   "sail_vwap_st_strategy_guide.html":  "SAIL_VWAP_ST",
   "bb_rsi_strategy_guide.html":        "BB_RSI",
@@ -37,7 +36,6 @@ const GUIDE_MODE_BY_FILE = {
   "prev_orb_scalp_strategy_guide.html": "PREV_ORB_SCALP",
   "itm20_scalp_strategy_guide.html": "ITM20_SCALP",
   "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
-  "bn_pivot_rsi_st_strategy_guide.html": "BN_PIVOT_RSI_ST",
   "simple930_strategy_guide.html":    "SIMPLE930",
   "earlybird_strategy_guide.html":    "EARLYBIRD",
   // GAP_RUNAWAY's guide also covers its stock scanner — see isDocVisible below.
@@ -67,10 +65,10 @@ const CMX_GUIDE_FILE = "cmx_commodity_strategy_guide.html";
 const CMX_MODE_KEYS = ["CRUDE", "GOLD", "SILVER"].flatMap(c =>
   [`CMX_${c}_EMA_RSI_ST_MODE_ENABLED`, `CMX_${c}_EMA_RSI_ST_V2_MODE_ENABLED`]);
 
-// The PIVOT_EMA_ST guide covers NIFTY, BANK NIFTY, SAIL and the three commodity
+// The PIVOT_EMA_ST guide covers NIFTY, SAIL and the three commodity
 // pages, so it is shown when ANY of them is on. The commodity toggles default TRUE.
 const PIVOT_GUIDE_FILE = "pivot_ema_st_strategy_guide.html";
-const PIVOT_NSE_MODES = ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST", "FUT_PIVOT_EMA_ST"];
+const PIVOT_NSE_MODES = ["PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST", "FUT_PIVOT_EMA_ST"];
 const PIVOT_CMX_KEYS = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_ST_MODE_ENABLED`);
 
 function isDocVisible(filename, enabledModes) {
@@ -858,14 +856,6 @@ const GUIDE_STATUS = {
     { type: "value", label: "SuperTrend Period", key: "FUT_EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "FUT_EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
   ] }] },
-  // The same engine on NIFTY BANK — every key below is its own BN_ one, so the
-  // guide reads the NIFTY BANK settings, not the NIFTY ones.
-  "BN_EMA_RSI_ST_V2_Strategy_Guide.html": { title: "BN EMA_RSI_ST_V2 (NIFTY BANK) — Live Configuration", groups: [{ rows: [
-    { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
-    { type: "bool", label: "Confirmation Candle", key: "BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
-    { type: "value", label: "SuperTrend Period", key: "BN_EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
-    { type: "value", label: "SuperTrend Multiplier", key: "BN_EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
-  ] }] },
   // ST_RSI_PIV_BB — every key below is its own; the mode toggle defaults FALSE
   // (like V2), so the guide stays hidden until it is switched on in Settings.
   "ST_RSI_PIV_BB_Strategy_Guide.html": { title: "ST_RSI_PIV_BB — Live Configuration", groups: [{ rows: [
@@ -891,7 +881,7 @@ const GUIDE_STATUS = {
     { type: "value", label: "Breakout Window (candles)", key: "SAIL_VWAP_ST_BREAKOUT_BARS", def: "3" },
     { type: "value", label: "Lots (× SAIL_LOT_SIZE)", key: "SAIL_VWAP_ST_LOTS", def: "1" },
   ] }] },
-  // PIVOT_EMA_ST — one guide for NIFTY / BANK NIFTY / SAIL (each its own keys) plus the
+  // PIVOT_EMA_ST — one guide for NIFTY / SAIL (each its own keys) plus the
   // three MCX pages that read the NIFTY rule keys. Mode toggles default TRUE (Start All).
   "PIVOT_EMA_ST_Strategy_Guide.html": { title: "PIVOT_EMA_ST — Live Configuration", groups: [
     { heading: "NIFTY", rows: [
@@ -905,10 +895,6 @@ const GUIDE_STATUS = {
       { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "FUT_PIVOT_EMA_ST_TF", def: "3" },
       { type: "value", label: "SuperTrend Period", key: "FUT_PIVOT_EMA_ST_ST_PERIOD", def: "10" },
       { type: "value", label: "SuperTrend Multiplier", key: "FUT_PIVOT_EMA_ST_ST_MULT", def: "3" },
-    ] },
-    { heading: "BANK NIFTY", rows: [
-      { type: "bool", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
-      { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "BN_PIVOT_EMA_ST_TF", def: "3" },
     ] },
     { heading: "SAIL", rows: [
       { type: "bool", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
@@ -999,28 +985,6 @@ const GUIDE_STATUS = {
     { type: "bool", label: "FUT RSI Pivot ST Paper Trading", key: "FUT_RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
     { type: "value", label: "SuperTrend entry filter applies to", key: "FUT_RSI_PIVOT_ST_ST_SIDES", def: "CE" },
   ] }] },
-  // The NIFTY BANK replica of the row above. The extra group carries the
-  // INDEX-level keys, because on this strategy they are not incidental: the
-  // 100-point grid and the monthly-only expiry are two of the three things
-  // that make it behave differently from its NIFTY sibling.
-  "BN_PIVOT_RSI_ST_Strategy_Guide.html": { title: "BN Pivot RSI ST — Live Configuration", groups: [
-    { rows: [
-      { type: "bool", label: "BN Pivot RSI ST Mode (sidebar + Settings section)", key: "BN_PIVOT_RSI_ST_MODE_ENABLED", def: "true" },
-      { type: "bool", label: "BN Pivot RSI ST Paper Trading", key: "BN_PIVOT_RSI_ST_PAPER_ENABLED", def: "true" },
-      { type: "value", label: "SuperTrend entry filter applies to", key: "BN_PIVOT_RSI_ST_ST_SIDES", def: "CE" },
-    ] },
-    { heading: "NIFTY BANK instrument (shared by every NIFTY BANK strategy)", rows: [
-      { type: "value", label: "Strike step — the grid strikes are listed on", key: "BANKNIFTY_STRIKE_STEP", def: "100" },
-      { type: "value", label: "Lot size (quantity per lot)", key: "BANKNIFTY_LOT_SIZE", def: "30" },
-      { type: "value", label: "Expiry type — monthly is the only real answer since Nov-2024", key: "BANKNIFTY_OPTION_EXPIRY_TYPE", def: "monthly", warnOn: ["weekly"] },
-      { type: "bool", label: "Weekly expiries exist (must stay OFF — NSE withdrew BANKNIFTY weeklies)", key: "BANKNIFTY_WEEKLY_EXPIRY_ENABLED", def: "false" },
-    ] },
-    { heading: "Backtest premium model — the defaults are NIFTY-weekly-shaped", rows: [
-      { type: "value", label: "Seed premium — common to every backtest (₹240 is a NIFTY weekly, not a BANKNIFTY monthly)", key: "BACKTEST_SEED_PREMIUM", def: "240" },
-      { type: "value", label: "Theta per day (₹) used by every backtest", key: "BACKTEST_THETA_DAY", def: "8" },
-      { type: "value", label: "Delta used by every backtest", key: "BACKTEST_DELTA", def: "0.55" },
-    ] },
-  ] },
   "SIMPLE930_Strategy_Guide.html": { title: "SIMPLE_9:30 — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "SIMPLE_9:30 Mode (sidebar + Settings section)", key: "SIMPLE930_MODE_ENABLED", def: "true" },
     { type: "bool", label: "SIMPLE_9:30 Paper Trading", key: "SIMPLE930_PAPER_ENABLED", def: "true" },
@@ -1062,13 +1026,11 @@ const GUIDE_STATUS = {
       { type: "bool", label: "FUT EMA_RSI_ST Mode (NIFTY futures)", key: "FUT_EMA_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA_RSI_ST_V2 Mode", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "FUT EMA_RSI_ST_V2 Mode (NIFTY futures)", key: "FUT_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
-      { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK, monthly options)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "ST_RSI_PIV_BB Mode", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
       { type: "bool", label: "FUT ST_RSI_PIV_BB Mode (NIFTY futures)", key: "FUT_ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
       { type: "bool", label: "SAIL_VWAP_ST Mode (SAIL stock options)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
       { type: "bool", label: "PIVOT_EMA_ST Mode", key: "PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "FUT PIVOT_EMA_ST Mode (NIFTY futures)", key: "FUT_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
-      { type: "bool", label: "BN PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SAIL PIVOT_EMA_ST Mode (SAIL stock options)", key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "GAP_runAway__Kirubakaran Mode (NIFTY)", key: "GAP_RUNAWAY_MODE_ENABLED", def: "true" },
       { type: "bool", label: "GAP_runAway Stock Scanner Mode", key: "GAP_RUNAWAY_STK_MODE_ENABLED", def: "true" },
@@ -1085,7 +1047,6 @@ const GUIDE_STATUS = {
       { type: "bool", label: "ITM20 Scalp Mode", key: "ITM20_SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "FUT RSI Pivot ST Mode (NIFTY futures)", key: "FUT_RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
-      { type: "bool", label: "BN Pivot RSI ST Mode (NIFTY BANK, monthly options)", key: "BN_PIVOT_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SIMPLE_9:30 Mode", key: "SIMPLE930_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EarlyBird Mode", key: "EARLYBIRD_MODE_ENABLED", def: "true" },
     ] },

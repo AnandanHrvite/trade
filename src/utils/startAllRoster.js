@@ -13,7 +13,7 @@
  *   /{slug}-paper/start           canonical paper engine
  *
  * The mode key is matched to the route slug case- and separator-insensitively
- * (EMA_RSI_ST ↔ /ema_rsi_st-…, BN_PIVOT_RSI_ST ↔ /bn-pivot-rsi-st-…). A
+ * (EMA_RSI_ST ↔ /ema_rsi_st-…, RSI_PIVOT_ST ↔ /rsi-pivot-st-…). A
  * strategy whose key is not its slug declares `slug` on its STRATEGY_MODES row.
  */
 

@@ -545,46 +545,6 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
-    icon: "\u{1F3E6}",
-    nav: "BN PIVOT RSI ST",
-    group: "BANK NIFTY",
-    fields: [
-      // An exact replica of RSI_PIVOT_ST — same rules, same thresholds, same
-      // stops, same defaults — trading NIFTY BANK instead of NIFTY 50. Keep
-      // the two sections in step: a change to one is almost always a change
-      // to both. The index-level constants (strike grid, lot size, expiry)
-      // are NOT here — they live in the NIFTY BANK block of
-      // Instrument & Backtest, shared by every NIFTY BANK strategy.
-      // ── Enable ──
-      { key: "BN_PIVOT_RSI_ST_PAPER_ENABLED", label: "BN Pivot RSI ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new BN Pivot RSI ST paper sessions.", default: "true", subheader: "Mode" },
-
-      // ── The entry rule ──
-      { key: "BN_PIVOT_RSI_ST_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "15"], effect: EFFECT.SESSION, desc: "Which candle decides. Entries are taken only on a CLOSED candle of this size — 5-min is the rule as written.", default: "5", subheader: "Signal (RSI + Pivot cross)" },
-      { key: "BN_PIVOT_RSI_ST_RSI_PERIOD", label: "RSI Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How many candles the RSI is measured over. 14 is the standard setting and what the rule assumes.", default: "14" },
-      { key: "BN_PIVOT_RSI_ST_RSI_CE_MIN", label: "CE needs RSI above", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A CE (call) is only bought when RSI on the signal candle is above this — momentum must already be strong. Raise it for fewer, stronger buys.", default: "70" },
-      { key: "BN_PIVOT_RSI_ST_RSI_PE_MAX", label: "PE needs RSI below", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A PE (put) is only bought when RSI on the signal candle is below this — selling must already be strong. Lower it for fewer, stronger sells.", default: "40" },
-      { key: "BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS", label: "Pivot Buffer (pts)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "How far past R1 (or S1) the candle must close before it counts as a break. 0 = a close just beyond the level is enough. Raise it to ignore candles that only tickle the line.", default: "0" },
-      { key: "BN_PIVOT_RSI_ST_CONFIRM_ENABLED", label: "Confirmation Candle", type: "boolean", effect: EFFECT.SESSION, desc: "The breakout candle only arms the setup — entry waits for the NEXT candle to close past that candle's high (CE) or low (PE). Stops entries on a candle that pokes a few points past the pivot and stalls. OFF = enter on the crossing candle itself.", default: "true" },
-
-      // ── Window ──
-      { key: "BN_PIVOT_RSI_ST_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "When the strategy starts watching candles for the day (IST).", default: "09:15", subheader: "Session window" },
-      { key: "BN_PIVOT_RSI_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST). The first candles of the day are noisy and often break a pivot for no reason.", default: "09:30" },
-      { key: "BN_PIVOT_RSI_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST) — too late in the day for a fresh trade to work out.", default: "15:00" },
-
-      // ── Strike ──
-      { key: "BN_PIVOT_RSI_ST_STRIKE_MODE", label: "Which Strike to Buy", type: "select", options: ["ATM", "ITM", "OTM"], effect: EFFECT.SESSION, desc: "Which strike to buy. ATM = nearest to spot. OTM = 1% of spot away from the money (cheaper, needs a bigger move). ITM = 1% into the money (costlier, moves more with spot).", default: "OTM", subheader: "Strike" },
-      { key: "BN_PIVOT_RSI_ST_STRIKE_PCT", label: "Strike Distance (% of spot)", type: "number", min: 0, max: 20, step: 0.25, effect: EFFECT.SESSION, desc: "How far from spot the ITM/OTM strike sits, as a percentage. 1% of a 54000 NIFTY BANK is 540 points, rounded to the nearest 100-point strike. Ignored when the mode is ATM.", default: "1" },
-
-      // ── Stops. Deliberately asymmetric — see the CE toggle's note. ──
-      { key: "BN_PIVOT_RSI_ST_ST_PERIOD", label: "SuperTrend Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.", default: "10", subheader: "Stops" },
-      { key: "BN_PIVOT_RSI_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.", default: "2" },
-      { key: "BN_PIVOT_RSI_ST_ST_SIDES", label: "SuperTrend Stop Applies To", type: "select", options: [{ value: "CE", label: "CE only (original rule)" }, { value: "BOTH", label: "Both CE and PE" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no SuperTrend stop)" }], effect: EFFECT.SESSION, desc: "Which side uses the SuperTrend line as its stop and trail, on top of the premium stop. CE is the original rule. On PE the line is mirrored: it sits ABOVE price and a flip to bullish is the exit. A side that uses it also gains the \"SuperTrend must be on the right side of price\" entry check, so it takes FEWER trades; a side without it relies on the premium stop alone.", default: "CE" },
-
-      // ── Backtest ──
-    ],
-  },
-  {
     section: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F9EA}",
     nav: "EMA_RSI_ST_V2",
@@ -723,30 +683,6 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
-    icon: "\u{1F3E6}",
-    nav: "BN_PIVOT_EMA_ST",
-    group: "BANK NIFTY",
-    fields: [
-      // NIFTY BANK copy of PIVOT_EMA_ST — the same rules (src/strategies/pivot_ema_st.js)
-      // on NSE:NIFTYBANK-INDEX, with its own BN_PIVOT_EMA_ST_* keys and its own
-      // position, so it runs side by side with the NIFTY one.
-      // Paper only — no backtest page, not replayable.
-
-      // ── Chart & signal ──
-      { key: "BN_PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which NIFTY BANK candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
-      { key: "BN_PIVOT_EMA_ST_EMA_FAST", label: "Fast EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The fast EMA in the crossover. A CE needs it to cross ABOVE the slow EMA on the signal candle itself (the bar before: fast ≤ slow; this bar: fast > slow), and the cross level — (fast + slow) / 2 on that candle — must sit inside the same zone as the close (PP–R1 for CE, S1–PP for PE). A cross on an earlier candle, or outside the zone, does not count.", default: "20" },
-      { key: "BN_PIVOT_EMA_ST_EMA_SLOW", label: "Slow EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The slow EMA in the crossover. Must be longer than the fast EMA — if it is not, the engine falls back to 50.", default: "50" },
-      { key: "BN_PIVOT_EMA_ST_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "ATR length behind the SuperTrend line. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the stop — its value on the signal candle is the first stop, then it trails.", default: "10" },
-      { key: "BN_PIVOT_EMA_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.INSTANT, desc: "How many ATRs away from price the SuperTrend line sits. Example: ATR 40 pts × 3 = the line sits about 120 pts from price. Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "3" },
-
-      // ── Session window ──
-      { key: "BN_PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
-      { key: "BN_PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
-      { key: "BN_PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
-    ],
-  },
-  {
     section: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
     icon: "\u{1F3ED}",
     nav: "SAIL_PIVOT_EMA_ST",
@@ -831,65 +767,6 @@ const SETTINGS_SCHEMA = [
       { key: "GAP_RUNAWAY_STK_UNIVERSE", label: "Stock List", type: "select", options: ["FNO", "NIFTY100", "NIFTY50"], effect: EFFECT.SESSION, desc: "Which stocks are scanned before 09:15. FNO = all F&O stocks (~220, about 75 s to scan). Lists can be edited in ~/trading-data/swing_scanner_universe.json.", default: "FNO", subheader: "Universe & size" },
       { key: "GAP_RUNAWAY_STK_TRADE_AMOUNT", label: "Amount per Trade (₹)", type: "number", min: 1000, max: 10000000, step: 1000, effect: EFFECT.SESSION, desc: "Shares per trade = this ÷ price, rounded down. Example: ₹1,00,000 on a ₹2,500 stock = 40 shares.", default: "100000" },
       { key: "GAP_RUNAWAY_STK_MAX_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "When more stocks fire, the biggest gaps (in %) are taken first, up to this many a day. One trade per stock per day.", default: "3" },
-    ],
-  },
-  {
-    section: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
-    icon: "\u{1F3E6}",
-    nav: "BN_EMA_RSI_ST_V2",
-    group: "BANK NIFTY",
-    fields: [
-      // The SAME engine as EMA_RSI_ST_V2, pointed at NIFTY BANK. Every key here
-      // is its own BN_EMA_RSI_ST_V2_* key, so tuning the NIFTY version never
-      // moves this one and vice versa. The defaults below are copied from the
-      // NIFTY section deliberately — a shared starting point, not a claim that
-      // they suit BANKNIFTY.
-      //
-      // WHAT IS ACTUALLY DIFFERENT ABOUT NIFTY BANK, in plain terms:
-      //   • Its options are MONTHLY only. There is no weekly expiry to roll to,
-      //     so on most days you are holding a contract with weeks of life left —
-      //     it decays more slowly than a NIFTY weekly, but it also moves less
-      //     per point of index move than a near-expiry option would.
-      //   • Strikes sit on a 100-POINT grid (NIFTY uses 50). The nearest strike
-      //     can be up to 50 points away from spot instead of 25.
-      //   • The index itself swings roughly twice as far in a day as NIFTY.
-      //
-      // The practical consequence: every rupee guard below buys you LESS room
-      // here than the same number does on NIFTY. A ₹1,000 daily-loss cap is a
-      // couple of ordinary BANKNIFTY candles, where on NIFTY it is a bad trade.
-      // Example: NIFTY moving 60 points is an unremarkable hour; BANKNIFTY
-      // moving the equivalent 130-odd points in the same hour is equally
-      // unremarkable — but at one lot each, that second move is the larger
-      // rupee swing. Expect these caps to stop the session sooner than they do
-      // on NIFTY, and raise them deliberately rather than by accident.
-      //
-      // Everything here ships OFF. Turn the Mode toggle on, paper it for a run
-      // of sessions, and only then think about live.
-      // ── Enable ──
-      // The master BN_EMA_RSI_ST_V2_MODE_ENABLED toggle (which hides this whole
-      // section) lives in MENU VISIBILITY with every other strategy's.
-      { key: "BN_EMA_RSI_ST_V2_PAPER_ENABLED", label: "BN_EMA_RSI_ST_V2 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new NIFTY BANK paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode" },
-
-      // ── The entry rule: EMA alignment + RSI gate, on a closed candle ──
-      { key: "BN_EMA_RSI_ST_V2_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "The faster of the two moving averages. A CE needs it ABOVE the slow one, a PE below. Smaller reacts to a turn sooner and gives more (and noisier) signals; larger waits for a clearer trend.", default: "20", subheader: "Signal (EMA + RSI)" },
-      { key: "BN_EMA_RSI_ST_V2_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.SESSION, desc: "The slower moving average the fast one is measured against. Raise it and the trend has to be older and better established before a cross counts; lower it and crosses come thick and fast.", default: "50" },
-      { key: "BN_EMA_RSI_ST_V2_RSI_PERIOD", label: "RSI Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How many candles the RSI is measured over. 14 is the standard and what the rule assumes.", default: "14" },
-      { key: "BN_EMA_RSI_ST_V2_RSI_CE_MIN", label: "CE needs RSI above", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A CE (call) is only bought when RSI on the signal candle is above this. Raise it for fewer but stronger buys; lower it and weak, barely-positive momentum starts qualifying.", default: "52" },
-      { key: "BN_EMA_RSI_ST_V2_RSI_PE_MAX", label: "PE needs RSI below", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A PE (put) is only bought when RSI on the signal candle is below this. Lower it for fewer but stronger sells; raise it and mild weakness starts counting as a signal.", default: "48" },
-      { key: "BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.SESSION, desc: "The candle that crosses only ARMS the setup — entry waits for the NEXT candle to close in the same direction. Costs you the first candle of the move but skips the crosses that immediately snap back. OFF enters on the crossing candle itself.", default: "true" },
-
-      // ── Stops. The SuperTrend is the whole of it. ──
-      { key: "BN_EMA_RSI_ST_V2_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR length behind the SuperTrend line. THIS LINE IS THE ONLY STOP — it is a trailing exit, not an entry filter, so it never blocks a trade from being taken. Longer = a slower, looser trail that gives the trade more room. Note the ATR it measures is a BANKNIFTY ATR, so the same period sits further from price in points than it does on NIFTY.", default: "10", subheader: "Stops (SuperTrend trail — the only stop)" },
-      { key: "BN_EMA_RSI_ST_V2_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs away from price the SuperTrend line sits. Smaller = a tighter trail that banks small moves but gets shaken out often; larger = more breathing room and bigger losses when it is finally hit. Again: this is the ONLY stop, not an entry filter.", default: "2" },
-
-      // ── Session window ──
-      { key: "BN_EMA_RSI_ST_V2_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST). The open is deliberately skipped — the first hour is noisy and its crosses reverse, and BANKNIFTY's opening swing is the widest of the day. Move it earlier for more trades and more false starts.", default: "10:30", subheader: "Session window" },
-      { key: "BN_EMA_RSI_ST_V2_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries after this time (IST). A trade opened later has too little of the day left to work. A position already open is not affected.", default: "13:00" },
-      { key: "BN_EMA_RSI_ST_V2_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so the EMAs, RSI and SuperTrend start the day already settled. Too few and the first signals are computed from half-formed indicators.", default: "5" },
-
-      // ── Day-level guards ──
-
-      // ── Backtest ──
     ],
   },
   // ── NIFTY FUTURES — one FUT_* twin per options strategy above. Futures are
@@ -1396,16 +1273,13 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
       { key: "TG_FUT_RSI_PIVOT_ST_STARTED", label: "FUT RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a FUT RSI Pivot ST session starts.", default: "true" },
-      { key: "TG_BN_PIVOT_RSI_ST_STARTED", label: "BN Pivot RSI ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN Pivot RSI ST session starts.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_STARTED", label: "EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST_V2 session starts.", default: "true" },
       { key: "TG_FUT_EMA_RSI_ST_V2_STARTED", label: "FUT EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a FUT EMA_RSI_ST_V2 session starts.", default: "true" },
-      { key: "TG_BN_EMA_RSI_ST_V2_STARTED", label: "BN_EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_EMA_RSI_ST_V2 (NIFTY BANK) session starts.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_STARTED", label: "ST_RSI_PIV_BB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ST_RSI_PIV_BB session starts.", default: "true" },
       { key: "TG_FUT_ST_RSI_PIV_BB_STARTED", label: "FUT ST_RSI_PIV_BB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a FUT ST_RSI_PIV_BB session starts.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_STARTED", label: "SAIL_VWAP_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_VWAP_ST session starts.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_STARTED", label: "PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a PIVOT_EMA_ST session starts.", default: "true" },
       { key: "TG_FUT_PIVOT_EMA_ST_STARTED", label: "FUT PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a FUT PIVOT_EMA_ST session starts.", default: "true" },
-      { key: "TG_BN_PIVOT_EMA_ST_STARTED", label: "BN_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_PIVOT_EMA_ST (NIFTY BANK) session starts.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_STARTED", label: "SAIL_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_PIVOT_EMA_ST session starts.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STARTED", label: "GAP_RUNAWAY — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAP_runAway__Kirubakaran (NIFTY) session starts.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_STARTED", label: "GAP_RUNAWAY Stocks — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when the GAP_runAway stock scanner starts.", default: "true" },
@@ -1428,16 +1302,13 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
       { key: "TG_FUT_RSI_PIVOT_ST_ENTRY", label: "FUT RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT RSI Pivot ST entry.", default: "true" },
-      { key: "TG_BN_PIVOT_RSI_ST_ENTRY", label: "BN Pivot RSI ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST entry.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_ENTRY", label: "EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 entry.", default: "true" },
       { key: "TG_FUT_EMA_RSI_ST_V2_ENTRY", label: "FUT EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT EMA_RSI_ST_V2 entry.", default: "true" },
-      { key: "TG_BN_EMA_RSI_ST_V2_ENTRY", label: "BN_EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) entry.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_ENTRY", label: "ST_RSI_PIV_BB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB entry.", default: "true" },
       { key: "TG_FUT_ST_RSI_PIV_BB_ENTRY", label: "FUT ST_RSI_PIV_BB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT ST_RSI_PIV_BB entry.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_ENTRY", label: "SAIL_VWAP_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST entry.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_ENTRY", label: "PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST entry.", default: "true" },
       { key: "TG_FUT_PIVOT_EMA_ST_ENTRY", label: "FUT PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT PIVOT_EMA_ST entry.", default: "true" },
-      { key: "TG_BN_PIVOT_EMA_ST_ENTRY", label: "BN_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_PIVOT_EMA_ST (NIFTY BANK) entry.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_ENTRY", label: "SAIL_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST entry.", default: "true" },
       { key: "TG_GAP_RUNAWAY_ENTRY", label: "GAP_RUNAWAY — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) entry.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_ENTRY", label: "GAP_RUNAWAY Stocks — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner entry.", default: "true" },
@@ -1460,16 +1331,13 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
       { key: "TG_FUT_RSI_PIVOT_ST_EXIT", label: "FUT RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT RSI Pivot ST exit.", default: "true" },
-      { key: "TG_BN_PIVOT_RSI_ST_EXIT", label: "BN Pivot RSI ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST exit.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_EXIT", label: "EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 exit.", default: "true" },
       { key: "TG_FUT_EMA_RSI_ST_V2_EXIT", label: "FUT EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT EMA_RSI_ST_V2 exit.", default: "true" },
-      { key: "TG_BN_EMA_RSI_ST_V2_EXIT", label: "BN_EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) exit.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_EXIT", label: "ST_RSI_PIV_BB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB exit.", default: "true" },
       { key: "TG_FUT_ST_RSI_PIV_BB_EXIT", label: "FUT ST_RSI_PIV_BB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT ST_RSI_PIV_BB exit.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_EXIT", label: "SAIL_VWAP_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST exit.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_EXIT", label: "PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST exit.", default: "true" },
       { key: "TG_FUT_PIVOT_EMA_ST_EXIT", label: "FUT PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every FUT PIVOT_EMA_ST exit.", default: "true" },
-      { key: "TG_BN_PIVOT_EMA_ST_EXIT", label: "BN_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_PIVOT_EMA_ST (NIFTY BANK) exit.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_EXIT", label: "SAIL_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST exit.", default: "true" },
       { key: "TG_GAP_RUNAWAY_EXIT", label: "GAP_RUNAWAY — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) exit.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_EXIT", label: "GAP_RUNAWAY Stocks — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner exit.", default: "true" },
@@ -1500,16 +1368,13 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
       { key: "TG_FUT_RSI_PIVOT_ST_DAYREPORT", label: "FUT RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a FUT RSI Pivot ST day summary on stop.", default: "true" },
-      { key: "TG_BN_PIVOT_RSI_ST_DAYREPORT", label: "BN Pivot RSI ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN Pivot RSI ST day summary on stop.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_DAYREPORT", label: "EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST_V2 day summary on stop.", default: "true" },
       { key: "TG_FUT_EMA_RSI_ST_V2_DAYREPORT", label: "FUT EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a FUT EMA_RSI_ST_V2 day summary on stop.", default: "true" },
-      { key: "TG_BN_EMA_RSI_ST_V2_DAYREPORT", label: "BN_EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_EMA_RSI_ST_V2 (NIFTY BANK) day summary on stop.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_DAYREPORT", label: "ST_RSI_PIV_BB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an ST_RSI_PIV_BB day summary on stop.", default: "true" },
       { key: "TG_FUT_ST_RSI_PIV_BB_DAYREPORT", label: "FUT ST_RSI_PIV_BB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a FUT ST_RSI_PIV_BB day summary on stop.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_DAYREPORT", label: "SAIL_VWAP_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_VWAP_ST day summary on stop.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_DAYREPORT", label: "PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a PIVOT_EMA_ST day summary on stop.", default: "true" },
       { key: "TG_FUT_PIVOT_EMA_ST_DAYREPORT", label: "FUT PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a FUT PIVOT_EMA_ST day summary on stop.", default: "true" },
-      { key: "TG_BN_PIVOT_EMA_ST_DAYREPORT", label: "BN_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_PIVOT_EMA_ST (NIFTY BANK) day summary on stop.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_DAYREPORT", label: "SAIL_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_PIVOT_EMA_ST day summary on stop.", default: "true" },
       { key: "TG_GAP_RUNAWAY_DAYREPORT", label: "GAP_RUNAWAY — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a GAP_runAway__Kirubakaran (NIFTY) day summary on stop.", default: "true" },
       { key: "TG_GAP_RUNAWAY_STK_DAYREPORT", label: "GAP_RUNAWAY Stocks — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the stock-scanner day summary on stop.", default: "true" },
@@ -1605,7 +1470,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_ADVISOR",        label: "Show Settings Advisor",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Settings Advisor menu.", default: "true" },
       { key: "UI_SHOW_OI_MONITOR",     label: "Show OI Monitor",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show the OI Monitor menu — read-only per-strike Open Interest ladder, walls and PCR. Research page: places no orders.", default: "false" },
       { key: "UI_SHOW_SWING_SCANNER",  label: "Show Swing Scanner",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Swing Scanner menu — screens stocks with your active strategies and can place REAL Zerodha delivery orders. Off by default because it is the one page with no dry-run gate.", default: "false" },
-      { key: "UI_SHOW_BANKNIFTY",      label: "Show BANK NIFTY group",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BANK NIFTY parent group in the sidebar. The NIFTY BANK strategies nest under it, the way the NIFTY strategies nest under NIFTY.", default: "true" },
       { key: "UI_SHOW_COMMODITY",      label: "Show COMMODITY group",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY (MCX crude / gold / silver) parent group in the sidebar. It only appears once one of the commodity pages below is switched on.", default: "true" },
       { key: "UI_SHOW_EDGE_ANALYTICS_BUTTON", label: "Show Edge Analytics button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Edge Analytics button on the Consolidation Report page.", default: "true" },
       { key: "EMA_RSI_ST_MODE_ENABLED",     label: "EMA_RSI_ST Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST menu and settings.", default: "true", subheader: "Strategy master toggles" },
@@ -1625,16 +1489,13 @@ const SETTINGS_SCHEMA = [
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
       { key: "FUT_RSI_PIVOT_ST_MODE_ENABLED", label: "FUT RSI Pivot ST Mode (NIFTY Futures)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the FUT RSI Pivot ST menu and settings. The RSI Pivot ST rules on the NIFTY future (CE signal = LONG, PE signal = SHORT), with its own FUT settings and its own position — it runs side by side with the options RSI Pivot ST.", default: "true" },
-      { key: "BN_PIVOT_RSI_ST_MODE_ENABLED", label: "BN Pivot RSI ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN Pivot RSI ST menu and settings. This is the NIFTY BANK replica of RSI Pivot ST.", default: "true" },
       { key: "EMA_RSI_ST_V2_MODE_ENABLED", label: "EMA_RSI_ST_V2 Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST_V2 menu and settings. A separate strategy from EMA_RSI_ST, not a mode of it. Ships OFF because V2 is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "FUT_EMA_RSI_ST_V2_MODE_ENABLED", label: "FUT EMA_RSI_ST_V2 Mode (NIFTY Futures)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the FUT EMA_RSI_ST_V2 menu and settings. The EMA_RSI_ST_V2 rules on the NIFTY future (CE signal = LONG, PE signal = SHORT), with its own FUT settings and its own position — it runs side by side with the options EMA_RSI_ST_V2. Ships OFF, like EMA_RSI_ST_V2.", default: "false" },
-      { key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN EMA_RSI_ST_V2 menu and settings. The same rules as EMA_RSI_ST_V2 but traded on NIFTY BANK, with its own settings and its own position — the two can run side by side. Ships OFF and unproven.", default: "false" },
       { key: "ST_RSI_PIV_BB_MODE_ENABLED", label: "ST_RSI_PIV_BB Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ST_RSI_PIV_BB menu and settings — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle. Ships OFF because it is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "FUT_ST_RSI_PIV_BB_MODE_ENABLED", label: "FUT ST_RSI_PIV_BB Mode (NIFTY Futures)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the FUT ST_RSI_PIV_BB menu and settings. The ST_RSI_PIV_BB rules on the NIFTY future (CE signal = LONG, PE signal = SHORT), with its own FUT settings and its own position — it runs side by side with the options ST_RSI_PIV_BB. Ships OFF, like ST_RSI_PIV_BB.", default: "false" },
       { key: "SAIL_VWAP_ST_MODE_ENABLED", label: "SAIL_VWAP_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven — turn it on to backtest and paper-trade it.", default: "false" },
       { key: "PIVOT_EMA_ST_MODE_ENABLED", label: "PIVOT_EMA_ST Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper only. On by default; unproven — never traded.", default: "true" },
       { key: "FUT_PIVOT_EMA_ST_MODE_ENABLED", label: "FUT PIVOT_EMA_ST Mode (NIFTY Futures)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the FUT PIVOT_EMA_ST menu and settings. The PIVOT_EMA_ST rules on the NIFTY future (CE signal = LONG, PE signal = SHORT), with its own FUT settings and its own position — it runs side by side with the options PIVOT_EMA_ST.", default: "true" },
-      { key: "BN_PIVOT_EMA_ST_MODE_ENABLED", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN_PIVOT_EMA_ST menu (under BANK NIFTY) and its settings, and include it in Start All. The PIVOT_EMA_ST rules on NIFTY BANK, with its own settings and position. On by default; unproven — never traded.", default: "true" },
       { key: "GAP_RUNAWAY_MODE_ENABLED", label: "GAP_runAway__Kirubakaran Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close.", default: "true" },
       { key: "GAP_RUNAWAY_STK_MODE_ENABLED", label: "GAP_runAway Stock Scanner Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY SCANNER menu (under STOCKS) and its settings, and include it in Start All. Same rules over F&O stocks, paper-traded as intraday shares.", default: "true" },
       { key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_PIVOT_EMA_ST menu (under STOCKS) and its settings, include it in Start All, and start streaming SAIL prices. The PIVOT_EMA_ST rules on SAIL stock options. On by default; unproven — never traded.", default: "true" },
@@ -1721,10 +1582,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_FUT_RSI_PIVOT_ST_PAPER",    label: "FUT RSI Pivot ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under FUT RSI Pivot ST.", default: "true" },
       { key: "UI_SHOW_FUT_RSI_PIVOT_ST_HISTORY",  label: "FUT RSI Pivot ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under FUT RSI Pivot ST.", default: "true" },
 
-      // ── BN Pivot RSI ST submenu (NIFTY BANK) ──
-      { key: "UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST", label: "BN Pivot RSI ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BN Pivot RSI ST.", default: "false", subheader: "BN Pivot RSI ST sub-menus" },
-      { key: "UI_SHOW_BN_PIVOT_RSI_ST_PAPER",    label: "BN Pivot RSI ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN Pivot RSI ST.", default: "true" },
-      { key: "UI_SHOW_BN_PIVOT_RSI_ST_HISTORY",  label: "BN Pivot RSI ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN Pivot RSI ST.", default: "true" },
 
       // ── EMA_RSI_ST_V2 submenu ── all OFF: V2 is unproven, so nothing appears
       // in the sidebar until you deliberately switch each page on.
@@ -1734,11 +1591,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_FUT_EMA_RSI_ST_V2_BACKTEST", label: "FUT EMA_RSI_ST_V2 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under FUT EMA_RSI_ST_V2.", default: "false", subheader: "FUT EMA_RSI_ST_V2 sub-menus" },
       { key: "UI_SHOW_FUT_EMA_RSI_ST_V2_PAPER",    label: "FUT EMA_RSI_ST_V2 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under FUT EMA_RSI_ST_V2.", default: "false" },
       { key: "UI_SHOW_FUT_EMA_RSI_ST_V2_HISTORY",  label: "FUT EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under FUT EMA_RSI_ST_V2.", default: "false" },
-      // ── BN EMA_RSI_ST_V2 submenu ── all OFF for the same reason: unproven, so
-      // nothing appears until it is asked for.
-      { key: "UI_SHOW_BN_EMA_RSI_ST_V2_BACKTEST", label: "BN EMA_RSI_ST_V2 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false", subheader: "BN EMA_RSI_ST_V2 sub-menus" },
-      { key: "UI_SHOW_BN_EMA_RSI_ST_V2_PAPER",    label: "BN EMA_RSI_ST_V2 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
-      { key: "UI_SHOW_BN_EMA_RSI_ST_V2_HISTORY",  label: "BN EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
       // ── ST_RSI_PIV_BB submenu ── defaults match what sharedNav falls back to
       // (Paper/History on); the whole group stays hidden
       // until ST_RSI_PIV_BB_MODE_ENABLED is switched on.
@@ -1752,14 +1604,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_SAIL_VWAP_ST_BACKTEST", label: "SAIL_VWAP_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SAIL VWAP+ST.", default: "false", subheader: "SAIL_VWAP_ST sub-menus" },
       { key: "UI_SHOW_SAIL_VWAP_ST_PAPER",    label: "SAIL_VWAP_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL VWAP+ST.", default: "true" },
       { key: "UI_SHOW_SAIL_VWAP_ST_HISTORY",  label: "SAIL_VWAP_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL VWAP+ST.", default: "true" },
-      // ── PIVOT_EMA_ST family submenus (NIFTY / BANK NIFTY / STOCKS) ── no
+      // ── PIVOT_EMA_ST family submenus (NIFTY / STOCKS) ── no
       // Backtest (none exists); defaults match what sharedNav falls back to.
       { key: "UI_SHOW_PIVOT_EMA_ST_PAPER",    label: "PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under PIVOT_EMA_ST.", default: "true", subheader: "PIVOT_EMA_ST sub-menus" },
       { key: "UI_SHOW_PIVOT_EMA_ST_HISTORY",  label: "PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under PIVOT_EMA_ST.", default: "true" },
       { key: "UI_SHOW_FUT_PIVOT_EMA_ST_PAPER",    label: "FUT PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under FUT PIVOT_EMA_ST.", default: "true", subheader: "FUT PIVOT_EMA_ST sub-menus" },
       { key: "UI_SHOW_FUT_PIVOT_EMA_ST_HISTORY",  label: "FUT PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under FUT PIVOT_EMA_ST.", default: "true" },
-      { key: "UI_SHOW_BN_PIVOT_EMA_ST_PAPER",    label: "BN_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN PIVOT_EMA_ST (NIFTY BANK).", default: "true" },
-      { key: "UI_SHOW_BN_PIVOT_EMA_ST_HISTORY",  label: "BN_PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN PIVOT_EMA_ST (NIFTY BANK).", default: "true" },
       { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_PAPER",    label: "SAIL_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL PIVOT_EMA_ST.", default: "true" },
       // ── GAP_RUNAWAY submenus (NIFTY + STOCKS) ── no Backtest (none exists);
       // defaults match sharedNav's fall-backs.
@@ -1846,16 +1696,13 @@ const MODE_SECTION_TITLES = {
   simple930: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   fut_rsi_pivot_st: "FUT RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha — NIFTY Futures",
-  bn_pivot_rsi_st: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   ema_rsi_st_v2: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
   fut_ema_rsi_st_v2: "FUT EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha — NIFTY Futures",
-  bn_ema_rsi_st_v2: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
   st_rsi_piv_bb: "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha",
   fut_st_rsi_piv_bb: "FUT ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha — NIFTY Futures",
   sail_vwap_st: "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha",
   pivot_ema_st: "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
   fut_pivot_ema_st: "FUT PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha — NIFTY Futures",
-  bn_pivot_ema_st: "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
   sail_pivot_ema_st: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
   gap_runaway: "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha",
   gap_runaway_stk: "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)",
@@ -1868,11 +1715,10 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), bn_pivot_rsi_st: new Set(), ema_rsi_st_v2: new Set(), bn_ema_rsi_st_v2: new Set(), early_bird: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), ema_rsi_st_v2: new Set(), early_bird: new Set() };
 _MODE_KEYS.st_rsi_piv_bb = new Set();
 _MODE_KEYS.sail_vwap_st = new Set();
 _MODE_KEYS.pivot_ema_st = new Set();
-_MODE_KEYS.bn_pivot_ema_st = new Set();
 _MODE_KEYS.sail_pivot_ema_st = new Set();
 _MODE_KEYS.gap_runaway = new Set();
 _MODE_KEYS.gap_runaway_stk = new Set();
@@ -2875,18 +2721,14 @@ router.get("/", (req, res) => {
   const earlyBirdModeOn = (envData["EARLYBIRD_MODE_ENABLED"] ?? process.env.EARLYBIRD_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const simple930ModeOn = (envData["SIMPLE930_MODE_ENABLED"] ?? process.env.SIMPLE930_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  const bnPivotRsiStModeOn = (envData["BN_PIVOT_RSI_ST_MODE_ENABLED"] ?? process.env.BN_PIVOT_RSI_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // V2 defaults to "false", not "true" — an unproven strategy stays hidden until asked for.
   const emaRsiStV2ModeOn = (envData["EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
-  // The NIFTY BANK sibling — also "false" by default.
-  const bnEmaRsiStV2ModeOn = (envData["BN_EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // ST_RSI_PIV_BB — also "false" by default, like V2.
   const stRsiPivBbModeOn = (envData["ST_RSI_PIV_BB_MODE_ENABLED"] ?? process.env.ST_RSI_PIV_BB_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // SAIL_VWAP_ST — also "false" by default.
   const sailVwapStModeOn = (envData["SAIL_VWAP_ST_MODE_ENABLED"] ?? process.env.SAIL_VWAP_ST_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // PIVOT_EMA_ST family — "true" by default (the user wants Start All to start them).
   const pivotEmaStModeOn     = (envData["PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  const bnPivotEmaStModeOn   = (envData["BN_PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.BN_PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const sailPivotEmaStModeOn = (envData["SAIL_PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // GAP_RUNAWAY + its stock scanner — "true" by default (Start All starts them).
   const gapRunawayModeOn     = (envData["GAP_RUNAWAY_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_MODE_ENABLED ?? "true").toLowerCase() === "true";
@@ -2926,13 +2768,10 @@ router.get("/", (req, res) => {
     "PREV ORB SCALP STRATEGY (Prev-day range + 15m/3m) — Zerodha": prevOrbScalpModeOn,
     "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha":     simple930ModeOn,
     "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,
-    "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": bnPivotRsiStModeOn,
     "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha": emaRsiStV2ModeOn,
-    "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha": bnEmaRsiStV2ModeOn,
     "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha": stRsiPivBbModeOn,
     "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha": sailVwapStModeOn,
     "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": pivotEmaStModeOn,
-    "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": bnPivotEmaStModeOn,
     "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": sailPivotEmaStModeOn,
     "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha": gapRunawayModeOn,
     "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)": gapRunawayStkModeOn,
@@ -2991,7 +2830,7 @@ router.get("/", (req, res) => {
   // Server Control has no schema fields but still needs an index entry.
   railItems.push({ group: "System", id: "server-control", icon: "🔄", nav: "Server Control", count: 0 });
 
-  const RAIL_GROUP_ORDER = ["NIFTY", "NIFTY FUTURES", "BANK NIFTY", "COMMODITY", "STOCKS", "Trading", "System"];
+  const RAIL_GROUP_ORDER = ["NIFTY", "NIFTY FUTURES", "COMMODITY", "STOCKS", "Trading", "System"];
   const railHtml = RAIL_GROUP_ORDER.map(g => {
     const items = railItems.filter(r => r.group === g);
     if (!items.length) return "";

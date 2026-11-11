@@ -51,7 +51,6 @@ const PAPER_SOURCES = [
   { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_paper_trades.json" },
   { mode: "FUT_EMA_RSI_ST_V2", file: "fut_ema_rsi_st_v2_paper_trades.json" }, // NIFTY FUTURES twin
   // Same engine, NIFTY BANK — a different underlying is a different edge.
-  { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_paper_trades.json" },
   // ST_RSI_PIV_BB — its own rules, its own edge.
   { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
   { mode: "FUT_ST_RSI_PIV_BB", file: "fut_st_rsi_piv_bb_paper_trades.json" }, // NIFTY FUTURES twin
@@ -60,7 +59,6 @@ const PAPER_SOURCES = [
   // PIVOT_EMA_ST family — one rule set, three underlyings = three edges.
   { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
   { mode: "FUT_PIVOT_EMA_ST", file: "fut_pivot_ema_st_paper_trades.json" }, // NIFTY FUTURES twin
-  { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_paper_trades.json" },
   { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   // GAP_RUNAWAY — NIFTY options and the stock scanner are two different edges.
   { mode: "GAP_RUNAWAY", file: "gap_runaway_paper_trades.json" },
@@ -79,7 +77,6 @@ const PAPER_SOURCES = [
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   { mode: "FUT_RSI_PIVOT_ST", file: "fut_rsi_pivot_st_paper_trades.json" }, // NIFTY FUTURES twin
   // NIFTY BANK, monthly options — same rules, separate edge.
-  { mode: "BN_PIVOT_RSI_ST", file: "bn_pivot_rsi_st_paper_trades.json" },
   { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
   // EarlyBird: cash equity, sides are LONG/SHORT rather than CE/PE.
   { mode: "EARLYBIRD", file: "early_bird_paper_trades.json" },
@@ -394,13 +391,11 @@ ${multiSelectCSS()}
     .badge-FUT_EMA_RSI_ST{background:rgba(245,158,11,0.12);color:#3b82f6;border:0.5px solid #f59e0b;}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-FUT_EMA_RSI_ST_V2{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
-    .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;border:0.5px solid rgba(45,212,191,0.3);}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
     .badge-FUT_ST_RSI_PIV_BB{background:rgba(245,158,11,0.12);color:#a3e635;border:0.5px solid #f59e0b;}
     .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;border:0.5px solid rgba(253,164,175,0.3);}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-FUT_PIVOT_EMA_ST{background:rgba(245,158,11,0.12);color:#38bdf8;border:0.5px solid #f59e0b;}
-    .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;border:0.5px solid rgba(244,114,182,0.3);}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;border:0.5px solid rgba(252,211,77,0.3);}
     .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);}
     .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;border:0.5px solid rgba(192,132,252,0.3);}
