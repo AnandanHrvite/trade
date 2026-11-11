@@ -483,6 +483,15 @@ check("the paper routes take their shared calls from marketData, not the broker"
   }
 });
 
+check("Start All runs a bounded pool, not one start after another", () => {
+  const app = fs.readFileSync(path.join(SRC, "app.js"), "utf8");
+  const i = app.indexOf("async function _startAll(endpoints)");
+  assert.ok(i > 0, "_startAll not found");
+  const body = app.slice(i, app.indexOf("\n}\n", i));
+  assert.ok(/START_ALL_CONCURRENCY/.test(body) && /Promise\.all\(pool\)/.test(body), "Start All is not a concurrency pool");
+  assert.ok(/_startAllClickBusy/.test(app), "the double-click guard is gone");
+});
+
 (async () => {
   for (const c of cases) {
     restore();

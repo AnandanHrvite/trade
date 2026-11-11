@@ -1563,6 +1563,8 @@ app.get("/", (req, res) => {
   // Built from the roster so it cannot drift from the endpoints actually called.
   const startAllEndpointLabels = {};
   for (const m of startAllModes) startAllEndpointLabels[m.paper] = `${m.label} Paper`;
+  // How many /start calls the Start-All button runs at once (Settings → Server & Broker).
+  const startAllConcurrency = Math.max(1, Math.min(10, parseInt(process.env.START_ALL_CONCURRENCY || "5", 10) || 5));
 
   // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
   // top-bar date range, summed over every ENABLED strategy that trades through
@@ -3071,25 +3073,53 @@ function _prettyEndpoint(url){
 // navigate away mid-run — see the comment there.
 var _startAllBusy = false;
 
+// One /start call → its outcome. Never throws.
+async function _startOne(ep){
+  try {
+    var r = await secretFetch(ep);
+    if (!r) return { ok:false, f:{ endpoint: ep, error: 'No response from server' } };
+    var body = null;
+    try { body = await r.json(); } catch(_) { /* non-JSON body */ }
+    if (r.ok && (!body || body.success !== false)) return { ok:true };
+    var msg = (body && (body.error || body.message)) || ('HTTP ' + r.status);
+    return { ok:false, f:{ endpoint: ep, status: r.status, error: msg } };
+  } catch(e){
+    return { ok:false, f:{ endpoint: ep, error: (e && e.message) || 'Network error' } };
+  }
+}
+
+// Starts are independent (each strategy owns its own sharedSocketState slot and
+// start reservation, and the broker calls they share are de-duplicated server
+// side by services/marketData.js), so they run START_ALL_CONCURRENCY at a time
+// instead of one after another. 1 = the old sequential behaviour.
+var START_ALL_CONCURRENCY = ${startAllConcurrency};
+
 async function _startAll(endpoints){
   var results = { successes: [], failures: [] };
-  for (var i = 0; i < endpoints.length; i++){
-    var ep = endpoints[i];
-    try {
-      var r = await secretFetch(ep);
-      if (!r){ results.failures.push({ endpoint: ep, error: 'No response from server' }); continue; }
-      var body = null;
-      try { body = await r.json(); } catch(_) { /* non-JSON body */ }
-      if (r.ok && (!body || body.success !== false)){
-        results.successes.push({ endpoint: ep });
-      } else {
-        var msg = (body && (body.error || body.message)) || ('HTTP ' + r.status);
-        results.failures.push({ endpoint: ep, status: r.status, error: msg });
-      }
-    } catch(e){
-      results.failures.push({ endpoint: ep, error: (e && e.message) || 'Network error' });
+  function record(ep, out){
+    if (out.ok) results.successes.push({ endpoint: ep });
+    else results.failures.push(out.f);
+  }
+  if (!endpoints.length) return results;
+  // The FIRST start runs alone: if the API secret is not yet in this session it
+  // is prompted for exactly once (parallel 403s would stack N prompts), and its
+  // token / holiday / spot checks warm the shared server-side answers.
+  var first = await _startOne(endpoints[0]);
+  record(endpoints[0], first);
+  // Secret still missing (prompt cancelled / rejected) → the rest one at a time,
+  // exactly as before, so each start can prompt on its own.
+  var authBlocked = !first.ok && (!first.f.status || first.f.status === 403);
+  var limit = authBlocked ? 1 : START_ALL_CONCURRENCY;
+  var next = 1;
+  async function worker(){
+    while (next < endpoints.length){
+      var ep = endpoints[next++];
+      record(ep, await _startOne(ep));
     }
   }
+  var pool = [];
+  for (var w = 0; w < Math.min(limit, endpoints.length - 1); w++) pool.push(worker());
+  await Promise.all(pool);
   return results;
 }
 
