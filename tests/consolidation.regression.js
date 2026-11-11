@@ -17,6 +17,8 @@
  *   GROUP 5 — retired copy books + post-exit join + the page itself
  */
 
+// UI_THEME=auto resolves by time of day; pin it so the page script under test is the same at any hour.
+process.env.UI_THEME = "dark";
 const assert = require("assert");
 const fs     = require("fs");
 const os     = require("os");
