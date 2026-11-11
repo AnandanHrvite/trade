@@ -4647,6 +4647,10 @@ server.listen(PORT, HOST, () => {
   try { require("./utils/postExitTracker").resume(); }
   catch (e) { console.error(`[STARTUP] post-exit resume failed: ${e.message}`); }
 
+  // ── Daily trade CSV + summary JSON → ~/trading-data/exports (≥16:30 IST) ───
+  try { require("./utils/dailyExport").start(); }
+  catch (e) { console.error(`[STARTUP] daily export scheduler failed: ${e.message}`); }
+
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();
 
