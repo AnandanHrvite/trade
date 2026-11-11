@@ -19,8 +19,6 @@ The engine falls back to one value; a status panel or log banner prints another.
 
 | Key | Engine uses | UI shows | Where |
 |---|---|---|---|
-| `BB_RSI_ENTRY_END` | `14:30` | `15:10` | `src/routes/bbRsiPaper.js` |
-| `BB_RSI_ENTRY_START` | `09:21` | `09:20` | `src/routes/bbRsiPaper.js` |
 | `ORB_BODY_ATR_MULT` | `0` | `0.6` | `src/routes/orbBacktest.js` |
 | `ORB_GAP_OR_MULT` | `0` | `3` | `src/routes/orbBacktest.js` |
 | `ORB_OR_ATR_MAX` | `0` | `2.5` | `src/routes/orbBacktest.js` |
