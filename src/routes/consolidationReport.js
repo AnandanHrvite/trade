@@ -33,6 +33,7 @@ const { VIX_SYMBOL } = require("../services/vixFilter");
 const fyers = require("../config/fyers");
 const { resolveTheme } = require("../utils/theme");
 const { istDayFromAny } = require("../utils/tradeUtils");
+const { marketOf } = require("../utils/consolidationCore");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -158,9 +159,19 @@ const PAPER_HISTORY_PATH = {
   EARLYBIRD:         "/early-bird-paper/history",
 };
 
-// Which table a strategy's column sits in.
+// Which table a strategy's column sits in: its market, by the same defaults the
+// consolidated page uses (consolidationCore.marketOf on the book's file key), so
+// SAIL_VWAP_ST and the gap-runaway stock scanner get their own SAIL / STOCKS
+// tables and a new market's book lands in its own table with no edit here.
+const _BOOK_KEY = Object.fromEntries(PAPER_SOURCES.map((s) => [s.mode, s.file.replace(/_paper_trades\.json$/, "")]));
 function groupOf(mode) {
-  return "NIFTY";
+  return marketOf(_BOOK_KEY[mode] || String(mode).toLowerCase(), {});
+}
+// Table order; any other market follows in name order.
+const GROUP_ORDER = ["NIFTY", "NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL", "STOCKS"];
+function groupsOf(modes) {
+  const present = new Set(modes.map(groupOf));
+  return [...GROUP_ORDER.filter((g) => present.has(g)), ...[...present].filter((g) => !GROUP_ORDER.includes(g)).sort()];
 }
 
 function safeRead(p) {
@@ -437,7 +448,7 @@ ${multiSelectCSS()}
       <label>Market</label>
       <div class="seg" id="segMkt">
         <button data-mkt="all" class="on">All</button>
-        ${["NIFTY"].filter(g => enabled.some(s => groupOf(s.mode) === g)).map(g => `<button data-mkt="${g}">${g}</button>`).join("")}
+        ${groupsOf(enabled.map(s => s.mode)).map(g => `<button data-mkt="${g}">${g}</button>`).join("")}
       </div>
       <label>Strategy</label>
       ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All strategies')}
@@ -469,7 +480,7 @@ const HIST_PATH  = ${JSON.stringify(PAPER_HISTORY_PATH)};   // mode → paper hi
 const COL_GROUP  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.group])))};
 const COL_LABEL  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.col])))};
 const GROUP_OF   = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, groupOf(s.mode)])))};
-const GROUPS     = ['NIFTY'];
+const GROUPS     = ${JSON.stringify(groupsOf(enabled.map(s => s.mode)))};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
