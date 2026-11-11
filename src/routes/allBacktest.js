@@ -50,14 +50,6 @@ const SAIL_VWAP_ST_KEY = "SAIL_VWAP_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
 // MUST match the RESULT_KEY earlyBirdBacktest.js saves under.
 const EARLYBIRD_KEY    = "EARLY_BIRD_BACKTEST";
-// NIFTY FUTURES twins — each MUST match the key its fut*Backtest.js saves under.
-const FUT_EMA_RSI_ST_KEY    = "FUT_EMA_RSI_ST_BACKTEST";
-const FUT_EMA_RSI_ST_V2_KEY = "FUT_EMA_RSI_ST_V2_BACKTEST";
-const FUT_BB_RSI_KEY        = "FUT_BB_RSI_BACKTEST";
-const FUT_EMA9_VWAP_KEY     = "FUT_EMA9_VWAP";   // futEma9vwapBacktest.js saves under ACTIVE
-const FUT_RSI_PIVOT_ST_KEY  = "FUT_RSI_PIVOT_ST_BACKTEST";
-// One amber futures accent on every twin panel; the text keeps the original's colour.
-const _futColor = (fg) => ({ bg: "rgba(245,158,11,0.12)", fg, border: "#f59e0b" });
 
 function _modeOn(envKey) {
   return (process.env[envKey] || "true").toLowerCase() === "true";
@@ -176,12 +168,6 @@ router.get("/", (req, res) => {
   const sailVwapStOn = String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() === "true";
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
   const earlyBirdOn  = _modeOn("EARLYBIRD_MODE_ENABLED");
-  // NIFTY FUTURES twins — each gated by its own toggle, with its original's default.
-  const futEmaRsiStOn   = _modeOn("FUT_EMA_RSI_ST_MODE_ENABLED");
-  const futEmaRsiStV2On = String(process.env.FUT_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true";
-  const futBbRsiOn      = _modeOn("FUT_BB_RSI_MODE_ENABLED");
-  const futEma9VwapOn   = _modeOn("FUT_EMA9VWAP_MODE_ENABLED");
-  const futRsiPivotStOn = _modeOn("FUT_RSI_PIVOT_ST_MODE_ENABLED");
 
   const emaRsiStResult    = emaRsiStOn    ? loadResult(EMA_RSI_ST_KEY)    : null;
   const bbRsiResult    = bbRsiOn    ? loadResult(BB_RSI_KEY)    : null;
@@ -197,11 +183,6 @@ router.get("/", (req, res) => {
   const sailVwapStResult = sailVwapStOn ? loadResult(SAIL_VWAP_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
   const earlyBirdResult  = earlyBirdOn  ? loadResult(EARLYBIRD_KEY)  : null;
-  const futEmaRsiStResult   = futEmaRsiStOn   ? loadResult(FUT_EMA_RSI_ST_KEY)    : null;
-  const futEmaRsiStV2Result = futEmaRsiStV2On ? loadResult(FUT_EMA_RSI_ST_V2_KEY) : null;
-  const futBbRsiResult      = futBbRsiOn      ? loadResult(FUT_BB_RSI_KEY)        : null;
-  const futEma9VwapResult   = futEma9VwapOn   ? loadResult(FUT_EMA9_VWAP_KEY)     : null;
-  const futRsiPivotStResult = futRsiPivotStOn ? loadResult(FUT_RSI_PIVOT_ST_KEY)  : null;
 
   const emaRsiStPanel = emaRsiStOn ? renderPanel(
     "EMA_RSI_ST", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
@@ -277,28 +258,6 @@ router.get("/", (req, res) => {
     "EarlyBird", { bg: "rgba(20,184,166,0.12)", fg: "#14b8a6", border: "rgba(20,184,166,0.25)" },
     earlyBirdStrategy && earlyBirdStrategy.NAME ? earlyBirdStrategy.NAME : "EARLY_BIRD",
     EARLYBIRD_KEY, "/early-bird-backtest", earlyBirdResult
-  ) : "";
-  // NIFTY FUTURES twins — same rules as the original on the NIFTY future
-  // (CE = LONG, PE = SHORT); the label says so, like the BN panels do.
-  const futEmaRsiStPanel = futEmaRsiStOn ? renderPanel(
-    "FUT EMA_RSI_ST · NIFTY FUTURES", _futColor("#60a5fa"),
-    "FUT_EMA_RSI_ST", FUT_EMA_RSI_ST_KEY, "/fut_ema_rsi_st-backtest", futEmaRsiStResult
-  ) : "";
-  const futEmaRsiStV2Panel = futEmaRsiStV2On ? renderPanel(
-    "FUT EMA_RSI_ST_V2 · NIFTY FUTURES", _futColor("#38bdf8"),
-    "FUT_EMA_RSI_ST_V2", FUT_EMA_RSI_ST_V2_KEY, "/fut_ema_rsi_st_v2-backtest", futEmaRsiStV2Result
-  ) : "";
-  const futBbRsiPanel = futBbRsiOn ? renderPanel(
-    "FUT BB_RSI · NIFTY FUTURES", _futColor("#fbbf24"),
-    "FUT_BB_RSI", FUT_BB_RSI_KEY, "/fut_bb_rsi-backtest", futBbRsiResult
-  ) : "";
-  const futEma9VwapPanel = futEma9VwapOn ? renderPanel(
-    "FUT EMA9+VWAP · NIFTY FUTURES", _futColor("#06b6d4"),
-    "FUT_EMA9_VWAP", FUT_EMA9_VWAP_KEY, "/fut_ema9vwap-backtest", futEma9VwapResult
-  ) : "";
-  const futRsiPivotStPanel = futRsiPivotStOn ? renderPanel(
-    "FUT RSI PIVOT ST · NIFTY FUTURES", _futColor("#facc15"),
-    "FUT_RSI_PIVOT_ST", FUT_RSI_PIVOT_ST_KEY, "/fut-rsi-pivot-st-backtest", futRsiPivotStResult
   ) : "";
 
   res.setHeader("Content-Type", "text/html");
@@ -441,11 +400,8 @@ ${buildSidebar('allBacktest', false)}
   </div>
 
   ${emaRsiStPanel}
-  ${futEmaRsiStPanel}
   ${emaRsiStV2Panel}
-  ${futEmaRsiStV2Panel}
   ${bbRsiPanel}
-  ${futBbRsiPanel}
   ${paPanel}
   ${orbPanel}
   ${trendPbPanel}
@@ -454,12 +410,10 @@ ${buildSidebar('allBacktest', false)}
   ${prevOrbScalpPanel}
   ${itm20ScalpPanel}
   ${rsiPivotStPanel}
-  ${futRsiPivotStPanel}
-  ${futEma9VwapPanel}
   ${sailVwapStPanel}
   ${simple930Panel}
   ${earlyBirdPanel}
-  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !sailVwapStOn && !simple930On && !earlyBirdOn && !futEmaRsiStOn && !futEmaRsiStV2On && !futBbRsiOn && !futEma9VwapOn && !futRsiPivotStOn) ? `
+  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !sailVwapStOn && !simple930On && !earlyBirdOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

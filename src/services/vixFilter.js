@@ -11,10 +11,6 @@
  *   EMA9_VWAP : EMA9VWAP_VIX_ENABLED (TRI-STATE — unset falls back to the global
  *               VIX_FILTER_ENABLED default so pre-existing behaviour is preserved),
  *               EMA9VWAP_VIX_MAX_ENTRY, EMA9VWAP_VIX_STRONG_ONLY
- *   FUT_BB_RSI    (mode "fut_bb_rsi")   : FUT_BB_RSI_VIX_* — same shape/fallbacks as BB_RSI
- *   FUT_EMA9_VWAP (mode "fut_ema9vwap") : FUT_EMA9VWAP_VIX_* — TRI-STATE like EMA9VWAP
- *   FUT_EMA_RSI_ST / FUT_EMA_RSI_ST_V2 pass no mode → share EMA_RSI_ST's global
- *   VIX_* keys, exactly like their options originals.
  *
  * NOTE: every mode string a call site passes MUST have a branch in getVixEnabled()
  * AND be listed in anyVixEnabled(). An unknown mode silently falls through to the
@@ -43,7 +39,6 @@ const VIX_SYMBOL = "NSE:INDIAVIX-INDEX";
 // ── Per-mode config readers (live — never cached, so toggles apply instantly) ─
 function getVixEnabled(mode = "ema_rsi_st") {
   if (mode === "bb_rsi")    return process.env.BB_RSI_VIX_ENABLED    === "true";
-  if (mode === "fut_bb_rsi") return process.env.FUT_BB_RSI_VIX_ENABLED === "true";
   if (mode === "pa")       return process.env.PA_VIX_ENABLED       === "true";
   if (mode === "orb")      return process.env.ORB_VIX_ENABLED      === "true";
   if (mode === "trend_pb") return process.env.TREND_PB_VIX_ENABLED === "true";
@@ -55,13 +50,6 @@ function getVixEnabled(mode = "ema_rsi_st") {
   // is exactly the behaviour before this key existed.
   if (mode === "ema9vwap") {
     const v = (process.env.EMA9VWAP_VIX_ENABLED || "").trim().toLowerCase();
-    if (v === "true")  return true;
-    if (v === "false") return false;
-    return process.env.VIX_FILTER_ENABLED !== "false";
-  }
-  // FUT_EMA9_VWAP: same TRI-STATE as EMA9_VWAP, on its own FUT_EMA9VWAP_ key.
-  if (mode === "fut_ema9vwap") {
-    const v = (process.env.FUT_EMA9VWAP_VIX_ENABLED || "").trim().toLowerCase();
     if (v === "true")  return true;
     if (v === "false") return false;
     return process.env.VIX_FILTER_ENABLED !== "false";
@@ -79,23 +67,19 @@ function _numOr(raw, def) {
 
 function getVixMaxEntry(mode = "ema_rsi_st") {
   if (mode === "bb_rsi")    return _numOr(parseFloat(process.env.BB_RSI_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20"), 20);
-  if (mode === "fut_bb_rsi") return _numOr(parseFloat(process.env.FUT_BB_RSI_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20"), 20);
   if (mode === "pa")       return _numOr(parseFloat(process.env.PA_VIX_MAX_ENTRY       || process.env.VIX_MAX_ENTRY || "20"), 20);
   if (mode === "orb")      return _numOr(parseFloat(process.env.ORB_VIX_MAX_ENTRY      || process.env.VIX_MAX_ENTRY || "22"), 22);
   if (mode === "trend_pb") return _numOr(parseFloat(process.env.TREND_PB_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "22"), 22);
   if (mode === "ema9vwap") return _numOr(parseFloat(process.env.EMA9VWAP_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20"), 20);
-  if (mode === "fut_ema9vwap") return _numOr(parseFloat(process.env.FUT_EMA9VWAP_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20"), 20);
   return _numOr(parseFloat(process.env.VIX_MAX_ENTRY || "20"), 20);
 }
 
 function getVixStrongOnly(mode = "ema_rsi_st") {
   if (mode === "bb_rsi")    return _numOr(parseFloat(process.env.BB_RSI_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16"), 16);
-  if (mode === "fut_bb_rsi") return _numOr(parseFloat(process.env.FUT_BB_RSI_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16"), 16);
   if (mode === "pa")       return _numOr(parseFloat(process.env.PA_VIX_STRONG_ONLY       || process.env.VIX_STRONG_ONLY || "16"), 16);
   if (mode === "orb")      return _numOr(parseFloat(process.env.ORB_VIX_STRONG_ONLY      || process.env.VIX_STRONG_ONLY || "18"), 18);
   if (mode === "trend_pb") return _numOr(parseFloat(process.env.TREND_PB_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "18"), 18);
   if (mode === "ema9vwap") return _numOr(parseFloat(process.env.EMA9VWAP_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16"), 16);
-  if (mode === "fut_ema9vwap") return _numOr(parseFloat(process.env.FUT_EMA9VWAP_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16"), 16);
   return _numOr(parseFloat(process.env.VIX_STRONG_ONLY || "16"), 16);
 }
 
@@ -108,8 +92,7 @@ function anyVixEnabled() {
   // it makes that failure LESS likely, never more — but it is observer-only and
   // must not be relied on to feed a filter: this list is still the contract.)
   return getVixEnabled("ema_rsi_st") || getVixEnabled("bb_rsi") || getVixEnabled("pa") ||
-         getVixEnabled("orb") || getVixEnabled("trend_pb") || getVixEnabled("ema9vwap") ||
-         getVixEnabled("fut_bb_rsi") || getVixEnabled("fut_ema9vwap");
+         getVixEnabled("orb") || getVixEnabled("trend_pb") || getVixEnabled("ema9vwap");
 }
 
 // ── Live VIX cache (60-second TTL, shared across all modes) ─────────────────

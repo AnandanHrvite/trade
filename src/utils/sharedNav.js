@@ -19,17 +19,10 @@ const demoMode = require('./demoMode');   // read-only stakeholder session
 // with the sidebar instead of hard-coding their own strategy lists.
 const STRATEGY_MODES = [
   { mode: 'EMA_RSI_ST', label: 'EMA_RSI_ST',   envKey: 'EMA_RSI_ST_MODE_ENABLED' },
-  // NIFTY FUTURES twins (CE signal = LONG future, PE = SHORT) sit right after the
-  // options strategy each one mirrors, with the same envDefault/paperDefault.
-  // No `slug` needed: FUT_EMA_RSI_ST ↔ /fut_ema_rsi_st-…, FUT_RSI_PIVOT_ST ↔
-  // /fut-rsi-pivot-st-… already match key→slug in startAllRoster.js.
-  { mode: 'FUT_EMA_RSI_ST', label: 'FUT EMA_RSI_ST', envKey: 'FUT_EMA_RSI_ST_MODE_ENABLED' },
   { mode: 'BB_RSI',     label: 'BB_RSI',       envKey: 'BB_RSI_MODE_ENABLED'     },
-  { mode: 'FUT_BB_RSI', label: 'FUT BB_RSI',   envKey: 'FUT_BB_RSI_MODE_ENABLED' },
   { mode: 'PA',         label: 'Price Action', envKey: 'PA_MODE_ENABLED'         },
   { mode: 'ORB',        label: 'ORB',          envKey: 'ORB_MODE_ENABLED'        },
   { mode: 'EMA9VWAP',   label: 'EMA9+VWAP',    envKey: 'EMA9VWAP_MODE_ENABLED'   },
-  { mode: 'FUT_EMA9VWAP', label: 'FUT EMA9+VWAP', envKey: 'FUT_EMA9VWAP_MODE_ENABLED' },
   { mode: 'TREND_PB',   label: 'Trend_PB',     envKey: 'TREND_PB_MODE_ENABLED'   },
   // `slug` is only needed when the mode key is not the route slug (TDS lives at
   // /trend-day-scalp-*). startAllRoster.js matches key→slug otherwise.
@@ -38,22 +31,16 @@ const STRATEGY_MODES = [
   { mode: 'PREV_ORB_SCALP', label: 'Prev ORB Scalp', envKey: 'PREV_ORB_SCALP_MODE_ENABLED' },
   { mode: 'ITM20_SCALP', label: 'ITM20 Scalp', envKey: 'ITM20_SCALP_MODE_ENABLED' },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
-  { mode: 'FUT_RSI_PIVOT_ST', label: 'FUT RSI Pivot ST', envKey: 'FUT_RSI_PIVOT_ST_MODE_ENABLED' },
   // envDefault 'false': V2 ships dark. Without it enabledStrategies() below would
   // default it ON and Start-All, the consolidated report and edge analytics would
   // all include a strategy the sidebar and Settings show as disabled.
   { mode: 'EMA_RSI_ST_V2', label: 'EMA_RSI_ST_V2', envKey: 'EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
-  // Its NIFTY FUTURES twin ships dark for the same reason (its paper route's
-  // /start gate defaults FUT_EMA_RSI_ST_V2_MODE/_PAPER_ENABLED to 'false').
-  { mode: 'FUT_EMA_RSI_ST_V2', label: 'FUT EMA_RSI_ST_V2', envKey: 'FUT_EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
   // ST_RSI_PIV_BB ships dark like V2 (envDefault 'false') for the same reason.
   { mode: 'ST_RSI_PIV_BB', label: 'ST_RSI_PIV_BB', envKey: 'ST_RSI_PIV_BB_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
-  { mode: 'FUT_ST_RSI_PIV_BB', label: 'FUT ST_RSI_PIV_BB', envKey: 'FUT_ST_RSI_PIV_BB_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
   // SAIL_VWAP_ST (SAIL stock options) ships dark (envDefault 'false').
   { mode: 'SAIL_VWAP_ST', label: 'SAIL VWAP+ST', envKey: 'SAIL_VWAP_ST_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
   // PIVOT_EMA_ST family ships ON (envDefault 'true') — the user wants Start All to start them.
   { mode: 'PIVOT_EMA_ST', label: 'PIVOT_EMA_ST', envKey: 'PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
-  { mode: 'FUT_PIVOT_EMA_ST', label: 'FUT PIVOT_EMA_ST', envKey: 'FUT_PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
   { mode: 'SAIL_PIVOT_EMA_ST', label: 'SAIL PIVOT_EMA_ST', envKey: 'SAIL_PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
   // GAP_RUNAWAY (GAP_runAway__Kirubakaran) ships ON — the user wants Start All (Paper) to start it,
   // and its stock scanner beside it (paper only).
@@ -96,9 +83,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   let _pivotEmaStMode = null, _sailPivotEmaStMode = null;
   let _gapRunawayMode = null, _gapRunawayStkMode = null;
   let _simple930Mode = null;
-  // NIFTY FUTURES twins — each its own sharedSocketState slot.
-  let _futEmaRsiStMode = null, _futBbRsiMode = null, _futEma9vwapMode = null, _futRsiPivotStMode = null;
-  let _futEmaRsiStV2Mode = null, _futStRsiPivBbMode = null, _futPivotEmaStMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -122,13 +106,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     _gapRunawayMode = sss.getGapRunawayMode ? sss.getGapRunawayMode() : null;
     _gapRunawayStkMode = sss.getGapRunawayStkMode ? sss.getGapRunawayStkMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
-    _futEmaRsiStMode   = sss.getFutEmaRsiStMode   ? sss.getFutEmaRsiStMode()   : null;
-    _futBbRsiMode      = sss.getFutBbRsiMode      ? sss.getFutBbRsiMode()      : null;
-    _futEma9vwapMode   = sss.getFutEma9VwapMode   ? sss.getFutEma9VwapMode()   : null;
-    _futRsiPivotStMode = sss.getFutRsiPivotStMode ? sss.getFutRsiPivotStMode() : null;
-    _futEmaRsiStV2Mode = sss.getFutEmaRsiStV2Mode ? sss.getFutEmaRsiStV2Mode() : null;
-    _futStRsiPivBbMode = sss.getFutStRsiPivBbMode ? sss.getFutStRsiPivBbMode() : null;
-    _futPivotEmaStMode = sss.getFutPivotEmaStMode ? sss.getFutPivotEmaStMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -185,15 +162,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const gapRunawayModeOn    = (process.env.GAP_RUNAWAY_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const gapRunawayStkModeOn = (process.env.GAP_RUNAWAY_STK_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  // NIFTY FUTURES twins — each gated by its own *_MODE_ENABLED with the same
-  // default as the options strategy it mirrors (V2 / ST_RSI_PIV_BB ship OFF).
-  const futEmaRsiStModeOn   = (process.env.FUT_EMA_RSI_ST_MODE_ENABLED    || 'true').toLowerCase()  === 'true';
-  const futBbRsiModeOn      = (process.env.FUT_BB_RSI_MODE_ENABLED        || 'true').toLowerCase()  === 'true';
-  const futEma9vwapModeOn   = (process.env.FUT_EMA9VWAP_MODE_ENABLED      || 'true').toLowerCase()  === 'true';
-  const futRsiPivotStModeOn = (process.env.FUT_RSI_PIVOT_ST_MODE_ENABLED  || 'true').toLowerCase()  === 'true';
-  const futEmaRsiStV2ModeOn = (process.env.FUT_EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
-  const futStRsiPivBbModeOn = (process.env.FUT_ST_RSI_PIV_BB_MODE_ENABLED || 'false').toLowerCase() === 'true';
-  const futPivotEmaStModeOn = (process.env.FUT_PIVOT_EMA_ST_MODE_ENABLED  || 'true').toLowerCase()  === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -287,25 +255,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'false').toLowerCase()  === 'true';
   const showSimple930Paper    = (process.env.UI_SHOW_SIMPLE930_PAPER       || 'true').toLowerCase()  === 'true';
   const showSimple930History  = (process.env.UI_SHOW_SIMPLE930_HISTORY     || 'true').toLowerCase()  === 'true';
-  // NIFTY FUTURES twins — the same pages, keys and defaults as the options
-  // strategy each one mirrors (UI_SHOW_<ORIG> → UI_SHOW_FUT_<ORIG>).
-  const showFutEmaRsiStBacktest   = (process.env.UI_SHOW_FUT_EMA_RSI_ST_BACKTEST    || 'false').toLowerCase() === 'true';
-  const showFutEmaRsiStPaper      = (process.env.UI_SHOW_FUT_EMA_RSI_ST_PAPER       || 'true').toLowerCase()  === 'true';
-  const showFutBbRsiBacktest      = (process.env.UI_SHOW_FUT_BB_RSI_BACKTEST        || 'false').toLowerCase() === 'true';
-  const showFutBbRsiPaper         = (process.env.UI_SHOW_FUT_BB_RSI_PAPER           || 'true').toLowerCase()  === 'true';
-  const showFutEma9vwapBacktest   = (process.env.UI_SHOW_FUT_EMA9VWAP_BACKTEST      || 'false').toLowerCase() === 'true';
-  const showFutEma9vwapPaper      = (process.env.UI_SHOW_FUT_EMA9VWAP_PAPER         || 'true').toLowerCase()  === 'true';
-  const showFutEma9vwapHistory    = (process.env.UI_SHOW_FUT_EMA9VWAP_HISTORY       || 'true').toLowerCase()  === 'true';
-  const showFutRsiPivotStBacktest = (process.env.UI_SHOW_FUT_RSI_PIVOT_ST_BACKTEST  || 'false').toLowerCase() === 'true';
-  const showFutRsiPivotStPaper    = (process.env.UI_SHOW_FUT_RSI_PIVOT_ST_PAPER     || 'true').toLowerCase()  === 'true';
-  const showFutRsiPivotStHistory  = (process.env.UI_SHOW_FUT_RSI_PIVOT_ST_HISTORY   || 'true').toLowerCase()  === 'true';
-  const showFutEmaRsiStV2Backtest = (process.env.UI_SHOW_FUT_EMA_RSI_ST_V2_BACKTEST || 'false').toLowerCase() === 'true';
-  const showFutEmaRsiStV2Paper    = (process.env.UI_SHOW_FUT_EMA_RSI_ST_V2_PAPER    || 'true').toLowerCase()  === 'true';
-  const showFutEmaRsiStV2History  = (process.env.UI_SHOW_FUT_EMA_RSI_ST_V2_HISTORY  || 'true').toLowerCase()  === 'true';
-  const showFutStRsiPivBbPaper    = (process.env.UI_SHOW_FUT_ST_RSI_PIV_BB_PAPER    || 'true').toLowerCase()  === 'true';
-  const showFutStRsiPivBbHistory  = (process.env.UI_SHOW_FUT_ST_RSI_PIV_BB_HISTORY  || 'true').toLowerCase()  === 'true';
-  const showFutPivotEmaStPaper    = (process.env.UI_SHOW_FUT_PIVOT_EMA_ST_PAPER     || 'true').toLowerCase()  === 'true';
-  const showFutPivotEmaStHistory  = (process.env.UI_SHOW_FUT_PIVOT_EMA_ST_HISTORY   || 'true').toLowerCase()  === 'true';
 
   // ── Top-level underlying groups (NIFTY is implicit — it holds the strategies
   //    that already exist) ──
@@ -341,14 +290,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const gapRunawayStkKeys = ['gapRunawayStkPaper', 'gapRunawayStkHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930History'];
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdHistory'];
-  // NIFTY FUTURES twins — every page key a twin's routes pass to buildSidebar.
-  const futEmaRsiStKeys   = ['futEmaRsiStBacktest', 'futEmaRsiStPaper', 'futEmaRsiStSim', 'futEmaRsiStHistory'];
-  const futBbRsiKeys      = ['futBbRsiBacktest', 'futBbRsiPaper', 'futBbRsiSim', 'futBbRsiHistory'];
-  const futEma9vwapKeys   = ['futEma9vwapBacktest', 'futEma9vwapPaper', 'futEma9vwapSim', 'futEma9vwapHistory'];
-  const futRsiPivotStKeys = ['futRsiPivotStBacktest', 'futRsiPivotStPaper', 'futRsiPivotStHistory'];
-  const futEmaRsiStV2Keys = ['futEmaRsiStV2Backtest', 'futEmaRsiStV2Paper', 'futEmaRsiStV2History'];
-  const futStRsiPivBbKeys = ['futStRsiPivBbPaper', 'futStRsiPivBbHistory'];
-  const futPivotEmaStKeys = ['futPivotEmaStPaper', 'futPivotEmaStHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
   // sidebar behaves the same way — one accordion, no ungrouped stragglers.
   const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
@@ -374,20 +315,9 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const isGapRunawayStkOpen = gapRunawayStkKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
-  const isFutEmaRsiStOpen   = futEmaRsiStKeys.includes(activePage);
-  const isFutBbRsiOpen      = futBbRsiKeys.includes(activePage);
-  const isFutEma9vwapOpen   = futEma9vwapKeys.includes(activePage);
-  const isFutRsiPivotStOpen = futRsiPivotStKeys.includes(activePage);
-  const isFutEmaRsiStV2Open = futEmaRsiStV2Keys.includes(activePage);
-  const isFutStRsiPivBbOpen = futStRsiPivBbKeys.includes(activePage);
-  const isFutPivotEmaStOpen = futPivotEmaStKeys.includes(activePage);
   const isSystemOpen    = systemKeys.includes(activePage);
   const commodityKeys = ['cmxCrudeEmaRsiStPaper', 'cmxCrudeEmaRsiStV2Paper', 'cmxGoldEmaRsiStPaper', 'cmxGoldEmaRsiStV2Paper', 'cmxSilverEmaRsiStPaper', 'cmxSilverEmaRsiStV2Paper'];
   commodityKeys.push('cmxCrudePivotEmaStPaper', 'cmxGoldPivotEmaStPaper', 'cmxSilverPivotEmaStPaper');
-  // NIFTY FUTURES pages — every item key of every twin under the NIFTY FUTURES
-  // parent, so that parent (not NIFTY) opens on a twin's page.
-  const futuresKeys = [...futEmaRsiStKeys, ...futBbRsiKeys, ...futEma9vwapKeys, ...futRsiPivotStKeys,
-    ...futEmaRsiStV2Keys, ...futStRsiPivBbKeys, ...futPivotEmaStKeys];
   // Pages that live outside every group (Real-Time monitor, docs, …) used to see
   // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
   // never rendered fully collapsed.
@@ -399,8 +329,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     || isPivotEmaStOpen || isSailPivotEmaStOpen
     || isGapRunawayOpen || isGapRunawayStkOpen
     || isItm20ScalpOpen
-    || isFutEmaRsiStOpen || isFutBbRsiOpen || isFutEma9vwapOpen || isFutRsiPivotStOpen
-    || isFutEmaRsiStV2Open || isFutStRsiPivBbOpen || isFutPivotEmaStOpen
     || isEarlyBirdOpen || isSystemOpen
     || commodityKeys.includes(activePage);
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
@@ -532,43 +460,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     ...(showSimple930History  ? [{ key: 'simple930History',  href: '/simple930-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
-  // ── NIFTY FUTURES twins — the same pages as the options group each mirrors.
-  // EMA_RSI_ST / BB_RSI have no History item in their own groups, so neither
-  // twin gets one; Compare / Tracker have no futures pages, so they are absent.
-  const futEmaRsiStItems = [
-    ...(showFutEmaRsiStBacktest ? [{ key: 'futEmaRsiStBacktest', href: '/fut_ema_rsi_st-backtest',       icon: '🔍', label: 'Backtest' }] : []),
-    ...(showFutEmaRsiStPaper    ? [{ key: 'futEmaRsiStPaper',    href: '/fut_ema_rsi_st-paper/status',   icon: '📋', label: 'Paper'    }] : []),
-    ...(showSim                 ? [{ key: 'futEmaRsiStSim',      href: '/fut_ema_rsi_st-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-  ];
-  const futBbRsiItems = [
-    ...(showFutBbRsiBacktest ? [{ key: 'futBbRsiBacktest', href: '/fut_bb_rsi-backtest',       icon: '🔍', label: 'Backtest' }] : []),
-    ...(showFutBbRsiPaper    ? [{ key: 'futBbRsiPaper',    href: '/fut_bb_rsi-paper/status',   icon: '📋', label: 'Paper'    }] : []),
-    ...(showSim              ? [{ key: 'futBbRsiSim',      href: '/fut_bb_rsi-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-  ];
-  const futEma9vwapItems = [
-    ...(showFutEma9vwapBacktest ? [{ key: 'futEma9vwapBacktest', href: '/fut_ema9vwap-backtest',       icon: '🔍', label: 'Backtest' }] : []),
-    ...(showFutEma9vwapPaper    ? [{ key: 'futEma9vwapPaper',    href: '/fut_ema9vwap-paper/status',   icon: '📋', label: 'Paper'    }] : []),
-    ...(showSim                 ? [{ key: 'futEma9vwapSim',      href: '/fut_ema9vwap-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-    ...(showFutEma9vwapHistory  ? [{ key: 'futEma9vwapHistory',  href: '/fut_ema9vwap-paper/history',  icon: '📜', label: 'History' }] : []),
-  ];
-  const futRsiPivotStItems = [
-    ...(showFutRsiPivotStBacktest ? [{ key: 'futRsiPivotStBacktest', href: '/fut-rsi-pivot-st-backtest',      icon: '🔍', label: 'Backtest' }] : []),
-    ...(showFutRsiPivotStPaper    ? [{ key: 'futRsiPivotStPaper',    href: '/fut-rsi-pivot-st-paper/status',  icon: '📋', label: 'Paper'    }] : []),
-    ...(showFutRsiPivotStHistory  ? [{ key: 'futRsiPivotStHistory',  href: '/fut-rsi-pivot-st-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
-  const futEmaRsiStV2Items = [
-    ...(showFutEmaRsiStV2Backtest ? [{ key: 'futEmaRsiStV2Backtest', href: '/fut_ema_rsi_st_v2-backtest',      icon: '🔍', label: 'Backtest' }] : []),
-    ...(showFutEmaRsiStV2Paper    ? [{ key: 'futEmaRsiStV2Paper',    href: '/fut_ema_rsi_st_v2-paper/status',  icon: '📋', label: 'Paper'    }] : []),
-    ...(showFutEmaRsiStV2History  ? [{ key: 'futEmaRsiStV2History',  href: '/fut_ema_rsi_st_v2-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
-  const futStRsiPivBbItems = [
-    ...(showFutStRsiPivBbPaper    ? [{ key: 'futStRsiPivBbPaper',    href: '/fut_st_rsi_piv_bb-paper/status',  icon: '📋', label: 'Paper'    }] : []),
-    ...(showFutStRsiPivBbHistory  ? [{ key: 'futStRsiPivBbHistory',  href: '/fut_st_rsi_piv_bb-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
-  const futPivotEmaStItems = [
-    ...(showFutPivotEmaStPaper    ? [{ key: 'futPivotEmaStPaper',    href: '/fut_pivot_ema_st-paper/status',  icon: '📋', label: 'Paper'    }] : []),
-    ...(showFutPivotEmaStHistory  ? [{ key: 'futPivotEmaStHistory',  href: '/fut_pivot_ema_st-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
 
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
@@ -718,52 +609,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       parent: 'stocks',
       items: gapRunawayStkItems,
     }] : []),
-    // ── NIFTY FUTURES — the futures twin of each options strategy ────────
-    // Same engine and rules, forced to NIFTY futures (CE signal = LONG future,
-    // PE = SHORT). Own parent so a futures page is never mistaken for the
-    // options strategy it mirrors; dropped when no twin is enabled.
-    ...(futEmaRsiStModeOn ? [{
-      header: 'FUT EMA_RSI_ST', collapsible: true, collapsed: !isFutEmaRsiStOpen,
-      groupId: 'nav-fut_ema_rsi_st',
-      parent: 'futures',
-      items: futEmaRsiStItems,
-    }] : []),
-    ...(futBbRsiModeOn ? [{
-      header: 'FUT BB_RSI', collapsible: true, collapsed: !isFutBbRsiOpen,
-      groupId: 'nav-fut_bb_rsi',
-      parent: 'futures',
-      items: futBbRsiItems,
-    }] : []),
-    ...(futEma9vwapModeOn ? [{
-      header: 'FUT EMA9+VWAP', collapsible: true, collapsed: !isFutEma9vwapOpen,
-      groupId: 'nav-fut_ema9vwap',
-      parent: 'futures',
-      items: futEma9vwapItems,
-    }] : []),
-    ...(futRsiPivotStModeOn ? [{
-      header: 'FUT RSI PIVOT ST', collapsible: true, collapsed: !isFutRsiPivotStOpen,
-      groupId: 'nav-fut-rsi-pivot-st',
-      parent: 'futures',
-      items: futRsiPivotStItems,
-    }] : []),
-    ...(futEmaRsiStV2ModeOn ? [{
-      header: 'FUT EMA_RSI_ST_V2', collapsible: true, collapsed: !isFutEmaRsiStV2Open,
-      groupId: 'nav-fut_ema_rsi_st_v2',
-      parent: 'futures',
-      items: futEmaRsiStV2Items,
-    }] : []),
-    ...(futStRsiPivBbModeOn ? [{
-      header: 'FUT ST+RSI+PIV+BB', collapsible: true, collapsed: !isFutStRsiPivBbOpen,
-      groupId: 'nav-fut_st_rsi_piv_bb',
-      parent: 'futures',
-      items: futStRsiPivBbItems,
-    }] : []),
-    ...(futPivotEmaStModeOn ? [{
-      header: 'FUT PIVOT_EMA_ST', collapsible: true, collapsed: !isFutPivotEmaStOpen,
-      groupId: 'nav-fut_pivot_ema_st',
-      parent: 'futures',
-      items: futPivotEmaStItems,
-    }] : []),
     // ── COMMODITY — one group per commodity, both strategies inside ──────
     {
       header: 'CRUDE OIL', collapsible: true,
@@ -875,15 +720,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     const gapRunawayBadges =
       (p.key === 'gapRunawayPaper' && _gapRunawayMode === 'GAP_RUNAWAY_PAPER' ? _pesOnBadge : '') +
       (p.key === 'gapRunawayStkPaper' && _gapRunawayStkMode === 'GAP_RUNAWAY_STK_PAPER' ? _pesOnBadge : '');
-    // NIFTY FUTURES twins — ON on each Paper item, from the twin's own slot.
-    const futPaperBadges =
-      (p.key === 'futEmaRsiStPaper'   && _futEmaRsiStMode   === 'FUT_EMA_RSI_ST_PAPER'    ? _pesOnBadge : '') +
-      (p.key === 'futBbRsiPaper'      && _futBbRsiMode      === 'FUT_BB_RSI_PAPER'        ? _pesOnBadge : '') +
-      (p.key === 'futEma9vwapPaper'   && _futEma9vwapMode   === 'FUT_EMA9VWAP_PAPER'      ? _pesOnBadge : '') +
-      (p.key === 'futRsiPivotStPaper' && _futRsiPivotStMode === 'FUT_RSI_PIVOT_ST_PAPER'  ? _pesOnBadge : '') +
-      (p.key === 'futEmaRsiStV2Paper' && _futEmaRsiStV2Mode === 'FUT_EMA_RSI_ST_V2_PAPER' ? _pesOnBadge : '') +
-      (p.key === 'futStRsiPivBbPaper' && _futStRsiPivBbMode === 'FUT_ST_RSI_PIV_BB_PAPER' ? _pesOnBadge : '') +
-      (p.key === 'futPivotEmaStPaper' && _futPivotEmaStMode === 'FUT_PIVOT_EMA_ST_PAPER'  ? _pesOnBadge : '');
 
     const simple930PaperBadge = p.key === 'simple930Paper' && _simple930Mode === 'SIMPLE930_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
@@ -897,7 +733,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       ${pivotEmaStBadges}
       ${gapRunawayBadges}
       ${itm20ScalpPaperBadge}
-      ${futPaperBadges}
     </a>`;
   }
 
@@ -932,8 +767,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   // was open inside it untouched.
   const parentDefs = [
     { id: 'nav-parent-nifty', key: 'nifty', header: 'NIFTY' },
-    // NIFTY FUTURES — the futures twins; rendered only when one of them is enabled.
-    { id: 'nav-parent-futures', key: 'futures', header: 'NIFTY FUTURES' },
     ...(showCommodity ? [{ id: 'nav-parent-commodity', key: 'commodity', header: 'COMMODITY' }] : []),
     // STOCKS — rendered only when one of its sections (SAIL_VWAP_ST) is enabled.
     { id: 'nav-parent-stocks', key: 'stocks', header: 'STOCKS' },
@@ -945,9 +778,6 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   if (sailPivotEmaStKeys.includes(activePage)) parentOpen.stocks = true;   // SAIL_PIVOT_EMA_ST is a STOCKS page too
   if (gapRunawayStkKeys.includes(activePage)) parentOpen.stocks = true;    // the GAP_RUNAWAY stock scanner too
   if (parentOpen.stocks) parentOpen.nifty = false;
-  // NIFTY FUTURES opens on a twin's page (and then NIFTY stays closed).
-  parentOpen.futures = futuresKeys.includes(activePage);
-  if (parentOpen.futures) parentOpen.nifty = false;
 
   function renderParents() {
     return parentDefs.map(pd => {
@@ -2575,8 +2405,6 @@ window.__ltInit = true;
     '.mode-gap_runaway{color:#7c3aed!important;}',
     '.mode-gap_runaway_stk{color:#9333ea!important;}',
     '.mode-simple930{color:#c2410c!important;}',
-    '.mode-fut_ema_rsi_st,.mode-fut_bb_rsi,.mode-fut_ema9vwap,.mode-fut_rsi_pivot_st{color:#92400e!important;}',
-    '.mode-fut_ema_rsi_st_v2,.mode-fut_st_rsi_piv_bb,.mode-fut_pivot_ema_st{color:#92400e!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',
     '#da-mode-badge{color:#1d4ed8!important;}',

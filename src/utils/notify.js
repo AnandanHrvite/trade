@@ -25,10 +25,6 @@
  *   SAIL_VWAP_ST uses the same four per-mode toggles (TG_SAIL_VWAP_ST_STARTED/_ENTRY/_EXIT/_DAYREPORT) and no _SIGNALS toggle.
  *   PIVOT_EMA_ST / SAIL_PIVOT_EMA_ST likewise (TG_<group>_STARTED/_ENTRY/_EXIT/_DAYREPORT), no _SIGNALS toggle.
  *   GAP_RUNAWAY / GAP_RUNAWAY_STK likewise (TG_<group>_STARTED/_ENTRY/_EXIT/_DAYREPORT), no _SIGNALS toggle.
- *   Futures twins — FUT_EMA_RSI_ST, FUT_BB_RSI, FUT_EMA9VWAP, FUT_RSI_PIVOT_ST, FUT_EMA_RSI_ST_V2,
- *   FUT_ST_RSI_PIV_BB, FUT_PIVOT_EMA_ST — each has its own TG_FUT_<orig>_* toggles mirroring its
- *   original's (only FUT_EMA_RSI_ST / FUT_BB_RSI / FUT_EMA9VWAP have a _SIGNALS toggle) and its own
- *   FUT_<orig>_MODE_ENABLED. Every FUT_* alert is rendered as a futures position.
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -106,17 +102,6 @@ function isMasterEnabled() {
 function modeGroup(mode) {
   if (!mode) return "EMA_RSI_ST";
   const m = String(mode).toUpperCase();
-  // Futures twins (FUT_<original>) — tested FIRST so no options branch below can
-  // ever classify one under its original. Anchored on the full FUT_ name, and
-  // FUT_EMA_RSI_ST_V2 before FUT_EMA_RSI_ST: "FUT_EMA_RSI_ST_V2-PAPER" also
-  // startsWith "FUT_EMA_RSI_ST_" (same ordering rule as EMA_RSI_ST_V2 vs V1).
-  if (m === "FUT_EMA_RSI_ST_V2" || m.startsWith("FUT_EMA_RSI_ST_V2-") || m.startsWith("FUT_EMA_RSI_ST_V2_")) return "FUT_EMA_RSI_ST_V2";
-  if (m === "FUT_EMA_RSI_ST"    || m.startsWith("FUT_EMA_RSI_ST-")    || m.startsWith("FUT_EMA_RSI_ST_"))    return "FUT_EMA_RSI_ST";
-  if (m === "FUT_BB_RSI"        || m.startsWith("FUT_BB_RSI-")        || m.startsWith("FUT_BB_RSI_"))        return "FUT_BB_RSI";
-  if (m === "FUT_EMA9VWAP"      || m.startsWith("FUT_EMA9VWAP-")      || m.startsWith("FUT_EMA9VWAP_"))      return "FUT_EMA9VWAP";
-  if (m === "FUT_RSI_PIVOT_ST"  || m.startsWith("FUT_RSI_PIVOT_ST-")  || m.startsWith("FUT_RSI_PIVOT_ST_"))  return "FUT_RSI_PIVOT_ST";
-  if (m === "FUT_ST_RSI_PIV_BB" || m.startsWith("FUT_ST_RSI_PIV_BB-") || m.startsWith("FUT_ST_RSI_PIV_BB_")) return "FUT_ST_RSI_PIV_BB";
-  if (m === "FUT_PIVOT_EMA_ST"  || m.startsWith("FUT_PIVOT_EMA_ST-")  || m.startsWith("FUT_PIVOT_EMA_ST_"))  return "FUT_PIVOT_EMA_ST";
   if (m === "BB_RSI"    || m.startsWith("BB_RSI-")    || m.startsWith("BB_RSI_"))    return "BB_RSI";
   if (m === "PA"       || m.startsWith("PA-")       || m.startsWith("PA_"))       return "PA";
   // Prev ORB Scalp. Tested BEFORE ORB and with anchored prefixes only: the name
@@ -181,9 +166,6 @@ function modeGroup(mode) {
 const DEFAULT_OFF_GROUPS = new Set(["EMA_RSI_ST_V2"]);
 DEFAULT_OFF_GROUPS.add("ST_RSI_PIV_BB"); // ships dark like V2 (Settings defaults it to "false")
 DEFAULT_OFF_GROUPS.add("SAIL_VWAP_ST"); // ships dark (Settings defaults it to "false")
-// Futures twins mirror their originals: only the twins of default-off strategies ship dark.
-DEFAULT_OFF_GROUPS.add("FUT_EMA_RSI_ST_V2");
-DEFAULT_OFF_GROUPS.add("FUT_ST_RSI_PIV_BB");
 
 function isModeEnabled(group) {
   const v = process.env[`${group}_MODE_ENABLED`];
@@ -436,14 +418,6 @@ function modeLabel(mode) {
   if (!mode) return "";
   const m = String(mode).toUpperCase();
   if (m === "PAPER")        return "📄 EMA_RSI_ST PAPER";
-  // Futures twins — FUT_EMA_RSI_ST_V2 before FUT_EMA_RSI_ST (most specific first).
-  if (m.startsWith("FUT_EMA_RSI_ST_V2-PAPER")) return "📄 FUT EMA_RSI_ST_V2 PAPER" + m.slice("FUT_EMA_RSI_ST_V2-PAPER".length);
-  if (m.startsWith("FUT_EMA_RSI_ST-PAPER"))    return "📄 FUT EMA_RSI_ST PAPER" + m.slice("FUT_EMA_RSI_ST-PAPER".length);
-  if (m.startsWith("FUT_BB_RSI-PAPER"))        return "📄 FUT BB_RSI PAPER" + m.slice("FUT_BB_RSI-PAPER".length);
-  if (m.startsWith("FUT_EMA9VWAP-PAPER"))      return "📄 FUT EMA9+VWAP PAPER" + m.slice("FUT_EMA9VWAP-PAPER".length);
-  if (m.startsWith("FUT_RSI_PIVOT_ST-PAPER"))  return "🎯 FUT RSI PIVOT ST PAPER" + m.slice("FUT_RSI_PIVOT_ST-PAPER".length);
-  if (m.startsWith("FUT_ST_RSI_PIV_BB-PAPER")) return "📄 FUT ST_RSI_PIV_BB PAPER" + m.slice("FUT_ST_RSI_PIV_BB-PAPER".length);
-  if (m.startsWith("FUT_PIVOT_EMA_ST-PAPER"))  return "📄 FUT PIVOT_EMA_ST PAPER" + m.slice("FUT_PIVOT_EMA_ST-PAPER".length);
   if (m === "BB_RSI-PAPER")  return "📄 BB_RSI PAPER";
   if (m === "PA-PAPER")     return "📄 PA PAPER";
   // Matched by prefix and any suffix is preserved.
@@ -505,9 +479,6 @@ function notifyStarted({ mode, text }) {
  */
 function _isFuturesAlert(p) {
   if (!p) return false;
-  // A FUT_* twin trades NIFTY futures by construction — never trust a payload
-  // that forgot (or mis-set) isFutures/instrument to render it as an option.
-  if (p.mode && /^FUT[_-]/i.test(String(p.mode))) return true;
   if (p.isFutures === true)  return true;
   if (p.isFutures === false) return false;
   if (p.instrument) return String(p.instrument).toUpperCase() === "NIFTY_FUTURES";
@@ -785,7 +756,6 @@ function notifyConsolidatedDayReport({ byMode }) {
   for (const g of ["PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST"]) if (isModeEnabled(g)) groups.push(g);
   for (const g of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) if (isModeEnabled(g)) groups.push(g);
   if (isModeEnabled("ITM20_SCALP")) groups.push("ITM20_SCALP");
-  for (const g of ["FUT_EMA_RSI_ST", "FUT_BB_RSI", "FUT_EMA9VWAP", "FUT_RSI_PIVOT_ST", "FUT_EMA_RSI_ST_V2", "FUT_ST_RSI_PIV_BB", "FUT_PIVOT_EMA_ST"]) if (isModeEnabled(g)) groups.push(g);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

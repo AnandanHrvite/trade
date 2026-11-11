@@ -20,11 +20,6 @@
  *   PA            swing structure + chart patterns       — pure price structure
  *   RSI_PIVOT_ST  RSI + prev-day pivot cross + SuperTrend — pure, given pivots
  *   EMA_RSI_ST_V2    a separate strategy from EMA_RSI_ST — its own rules and keys
- *   FUT_EMA_RSI_ST / FUT_EMA_RSI_ST_V2 / FUT_BB_RSI / FUT_RSI_PIVOT_ST
- *                    the NIFTY FUTURES twins — the same engines read through their
- *                    own FUT_* keys. The instrument only decides paper execution
- *                    (futures vs options), so on a stock chart each evaluates its
- *                    original's rules with the twin's own settings.
  *
  * The rest are excluded because their rule is not expressible on an arbitrary
  * stock timeframe, and forcing them would produce signals their author never
@@ -78,10 +73,6 @@ const emaRsiStV2 = require("../strategies/ema_rsi_st_v2");
 const bbRsi      = require("../strategies/bb_rsi");
 const priceAction= require("../strategies/price_action");
 const rsiPivotSt = require("../strategies/rsi_pivot_st");
-// FUT_* twins: the same modules bound to their own FUT_* env prefix.
-const futEmaRsiSt   = emaRsiSt.forPrefix("FUT_EMA_RSI_ST");
-const futBbRsi      = bbRsi.forPrefix("FUT_BB_RSI");
-const futRsiPivotSt = rsiPivotSt.forPrefix("FUT_RSI_PIVOT_ST");
 
 // Every timeframe the scanner offers, in the order the dropdown shows them.
 // `mins` is the bar length; 'W' is a calendar week and has no minute length.
@@ -197,38 +188,6 @@ const ADAPTERS = [
   },
 
   {
-    key:        "FUT_EMA_RSI_ST",
-    label:      "FUT EMA_RSI_ST",
-    envKey:     "FUT_EMA_RSI_ST_MODE_ENABLED",
-    // The EMA_RSI_ST rules read through the FUT_EMA_RSI_ST_* keys (NIFTY FUTURES twin).
-    blurb:      "EMA20/50 alignment + RSI band + SuperTrend(10,3) side. Trend-following. (FUT twin settings.)",
-    timeframes: TIMEFRAME_KEYS,
-    needsDaily: false,
-    stateful:   false,
-    scaleKeys:  [{ key: "FUT_EMA_RSI_ST_MAX_EMA_DIST_PTS", def: "0" }],
-    minBars() {
-      const slow = parseInt(process.env.FUT_EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
-      return Math.max(slow, 30) + 5;            // mirrors the module's own WARMUP
-    },
-    evaluate(candles) {
-      const s = futEmaRsiSt.getSignal(candles, { silent: true, skipTimeCheck: true });
-      return {
-        side:   sideFromSignal(s.signal),
-        reason: s.reason || "",
-        stop:   num(s.stopLoss),
-        target: null,
-        indicators: {
-          RSI:        r2(s.rsi),
-          EMA20:      r2(s.ema20),
-          EMA50:      r2(s.ema50),
-          SuperTrend: r2(s.supertrend),
-          STtrend:    s.stTrend === 1 ? "up" : s.stTrend === -1 ? "down" : null,
-        },
-      };
-    },
-  },
-
-  {
     key:        "EMA_RSI_ST_V2",
     label:      "EMA_RSI_ST_V2",
     // Defaults OFF, unlike every other adapter. The caller gates on this key, so a
@@ -268,40 +227,6 @@ const ADAPTERS = [
   },
 
   {
-    key:        "FUT_EMA_RSI_ST_V2",
-    label:      "FUT EMA_RSI_ST_V2",
-    envKey:     "FUT_EMA_RSI_ST_V2_MODE_ENABLED",
-    envDefault: "false",                        // ships OFF, like EMA_RSI_ST_V2
-    // The SAME engine as EMA_RSI_ST_V2, read through the FUT_EMA_RSI_ST_V2_* env
-    // prefix (NIFTY FUTURES twin), so the options and futures versions tune
-    // independently.
-    blurb:      "EMA20/50 alignment + close beyond EMA20 + single RSI threshold. SuperTrend is the stop. (FUT twin settings.)",
-    timeframes: TIMEFRAME_KEYS,                 // no absolute-point gate anywhere
-    needsDaily: false,                          // 5-minute intraday bars only
-    stateful:   false,
-    scaleKeys:  [],
-    minBars() {
-      return emaRsiStV2.warmupBars(emaRsiStV2.getConfig("FUT_EMA_RSI_ST_V2")) + 5;
-    },
-    evaluate(candles) {
-      const s = emaRsiStV2.getSignal(candles, { silent: true, skipTimeCheck: true, prefix: "FUT_EMA_RSI_ST_V2" });
-      return {
-        side:   sideFromSignal(s.signal),
-        reason: s.reason || s.skipReason || "",
-        stop:   num(s.slSpot),
-        target: null,                           // no profit target
-        indicators: {
-          RSI:        r2(s.rsi),
-          EMA20:      r2(s.ema20),
-          EMA50:      r2(s.ema50),
-          SuperTrend: r2(s.supertrend),
-          STtrend:    s.stTrendInt === 1 ? "up" : s.stTrendInt === -1 ? "down" : null,
-        },
-      };
-    },
-  },
-
-  {
     key:        "BB_RSI",
     label:      "BB_RSI",
     envKey:     "BB_RSI_MODE_ENABLED",
@@ -321,43 +246,6 @@ const ADAPTERS = [
     },
     evaluate(candles) {
       const s = bbRsi.getSignal(candles, { silent: true, skipTimeCheck: true });
-      return {
-        side:   sideFromSignal(s.signal),
-        reason: s.reason || "",
-        stop:   num(s.stopLoss),
-        target: num(s.target),
-        indicators: {
-          RSI:      r2(s.rsi),
-          BBupper:  r2(s.bbUpper),
-          BBmiddle: r2(s.bbMiddle),
-          BBlower:  r2(s.bbLower),
-          ADX:      r2(s.adx),
-        },
-      };
-    },
-  },
-
-  {
-    key:        "FUT_BB_RSI",
-    label:      "FUT BB_RSI",
-    envKey:     "FUT_BB_RSI_MODE_ENABLED",
-    // The BB_RSI rules read through the FUT_BB_RSI_* keys (NIFTY FUTURES twin).
-    blurb:      "Bollinger(30,2) band touch + RSI extreme. Mean-reversion (or breakout, per Settings). (FUT twin settings.)",
-    timeframes: TIMEFRAME_KEYS,
-    needsDaily: false,
-    stateful:   true,                           // memoised indicator cache (its own prefix's) — cleared per symbol
-    scaleKeys:  [
-      { key: "FUT_BB_RSI_MIN_BAND_WIDTH_PTS", def: "50" },
-      { key: "FUT_BB_RSI_MAX_ENTRY_SL_PTS",   def: "50" },
-    ],
-    reset() { futBbRsi.reset(); },
-    minBars() {
-      const bb  = parseInt(process.env.FUT_BB_RSI_BB_PERIOD  || "30", 10) || 30;
-      const rsi = parseInt(process.env.FUT_BB_RSI_RSI_PERIOD || "14", 10) || 14;
-      return Math.max(bb + 5, rsi + 5, 30);
-    },
-    evaluate(candles) {
-      const s = futBbRsi.getSignal(candles, { silent: true, skipTimeCheck: true });
       return {
         side:   sideFromSignal(s.signal),
         reason: s.reason || "",
@@ -439,56 +327,6 @@ const ADAPTERS = [
         pivotBufferPts:  parseFloat(process.env.RSI_PIVOT_ST_PIVOT_BUFFER_PTS || "0") || 0,
       });
       const s = rsiPivotSt.getSignal(candles, {
-        cfg,
-        silent:       true,
-        dailyCandles: ctx.dailyCandles || [],
-      });
-      return {
-        side:   sideFromSignal(s.signal),
-        reason: s.reason || s.skipReason || "",
-        stop:   num(s.slSpot),
-        target: null,
-        indicators: {
-          RSI:        r2(s.rsi),
-          Pivot:      r2(s.pp),
-          R1:         r2(s.r1),
-          S1:         r2(s.s1),
-          SuperTrend: r2(s.superTrend),
-        },
-      };
-    },
-  },
-
-  {
-    key:        "FUT_RSI_PIVOT_ST",
-    label:      "FUT RSI Pivot ST",
-    envKey:     "FUT_RSI_PIVOT_ST_MODE_ENABLED",
-    // Same rules as RSI_PIVOT_ST, but reading the FUT_RSI_PIVOT_ST_* Settings keys
-    // (NIFTY FUTURES twin), so the futures engine tunes without touching the options one.
-    blurb:      "Close crosses the previous day's R1 (or S1) with RSI confirming, stopped by SuperTrend. (FUT twin settings.)",
-    // Weekly is excluded on purpose: the levels are PREVIOUS-DAY pivots, and the
-    // module itself refuses a series that carries one bar per day.
-    timeframes: ["5", "15", "30", "60", "240"],
-    timeframeNote: "Uses previous-day pivots, so it needs intraday bars — weekly is not defined for it.",
-    needsDaily: true,
-    stateful:   false,
-    scaleKeys:  [{ key: "FUT_RSI_PIVOT_ST_PIVOT_BUFFER_PTS", def: "0" }],
-    minBars() {
-      const cfg = futRsiPivotSt.getConfig();
-      return Math.max(cfg.rsiPeriod + 2, cfg.stPeriod + 2, 20);
-    },
-    evaluate(candles, ctx) {
-      const base = futRsiPivotSt.getConfig();
-      // Widen the entry window to the whole day; everything else stays as
-      // Settings has it (see the RSI_PIVOT_ST adapter above).
-      const cfg = Object.assign({}, base, {
-        resolutionMins:  ctx.tfMinutes || base.resolutionMins,
-        sessionStartMin: 0,
-        entryStartMin:   0,
-        entryEndMin:     24 * 60,
-        pivotBufferPts:  parseFloat(process.env.FUT_RSI_PIVOT_ST_PIVOT_BUFFER_PTS || "0") || 0,
-      });
-      const s = futRsiPivotSt.getSignal(candles, {
         cfg,
         silent:       true,
         dailyCandles: ctx.dailyCandles || [],

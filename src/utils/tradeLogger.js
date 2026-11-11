@@ -20,14 +20,10 @@ const TRADES_DIR = path.join(DATA_DIR, "trades");
 
 const FILE_BY_MODE = {
   ema_rsi_st:    "ema_rsi_st_paper_trades_log.jsonl",
-  // FUT twins (NIFTY FUTURES copies of an options strategy) — own files.
-  fut_ema_rsi_st: "fut_ema_rsi_st_paper_trades_log.jsonl",
   bb_rsi:    "bb_rsi_paper_trades_log.jsonl",
-  fut_bb_rsi: "fut_bb_rsi_paper_trades_log.jsonl",
   pa:       "pa_paper_trades_log.jsonl",
   orb:      "orb_paper_trades_log.jsonl",
   ema9vwap: "ema9vwap_paper_trades_log.jsonl",
-  fut_ema9vwap: "fut_ema9vwap_paper_trades_log.jsonl",
   trend_pb: "trend_pb_paper_trades_log.jsonl",
   trend_day_scalp: "trend_day_scalp_paper_trades_log.jsonl",
   ha_scalp: "ha_scalp_paper_trades_log.jsonl",
@@ -35,18 +31,14 @@ const FILE_BY_MODE = {
   itm20_scalp: "itm20_scalp_paper_trades_log.jsonl",
   early_bird: "early_bird_paper_trades_log.jsonl",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_log.jsonl",
-  fut_rsi_pivot_st: "fut_rsi_pivot_st_paper_trades_log.jsonl",
   // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop.
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_log.jsonl",
-  fut_ema_rsi_st_v2: "fut_ema_rsi_st_v2_paper_trades_log.jsonl",
   // ST_RSI_PIV_BB — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_log.jsonl",
-  fut_st_rsi_piv_bb: "fut_st_rsi_piv_bb_paper_trades_log.jsonl",
   // SAIL_VWAP_ST — SAIL stock options: VWAP cross + breakout, SuperTrend stop.
   sail_vwap_st: "sail_vwap_st_paper_trades_log.jsonl",
   // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend (NIFTY / BANK NIFTY / SAIL).
   pivot_ema_st: "pivot_ema_st_paper_trades_log.jsonl",
-  fut_pivot_ema_st: "fut_pivot_ema_st_paper_trades_log.jsonl",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_log.jsonl",
   // GAP_RUNAWAY (NIFTY options) + GAP_RUNAWAY_STK (stock scanner, paper only).
   gap_runaway: "gap_runaway_paper_trades_log.jsonl",
@@ -56,14 +48,10 @@ const FILE_BY_MODE = {
 
 const DAILY_PREFIX_BY_MODE = {
   ema_rsi_st:    "ema_rsi_st_paper_trades_",
-  // FUT twins — MUST match FILE_BY_MODE's key character for character.
-  fut_ema_rsi_st: "fut_ema_rsi_st_paper_trades_",
   bb_rsi:    "bb_rsi_paper_trades_",
-  fut_bb_rsi: "fut_bb_rsi_paper_trades_",
   pa:       "pa_paper_trades_",
   orb:      "orb_paper_trades_",
   ema9vwap: "ema9vwap_paper_trades_",
-  fut_ema9vwap: "fut_ema9vwap_paper_trades_",
   trend_pb: "trend_pb_paper_trades_",
   trend_day_scalp: "trend_day_scalp_paper_trades_",
   ha_scalp: "ha_scalp_paper_trades_",
@@ -71,16 +59,12 @@ const DAILY_PREFIX_BY_MODE = {
   itm20_scalp: "itm20_scalp_paper_trades_",
   early_bird: "early_bird_paper_trades_",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_",
-  fut_rsi_pivot_st: "fut_rsi_pivot_st_paper_trades_",
   // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_",
-  fut_ema_rsi_st_v2: "fut_ema_rsi_st_v2_paper_trades_",
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_",
-  fut_st_rsi_piv_bb: "fut_st_rsi_piv_bb_paper_trades_",
   sail_vwap_st: "sail_vwap_st_paper_trades_",
   // PIVOT_EMA_ST family — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   pivot_ema_st: "pivot_ema_st_paper_trades_",
-  fut_pivot_ema_st: "fut_pivot_ema_st_paper_trades_",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_",
   // GAP_RUNAWAY — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   gap_runaway: "gap_runaway_paper_trades_",

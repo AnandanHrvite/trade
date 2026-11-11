@@ -28,8 +28,6 @@ PAPER_MODES.push("sail_vwap_st"); // SAIL_VWAP_ST (SAIL stock options, Zerodha)
 PAPER_MODES.push("pivot_ema_st", "sail_pivot_ema_st"); // PIVOT_EMA_ST family (Zerodha)
 PAPER_MODES.push("gap_runaway_stk"); // GAP_RUNAWAY stock scanner (intraday shares, Zerodha pool)
 PAPER_MODES.push("itm20_scalp"); // ITM20_SCALP (NIFTY options, paper + backtest)
-// FUT twins — NIFTY FUTURES copies of an options strategy, each on its own logs.
-PAPER_MODES.push("fut_ema_rsi_st", "fut_bb_rsi", "fut_ema9vwap", "fut_rsi_pivot_st", "fut_ema_rsi_st_v2", "fut_st_rsi_piv_bb", "fut_pivot_ema_st");
 
 // Pull a realized P&L number out of a logged record. Trade exits carry `pnl`;
 // some EXIT events carry `paperPnl`. Snapshot / checkpoint lines carry

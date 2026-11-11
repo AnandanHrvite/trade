@@ -442,11 +442,6 @@ const _SETTINGS_KEY_MATCHERS = [
   /^GAP_RUNAWAY_/,
   //   ITM20_SCALP_* — the ITM20 Scalp strategy; no older prefix matches "ITM20_".
   /^ITM20_SCALP_/,
-  //   FUT_* twins — NIFTY FUTURES copies of an options strategy, each on its own
-  //   FUT_-prefixed keys; no older prefix matches "FUT_". /^FUT_EMA_RSI_ST_/ also
-  //   covers FUT_EMA_RSI_ST_V2_*, listed for clarity only (as /^EMA_RSI_ST_V2_/).
-  /^FUT_EMA_RSI_ST_/, /^FUT_EMA_RSI_ST_V2_/, /^FUT_BB_RSI_/, /^FUT_EMA9VWAP_/,
-  /^FUT_RSI_PIVOT_ST_/, /^FUT_ST_RSI_PIV_BB_/, /^FUT_PIVOT_EMA_ST_/,
   //   EXIT_REENTRY_* — the global wait-after-any-exit cooldown; it blocks entries.
   /^EXIT_REENTRY_/,
   //   PREMIUM_SL_* — the global premium stop-loss & trail; it changes exits.
@@ -471,8 +466,6 @@ function snapshotSettings() {
   if (out.EXIT_REENTRY_COOLDOWN_CANDLES === undefined) out.EXIT_REENTRY_COOLDOWN_CANDLES = "2";
   if (out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED === undefined) out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED = "true";
   if (out.EMA_RSI_ST_FRESH_SIGNAL_ENABLED === undefined) out.EMA_RSI_ST_FRESH_SIGNAL_ENABLED = "true";
-  if (out.FUT_EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED === undefined) out.FUT_EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED = "true";
-  if (out.FUT_EMA_RSI_ST_FRESH_SIGNAL_ENABLED === undefined) out.FUT_EMA_RSI_ST_FRESH_SIGNAL_ENABLED = "true";
   return out;
 }
 

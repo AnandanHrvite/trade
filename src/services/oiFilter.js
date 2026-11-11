@@ -24,10 +24,7 @@
  * Toggles (all OFF by default):
  *   Master  : OI_FILTER_ENABLED          — kill-switch for every strategy
  *   Per-mode: EMA_RSI_ST_OI_ENABLED, BB_RSI_OI_ENABLED, PA_OI_ENABLED, ORB_OI_ENABLED,
- *             TREND_PB_OI_ENABLED, EMA9VWAP_OI_ENABLED,
- *             FUT_EMA_RSI_ST_OI_ENABLED, FUT_BB_RSI_OI_ENABLED, FUT_EMA9VWAP_OI_ENABLED
- *             (futures twins; "fut_ema_rsi_st_v2" reads FUT_EMA_RSI_ST_OI_ENABLED,
- *             mirroring how "ema_rsi_st_v2" falls through to EMA_RSI_ST_OI_ENABLED)
+ *             TREND_PB_OI_ENABLED, EMA9VWAP_OI_ENABLED
  *   NOTE: every mode string a call site passes MUST have a branch in getOiEnabled().
  *   An unknown mode silently falls through to the EMA_RSI_ST toggle — which is how
  *   "ema9vwap" was dead from the day it was wired up.
@@ -53,12 +50,6 @@ function getOiEnabled(mode = "ema_rsi_st") {
   if (mode === "orb")   return process.env.ORB_OI_ENABLED   === "true";
   if (mode === "trend_pb") return process.env.TREND_PB_OI_ENABLED === "true";
   if (mode === "ema9vwap") return process.env.EMA9VWAP_OI_ENABLED === "true";
-  if (mode === "fut_ema_rsi_st") return process.env.FUT_EMA_RSI_ST_OI_ENABLED === "true";
-  if (mode === "fut_bb_rsi")     return process.env.FUT_BB_RSI_OI_ENABLED     === "true";
-  if (mode === "fut_ema9vwap")   return process.env.FUT_EMA9VWAP_OI_ENABLED   === "true";
-  // V2 borrows V1's OI toggle — inside its own family: the futures V2 twin
-  // follows the FUTURES EMA_RSI_ST toggle, never the options one.
-  if (mode === "fut_ema_rsi_st_v2") return process.env.FUT_EMA_RSI_ST_OI_ENABLED === "true";
   return process.env.EMA_RSI_ST_OI_ENABLED === "true"; // EMA_RSI_ST
 }
 
@@ -79,8 +70,7 @@ function getOiMinDelta(mode = "ema_rsi_st") {
 function anyOiEnabled() {
   return getOiEnabled("ema_rsi_st") || getOiEnabled("bb_rsi") ||
          getOiEnabled("pa")    || getOiEnabled("orb") || getOiEnabled("trend_pb") ||
-         getOiEnabled("ema9vwap") || getOiEnabled("fut_ema_rsi_st") ||
-         getOiEnabled("fut_bb_rsi") || getOiEnabled("fut_ema9vwap");
+         getOiEnabled("ema9vwap");
 }
 
 // ── Shared OI series (ring buffer of {ts, oi, spot}, one sample per ~candle) ───

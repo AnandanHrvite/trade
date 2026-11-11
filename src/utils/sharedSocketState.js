@@ -16,17 +16,8 @@
 // Primary mode: "EMA_RSI_ST_PAPER" | null
 let primaryMode = null;
 
-// FUT twins (NIFTY FUTURES copies of an options strategy: CE = LONG future,
-// PE = SHORT): "FUT_<X>_PAPER" | null. Each is its OWN slot, independent of
-// the options original's, so a twin and its original run side by side.
-// FUT_EMA_RSI_ST mode: "FUT_EMA_RSI_ST_PAPER" | null
-let futEmaRsiStMode = null;
-
 // BB_RSI mode: "BB_RSI_PAPER" | null
 let bbRsiMode = null;
-
-// FUT_BB_RSI mode (NIFTY FUTURES twin of BB_RSI): "FUT_BB_RSI_PAPER" | null
-let futBbRsiMode = null;
 
 // Price Action mode: "PA_PAPER" | null
 let paMode = null;
@@ -36,9 +27,6 @@ let orbMode = null;
 
 // EMA9+VWAP mode: "EMA9VWAP_PAPER" | null
 let ema9vwapMode = null;
-
-// FUT_EMA9_VWAP mode (NIFTY FUTURES twin of EMA9+VWAP): "FUT_EMA9VWAP_PAPER" | null
-let futEma9vwapMode = null;
 
 // Trend Pullback mode: "TREND_PB_PAPER" | null
 let trendPbMode = null;
@@ -61,27 +49,16 @@ let itm20ScalpMode = null;
 // RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | null
 let rsiPivotStMode = null;
 
-// FUT_RSI_PIVOT_ST mode (NIFTY FUTURES twin of RSI_PIVOT_ST): "FUT_RSI_PIVOT_ST_PAPER" | null
-let futRsiPivotStMode = null;
-
 // EMA_RSI_ST_V2 mode: "EMA_RSI_ST_V2_PAPER" | null
 // Its OWN slot, deliberately independent of `primaryMode` (which carries V1's
 // EMA_RSI_ST_PAPER). V2 is a separate strategy with its own rules, its own
 // settings and its own position file — the two are free to run side by side.
 let emaRsiStV2Mode = null;
 
-// FUT_EMA_RSI_ST_V2 mode (NIFTY FUTURES twin of EMA_RSI_ST_V2):
-//   "FUT_EMA_RSI_ST_V2_PAPER" | null
-let futEmaRsiStV2Mode = null;
-
 // ST_RSI_PIV_BB mode: "ST_RSI_PIV_BB_PAPER" | null
 // Its OWN slot — a separate strategy with its own settings and position file,
 // so it may run side by side with every other strategy.
 let stRsiPivBbMode = null;
-
-// FUT_ST_RSI_PIV_BB mode (NIFTY FUTURES twin of ST_RSI_PIV_BB):
-//   "FUT_ST_RSI_PIV_BB_PAPER" | null
-let futStRsiPivBbMode = null;
 
 // SAIL_VWAP_ST mode: "SAIL_VWAP_ST_PAPER" | null
 // Its OWN slot — SAIL stock options, its own settings and position file, so it
@@ -94,9 +71,6 @@ let sailVwapStMode = null;
 // other strategy.
 let pivotEmaStMode = null;
 let sailPivotEmaStMode = null;
-// FUT_PIVOT_EMA_ST (NIFTY FUTURES twin of PIVOT_EMA_ST): "FUT_PIVOT_EMA_ST_PAPER" | null
-let futPivotEmaStMode = null;
-
 // GAP_RUNAWAY (GAP_runAway__Kirubakaran, NIFTY options) and GAP_RUNAWAY_STK (its
 // stock scanner, paper only): "<P>_PAPER" | null. Each its OWN slot,
 // parallel with every other strategy.
@@ -127,24 +101,6 @@ function getMode() {
   return primaryMode;
 }
 
-// ── FUT_EMA_RSI_ST mode (NIFTY FUTURES twin of EMA_RSI_ST) ─────────────────
-
-function setFutEmaRsiStActive(mode) {
-  futEmaRsiStMode = mode;
-}
-
-function clearFutEmaRsiSt() {
-  futEmaRsiStMode = null;
-}
-
-function isFutEmaRsiStActive() {
-  return futEmaRsiStMode !== null;
-}
-
-function getFutEmaRsiStMode() {
-  return futEmaRsiStMode;
-}
-
 // ── BB_RSI mode (3-min) ────────────────────────────────────────────────────
 
 function setBbRsiActive(mode) {
@@ -161,24 +117,6 @@ function isBbRsiActive() {
 
 function getBbRsiMode() {
   return bbRsiMode;
-}
-
-// ── FUT_BB_RSI mode (NIFTY FUTURES twin of BB_RSI) ─────────────────────────
-
-function setFutBbRsiActive(mode) {
-  futBbRsiMode = mode;
-}
-
-function clearFutBbRsi() {
-  futBbRsiMode = null;
-}
-
-function isFutBbRsiActive() {
-  return futBbRsiMode !== null;
-}
-
-function getFutBbRsiMode() {
-  return futBbRsiMode;
 }
 
 // ── Price Action mode (5-min) ─────────────────────────────────────────────
@@ -233,24 +171,6 @@ function isEma9VwapActive() {
 
 function getEma9VwapMode() {
   return ema9vwapMode;
-}
-
-// ── FUT_EMA9_VWAP mode (NIFTY FUTURES twin of EMA9+VWAP) ───────────────────
-
-function setFutEma9VwapActive(mode) {
-  futEma9vwapMode = mode;
-}
-
-function clearFutEma9Vwap() {
-  futEma9vwapMode = null;
-}
-
-function isFutEma9VwapActive() {
-  return futEma9vwapMode !== null;
-}
-
-function getFutEma9VwapMode() {
-  return futEma9vwapMode;
 }
 
 // ── Trend Pullback mode (5-min, secondary socket callback) ────────────────
@@ -381,24 +301,6 @@ function getRsiPivotStMode() {
   return rsiPivotStMode;
 }
 
-// ── FUT_RSI_PIVOT_ST mode (NIFTY FUTURES twin of RSI_PIVOT_ST) ─────────────
-
-function setFutRsiPivotStActive(mode) {
-  futRsiPivotStMode = mode;
-}
-
-function clearFutRsiPivotSt() {
-  futRsiPivotStMode = null;
-}
-
-function isFutRsiPivotStActive() {
-  return futRsiPivotStMode !== null;
-}
-
-function getFutRsiPivotStMode() {
-  return futRsiPivotStMode;
-}
-
 // ── EMA_RSI_ST_V2 mode ──────────────────────────────────────────────────────
 
 function setEmaRsiStV2Mode(mode) {
@@ -417,24 +319,6 @@ function getEmaRsiStV2Mode() {
   return emaRsiStV2Mode;
 }
 
-// ── FUT_EMA_RSI_ST_V2 mode (NIFTY FUTURES twin of EMA_RSI_ST_V2) ───────────
-
-function setFutEmaRsiStV2Mode(mode) {
-  futEmaRsiStV2Mode = mode;
-}
-
-function clearFutEmaRsiStV2Mode() {
-  futEmaRsiStV2Mode = null;
-}
-
-function isFutEmaRsiStV2Active() {
-  return futEmaRsiStV2Mode !== null;
-}
-
-function getFutEmaRsiStV2Mode() {
-  return futEmaRsiStV2Mode;
-}
-
 // ── ST_RSI_PIV_BB mode ──────────────────────────────────────────────────────
 
 function setStRsiPivBbMode(mode) {
@@ -451,24 +335,6 @@ function isStRsiPivBbActive() {
 
 function getStRsiPivBbMode() {
   return stRsiPivBbMode;
-}
-
-// ── FUT_ST_RSI_PIV_BB mode (NIFTY FUTURES twin of ST_RSI_PIV_BB) ───────────
-
-function setFutStRsiPivBbMode(mode) {
-  futStRsiPivBbMode = mode;
-}
-
-function clearFutStRsiPivBbMode() {
-  futStRsiPivBbMode = null;
-}
-
-function isFutStRsiPivBbActive() {
-  return futStRsiPivBbMode !== null;
-}
-
-function getFutStRsiPivBbMode() {
-  return futStRsiPivBbMode;
 }
 
 // ── SAIL_VWAP_ST mode ───────────────────────────────────────────────────────
@@ -501,11 +367,6 @@ function clearSailPivotEmaStMode() { sailPivotEmaStMode = null; }
 function isSailPivotEmaStActive() { return sailPivotEmaStMode !== null; }
 function getSailPivotEmaStMode() { return sailPivotEmaStMode; }
 
-// FUT_PIVOT_EMA_ST (NIFTY FUTURES twin of PIVOT_EMA_ST)
-function setFutPivotEmaStMode(mode) { futPivotEmaStMode = mode; }
-function clearFutPivotEmaStMode() { futPivotEmaStMode = null; }
-function isFutPivotEmaStActive() { return futPivotEmaStMode !== null; }
-function getFutPivotEmaStMode() { return futPivotEmaStMode; }
 
 // ── GAP_RUNAWAY modes (NIFTY options + the stock scanner) ──────────────────
 
@@ -554,11 +415,7 @@ function isAnyActive() {
          sailVwapStMode !== null ||
          pivotEmaStMode !== null || sailPivotEmaStMode !== null ||
          gapRunawayMode !== null || gapRunawayStkMode !== null ||
-         simple930Mode !== null ||
-         // FUT twins (NIFTY FUTURES) — each its own slot.
-         futEmaRsiStMode !== null || futBbRsiMode !== null || futEma9vwapMode !== null ||
-         futRsiPivotStMode !== null || futEmaRsiStV2Mode !== null ||
-         futStRsiPivBbMode !== null || futPivotEmaStMode !== null;
+         simple930Mode !== null;
 }
 
 /** Raw mutex check (no reservation). Returns { allowed, reason } */
@@ -567,16 +424,8 @@ function _canStartRaw(mode) {
     case "EMA_RSI_ST_PAPER":
       if (primaryMode === "EMA_RSI_ST_PAPER") return { allowed: false, reason: "Paper Trade is already running" };
       return { allowed: true };
-    // FUT twins (NIFTY FUTURES) — each checked ONLY against its own slot, so a
-    // twin runs in parallel with its options original and every other strategy.
-    case "FUT_EMA_RSI_ST_PAPER":
-      if (futEmaRsiStMode === "FUT_EMA_RSI_ST_PAPER") return { allowed: false, reason: "FUT EMA_RSI_ST Paper is already running" };
-      return { allowed: true };
     case "BB_RSI_PAPER":
       if (bbRsiMode === "BB_RSI_PAPER") return { allowed: false, reason: "BB_RSI Paper is already running" };
-      return { allowed: true };
-    case "FUT_BB_RSI_PAPER":
-      if (futBbRsiMode === "FUT_BB_RSI_PAPER") return { allowed: false, reason: "FUT BB_RSI Paper is already running" };
       return { allowed: true };
     case "PA_PAPER":
       if (paMode === "PA_PAPER") return { allowed: false, reason: "Price Action Paper is already running" };
@@ -586,9 +435,6 @@ function _canStartRaw(mode) {
       return { allowed: true };
     case "EMA9VWAP_PAPER":
       if (ema9vwapMode === "EMA9VWAP_PAPER") return { allowed: false, reason: "EMA9+VWAP Paper is already running" };
-      return { allowed: true };
-    case "FUT_EMA9VWAP_PAPER":
-      if (futEma9vwapMode === "FUT_EMA9VWAP_PAPER") return { allowed: false, reason: "FUT EMA9+VWAP Paper is already running" };
       return { allowed: true };
     case "TREND_PB_PAPER":
       if (trendPbMode === "TREND_PB_PAPER") return { allowed: false, reason: "Trend Pullback Paper is already running" };
@@ -611,24 +457,15 @@ function _canStartRaw(mode) {
     case "RSI_PIVOT_ST_PAPER":
       if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is already running" };
       return { allowed: true };
-    case "FUT_RSI_PIVOT_ST_PAPER":
-      if (futRsiPivotStMode === "FUT_RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "FUT RSI Pivot ST Paper is already running" };
-      return { allowed: true };
     // EMA_RSI_ST_V2 is checked ONLY against its own sibling — it is a separate
     // strategy from EMA_RSI_ST (V1), not another mode of it, so V1 and V2 may
     // run at the same time.
     case "EMA_RSI_ST_V2_PAPER":
       if (emaRsiStV2Mode === "EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "EMA_RSI_ST_V2 Paper is already running" };
       return { allowed: true };
-    case "FUT_EMA_RSI_ST_V2_PAPER":
-      if (futEmaRsiStV2Mode === "FUT_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "FUT EMA_RSI_ST_V2 Paper is already running" };
-      return { allowed: true };
     // ST_RSI_PIV_BB is a separate strategy, checked ONLY against its own sibling.
     case "ST_RSI_PIV_BB_PAPER":
       if (stRsiPivBbMode === "ST_RSI_PIV_BB_PAPER") return { allowed: false, reason: "ST_RSI_PIV_BB Paper is already running" };
-      return { allowed: true };
-    case "FUT_ST_RSI_PIV_BB_PAPER":
-      if (futStRsiPivBbMode === "FUT_ST_RSI_PIV_BB_PAPER") return { allowed: false, reason: "FUT ST_RSI_PIV_BB Paper is already running" };
       return { allowed: true };
     // SAIL_VWAP_ST is a separate strategy, checked ONLY against its own sibling.
     case "SAIL_VWAP_ST_PAPER":
@@ -640,9 +477,6 @@ function _canStartRaw(mode) {
       return { allowed: true };
     case "SAIL_PIVOT_EMA_ST_PAPER":
       if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Paper is already running" };
-      return { allowed: true };
-    case "FUT_PIVOT_EMA_ST_PAPER":
-      if (futPivotEmaStMode === "FUT_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "FUT PIVOT_EMA_ST Paper is already running" };
       return { allowed: true };
     // GAP_RUNAWAY — checked ONLY against its own sibling; the stock scanner is paper-only.
     case "GAP_RUNAWAY_PAPER":
@@ -693,20 +527,14 @@ function canStart(mode, opts) {
 module.exports = {
   // Primary (backward compatible)
   setActive, clear, isActive, getMode,
-  // FUT_EMA_RSI_ST (NIFTY FUTURES)
-  setFutEmaRsiStActive, clearFutEmaRsiSt, isFutEmaRsiStActive, getFutEmaRsiStMode,
   // BB_RSI
   setBbRsiActive, clearBbRsi, isBbRsiActive, getBbRsiMode,
-  // FUT_BB_RSI (NIFTY FUTURES)
-  setFutBbRsiActive, clearFutBbRsi, isFutBbRsiActive, getFutBbRsiMode,
   // Price Action
   setPAActive, clearPA, isPAActive, getPAMode,
   // ORB
   setOrbActive, clearOrb, isOrbActive, getOrbMode,
   // EMA9+VWAP
   setEma9VwapActive, clearEma9Vwap, isEma9VwapActive, getEma9VwapMode,
-  // FUT_EMA9_VWAP (NIFTY FUTURES)
-  setFutEma9VwapActive, clearFutEma9Vwap, isFutEma9VwapActive, getFutEma9VwapMode,
   // Trend Pullback
   setTrendPbActive, clearTrendPb, isTrendPbActive, getTrendPbMode,
   // Trend Day Scalp
@@ -721,23 +549,15 @@ module.exports = {
   setEarlyBirdActive, clearEarlyBird, isEarlyBirdActive, getEarlyBirdMode,
 
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
-  // FUT_RSI_PIVOT_ST (NIFTY FUTURES)
-  setFutRsiPivotStActive, clearFutRsiPivotSt, isFutRsiPivotStActive, getFutRsiPivotStMode,
   // EMA_RSI_ST_V2
   setEmaRsiStV2Mode, clearEmaRsiStV2Mode, isEmaRsiStV2Active, getEmaRsiStV2Mode,
-  // FUT_EMA_RSI_ST_V2 (NIFTY FUTURES)
-  setFutEmaRsiStV2Mode, clearFutEmaRsiStV2Mode, isFutEmaRsiStV2Active, getFutEmaRsiStV2Mode,
   // ST_RSI_PIV_BB
   setStRsiPivBbMode, clearStRsiPivBbMode, isStRsiPivBbActive, getStRsiPivBbMode,
-  // FUT_ST_RSI_PIV_BB (NIFTY FUTURES)
-  setFutStRsiPivBbMode, clearFutStRsiPivBbMode, isFutStRsiPivBbActive, getFutStRsiPivBbMode,
   // SAIL_VWAP_ST
   setSailVwapStMode, clearSailVwapStMode, isSailVwapStActive, getSailVwapStMode,
   // PIVOT_EMA_ST family
   setPivotEmaStMode, clearPivotEmaStMode, isPivotEmaStActive, getPivotEmaStMode,
   setSailPivotEmaStMode, clearSailPivotEmaStMode, isSailPivotEmaStActive, getSailPivotEmaStMode,
-  // FUT_PIVOT_EMA_ST (NIFTY FUTURES)
-  setFutPivotEmaStMode, clearFutPivotEmaStMode, isFutPivotEmaStActive, getFutPivotEmaStMode,
   // GAP_RUNAWAY (NIFTY) + GAP_RUNAWAY_STK (stock scanner)
   setGapRunawayMode, clearGapRunawayMode, isGapRunawayActive, getGapRunawayMode,
   setGapRunawayStkMode, clearGapRunawayStkMode, isGapRunawayStkActive, getGapRunawayStkMode,
@@ -761,10 +581,6 @@ const _CLEAR_SLOT = {
   clearGapRunawayMode: "GAP_RUNAWAY", clearGapRunawayStkMode: "GAP_RUNAWAY_STK",
   clearSimple930: "SIMPLE930",
   clearItm20Scalp: "ITM20_SCALP",
-  // FUT twins (NIFTY FUTURES) — slot = mode minus "_PAPER", as _slotOf derives it.
-  clearFutEmaRsiSt: "FUT_EMA_RSI_ST", clearFutBbRsi: "FUT_BB_RSI", clearFutEma9Vwap: "FUT_EMA9VWAP",
-  clearFutRsiPivotSt: "FUT_RSI_PIVOT_ST", clearFutEmaRsiStV2Mode: "FUT_EMA_RSI_ST_V2",
-  clearFutStRsiPivBbMode: "FUT_ST_RSI_PIV_BB", clearFutPivotEmaStMode: "FUT_PIVOT_EMA_ST",
 };
 for (const name of Object.keys(module.exports)) {
   const fn = module.exports[name];

@@ -417,78 +417,6 @@ function clearEma9VwapPosition() {
   console.log("[PERSIST] EMA9+VWAP position file cleared.");
 }
 
-// ── FUT_EMA9_VWAP (NIFTY FUTURES twin of EMA9+VWAP) ─────────────────────────
-// A copy of the EMA9+VWAP block above on its OWN file, so the options strategy
-// and its futures twin can each hold and recover a position at the same time.
-// Same persisted fields; a twin position is always isFutures and its `symbol`
-// is the NIFTY month future.
-
-const FUT_EMA9VWAP_POS_FILE = path.join(DATA_DIR, ".active_fut_ema9vwap_position.json");
-
-function saveFutEma9VwapPosition(position, sessionMeta) {
-  try {
-    if (!position) {
-      _persistAtomic(FUT_EMA9VWAP_POS_FILE, null);
-      return;
-    }
-    const data = {
-      position: {
-        side:            position.side,
-        symbol:          position.symbol,
-        qty:             position.qty,
-        entryPrice:      position.entryPrice,
-        spotAtEntry:     position.spotAtEntry,
-        stopLoss:        position.stopLoss,
-        initialStopLoss: position.initialStopLoss,
-        bestPrice:       position.bestPrice,
-        entryTime:       position.entryTime,
-        // Observer-only, but it must survive a restart: re-reading it after a
-        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
-        vixAtEntry:      position.vixAtEntry ?? null,
-        orderId:         position.orderId,
-        isFutures:       !!position.isFutures,
-        optionEntryLtp:  position.optionEntryLtp,
-        optionStrike:    position.optionStrike,
-        optionExpiry:    position.optionExpiry,
-        optionType:      position.optionType,
-      },
-      sessionMeta: sessionMeta || {},
-      savedAt: Date.now(),
-      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
-    };
-    _persistAtomic(FUT_EMA9VWAP_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] FUT EMA9+VWAP position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
-  } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save FUT EMA9+VWAP position: ${err.message}`);
-  }
-}
-
-function loadFutEma9VwapPosition() {
-  try {
-    if (!fs.existsSync(FUT_EMA9VWAP_POS_FILE)) return null;
-    const data = _readSnapshot(FUT_EMA9VWAP_POS_FILE);
-    if (!data) return null;
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale FUT EMA9+VWAP position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
-      _markStale(FUT_EMA9VWAP_POS_FILE, data);
-      return null;
-    }
-    if (data.position) {
-      console.log(`[PERSIST] FUT EMA9+VWAP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
-    }
-    return data;
-  } catch (err) {
-    console.warn(`[PERSIST] Could not load FUT EMA9+VWAP position: ${err.message}`);
-    return null;
-  }
-}
-
-function clearFutEma9VwapPosition() {
-  _persistAtomic(FUT_EMA9VWAP_POS_FILE, null);
-  console.log("[PERSIST] FUT EMA9+VWAP position file cleared.");
-}
-
 // ── ORB (opening-range breakout, Fyers) ─────────────────────────────────────
 
 const ORB_POS_FILE = path.join(DATA_DIR, ".active_orb_position.json");
@@ -1011,93 +939,6 @@ function clearRsiPivotStPosition() {
   console.log("[PERSIST] RSI_PIVOT_ST position file cleared.");
 }
 
-// ── FUT_RSI_PIVOT_ST (NIFTY FUTURES twin of RSI_PIVOT_ST) ───────────────────
-// A copy of the RSI_PIVOT_ST block above on its OWN file, so the options
-// strategy and its futures twin can each hold and recover a position at the
-// same time. Same persisted fields; a twin position is always isFutures and its
-// `symbol` is the NIFTY month future (the premium-floor fields stay null).
-
-const FUT_RSI_PIVOT_ST_POS_FILE = path.join(DATA_DIR, ".active_fut_rsi_pivot_st_position.json");
-
-function saveFutRsiPivotStPosition(position, sessionMeta) {
-  try {
-    if (!position) { _persistAtomic(FUT_RSI_PIVOT_ST_POS_FILE, null); return; }
-    const data = {
-      position: {
-        side:            position.side,
-        symbol:          position.symbol,
-        qty:             position.qty,
-        entryPrice:      position.entryPrice,
-        spotAtEntry:     position.spotAtEntry || position.entrySpot,
-        stopLoss:        position.stopLoss || position.slSpot,
-        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
-        target:          position.targetSpot,
-        slPts:           position.slPts,
-        targetPts:       position.targetPts,
-        rr:              position.rr,
-        signalStrength:  position.signalStrength,
-        crossedLevel:    position.crossedLevel,
-        pp:              position.pp,
-        r1:              position.r1,
-        s1:              position.s1,
-        entryUnixSec:    position.entryUnixSec,
-        entryTime:       position.entryTime,
-        // Observer-only, but it must survive a restart: re-reading it after a
-        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
-        vixAtEntry:      position.vixAtEntry ?? null,
-        orderId:         position.orderId,
-        isFutures:       !!position.isFutures,
-        optionEntryLtp:  position.optionEntryLtp,
-        optionStrike:    position.optionStrike,
-        optionExpiry:    position.optionExpiry,
-        optionType:      position.optionType || position.side,
-        // The premium floor is the second (and on PE the only) stop, and it
-        // RATCHETS — recovery must resume on the floor already reached, not
-        // re-derive it from the entry. null is meaningful: it records that this
-        // side does not carry a premium stop at all.
-        premiumFloor:        position.premiumFloor != null ? position.premiumFloor : null,
-        initialPremiumFloor: position.initialPremiumFloor != null ? position.initialPremiumFloor : null,
-        peakPremium:         position.peakPremium,
-        premiumStopPct:      position.premiumStopPct,
-        premiumStopSides:    position.premiumStopSides,
-        premiumStopApplies:  position.premiumStopApplies,
-      },
-      sessionMeta: sessionMeta || {},
-      savedAt: Date.now(),
-      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
-    };
-    _persistAtomic(FUT_RSI_PIVOT_ST_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] FUT_RSI_PIVOT_ST position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
-  } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save FUT_RSI_PIVOT_ST position: ${err.message}`);
-  }
-}
-
-function loadFutRsiPivotStPosition() {
-  try {
-    if (!fs.existsSync(FUT_RSI_PIVOT_ST_POS_FILE)) return null;
-    const data = _readSnapshot(FUT_RSI_PIVOT_ST_POS_FILE);
-    if (!data) return null;
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale FUT_RSI_PIVOT_ST position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
-      _markStale(FUT_RSI_PIVOT_ST_POS_FILE, data);
-      return null;
-    }
-    if (data.position) console.log(`[PERSIST] FUT_RSI_PIVOT_ST position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
-    return data;
-  } catch (err) {
-    console.warn(`[PERSIST] Could not load FUT_RSI_PIVOT_ST position: ${err.message}`);
-    return null;
-  }
-}
-
-function clearFutRsiPivotStPosition() {
-  _persistAtomic(FUT_RSI_PIVOT_ST_POS_FILE, null);
-  console.log("[PERSIST] FUT_RSI_PIVOT_ST position file cleared.");
-}
-
-
 // ── EMA_RSI_ST_V2 (EMA20/50 + RSI + SuperTrend-only stop, NIFTY, Zerodha) ────
 // A deliberate clone of the EMA_RSI_ST (V1) block at the top of this file, on
 // its own file so a V1 and a V2 position can be persisted and recovered at the
@@ -1177,77 +1018,6 @@ function clearEmaRsiStV2Position() {
   console.log("[PERSIST] EMA_RSI_ST_V2 position file cleared.");
 }
 
-// ── FUT_EMA_RSI_ST_V2 (NIFTY FUTURES twin of EMA_RSI_ST_V2) ─────────────────
-// A copy of the EMA_RSI_ST_V2 block above on its OWN file, so the options
-// strategy and its futures twin can each hold and recover a position at the
-// same time. Same persisted fields — `stopLoss` is the live trail, persisted at
-// its CURRENT value; a twin position is always isFutures (NIFTY month future).
-
-const FUT_EMA_RSI_ST_V2_POS_FILE = path.join(DATA_DIR, ".active_fut_ema_rsi_st_v2_position.json");
-
-function saveFutEmaRsiStV2Position(position, sessionMeta) {
-  try {
-    if (!position) { _persistAtomic(FUT_EMA_RSI_ST_V2_POS_FILE, null); return; }
-    const data = {
-      position: {
-        side:            position.side,
-        symbol:          position.symbol,
-        qty:             position.qty,
-        entryPrice:      position.entryPrice,
-        spotAtEntry:     position.spotAtEntry || position.entrySpot,
-        // The SuperTrend trail — V2's only stop. Persisted at its CURRENT
-        // ratcheted value, never re-derived on load.
-        stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
-        initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
-        bestPrice:       position.bestPrice,
-        entryUnixSec:    position.entryUnixSec,
-        entryTime:       position.entryTime,
-        // Observer-only, but it must survive a restart: re-reading it after a
-        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
-        vixAtEntry:      position.vixAtEntry ?? null,
-        orderId:         position.orderId,
-        isFutures:       !!position.isFutures,
-        optionEntryLtp:  position.optionEntryLtp,
-        optionStrike:    position.optionStrike,
-        optionExpiry:    position.optionExpiry,
-        optionType:      position.optionType || position.side,
-        signalStrength:  position.signalStrength,
-      },
-      sessionMeta: sessionMeta || {},
-      savedAt: Date.now(),
-      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
-    };
-    _persistAtomic(FUT_EMA_RSI_ST_V2_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] FUT_EMA_RSI_ST_V2 position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
-  } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save FUT_EMA_RSI_ST_V2 position: ${err.message}`);
-  }
-}
-
-function loadFutEmaRsiStV2Position() {
-  try {
-    if (!fs.existsSync(FUT_EMA_RSI_ST_V2_POS_FILE)) return null;
-    const data = _readSnapshot(FUT_EMA_RSI_ST_V2_POS_FILE);
-    if (!data) return null;
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale FUT_EMA_RSI_ST_V2 position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
-      _markStale(FUT_EMA_RSI_ST_V2_POS_FILE, data);
-      return null;
-    }
-    if (data.position) console.log(`[PERSIST] FUT_EMA_RSI_ST_V2 position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
-    return data;
-  } catch (err) {
-    console.warn(`[PERSIST] Could not load FUT_EMA_RSI_ST_V2 position: ${err.message}`);
-    return null;
-  }
-}
-
-function clearFutEmaRsiStV2Position() {
-  _persistAtomic(FUT_EMA_RSI_ST_V2_POS_FILE, null);
-  console.log("[PERSIST] FUT_EMA_RSI_ST_V2 position file cleared.");
-}
-
 // ── ST_RSI_PIV_BB (SuperTrend + RSI + pivot R1/S1 + Bollinger, NIFTY, Zerodha) ─
 // Copied from the EMA_RSI_ST_V2 block above, on its OWN file. Like V2 it has
 // exactly ONE stop: the SuperTrend line, which is the initial stop AND the
@@ -1320,77 +1090,6 @@ function loadStRsiPivBbPosition() {
 function clearStRsiPivBbPosition() {
   _persistAtomic(ST_RSI_PIV_BB_POS_FILE, null);
   console.log("[PERSIST] ST_RSI_PIV_BB position file cleared.");
-}
-
-// ── FUT_ST_RSI_PIV_BB (NIFTY FUTURES twin of ST_RSI_PIV_BB) ─────────────────
-// A copy of the ST_RSI_PIV_BB block above on its OWN file, so the options
-// strategy and its futures twin can each hold and recover a position at the
-// same time. Same persisted fields — `stopLoss` is the live trail, persisted at
-// its CURRENT value; a twin position is always isFutures (NIFTY month future).
-
-const FUT_ST_RSI_PIV_BB_POS_FILE = path.join(DATA_DIR, ".active_fut_st_rsi_piv_bb_position.json");
-
-function saveFutStRsiPivBbPosition(position, sessionMeta) {
-  try {
-    if (!position) { _persistAtomic(FUT_ST_RSI_PIV_BB_POS_FILE, null); return; }
-    const data = {
-      position: {
-        side:            position.side,
-        symbol:          position.symbol,
-        qty:             position.qty,
-        entryPrice:      position.entryPrice,
-        spotAtEntry:     position.spotAtEntry || position.entrySpot,
-        // The SuperTrend trail — the only stop. Persisted at its CURRENT
-        // tightened value, never re-derived on load.
-        stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
-        initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
-        bestPrice:       position.bestPrice,
-        entryUnixSec:    position.entryUnixSec,
-        entryTime:       position.entryTime,
-        entryTf:         position.entryTf ?? null,
-        tradeRes:        position.tradeRes ?? null,
-        vixAtEntry:      position.vixAtEntry ?? null,
-        orderId:         position.orderId,
-        isFutures:       !!position.isFutures,
-        optionEntryLtp:  position.optionEntryLtp,
-        optionStrike:    position.optionStrike,
-        optionExpiry:    position.optionExpiry,
-        optionType:      position.optionType || position.side,
-        signalStrength:  position.signalStrength,
-      },
-      sessionMeta: sessionMeta || {},
-      savedAt: Date.now(),
-      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
-    };
-    _persistAtomic(FUT_ST_RSI_PIV_BB_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] FUT_ST_RSI_PIV_BB position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
-  } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save FUT_ST_RSI_PIV_BB position: ${err.message}`);
-  }
-}
-
-function loadFutStRsiPivBbPosition() {
-  try {
-    if (!fs.existsSync(FUT_ST_RSI_PIV_BB_POS_FILE)) return null;
-    const data = _readSnapshot(FUT_ST_RSI_PIV_BB_POS_FILE);
-    if (!data) return null;
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale FUT_ST_RSI_PIV_BB position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
-      _markStale(FUT_ST_RSI_PIV_BB_POS_FILE, data);
-      return null;
-    }
-    if (data.position) console.log(`[PERSIST] FUT_ST_RSI_PIV_BB position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
-    return data;
-  } catch (err) {
-    console.warn(`[PERSIST] Could not load FUT_ST_RSI_PIV_BB position: ${err.message}`);
-    return null;
-  }
-}
-
-function clearFutStRsiPivBbPosition() {
-  _persistAtomic(FUT_ST_RSI_PIV_BB_POS_FILE, null);
-  console.log("[PERSIST] FUT_ST_RSI_PIV_BB position file cleared.");
 }
 
 // ── SAIL_VWAP_ST (SAIL VWAP cross + breakout, SuperTrend stop, Zerodha) ─────
@@ -1547,12 +1246,6 @@ function clearPivotEmaStPosition() { return _pivotEmaStPersist.clear(); }
 function saveSailPivotEmaStPosition(position, sessionMeta) { return _sailPivotEmaStPersist.save(position, sessionMeta); }
 function loadSailPivotEmaStPosition() { return _sailPivotEmaStPersist.load(); }
 function clearSailPivotEmaStPosition() { return _sailPivotEmaStPersist.clear(); }
-// FUT_PIVOT_EMA_ST — the NIFTY FUTURES twin of PIVOT_EMA_ST, same builder on its OWN
-// file so the options strategy and its twin can each hold a position at once.
-const _futPivotEmaStPersist  = _makePivotEmaStPersist("FUT_PIVOT_EMA_ST", path.join(DATA_DIR, ".active_fut_pivot_ema_st_position.json"));
-function saveFutPivotEmaStPosition(position, sessionMeta) { return _futPivotEmaStPersist.save(position, sessionMeta); }
-function loadFutPivotEmaStPosition() { return _futPivotEmaStPersist.load(); }
-function clearFutPivotEmaStPosition() { return _futPivotEmaStPersist.clear(); }
 
 // ── GAP_RUNAWAY (GAP_runAway__Kirubakaran, NIFTY options, Zerodha) ──────────
 // Same snapshot shape as the PIVOT_EMA_ST family (one builder, so it cannot
@@ -1777,7 +1470,6 @@ module.exports = {
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
   savePAPosition, loadPAPosition, clearPAPosition,
   saveEma9VwapPosition, loadEma9VwapPosition, clearEma9VwapPosition,
-  saveFutEma9VwapPosition, loadFutEma9VwapPosition, clearFutEma9VwapPosition,
   saveOrbPosition, loadOrbPosition, clearOrbPosition,
   saveTrendPbPosition, loadTrendPbPosition, clearTrendPbPosition,
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
@@ -1786,14 +1478,10 @@ module.exports = {
   saveItm20ScalpPosition, loadItm20ScalpPosition, clearItm20ScalpPosition,
   saveEarlyBirdPositions, loadEarlyBirdPositions, clearEarlyBirdPositions,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
-  saveFutRsiPivotStPosition, loadFutRsiPivotStPosition, clearFutRsiPivotStPosition,
   saveEmaRsiStV2Position, loadEmaRsiStV2Position, clearEmaRsiStV2Position,
-  saveFutEmaRsiStV2Position, loadFutEmaRsiStV2Position, clearFutEmaRsiStV2Position,
   saveStRsiPivBbPosition, loadStRsiPivBbPosition, clearStRsiPivBbPosition,
-  saveFutStRsiPivBbPosition, loadFutStRsiPivBbPosition, clearFutStRsiPivBbPosition,
   saveSailVwapStPosition, loadSailVwapStPosition, clearSailVwapStPosition,
   savePivotEmaStPosition, loadPivotEmaStPosition, clearPivotEmaStPosition,
-  saveFutPivotEmaStPosition, loadFutPivotEmaStPosition, clearFutPivotEmaStPosition,
   saveSailPivotEmaStPosition, loadSailPivotEmaStPosition, clearSailPivotEmaStPosition,
   saveGapRunawayPosition, loadGapRunawayPosition, clearGapRunawayPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,

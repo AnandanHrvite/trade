@@ -15,19 +15,17 @@
  *   - every strategy trades NIFTY options, always — config/instrument.js
  *     getInstrument() no longer reads process.env, so a stale
  *     `INSTRUMENT=NIFTY_FUTURES` left in an .env is IGNORED;
- *   - futures trade only through the FUT_* twin strategies (fut*Paper.js /
- *     fut*Backtest.js), which ask for futures EXPLICITLY on every call — a literal
+ *   - futures can only be asked for EXPLICITLY on a call — a literal
  *     "NIFTY_FUTURES" argument to getSymbol / getSymbolSync / getLotQty, or the
- *     pinned `instrumentMode.futures` binding.
+ *     pinned `instrumentMode.futures` binding. No route does so today.
  *
- * GROUPS 9–11 DISCOVER the routes from disk rather than listing them. A futures
- * twin added later is enrolled the moment its fut*Paper.js file exists and must
- * prove it forces futures; every other route must prove it cannot reach futures
- * through any path the removed toggle used to open.
+ * The route groups DISCOVER the routes from disk rather than listing them: every
+ * route must prove it cannot reach futures through any path the removed toggle
+ * used to open.
  *
  * Exemption sets are kept, re-expressed: the strategies they name (premium-
- * denominated, MCX, stock options, cash equity, options-by-rule) are the ones
- * that must never get a NIFTY futures twin — asserted in the last group.
+ * denominated, MCX, stock options, cash equity, options-by-rule) each prove
+ * their own instrument rule — asserted in the last groups.
  */
 
 const assert = require("assert");
@@ -108,10 +106,9 @@ function bindingsOf(src, namePattern) {
 
 const FUT_LIT = /["']NIFTY_FUTURES["']/;
 
-// ── Strategies that can never have a NIFTY futures twin ─────────────────────
+// ── Strategies with their own instrument rule ───────────────────────────────
 // They used to be EXEMPT from the global toggle; with the toggle gone they are
-// options-only like everything else, and what remains true is that a futures
-// version of them would be meaningless — asserted in the last group.
+// options-only like everything else, and each proves its own rule below.
 //
 // Premium-denominated: the trigger, stop and trail are all option-premium levels.
 const PREMIUM_DENOMINATED = new Set(["simple930Paper.js", "itm20ScalpPaper.js", "itm20ScalpBacktest.js"]);
@@ -125,10 +122,6 @@ const stockUnderlyingOf = (f) => Object.keys(STOCK_OPTIONS).find((k) => STOCK_OP
 const OPTIONS_ONLY_BY_RULE = new Set(["gapRunawayPaper.js"]);
 // Its stock scanner trades CASH EQUITY (intraday shares) — no NIFTY contract.
 const CASH_EQUITY_ONLY = new Set(["gapRunawayStkPaper.js"]);
-
-const NEVER_A_FUTURES_TWIN = (f) =>
-  PREMIUM_DENOMINATED.has(f) || NOT_NIFTY.has(f) || !!stockUnderlyingOf(f) ||
-  OPTIONS_ONLY_BY_RULE.has(f) || CASH_EQUITY_ONLY.has(f);
 
 // ─────────────────────────────────────────────────────────────────────────────
 section("The global INSTRUMENT env is IGNORED — every default reader says options");
@@ -396,7 +389,7 @@ check("applying a pinned NIFTY_FUTURES recording env leaves every options route 
 // ─────────────────────────────────────────────────────────────────────────────
 section("Alerts and history label the instrument they actually traded");
 
-check("a Telegram alert trusts the payload, and a FUT_* mode is always futures", () => {
+check("a Telegram alert trusts the payload", () => {
   // EARLYBIRD can hold an index position and a cash-equity leg at the same time;
   // the equity leg must never be labelled futures.
   const src = read("utils/notify.js");
@@ -406,7 +399,6 @@ check("a Telegram alert trusts the payload, and a FUT_* mode is always futures",
     "an explicit isFutures:false in the payload must win for an options strategy");
   assert.ok(/p\.isSpot === true\) return false/.test(fnSrc),
     "a cash-equity leg must never be labelled futures");
-  assert.ok(/\^FUT\[_-\]/.test(fnSrc), "a FUT_* twin's mode must classify its alert as futures");
 });
 
 check("the trade-history modal reads each TRADE's own instrument, not a global", () => {
@@ -456,99 +448,11 @@ check("config/instrument.js getInstrument() is hard-wired to options", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-section("Every FUT_* twin forces futures — discovered from disk, not listed");
+section("The backtest engines still size and bill futures when told to");
 
-const allRoutes   = fs.readdirSync(ROUTES).filter(f => f.endsWith(".js")).sort();
-const futRoutes   = allRoutes.filter(f => /^fut[A-Z][A-Za-z0-9]*(Paper|Backtest)\.js$/.test(f));
-const futPaper    = futRoutes.filter(f => /Paper\.js$/.test(f));
-const futBacktest = futRoutes.filter(f => /Backtest\.js$/.test(f));
+const allRoutes = fs.readdirSync(ROUTES).filter(f => f.endsWith(".js")).sort();
 
-check("the discovery actually found the futures twins", () => {
-  assert.ok(futPaper.length >= 7, `expected ≥7 fut*Paper.js twins, found ${futPaper.length} — has the naming changed?`);
-  assert.ok(futBacktest.length >= 5, `expected ≥5 fut*Backtest.js twins, found ${futBacktest.length}`);
-});
-
-// Allowed sources for a futures flag inside a twin (INSTRUMENT is the literal there).
-const FUT_FLAG_OK = /\bINSTR(UMENT)?\s*===\s*["']NIFTY_FUTURES["']|instrumentMode\.isFutures\(\)|\.isFutures\s*===\s*true|^true\b/;
-
-for (const file of futRoutes) {
-  const src = codeOf(read(path.join("routes", file)));
-  const forcesByConst  = /\bconst\s+INSTRUMENT\s*=\s*["']NIFTY_FUTURES["']/.test(src);
-  const forcesByBinding = /require\(\s*["']\.\.\/utils\/instrumentMode["']\s*\)\.futures\b/.test(src);
-  const chargeCalls = [...callsOf(src, "getCharges"), ...callsOf(src, "calcCharges")];
-  const isThinBacktest = /Backtest\.js$/.test(file) && !forcesByConst && !forcesByBinding && chargeCalls.length === 0;
-
-  check(`${file} never reads the options-only global instrument`, () => {
-    assert.ok(!/\binstrumentConfig\.INSTRUMENT\b|\binstrument\.INSTRUMENT\b/.test(src),
-      `${file} reads instrumentConfig.INSTRUMENT — always NIFTY_OPTIONS now, so it would trade options`);
-    if (/\binstrumentMode\b/.test(src)) {
-      assert.ok(forcesByBinding,
-        `${file} uses the DEFAULT instrumentMode export — that is the options binding; require(...).futures`);
-    }
-  });
-
-  check(`${file} pins NIFTY_FUTURES (literal const, instrumentMode.futures, or engine isFutures:true)`, () => {
-    if (isThinBacktest) {
-      // The flag must ride on the ENGINE call itself (inline or via a const) — an
-      // isFutures:true anywhere else in the file (a summary stamp) proves nothing.
-      const engineCalls = ["runBacktest", "runEma9VwapBacktest"].flatMap(fn => callsOf(src, fn));
-      assert.ok(engineCalls.length > 0, `${file} delegates to no known backtest engine`);
-      for (const args of engineCalls) {
-        const viaConst = bindingsOf(src, "[A-Z_][A-Z0-9_]*").some(b =>
-          new RegExp(`\\b${b.name}\\b`).test(args) && /isFutures:\s*true/.test(b.rhs));
-        assert.ok(/isFutures:\s*true/.test(args) || viaConst,
-          `${file}: engine call (${args.replace(/\s+/g, " ").slice(0, 120)}…) carries no isFutures:true — it would size and bill options`);
-      }
-      return;
-    }
-    assert.ok(forcesByConst || forcesByBinding,
-      `${file} has neither \`const INSTRUMENT = "NIFTY_FUTURES"\` nor require("../utils/instrumentMode").futures`);
-    for (const b of bindingsOf(src, "INSTRUMENT|INSTR\\w*")) {
-      assert.ok(FUT_LIT.test(b.rhs) || /^INSTRUMENT\b/.test(b.rhs),
-        `${file}: ${b.name} = ${b.rhs} — every instrument binding in a twin must be the futures literal`);
-    }
-  });
-
-  check(`${file} passes "NIFTY_FUTURES" on every getSymbol / getSymbolSync / getLotQty call`, () => {
-    for (const fn of ["getSymbol", "getSymbolSync", "getLotQty"]) {
-      for (const args of callsOf(src, fn)) {
-        assert.ok(FUT_LIT.test(args), `${file}: ${fn}(${args}) — without "NIFTY_FUTURES" this resolves an OPTION`);
-      }
-    }
-  });
-
-  check(`${file} bills every trade at futures rates (isFutures:true)`, () => {
-    assert.ok(!/isFutures:\s*false/.test(src), `${file} hardcodes isFutures:false`);
-    assert.ok(!/instrument:\s*["']NIFTY_OPTIONS["']/.test(src), `${file} stamps a record as NIFTY_OPTIONS`);
-    for (const args of chargeCalls) {
-      const named = args.match(/\bisFutures\s*:\s*([A-Za-z_$][\w$.]*|true|false)/);
-      const shorthand = /(^|[{,])\s*isFutures\s*(?=[,}])/.test(args);
-      assert.ok(named || shorthand, `${file}: getCharges(${args.trim()}) passes no isFutures — it bills option STT`);
-      const id = named ? named[1] : "isFutures";
-      if (id === "true") continue;
-      const binds = bindingsOf(src, id.replace(/[$.]/g, "\\$&"));
-      assert.ok(binds.length > 0, `${file}: charges flag ${id} has no binding in the file`);
-      for (const b of binds) {
-        assert.ok(FUT_FLAG_OK.test(b.rhs) && !/\bfalse\b/.test(b.rhs),
-          `${file}: charges flag ${id} = ${b.rhs} — not provably futures`);
-      }
-    }
-  });
-
-  if (/Paper\.js$/.test(file)) {
-    check(`${file} resolves a FUTURES contract and prices its exit direction-signed`, () => {
-      const resolvesFut = callsOf(src, "getSymbol").some(a => FUT_LIT.test(a)) ||
-                          /instrumentMode\.resolveEntryInstrument\(/.test(src);
-      assert.ok(resolvesFut, `${file} never resolves the futures contract`);
-      const signed = /\(\s*side\s*===\s*["']CE["']\s*\?\s*1\s*:\s*-1\s*\)/.test(src) ||
-                     /instrumentMode\.computePnl\(/.test(src);
-      assert.ok(signed, `${file} has no direction-signed P&L — a winning SHORT would book as a loss`);
-      assert.ok(/isFutures:\s*true/.test(src), `${file} never stamps isFutures:true on its records`);
-    });
-  }
-}
-
-check("the backtest engines a thin twin delegates to size and bill futures when told to", () => {
+check("the backtest engines size and bill futures when told to", () => {
   const be = codeOf(read("services/backtestEngine.js"));
   assert.ok(/btOpts\.isFutures === true/.test(be) && /getLotQty\(\s*undefined\s*,\s*["']NIFTY_FUTURES["']\s*\)/.test(be),
     "backtestEngine must size the lot as a future when btOpts.isFutures is true");
@@ -560,7 +464,7 @@ check("the backtest engines a thin twin delegates to size and bill futures when 
 // ─────────────────────────────────────────────────────────────────────────────
 section("Every other route trades options only — it cannot reach futures through the removed toggle");
 
-const nonFutRoutes = allRoutes.filter(f => /(Paper|Backtest)\.js$/.test(f) && !futRoutes.includes(f));
+const nonFutRoutes = allRoutes.filter(f => /(Paper|Backtest)\.js$/.test(f));
 // A flag in an options route may only come from the options-only getter, the
 // default (options) instrumentMode binding, or a position's own recorded flag.
 const OPT_FLAG_OK = /instrumentConfig\.INSTRUMENT\b|\bINSTR(UMENT)?\s*===\s*["']NIFTY_FUTURES["']|instrumentMode\.isFutures\(\)|\.isFutures\s*===\s*true|^false\b|^["'](?!NIFTY_FUTURES)[A-Z_]+["']/;
@@ -642,43 +546,7 @@ for (const file of nonFutRoutes) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-section("Futures backtests price 1:1 — no delta, no theta");
-
-// Only the twins that run their OWN premium simulation. The thin wrappers
-// delegate to an engine that is told isFutures:true (asserted above).
-const futSelfSim = futBacktest.filter(f => {
-  const s = read(path.join("routes", f));
-  return /BACKTEST_DELTA/.test(s) && /BACKTEST_THETA_DAY/.test(s);
-});
-
-check("the discovery found the self-simulating futures backtests", () => {
-  assert.ok(futSelfSim.length >= 3, `expected ≥3 self-simulating fut*Backtest.js, found ${futSelfSim.length}`);
-});
-
-for (const file of futSelfSim) {
-  const src = codeOf(read(path.join("routes", file)));
-  check(`${file} neutralises delta and theta (it is always futures)`, () => {
-    const deltaOne  = /\?\s*1\.0\s*:/.test(src) || /delta:\s*1\.0/.test(src);
-    const thetaZero = /\?\s*0\s+:/.test(src) || /thetaPerDay:\s*0/.test(src);
-    assert.ok(deltaOne && thetaZero,
-      `${file} must collapse δ→1 / θ→0 — a 0.55 delta on a 1:1 instrument halves every move`);
-    const flag = bindingsOf(src, "IS_FUT|isFutures");
-    assert.ok(flag.length > 0 && flag.every(b => FUT_FLAG_OK.test(b.rhs)),
-      `${file}: the δ/θ switch must hang off the futures literal`);
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-section("Every twin mirrors a real options strategy — and never one that cannot be futures");
-
-check("each fut*X.js has its options original x*.js, and that original may have a futures twin", () => {
-  for (const f of futRoutes) {
-    const orig = f.charAt(3).toLowerCase() + f.slice(4);
-    assert.ok(allRoutes.includes(orig), `${f} has no options original ${orig} — what does it mirror?`);
-    assert.ok(!NEVER_A_FUTURES_TWIN(orig),
-      `${f} is a futures twin of ${orig}, whose levels/underlying have no NIFTY-futures meaning`);
-  }
-});
+section("The options-only exemption sets still name real routes");
 
 check("the never-a-twin sets still name real routes (an empty exemption is a dead one)", () => {
   for (const f of [...PREMIUM_DENOMINATED, ...STOCK_OPTIONS.SAIL, ...OPTIONS_ONLY_BY_RULE, ...CASH_EQUITY_ONLY]) {

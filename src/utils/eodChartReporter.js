@@ -78,13 +78,6 @@ const STRATEGIES = [
   // that is the only chart any of its rules read.
   { group: "SIMPLE930",    label: "SIMPLE 9:30",       module: "../routes/simple930Paper" },
   // Futures twins (same rules on NIFTY futures) — each its own paper route/chart.
-  { group: "FUT_EMA_RSI_ST",    label: "FUT EMA RSI ST",    module: "../routes/futEmaRsiStPaper" },
-  { group: "FUT_BB_RSI",        label: "FUT BB RSI",        module: "../routes/futBbRsiPaper",    overlay: "bbMiddle" },
-  { group: "FUT_EMA9VWAP",      label: "FUT EMA9 VWAP",     module: "../routes/futEma9vwapPaper" },
-  { group: "FUT_RSI_PIVOT_ST",  label: "FUT RSI Pivot ST",  module: "../routes/futRsiPivotStPaper" },
-  { group: "FUT_EMA_RSI_ST_V2", label: "FUT EMA_RSI_ST_V2", module: "../routes/futEmaRsiStV2Paper" },
-  { group: "FUT_ST_RSI_PIV_BB", label: "FUT ST_RSI_PIV_BB", module: "../routes/futStRsiPivBbPaper" },
-  { group: "FUT_PIVOT_EMA_ST",  label: "FUT PIVOT_EMA_ST",  module: "../routes/futPivotEmaStPaper" },
 ];
 
 function istNow() {

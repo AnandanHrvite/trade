@@ -19,13 +19,12 @@ const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD, preponedEx
  */
 
 // THE GLOBAL TOGGLE IS GONE. `INSTRUMENT` used to be one Settings switch that
-// flipped EVERY strategy between options and futures. Futures now trade only
-// through their OWN strategies (the FUT_* twins — FUT_EMA_RSI_ST, FUT_BB_RSI,
-// …), so every other strategy is options, always: getInstrument() no longer
-// reads process.env. A stale `INSTRUMENT=NIFTY_FUTURES` left in an .env is
+// flipped EVERY strategy between options and futures. Futures can now only be
+// asked for explicitly by a strategy, so every strategy is options unless it
+// says otherwise: getInstrument() no longer reads process.env. A stale `INSTRUMENT=NIFTY_FUTURES` left in an .env is
 // ignored, by design — it must never turn an options strategy into a futures one.
 //
-// A FUT_* twin asks for futures EXPLICITLY, per call, through the optional
+// A futures strategy asks for futures EXPLICITLY, per call, through the optional
 // `instrument` argument of getSymbol / getSymbolSync / getLotQty (or through
 // instrumentMode.futures). Anything that is not a recognised instrument falls
 // back to options, the safe default.
