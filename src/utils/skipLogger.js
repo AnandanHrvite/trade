@@ -52,8 +52,23 @@ function istDateString(unixMs) {
   return `${y}-${m < 10 ? "0" : ""}${m}-${d < 10 ? "0" : ""}${d}`;
 }
 
+// A RUNNING (strategy, market) pair skips under its own mode key — see
+// tradeLogger._pairMode (same lazy rule, same reason).
+function _pairPrefix(mode) {
+  try {
+    const p = require("../config/pairs").byModeKey(mode);
+    return p && p.runs && !p.home ? `${p.modeKey}_paper_skips_` : null;
+  } catch (_) { return null; }
+}
+/** Every skip-logging mode: the registry's, then each running pair's. */
+function modes() {
+  let extra = [];
+  try { extra = require("../config/pairs").runnable().map((p) => p.modeKey); } catch (_) {}
+  return [...Object.keys(FILE_PREFIX_BY_MODE), ...extra];
+}
+
 function _prefix(mode) {
-  const p = FILE_PREFIX_BY_MODE[mode];
+  const p = FILE_PREFIX_BY_MODE[mode] || _pairPrefix(mode);
   if (!p) throw new Error(`skipLogger: unknown mode "${mode}"`);
   return p;
 }
@@ -138,6 +153,7 @@ function readDailySkips(mode, dateStr) {
 }
 
 module.exports = {
+  modes,
   appendSkipLog,
   filePathFor,
   listDates,

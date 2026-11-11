@@ -247,7 +247,9 @@ check("every strategy's home section has its Trade days key; ORB / PA / BB_RSI k
 });
 check("pair fields are generated from the home section (one per own key), grouped in the five groups", () => {
   for (const p of pairs.all().filter(p => !p.home)) {
-    const { section: sec, fields, shared } = PS.pairFieldsFor(p);
+    const { section: sec, fields: allFields, shared } = PS.pairFieldsFor(p);
+    // A running pair adds its own pair-only fields (no NIFTY twin) — checked below.
+    const fields = allFields.filter(f => !f.pairOnly);
     const own = sec.fields.filter(f => pairs.pairKey(p, f.key) && !/_LIVE_|_POS_FILE$/.test(f.key));
     assert.strictEqual(fields.length, own.length, p.id);
     assert.strictEqual(fields.length + shared.length + (sec.fields.length - own.length - shared.length), sec.fields.length);
@@ -259,6 +261,19 @@ check("pair fields are generated from the home section (one per own key), groupe
     assert.deepStrictEqual(td.map(f => f.key), [p.expiryDayOnlyKey], `${p.id}: Trade days`);
     assert.strictEqual(td[0].type, "select");
   }
+});
+check("a running pair's pane adds exactly its fill-at-quote and spread-limit keys; other pairs add none", () => {
+  for (const p of pairs.all().filter(p => !p.home)) {
+    const extra = PS.pairFieldsFor(p).fields.filter(f => f.pairOnly).map(f => f.key);
+    assert.deepStrictEqual(extra, p.runs ? [`${p.envPrefix}_PAPER_FILL_AT_QUOTE`, `${p.envPrefix}_MAX_SPREAD_PTS`] : [], p.id);
+  }
+  withEnv({ MAX_BID_ASK_SPREAD_PTS: "3" }, () => {
+    const html = PS.renderPairSection(pairs.get("emaRsiStV2", "SENSEX"), { ...process.env });
+    const row = html.split('<div class="setting-row pair-row').find(r => r.includes('data-key="SENSEX_EMA_RSI_ST_V2_MAX_SPREAD_PTS"'));
+    assert.ok(row && row.includes("Common limit (<b>3</b>)"), "spread limit shows the common limit");
+    const fill = html.split('<div class="setting-row pair-row').find(r => r.includes('data-key="SENSEX_EMA_RSI_ST_V2_PAPER_FILL_AT_QUOTE"'));
+    assert.ok(fill && fill.includes("Default (<b>On</b>)") && /data-key="SENSEX_EMA_RSI_ST_V2_PAPER_FILL_AT_QUOTE" checked/.test(fill), "fill-at-quote defaults ON");
+  });
 });
 check("no market-pair field is hand-written in the Settings schema", () => {
   const src = fs.readFileSync(path.join(__dirname, "../src/routes/settings.js"), "utf8");
@@ -325,6 +340,16 @@ check("a pair switched ON appears under its market; the rest stay hidden; NIFTY 
     assert.ok(stocks.includes("GAP_RUNAWAY SCANNER"), "STOCKS keeps the gap-runaway scanner");
     assert.deepStrictEqual(s.groups.filter(g => g.parent === "nav-parent-nifty"),
       baseline.sidebar.orbPaper.groups.filter(g => g.parent === "nav-parent-nifty"));
+  });
+});
+check("a RUNNING pair switched ON links its real Paper / History pages (and opens on them)", () => {
+  withEnv({ SENSEX_EMA_RSI_ST_V2_MODE_ENABLED: "true" }, () => {
+    const s = sidebarStructure(nav.buildSidebar("pair:sensex_ema_rsi_st_v2:paper", false));
+    const g = s.groups.filter(g => g.parent === "nav-parent-sensex");
+    assert.deepStrictEqual(g.map(x => [x.header, x.items.map(i => i[0])]),
+      [["EMA_RSI_ST_V2", ["/sensex_ema_rsi_st_v2-paper/status", "/sensex_ema_rsi_st_v2-paper/history", "/settings#pair-sensex-ema-rsi-st-v2"]]]);
+    assert.strictEqual(g[0].collapsed, false, "the active pair's group is open");
+    assert.ok(g[0].items[0][2], "its Paper page is the active item");
   });
 });
 check("an MCX market never lists a needsIndexOpen strategy, even when its key is set", () => {

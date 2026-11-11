@@ -465,7 +465,22 @@ section("Every other route trades options only — it cannot reach futures throu
 const nonFutRoutes = allRoutes.filter(f => /(Paper|Backtest)\.js$/.test(f));
 // A flag in an options route may only come from the options-only getter, the
 // default (options) instrumentMode binding, or a position's own recorded flag.
-const OPT_FLAG_OK = /instrumentConfig\.INSTRUMENT\b|\bINSTR(UMENT)?\s*===\s*["']NIFTY_FUTURES["']|instrumentMode\.isFutures\(\)|\.isFutures\s*===\s*true|^false\b|^["'](?!NIFTY_FUTURES)[A-Z_]+["']/;
+// A create(pair) builder's flag comes from pairRuntime.instrumentName(), which on
+// the route's own (home) instance IS instrumentConfig.INSTRUMENT — checked below;
+// only a NIFTY_FUT pair instance answers futures.
+const OPT_FLAG_OK = /instrumentConfig\.INSTRUMENT\b|^rt\.instrumentName\(\)|\bINSTR(UMENT)?\s*===\s*["']NIFTY_FUTURES["']|instrumentMode\.isFutures\(\)|\.isFutures\s*===\s*true|^false\b|^["'](?!NIFTY_FUTURES)[A-Z_]+["']/;
+
+check("a builder route's home instance answers the options-only getter (only its NIFTY_FUT pair trades futures)", () => {
+  const pairRuntime = require("../src/utils/pairRuntime");
+  const instrument = require("../src/config/instrument");
+  const pairs = require("../src/config/pairs");
+  for (const id of pairs.RUNS_AS_PAIR) {
+    assert.strictEqual(pairRuntime.forStrategy(id).instrumentName(), instrument.INSTRUMENT, id);
+    for (const p of pairs.runnable().filter(x => x.strategyId === id)) {
+      assert.strictEqual(pairRuntime.forPair(p).instrumentName() === "NIFTY_FUTURES", p.marketKey === "NIFTY_FUT", p.id);
+    }
+  }
+});
 
 check("the discovery found the options routes", () => {
   assert.ok(nonFutRoutes.filter(f => /Paper\.js$/.test(f)).length >= 19,   // 17 NIFTY + SAIL_VWAP_ST + GAP_RUNAWAY_STK

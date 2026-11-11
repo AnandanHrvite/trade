@@ -26,8 +26,15 @@
 
 // Per-strategy toggle (default ON). prefix = "EMA_RSI_ST" | "BB_RSI". Read live so a
 // Settings change applies to a running session without a restart.
+// A (strategy, market) pair's prefix (BN_EMA_RSI_ST_V2) inherits its home
+// pair's value when its own key is unset (config/pairs.js envGet).
+let _pairs = null;
+function _env(k) {
+  if (!_pairs) _pairs = require("../config/pairs");
+  return _pairs.envGet(k);
+}
 function enabled(prefix) {
-  return (process.env[prefix + "_CONFIRM_CANDLE_ENABLED"] || "true").toLowerCase() === "true";
+  return (_env(prefix + "_CONFIRM_CANDLE_ENABLED") || "true").toLowerCase() === "true";
 }
 
 // Live (per-tick) cross test: has price `p` crossed the trigger in the signal
@@ -59,7 +66,7 @@ function isNextBar(barTimeSec, armedBarTimeSec, resMinutes) {
 // engine bought breakouts — a mean-reversion entry wants price coming BACK toward the
 // band, so the old test would have vetoed every valid confirmation.
 function onCloseEnabled(prefix) {
-  return (process.env[prefix + "_CONFIRM_ON_CLOSE"] || "true").toLowerCase() === "true";
+  return (_env(prefix + "_CONFIRM_ON_CLOSE") || "true").toLowerCase() === "true";
 }
 
 // Backtest candle-granularity proxy for the intra-bar cross. Returns the spot the

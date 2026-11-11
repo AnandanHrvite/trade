@@ -16,6 +16,10 @@
  * /start are consistent with the session it then trades.
  *
  * Exports:
+ *   forMarket(key)               the same API (getDay, dayTicks, intradayBars,
+ *                                intradayBarsAsOf, dailyBar) for BANKNIFTY / SENSEX:
+ *                                the same session scripts on that market's own
+ *                                seeded walk and price level (NIFTY's is unchanged)
  *   SESSIONS                     the replayed days (date, regime, weekly expiry, …)
  *   dayTicks(date)               2-second spot ticks for a session day
  *   intradayBars(date, res)      full-day bars at `res` minutes
@@ -205,68 +209,122 @@ function _interp(points, x) {
 }
 
 // ── Day chain ────────────────────────────────────────────────────────────────
-const _chain = new Map();
-let _chainLast = null;   // last date generated
+// One continuous chain per market. NIFTY's is the original (seed "nifty",
+// ANCHOR_PRICE) — byte for byte what this file always produced. Another market
+// (forMarket) runs the SAME session scripts on its own seeded random walk at its
+// own price level: `%` paths scale by themselves, point paths (`pts`, the OU
+// jitter) by the price ratio, so a SENSEX smart-money day is the same shape at
+// ~3× the points. Independent seeds = different ticks, so its signals are its own.
+const MARKETS = {
+  NIFTY:     { seed: "nifty",     anchor: ANCHOR_PRICE },
+  BANKNIFTY: { seed: "banknifty", anchor: 56900 },   // ~56–60k over the sessions
+  SENSEX:    { seed: "sensex",    anchor: 75800 },   // ~77–83k over the sessions
+};
 
-function _genDay(date, prevClose) {
-  const sess = SESSION_BY_DATE.get(date);
-  const R = rng(`nifty:${date}`);
-  const n = TICKS_PER_DAY;
-  let open, levelAt, bridgeFrac, ouStd, regime;
-  if (sess) {
-    regime = sess.regime;
-    open = prevClose * (1 + sess.gap);
-    if (sess.pts)                             levelAt = (m) => _interp(sess.pts, m);
-    else if (typeof sess.path === "function") levelAt = (m) => open * sess.path(m / SESSION_MIN) / 100;
-    else                                      levelAt = (m) => open * _interp(sess.path, m) / 100;
-    bridgeFrac = sess.noise.bridge;
-    ouStd = sess.noise.ou;
-  } else {
-    regime = "random";
-    const dr = _driftFor(date);
-    open = prevClose * (1 + R.gauss() * dr.gapSd);
-    const move = open * (dr.mu + R.gauss() * dr.sd);
-    levelAt = (m) => move * (m / SESSION_MIN);
-    bridgeFrac = 0.00026;
-    ouStd = 3;
-  }
-  const sigma = (open * bridgeFrac) / Math.sqrt(30);
-  const walk = new Float64Array(n);
-  let w = 0;
-  for (let i = 0; i < n; i++) { w += R.gauss() * sigma; walk[i] = w; }
-  const endW = walk[n - 1];
-  const theta = 1 / 90;                                      // ~3-minute decorrelation at 2 s ticks
-  const ouSig = ouStd * Math.sqrt(2 * theta - theta * theta);
-  let ou = 0;
-  const t0 = openMs(date);
-  const ticks = new Array(n);
-  for (let i = 0; i < n; i++) {
-    const u = i / (n - 1);
-    const m = (i * TICK_MS) / 60000;
-    ou = ou * (1 - theta) + R.gauss() * ouSig;
-    const px = open + levelAt(m) + (walk[i] - endW * u) + (i === 0 ? 0 : ou);
-    ticks[i] = { t: t0 + i * TICK_MS, ltp: round05(px) };
-  }
-  ticks[0].ltp = round05(open);
-  return { open: ticks[0].ltp, close: ticks[n - 1].ltp, ticks, regime };
-}
+function _makeChain(key) {
+  const M = MARKETS[key];
+  if (!M) throw new Error(`syntheticMarket: unknown market ${key}`);
+  const SCALE = M.anchor / ANCHOR_PRICE;   // 1 for NIFTY
+  const _chain = new Map();
+  let _chainLast = null;   // last date generated
+  let _lastTradingKey = null;
 
-function _ensureChain(upTo) {
-  if (_chainLast && _chainLast >= upTo) return;
-  let d = _chainLast ? _addDays(_chainLast, 1) : ANCHOR_DATE;
-  let prevClose = _chainLast ? _chain.get(_lastTradingKey).close : ANCHOR_PRICE;
-  for (; d <= upTo; d = _addDays(d, 1)) {
-    if (!isTradingDay(d)) continue;
-    const day = _genDay(d, prevClose);
-    // Ticks are kept for session days only; every day keeps its 1-min bars.
-    _chain.set(d, { open: day.open, close: day.close, regime: day.regime, bars1: _aggregate(day.ticks, 1),
-                    ticks: SESSION_BY_DATE.has(d) ? day.ticks : null });
-    prevClose = day.close;
-    _lastTradingKey = d;
+  function _genDay(date, prevClose) {
+    const sess = SESSION_BY_DATE.get(date);
+    const R = rng(`${M.seed}:${date}`);
+    const n = TICKS_PER_DAY;
+    let open, levelAt, bridgeFrac, ouStd, regime;
+    if (sess) {
+      regime = sess.regime;
+      open = prevClose * (1 + sess.gap);
+      if (sess.pts)                             levelAt = SCALE === 1 ? (m) => _interp(sess.pts, m) : (m) => _interp(sess.pts, m) * SCALE;
+      else if (typeof sess.path === "function") levelAt = (m) => open * sess.path(m / SESSION_MIN) / 100;
+      else                                      levelAt = (m) => open * _interp(sess.path, m) / 100;
+      bridgeFrac = sess.noise.bridge;
+      ouStd = sess.noise.ou * SCALE;
+    } else {
+      regime = "random";
+      const dr = _driftFor(date);
+      open = prevClose * (1 + R.gauss() * dr.gapSd);
+      const move = open * (dr.mu + R.gauss() * dr.sd);
+      levelAt = (m) => move * (m / SESSION_MIN);
+      bridgeFrac = 0.00026;
+      ouStd = 3 * SCALE;
+    }
+    const sigma = (open * bridgeFrac) / Math.sqrt(30);
+    const walk = new Float64Array(n);
+    let w = 0;
+    for (let i = 0; i < n; i++) { w += R.gauss() * sigma; walk[i] = w; }
+    const endW = walk[n - 1];
+    const theta = 1 / 90;                                      // ~3-minute decorrelation at 2 s ticks
+    const ouSig = ouStd * Math.sqrt(2 * theta - theta * theta);
+    let ou = 0;
+    const t0 = openMs(date);
+    const ticks = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const u = i / (n - 1);
+      const m = (i * TICK_MS) / 60000;
+      ou = ou * (1 - theta) + R.gauss() * ouSig;
+      const px = open + levelAt(m) + (walk[i] - endW * u) + (i === 0 ? 0 : ou);
+      ticks[i] = { t: t0 + i * TICK_MS, ltp: round05(px) };
+    }
+    ticks[0].ltp = round05(open);
+    return { open: ticks[0].ltp, close: ticks[n - 1].ltp, ticks, regime };
   }
-  _chainLast = upTo;
+
+  function _ensureChain(upTo) {
+    if (_chainLast && _chainLast >= upTo) return;
+    let d = _chainLast ? _addDays(_chainLast, 1) : ANCHOR_DATE;
+    let prevClose = _chainLast ? _chain.get(_lastTradingKey).close : M.anchor;
+    for (; d <= upTo; d = _addDays(d, 1)) {
+      if (!isTradingDay(d)) continue;
+      const day = _genDay(d, prevClose);
+      // Ticks are kept for session days only; every day keeps its 1-min bars.
+      _chain.set(d, { open: day.open, close: day.close, regime: day.regime, bars1: _aggregate(day.ticks, 1),
+                      ticks: SESSION_BY_DATE.has(d) ? day.ticks : null });
+      prevClose = day.close;
+      _lastTradingKey = d;
+    }
+    _chainLast = upTo;
+  }
+
+  function getDay(date) {
+    _ensureChain(date);
+    return _chain.get(date) || null;
+  }
+  function dayTicks(date) {
+    const d = getDay(date);
+    if (!d || !d.ticks) throw new Error(`syntheticMarket: ${date} is not a session day`);
+    return d.ticks;
+  }
+  /** Full-day bars at `resMin` (minutes). */
+  function intradayBars(date, resMin) {
+    const d = getDay(date);
+    return d ? _rollUp(d.bars1, resMin) : [];
+  }
+  /**
+   * Bars for a session day as a broker would return them at `nowMs`: every
+   * closed bar plus the still-forming one built from the ticks seen so far.
+   */
+  function intradayBarsAsOf(date, resMin, nowMs) {
+    const d = getDay(date);
+    if (!d) return [];
+    if (!d.ticks) return _rollUp(d.bars1, resMin);
+    const seen = [];
+    for (const tk of d.ticks) { if (tk.t > nowMs) break; seen.push(tk); }
+    return _aggregate(seen, resMin);
+  }
+  function dailyBar(date) {
+    const d = getDay(date);
+    if (!d) return null;
+    let hi = -Infinity, lo = Infinity;
+    for (const b of d.bars1) { if (b.high > hi) hi = b.high; if (b.low < lo) lo = b.low; }
+    // Fyers stamps a daily bar at 00:00 IST.
+    return { time: Math.floor((Date.parse(`${date}T00:00:00Z`) - IST_OFFSET_MS) / 1000),
+             open: d.open, high: hi, low: lo, close: d.close, volume: 0 };
+  }
+  return { key, anchor: M.anchor, getDay, dayTicks, intradayBars, intradayBarsAsOf, dailyBar };
 }
-let _lastTradingKey = null;
 
 /** Epoch-aligned bucket start (ms), same math as tradeUtils.getBucketStart. */
 function _bucket(tMs, resMin) {
@@ -307,43 +365,20 @@ function _rollUp(bars1, resMin) {
   return out;
 }
 
-function getDay(date) {
-  _ensureChain(date);
-  return _chain.get(date) || null;
+const _chains = new Map();
+/** The synthetic chain of one market (NIFTY, BANKNIFTY, SENSEX). */
+function forMarket(key) {
+  const k = String(key || "NIFTY").toUpperCase();
+  if (!_chains.has(k)) _chains.set(k, _makeChain(k));
+  return _chains.get(k);
 }
-function dayTicks(date) {
-  const d = getDay(date);
-  if (!d || !d.ticks) throw new Error(`syntheticMarket: ${date} is not a session day`);
-  return d.ticks;
-}
-/** Full-day bars at `resMin` (minutes). */
-function intradayBars(date, resMin) {
-  const d = getDay(date);
-  return d ? _rollUp(d.bars1, resMin) : [];
-}
-/**
- * Bars for a session day as a broker would return them at `nowMs`: every
- * closed bar plus the still-forming one built from the ticks seen so far.
- */
-function intradayBarsAsOf(date, resMin, nowMs) {
-  const d = getDay(date);
-  if (!d) return [];
-  if (!d.ticks) return _rollUp(d.bars1, resMin);
-  const seen = [];
-  for (const tk of d.ticks) { if (tk.t > nowMs) break; seen.push(tk); }
-  return _aggregate(seen, resMin);
-}
-function dailyBar(date) {
-  const d = getDay(date);
-  if (!d) return null;
-  let hi = -Infinity, lo = Infinity;
-  for (const b of d.bars1) { if (b.high > hi) hi = b.high; if (b.low < lo) lo = b.low; }
-  // Fyers stamps a daily bar at 00:00 IST.
-  return { time: Math.floor((Date.parse(`${date}T00:00:00Z`) - IST_OFFSET_MS) / 1000),
-           open: d.open, high: hi, low: lo, close: d.close, volume: 0 };
-}
+const _NIFTY = forMarket("NIFTY");
+function getDay(date) { return _NIFTY.getDay(date); }
+function dayTicks(date) { return _NIFTY.dayTicks(date); }
+function intradayBars(date, resMin) { return _NIFTY.intradayBars(date, resMin); }
+function intradayBarsAsOf(date, resMin, nowMs) { return _NIFTY.intradayBarsAsOf(date, resMin, nowMs); }
+function dailyBar(date) { return _NIFTY.dailyBar(date); }
 
-// ── VIX ──────────────────────────────────────────────────────────────────────
 function vixLevelOf(date) {
   const s = SESSION_BY_DATE.get(date);
   if (s) return s.vix;
@@ -388,6 +423,7 @@ function optionPremium(spot, strike, side, tMs, expiryDate, vix) {
 }
 
 module.exports = {
+  MARKETS, forMarket,
   SESSIONS, TICK_MS, OPEN_MIN, CLOSE_MIN, IST_OFFSET_MS, HOLIDAYS, ANCHOR_DATE,
   rng, isTradingDay, tradingDaysBetween, openMs, monthlyExpiryOf,
   getDay, dayTicks, intradayBars, intradayBarsAsOf, dailyBar,

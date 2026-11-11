@@ -1123,6 +1123,11 @@ const OPEN_PREFIXES = [
 const OPEN_STATUS_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-paper\/status(?:\/data|\/chart-data)?$/;
 // Paper start/stop place no real order, so they skip the secret prompt (still
 // login-gated). Paper reset/exit stay protected.
+// A running pair's read-only pages, same as its NIFTY strategy's (generated).
+for (const p of require("./config/pairs").runnable()) {
+  for (const sub of ["status", "status/data", "status/chart-data", "history", "debug", "client.js", "simulate"]) OPEN_PATHS.push(`${p.paperPath}/${sub}`);
+  OPEN_PREFIXES.push(`${p.paperPath}/view/`, `${p.paperPath}/download/`);
+}
 const OPEN_PAPER_CTRL_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-paper\/(?:start|stop)$/;
 
 app.use((req, res, next) => {
@@ -1236,6 +1241,14 @@ app.use("/compare",        lazyRouter(() => require("./routes/compare")));      
 // ── EMA_RSI_ST_V2 routes (EMA20/50 + RSI entry, SuperTrend-only stop, Zerodha) ─
 // A separate strategy from EMA_RSI_ST, not another mode of it.
 app.use("/ema_rsi_st_v2-paper",        require("./routes/emaRsiStV2Paper"));       // ← canonical engine
+// ── (strategy, market) pairs: every offered pair of a create(pair) builder
+// (config/pairs.js runnable) is mounted at its own /<modeKey>-paper — cheap
+// (an idle router), and a pair that is switched off refuses /start. The NIFTY
+// instance above is the builder module's default export.
+for (const p of require("./config/pairs").runnable()) {
+  const s = require("./config/strategyRegistry").byId(p.strategyId);
+  app.use(p.paperPath, require("./" + s.paper.module).forPair(p));
+}
 app.use("/ema_rsi_st_v2-backtest",     lazyRouter(() => require("./routes/emaRsiStV2Backtest")));    // ← same signal engine, paper's exits
 
 
@@ -1490,6 +1503,13 @@ app.get("/", (req, res) => {
   const gapRunawayStkMode    = sharedSocketState.getGapRunawayStkMode ? sharedSocketState.getGapRunawayStkMode() : null;
   const gapRunawayStkModeOn  = (process.env.GAP_RUNAWAY_STK_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
+  // Running (strategy, market) pairs switched ON — every dashboard rollup below
+  // adds these to its hand-listed strategies (key = the pair's env prefix, the
+  // mode the consolidated trade list carries).
+  const _pairsOn = require("./config/pairs").runnable({ enabledOnly: true }).map((p) => ({
+    key: p.envPrefix, cls: 'pairmk', path: p.paperPath, broker: p.broker,
+    label: require("./utils/pairRuntime").forPair(p).title,
+  }));
   const activeStrategyName = getActiveStrategy().NAME;
 
   // True when ANY strategy is currently running. While active we
@@ -1514,7 +1534,8 @@ app.get("/", (req, res) => {
     || (sailVwapStModeOn && sailVwapStMode)
     || (pivotEmaStModeOn && pivotEmaStMode)
     || (gapRunawayModeOn && gapRunawayMode)
-    || (gapRunawayStkModeOn && gapRunawayStkMode);
+    || (gapRunawayStkModeOn && gapRunawayStkMode)
+    || (sharedSocketState.heldSlots ? sharedSocketState.heldSlots().length > 0 : false);
   // The mode-specific top-bar badge below only covers ORB_PAPER. When some
   // OTHER mode is active we still want a running indicator visible — show a
   // generic badge in that gap.
@@ -1551,6 +1572,7 @@ app.get("/", (req, res) => {
     { key: 'PIVOT_EMA_ST', cls: 'pivotemast', label: 'PIVOT_EMA_ST', on: pivotEmaStModeOn },
     { key: 'GAP_RUNAWAY', cls: 'gaprunaway', label: 'GAP_runAway__Kirubakaran', on: gapRunawayModeOn },
     { key: 'GAP_RUNAWAY_STK', cls: 'gaprunawaystk', label: 'GAP_runAway Stocks', on: gapRunawayStkModeOn },
+    ..._pairsOn.map((p) => ({ key: p.key, cls: p.cls, label: p.label, on: true })),
   ].filter((t) => t.on).map((t) => ({
     key: t.key,
     cls: t.cls,
@@ -1608,6 +1630,7 @@ app.get("/", (req, res) => {
     ['zerodha', 'SIMPLE930',        simple930ModeOn],
     ['zerodha', 'GAP_RUNAWAY',      gapRunawayModeOn],
     ['zerodha', 'GAP_RUNAWAY_STK',  gapRunawayStkModeOn],
+    ..._pairsOn.map((p) => [p.broker, p.key, true]),
   ];
   const _modesOf = (broker) => _poolModes.filter(([b, , on]) => b === broker && on).map(([, m]) => m);
   const brokerPools = {
@@ -2270,6 +2293,7 @@ app.get("/", (req, res) => {
     .mm-card.simple930 .mm-dot { background:#fb923c; }
     .mm-card.rsipivotst .mm-dot { background:#c2410c; }
     .mm-card.emarsistv2 .mm-dot { background:#a78bfa; }
+    .mm-card.pairmk .mm-dot { background:#2dd4bf; }
     .mm-card.strsipivbb .mm-dot { background:#a3e635; }
     .mm-card.sailvwapst .mm-dot { background:#fda4af; }
     .mm-card.pivotemast .mm-dot { background:#38bdf8; }
@@ -2787,6 +2811,16 @@ ${buildSidebar('dashboard', false)}
       <div class="mm-empty" id="mm-empty-EMA_RSI_ST_V2" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
+    ${_pairsOn.map((p) => `
+    <div class="mm-card pairmk" data-mode="${p.key}">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">${p.label}</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-${p.key}">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-${p.key}"></canvas></div>
+      <div class="mm-empty" id="mm-empty-${p.key}" style="display:none;">No paper trades yet</div>
+    </div>`).join('')}
     ${stRsiPivBbModeOn ? `
     <div class="mm-card strsipivbb" data-mode="ST_RSI_PIV_BB">
       <div class="mm-hdr">
@@ -3536,6 +3570,7 @@ async function loadDashCumCharts(){
     _renderModuleChart('ITM20_SCALP');
     _renderModuleChart('PIVOT_EMA_ST');
     ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
+    PAIR_KEYS.forEach(_renderModuleChart);
     _renderBrokerWallets();
   }
   function syncCustomVisibility(){
@@ -3618,6 +3653,8 @@ function _renderModuleChart(mode){
 // Deliberately paper-only, and driven by _applyDashRange so the wallet and the
 // curve below it can never quote different periods.
 var BROKER_POOLS = ${JSON.stringify(brokerPools)};
+// Running (strategy, market) pairs switched on — their module cards (mode = env prefix).
+var PAIR_KEYS = ${JSON.stringify(_pairsOn.map((p) => p.key))};
 function _inr0(n){ return '₹' + Math.round(n).toLocaleString('en-IN'); }
 function _renderBrokerWallets(){
   var all = _mmData.paper;
@@ -3652,6 +3689,7 @@ async function loadModuleCharts(){
     _renderModuleChart('ITM20_SCALP');
   _renderModuleChart('PIVOT_EMA_ST');
   ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
+  PAIR_KEYS.forEach(_renderModuleChart);
   _renderBrokerWallets();
 }
 
@@ -3804,6 +3842,7 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     GAP_RUNAWAY:'/gap_runaway-paper/status/data',
     GAP_RUNAWAY_STK:'/gap_runaway_stk-paper/status/data',
   };
+  Object.assign(LIVE_URLS, ${JSON.stringify(Object.fromEntries(_pairsOn.map((p) => [p.key, p.path + '/status/data'])))});
 
   function fmtINR(n) {
     if (n === null || n === undefined || isNaN(n)) return '—';
@@ -4704,6 +4743,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getGapRunawayMode && sharedSocketState.getGapRunawayMode()) activeModes.push(sharedSocketState.getGapRunawayMode());
     if (sharedSocketState.getGapRunawayStkMode && sharedSocketState.getGapRunawayStkMode()) activeModes.push(sharedSocketState.getGapRunawayStkMode());
     if (sharedSocketState.getEarlyBirdMode && sharedSocketState.getEarlyBirdMode()) activeModes.push(sharedSocketState.getEarlyBirdMode());
+    if (sharedSocketState.heldSlots) activeModes.push(...sharedSocketState.heldSlots());
 
     if (activeModes.length === 0) {
       // No Telegram here: with nothing running there is nothing to report,
@@ -4721,6 +4761,11 @@ async function gracefulShutdown(signal) {
     // export are skipped by the guard below.
     const routeMap = Object.fromEntries(require("./config/strategyRegistry").all()
       .map((s) => [s.socket.mode, require("./" + s.paper.module)]));
+    // Running (strategy, market) pairs: their slot → their own router instance.
+    for (const p of require("./config/pairs").runnable()) {
+      const s = require("./config/strategyRegistry").byId(p.strategyId);
+      routeMap[p.socketMode] = require("./" + s.paper.module).forPair(p);
+    }
     for (const mode of activeModes) {
       const route = routeMap[mode];
       if (route && typeof route.stopSession === "function") {

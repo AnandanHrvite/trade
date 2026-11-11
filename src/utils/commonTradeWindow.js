@@ -5,6 +5,10 @@
 // profit lock is the only automatic exit, and an open trade runs until it
 // fires, the trader exits manually, or the session auto-stops.
 //
+// It also covers every RUNNING (strategy, market) pair (config/pairs.js
+// runnable): a pair without its own window reads NIFTY's overridden keys; a pair
+// that set its own (SENSEX_EMA_RSI_ST_V2_ENTRY_START) is overridden the same way.
+//
 // Each strategy keeps reading its own keys. While the rule is on, those keys
 // are overridden in process.env ONLY — .env and the Settings page keep the
 // strategy's own value, and it comes back the moment the rule is turned off.
@@ -39,6 +43,24 @@ const _own = {};
  * write, passing that write's updates/deletes so a strategy value saved while
  * the rule is on is remembered as its own value instead of being lost.
  */
+// (strategy, market) pairs a route RUNS (config/pairs.js runnable): their own
+// entry-window keys (SENSEX_EMA_RSI_ST_V2_ENTRY_START …). A pair with no value of
+// its own already reads NIFTY's overridden key (pairs.envGet), so only a key the
+// pair SET is overridden — an unset pair key is never written into process.env.
+function _pairOverrides() {
+  let list = [];
+  try {
+    const pairs = require("../config/pairs");
+    for (const p of pairs.runnable()) {
+      const s = _REG.find(e => e.id === p.strategyId);
+      if (!s) continue;
+      if (s.commonWindow.start) list.push([pairs.pairKey(p, s.commonWindow.start), ENTRY_START]);
+      if (s.commonWindow.end)   list.push([pairs.pairKey(p, s.commonWindow.end), ENTRY_END]);
+    }
+  } catch (_) {}
+  return list.filter(([k]) => k);
+}
+
 function apply(updates = {}, deletes = []) {
   for (const k of deletes) if (k in _own) _own[k] = undefined;
   for (const [k, v] of Object.entries(updates)) if (k in _own) _own[k] = v;
@@ -47,6 +69,16 @@ function apply(updates = {}, deletes = []) {
     if (on) {
       if (!(k in _own)) _own[k] = process.env[k];
       process.env[k] = v;
+    } else if (k in _own) {
+      if (_own[k] === undefined) delete process.env[k];
+      else process.env[k] = _own[k];
+      delete _own[k];
+    }
+  }
+  for (const [k, v] of _pairOverrides()) {
+    if (on) {
+      if (k in _own) { if (_own[k] === undefined) { delete process.env[k]; delete _own[k]; } else process.env[k] = v; continue; }
+      if (process.env[k] !== undefined && process.env[k] !== "") { _own[k] = process.env[k]; process.env[k] = v; }
     } else if (k in _own) {
       if (_own[k] === undefined) delete process.env[k];
       else process.env[k] = _own[k];

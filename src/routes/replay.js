@@ -310,10 +310,17 @@ const STRATEGY_OPTIONS = [
   { mode: "simple930-paper", label: "SIMPLE_9:30 Paper", envKey: "UI_SHOW_SIMPLE930_PAPER", modeKey: "SIMPLE930_MODE_ENABLED" },
   // The mode string MUST match tickReplay MODE_TO_MODULE: "early-bird-paper".
   { mode: "early-bird-paper", label: "EarlyBird Paper", envKey: "UI_SHOW_EARLYBIRD_PAPER", modeKey: "EARLYBIRD_MODE_ENABLED" },
+  // Running (strategy, market) pairs (config/pairs.js runnable) — replayed through
+  // their own router instance on their own index (tickReplay pair support),
+  // listed only while the pair's <PAIR>_MODE_ENABLED is on. Generated.
+  ...require("../config/pairs").runnable().map(p => ({
+    mode: p.replayMode, label: `${require("../utils/pairRuntime").forPair(p).title} Paper`,
+    envKey: null, modeKey: p.enabledKey, modeDefault: "false", pair: true,
+  })),
 ];
 
 function _renderStrategyOptions() {
-  const on = (k) => (process.env[k] || "true").toLowerCase() === "true";
+  const on = (k) => !k || (process.env[k] || "true").toLowerCase() === "true";
   // Gate on the same *_MODE_ENABLED Settings toggle the sidebar uses, AND the
   // replay-specific UI_SHOW_* toggle, so disabled strategies drop out here too.
   // modeDefault lets an option default to OFF (EMA_RSI_ST_V2); every other
@@ -709,6 +716,8 @@ function modeTag(mode) {
   // MUST precede the 'ema_rsi_st' test below: 'ema_rsi_st_v2-paper' also starts
   // with 'ema_rsi_st', so the more specific prefix has to be checked first.
   if (mode.startsWith('ema_rsi_st_v2')) return 'emarsistv2';
+  // A (strategy, market) pair's mode is <market>_<strategy mode>-paper.
+  if (/^[a-z]+_ema_rsi_st_v2-paper$/.test(mode)) return 'emarsistv2';
   if (mode.startsWith('ema_rsi_st'))    return 'ema_rsi_st';
   if (mode.startsWith('bb_rsi'))    return 'bb_rsi';
   if (mode.startsWith('itm20-scalp')) return 'itm20scalp';

@@ -1460,6 +1460,82 @@ function clearEarlyBirdPositions() {
   console.log("[PERSIST] EARLY_BIRD position file cleared.");
 }
 
+// ── (strategy, market) pairs — one generic snapshot per running pair ──────────
+// A strategy that runs on other markets (config/pairs.js RUNS_AS_PAIR) persists
+// each non-home pair's open position to its OWN file,
+// .active_<modeKey>_position.json (e.g. .active_bn_ema_rsi_st_v2_position.json
+// — the name the old NIFTY BANK twin used), so two markets of one strategy never
+// overwrite each other. The position object is stored as the route holds it.
+//
+// Boot: app.js calls every load*()/clear*() pair it finds here with no
+// arguments — loadPairPositions()/clearPairPositions() cover every pair file;
+// the per-pair functions do nothing without a mode key.
+const _PAIR_POS_RE = /^\.active_([a-z0-9_]+)_position\.json$/;
+function _pairPosFile(modeKey) {
+  const m = String(modeKey || "");
+  if (!/^[a-z0-9_]+$/.test(m)) return null;
+  return path.join(DATA_DIR, `.active_${m}_position.json`);
+}
+function _isRunningPairMode(modeKey) {
+  try {
+    const p = require("../config/pairs").byModeKey(modeKey);
+    return !!(p && p.runs && !p.home);
+  } catch (_) { return false; }
+}
+function savePairPosition(modeKey, position, sessionMeta) {
+  const file = _pairPosFile(modeKey);
+  if (!file) return;
+  try {
+    if (!position) { _persistAtomic(file, null); return; }
+    const data = {
+      mode: modeKey,
+      position: { ...position },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(file, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] ${modeKey} position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save ${modeKey} position: ${err.message}`);
+  }
+}
+function loadPairPosition(modeKey) {
+  const file = _pairPosFile(modeKey);
+  if (!file) return null;
+  try {
+    if (!fs.existsSync(file)) return null;
+    const data = _readSnapshot(file);
+    if (!data) return null;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) { _markStale(file, data); return null; }
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load ${modeKey} position: ${err.message}`);
+    return null;
+  }
+}
+function clearPairPosition(modeKey) {
+  const file = _pairPosFile(modeKey);
+  if (!file) return;
+  _persistAtomic(file, null);
+  console.log(`[PERSIST] ${modeKey} position file cleared.`);
+}
+/** Mode keys of every running pair with a snapshot file on disk. */
+function _pairSnapshotModes() {
+  let names = [];
+  try { names = fs.readdirSync(DATA_DIR); } catch (_) { return []; }
+  return names.map((n) => (_PAIR_POS_RE.exec(n) || [])[1]).filter((m) => m && _isRunningPairMode(m));
+}
+/** Every running pair's today-snapshot ({ modeKey: data }), or null when none. */
+function loadPairPositions() {
+  const out = {};
+  for (const m of _pairSnapshotModes()) { const d = loadPairPosition(m); if (d) out[m] = d; }
+  return Object.keys(out).length ? out : null;
+}
+function clearPairPositions() {
+  for (const m of _pairSnapshotModes()) { if (loadPairPosition(m)) clearPairPosition(m); }
+}
 
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
@@ -1480,6 +1556,8 @@ module.exports = {
   savePivotEmaStPosition, loadPivotEmaStPosition, clearPivotEmaStPosition,
   saveGapRunawayPosition, loadGapRunawayPosition, clearGapRunawayPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
+  // (strategy, market) pairs
+  savePairPosition, loadPairPosition, clearPairPosition, loadPairPositions, clearPairPositions,
   // Boot-reconcile helpers (corrupt files moved aside, previous-day snapshots kept)
   getCorruptSnapshots, getStaleSnapshots, clearStaleSnapshot,
 };

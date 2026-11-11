@@ -59,6 +59,12 @@ const SOURCES = [
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_paper_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
   // EarlyBird is cash equity (share counts, real intraday shorts), not options.
   { mode: "EARLYBIRD", file: path.join(DATA_DIR, "early_bird_paper_trades.json"), label: "EarlyBird", color: "#14b8a6" },
+  // Running (strategy, market) pairs (config/pairs.js runnable) — each its own
+  // trades file under its env prefix (BN_EMA_RSI_ST_V2 …). Generated.
+  ...require("../config/pairs").runnable().map(p => ({
+    mode: p.envPrefix, file: path.join(DATA_DIR, p.tradesFile),
+    label: require("../utils/pairRuntime").forPair(p).title, color: "#2dd4bf",
+  })),
 ];
 
 function safeRead(p) {
@@ -93,6 +99,7 @@ function _sourcesSig() {
 const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2"]);
 _DEFAULT_OFF_MODES.add("ST_RSI_PIV_BB"); // ships OFF like V2
 _DEFAULT_OFF_MODES.add("SAIL_VWAP_ST"); // ships OFF
+for (const p of require("../config/pairs").runnable()) _DEFAULT_OFF_MODES.add(p.envPrefix); // every pair ships OFF
 function _modeEnabled(mode) {
   const key = mode + "_MODE_ENABLED";
   const dflt = _DEFAULT_OFF_MODES.has(mode) ? "false" : "true";
@@ -286,8 +293,13 @@ function _peFields(rec, exitTime) {
  * charges and post-exit move. New objects — the cached loadAllTrades() rows
  * (shared with /data and the EOD reports) are never mutated.
  */
+// A (strategy, market) pair's book whose switch is OFF: hidden from the dashboard
+// and EOD reports like any disabled strategy, but its history stays on the
+// consolidated page — as it did while the old NIFTY BANK / FUT twins were retired.
+const _PAIR_MODES = new Set(require("../config/pairs").runnable().map(p => p.envPrefix));
 function loadConsolidatedTrades() {
-  const live = loadAllTrades();
+  const live = loadAllTrades().concat(
+    _loadAllTradesUnfiltered().filter((t) => _PAIR_MODES.has(t.mode) && !_modeEnabled(t.mode)));
   const retired = loadRetiredTrades();
   const pe = loadPostExitIndex();
   const logKeyOf = {};

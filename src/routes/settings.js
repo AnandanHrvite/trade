@@ -1422,6 +1422,25 @@ function pairFieldsFor(pair) {
     pf.pts = isPointsField(pf);
     fields.push(pf);
   }
+  // A RUNNING pair (config/pairs.js runnable) has two settings NIFTY does not —
+  // generated here, never hand-written: honest paper fills (utils/pairRuntime.js
+  // fillAtQuote, default ON) and its own bid-ask spread limit (falls back to the
+  // common MAX_BID_ASK_SPREAD_PTS). They are the pair's own keys with no NIFTY
+  // twin (`pairOnly`), so the pane shows their default instead of "Same as NIFTY".
+  if (pair.runs && !pair.home) {
+    fields.push({
+      key: `${pair.envPrefix}_PAPER_FILL_AT_QUOTE`, homeKey: null, pairOnly: true,
+      label: "Paper fills at bid / ask", type: "toggle", effect: EFFECT.INSTANT, default: "true",
+      desc: "ON: a paper entry is bought at the ASK and an exit sold at the BID of a fresh option quote (no older than LTP_STALE_THRESHOLD_SEC), so this market's wider books cost what they would live. OFF: fills at the last traded price, as NIFTY does. Futures are priced at the index either way.",
+      group: "Safety", pts: false,
+    });
+    fields.push({
+      key: `${pair.envPrefix}_MAX_SPREAD_PTS`, homeKey: null, pairOnly: true, fallbackKey: "MAX_BID_ASK_SPREAD_PTS", fallbackDefault: "2",
+      label: "Max bid-ask spread (pts)", type: "number", min: 0.05, step: 0.05, effect: EFFECT.INSTANT, default: "",
+      desc: "No entry when the option's ask − bid is wider than this. Blank = the common limit (Common Trade Rules → MAX_BID_ASK_SPREAD_PTS). This market's premiums are larger than NIFTY's, so its books are usually wider.",
+      group: "Safety", pts: true,
+    });
+  }
   return { section, fields, shared };
 }
 function _pairEsc(s) {
@@ -1474,7 +1493,15 @@ function renderPairSection(pair, env) {
   let own = 0;
   const byGroup = new Map(PAIR_GROUPS.map(g => [g, []]));
   for (const f of fields) {
-    const r = pairs.resolve(pair, f.homeKey, env, f.default !== undefined ? String(f.default) : "");
+    // A pairOnly field has no NIFTY twin: its "home" is its fallback key's value
+    // (MAX_BID_ASK_SPREAD_PTS) or its own default.
+    const r = f.pairOnly
+      ? (() => {
+          const ownV = env[f.key] !== undefined && env[f.key] !== "" ? String(env[f.key]) : undefined;
+          const fb = f.fallbackKey && env[f.fallbackKey] !== undefined && env[f.fallbackKey] !== "" ? String(env[f.fallbackKey]) : (f.fallbackDefault !== undefined ? f.fallbackDefault : String(f.default));
+          return { value: ownV !== undefined ? ownV : fb, own: ownV !== undefined, homeValue: fb };
+        })()
+      : pairs.resolve(pair, f.homeKey, env, f.default !== undefined ? String(f.default) : "");
     if (r.own) own++;
     const homeVal = r.homeValue !== undefined ? r.homeValue : (f.default !== undefined ? String(f.default) : "");
     const homeText = _pairEsc(_pairValueText(f, homeVal));
@@ -1484,10 +1511,10 @@ function renderPairSection(pair, env) {
             <div class="setting-label">${f.label}<span class="env-key-tag">${_pairEsc(f.key)}</span></div>
             ${f.desc ? `<div class="field-desc">${f.desc}</div>` : ""}
             <div class="pair-state">
-              <span class="pair-same">Same as ${home} (<b>${homeText}</b>)</span>
-              <span class="pair-changed">Changed · ${home} is <b>${homeText}</b></span>
-              <span class="pair-pending">Goes back to ${home} (<b>${homeText}</b>) when you save</span>
-              <button type="button" class="pair-reset" onclick="pairResetField(this)">↺ Reset to ${home}</button>
+              <span class="pair-same">${f.pairOnly ? (f.fallbackKey ? "Common limit" : "Default") : `Same as ${home}`} (<b>${homeText}</b>)</span>
+              <span class="pair-changed">Changed · ${f.pairOnly ? (f.fallbackKey ? "the common limit" : "the default") : home} is <b>${homeText}</b></span>
+              <span class="pair-pending">Goes back to ${f.pairOnly ? (f.fallbackKey ? "the common limit" : "the default") : home} (<b>${homeText}</b>) when you save</span>
+              <button type="button" class="pair-reset" onclick="pairResetField(this)">↺ Reset to ${f.pairOnly ? "default" : home}</button>
             </div>
             ${f.pts ? `<div class="pair-pts">⚠ Value in points — check it for ${_pairEsc(M.label)}; ${home}'s points rarely fit another market.</div>` : ""}
           </div>
@@ -1511,7 +1538,7 @@ function renderPairSection(pair, env) {
         </div>
       </div>
       <div class="pair-note">
-        <b>Not running yet.</b> These settings are saved now and used once ${_pairEsc(pair.label)} runs on ${_pairEsc(M.label)}.
+        ${pair.runs ? `<b>Paper only.</b> ${_pairEsc(pair.label)} runs on ${_pairEsc(M.label)} from its own page (${_pairEsc(pair.paperPath)}) once its switch is on.` : `<b>Not running yet.</b> These settings are saved now and used once ${_pairEsc(pair.label)} runs on ${_pairEsc(M.label)}.`}
         A field that says <i>Same as ${home}</i> follows ${home} — change it there and it changes here too.
         ${shared.length ? `${shared.length} more setting${shared.length === 1 ? " is" : "s are"} shared by every market (${_pairEsc(shared.slice(0, 4).join(", "))}${shared.length > 4 ? ", …" : ""}) — change ${shared.length === 1 ? "it" : "them"} on ${home}.` : ""}
       </div>

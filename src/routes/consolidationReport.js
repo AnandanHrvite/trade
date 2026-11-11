@@ -115,13 +115,16 @@ async function loadVixByDate(fromDate, toDate) {
 // One { mode, file } row per registry entry — mode = group key, file = its
 // paper trades file — in the report pages' historic order (ORDERS.reports).
 const PAPER_SOURCES = require("../config/strategyRegistry").inOrder("reports")
-  .map(s => ({ mode: s.key, file: s.tradesFile }));
+  .map(s => ({ mode: s.key, file: s.tradesFile }))
+  // Running (strategy, market) pairs — each its own book under its env prefix.
+  .concat(require("../config/pairs").runnable().map(p => ({ mode: p.envPrefix, file: p.tradesFile })));
 
 // Mode → the strategy's Paper Trade History page. Clicking a per-strategy P&L cell
 // in the Daily Breakdown opens that page in a new tab, deep-linked to the day
 // (?date=YYYY-MM-DD) so the matching session card is expanded on arrival.
 const PAPER_HISTORY_PATH = Object.fromEntries(require("../config/strategyRegistry").inOrder("reports")
-  .map(s => [s.key, `${s.paper.path}/history`]));
+  .map(s => [s.key, `${s.paper.path}/history`])
+  .concat(require("../config/pairs").runnable().map(p => [p.envPrefix, `${p.paperPath}/history`])));
 
 // Which table a strategy's column sits in: its market, by the same defaults the
 // consolidated page uses (consolidationCore.marketOf on the book's file key), so
@@ -206,7 +209,8 @@ router.get("/", async (req, res) => {
   // hidden from the sidebar, so its columns (and its trades in the day totals)
   // must not appear here either. Filtered per-request, never cached: Settings
   // saves mutate process.env while the process is running.
-  const enabled     = enabledStrategies().map(s => ({ mode: s.mode, label: s.mode }));
+  const enabled     = enabledStrategies().map(s => ({ mode: s.mode, label: s.mode }))
+    .concat(require("../config/pairs").runnable({ enabledOnly: true }).map(p => ({ mode: p.envPrefix, label: p.envPrefix })));
   const enabledSet  = new Set(enabled.map(s => s.mode));
   const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const theme = resolveTheme();

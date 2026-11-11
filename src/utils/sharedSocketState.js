@@ -390,11 +390,28 @@ function getSimple930Mode() {
   return simple930Mode;
 }
 
+// ── (strategy, market) pair slots — generic, keyed by socket mode ─────────
+// A strategy that runs on other markets (config/pairs.js RUNS_AS_PAIR) holds
+// one slot per non-home pair, keyed by the pair's socket mode
+// ("BN_EMA_RSI_ST_V2_PAPER"). The home pair keeps its named slot above. A pair
+// is mutually exclusive with itself only — every pair, and every home strategy,
+// may run alongside it. registerSlot() is called by utils/pairRuntime.js.
+const _slotModes = new Map();   // socket mode -> label (registered pairs)
+const _slotActive = new Map();  // socket mode -> mode string while running
+
+function registerSlot(mode, label) { if (mode) _slotModes.set(mode, label || mode); }
+function holdSlot(mode)       { if (_slotModes.has(mode)) _slotActive.set(mode, mode); }
+function releaseSlot(mode)     { _slotActive.delete(mode); }
+function slotHeld(mode)  { return _slotActive.has(mode); }
+function heldSlotMode(mode)       { return _slotActive.get(mode) || null; }
+/** Socket modes of every running pair slot. */
+function heldSlots()       { return Array.from(_slotActive.keys()); }
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
-  return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
+  return _slotActive.size > 0 || primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
          trendDayScalpMode !== null ||
          haScalpMode !== null ||
@@ -478,6 +495,10 @@ function _canStartRaw(mode) {
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
       return { allowed: true };
     default:
+      if (_slotModes.has(mode)) {
+        if (_slotActive.has(mode)) return { allowed: false, reason: `${_slotModes.get(mode)} Paper is already running` };
+        return { allowed: true };
+      }
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
 }
@@ -551,6 +572,8 @@ module.exports = {
   setGapRunawayStkMode, clearGapRunawayStkMode, isGapRunawayStkActive, getGapRunawayStkMode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
+  // (strategy, market) pair slots
+  registerSlot, holdSlot, releaseSlot, slotHeld, heldSlotMode, heldSlots,
   // Combined
   isAnyActive, canStart,
 };
@@ -563,10 +586,11 @@ const _CLEAR_SLOT = Object.fromEntries(require("../config/strategyRegistry").all
   .map(s => [s.socket.clear, _slotOf(s.socket.mode)]));
 for (const name of Object.keys(module.exports)) {
   const fn = module.exports[name];
-  if (typeof fn !== "function" || !/^(set|clear)/.test(name)) continue;
+  // holdSlot / releaseSlot: the generic (strategy, market) pair slots, keyed by mode.
+  if (typeof fn !== "function" || !/^(set|clear|holdSlot$|releaseSlot$)/.test(name)) continue;
   module.exports[name] = function (...args) {
     const r = fn.apply(this, args);
-    const slot = name.startsWith("set") ? _slotOf(args[0]) : _CLEAR_SLOT[name];
+    const slot = (name.startsWith("set") || name === "holdSlot" || name === "releaseSlot") ? _slotOf(args[0]) : _CLEAR_SLOT[name];
     if (slot) _reservations.delete(slot);
     return r;
   };

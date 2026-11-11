@@ -111,12 +111,22 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   function pairNavSections() {
     return pairs.all().filter(p => !p.home && pairs.isEnabled(p)).map(p => {
       const stock = markets.MARKET_DEFS[p.marketKey].group === 'stock';
+      const settingsItem = { key: `pair:${p.modeKey}`, href: `/settings#pair-${p.slug}`, icon: '⚙️', label: 'Settings' };
+      // A RUNNING pair (config/pairs.js runnable) links its real Paper / History
+      // pages; the rest only have their Settings page until their route is built.
+      const items = p.runs
+        ? [
+            { key: `pair:${p.modeKey}:paper`,   href: `${p.paperPath}/status`,  icon: '📋', label: 'Paper',   pairSocketMode: p.socketMode },
+            { key: `pair:${p.modeKey}:history`, href: `${p.paperPath}/history`, icon: '📜', label: 'History' },
+            settingsItem,
+          ]
+        : [settingsItem];
       return {
         header: stock ? `${p.marketKey} · ${p.label}` : p.label,
-        collapsible: true, collapsed: true,
+        collapsible: true, collapsed: !items.some(i => i.key === activePage),
         groupId: `nav-pair-${p.slug}`,
         parent: stock ? 'stocks' : p.marketKey.toLowerCase(),
-        items: [{ key: `pair:${p.modeKey}`, href: `/settings#pair-${p.slug}`, icon: '⚙️', label: 'Settings' }],
+        items,
       };
     });
   }
@@ -680,13 +690,19 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       (p.key === 'gapRunawayPaper' && _gapRunawayMode === 'GAP_RUNAWAY_PAPER' ? _pesOnBadge : '') +
       (p.key === 'gapRunawayStkPaper' && _gapRunawayStkMode === 'GAP_RUNAWAY_STK_PAPER' ? _pesOnBadge : '');
 
+    // A running (strategy, market) pair: ON while its generic socket slot is held.
+    let pairPaperBadge = '';
+    if (p.pairSocketMode) {
+      try { if (require('./sharedSocketState').slotHeld(p.pairSocketMode)) pairPaperBadge = `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`; } catch (_) {}
+    }
+
     const simple930PaperBadge = p.key === 'simple930Paper' && _simple930Mode === 'SIMPLE930_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${runningBadge}${bbRsiPaperBadge}${paPaperBadge}${orbPaperBadge}${tdsPaperBadge}${haScalpPaperBadge}${prevOrbScalpPaperBadge}${rsiPivotStPaperBadge}${emaRsiStV2PaperBadge}${simple930PaperBadge}
+      ${runningBadge}${bbRsiPaperBadge}${paPaperBadge}${orbPaperBadge}${tdsPaperBadge}${haScalpPaperBadge}${prevOrbScalpPaperBadge}${rsiPivotStPaperBadge}${emaRsiStV2PaperBadge}${pairPaperBadge}${simple930PaperBadge}
       ${stRsiPivBbPaperBadge}
       ${sailVwapStPaperBadge}
       ${pivotEmaStBadges}

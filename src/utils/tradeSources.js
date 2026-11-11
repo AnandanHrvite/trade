@@ -29,6 +29,11 @@ const CMX_SUFFIX = "_paper_trades.json";
 
 function marketOf(mode) {
   if (mode.startsWith("cmx_")) return "COMMODITY";
+  // A (strategy, market) pair names its own market (config/pairs.js).
+  try {
+    const p = require("../config/pairs").byModeKey(mode);
+    if (p && !p.home) return p.marketKey;
+  } catch (_) {}
   if (mode.startsWith("bn_")) return "BANKNIFTY";
   return "NIFTY";
 }
@@ -41,7 +46,7 @@ function _tradeFiles() {
 
 /** Modes that have daily logs on disk but no tradeLogger key (removed strategies). */
 function retiredModes() {
-  const live = new Set(Object.keys(tradeLogger.DAILY_PREFIX_BY_MODE));
+  const live = new Set(tradeLogger.modes());
   const out = new Set();
   for (const n of _tradeFiles()) {
     const m = RETIRED_RE.exec(n);
@@ -51,7 +56,7 @@ function retiredModes() {
 }
 
 function _isRetired(mode) {
-  return !Object.prototype.hasOwnProperty.call(tradeLogger.DAILY_PREFIX_BY_MODE, mode);
+  return !tradeLogger.modes().includes(mode);
 }
 
 function _retiredDates(mode) {
@@ -86,7 +91,7 @@ function cmxModes() {
 
 /** Every known mode: [{ mode, market }], NIFTY/BANKNIFTY first, then retired, then commodity. */
 function listModes() {
-  return [...Object.keys(tradeLogger.DAILY_PREFIX_BY_MODE), ...retiredModes(), ...cmxModes()]
+  return [...tradeLogger.modes(), ...retiredModes(), ...cmxModes()]
     .map((mode) => ({ mode, market: marketOf(mode) }));
 }
 

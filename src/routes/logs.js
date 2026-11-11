@@ -150,7 +150,7 @@ router.get("/day", async (req, res) => {
 const tradeLogger = require("../utils/tradeLogger");
 const normSrc = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const STRATEGY_LABELS = new Map();
-for (const m of Object.keys(tradeLogger.FILE_BY_MODE)) {
+for (const m of tradeLogger.modes()) {   // registry modes + running (strategy, market) pairs
   STRATEGY_LABELS.set(normSrc(m), m.toUpperCase());
 }
 

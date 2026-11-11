@@ -31,6 +31,8 @@ function coreFactory() {
   var PREFIX_MARKET = [
     ["bn_", "BANKNIFTY"], ["fut_", "NIFTY_FUT"],
     ["cmx_crude_", "CRUDE"], ["cmx_gold_", "GOLD"], ["cmx_silver_", "SILVER"],
+    // (strategy, market) pair books (config/pairs.js): <market>_<strategy mode>.
+    ["sensex_", "SENSEX"], ["crude_", "CRUDE"], ["gold_", "GOLD"], ["silver_", "SILVER"],
   ];
   var MARKET_ALIAS = {
     "NIFTY50": "NIFTY", "NIFTY 50": "NIFTY", "NIFTY_OPTIONS": "NIFTY",
@@ -60,7 +62,7 @@ function coreFactory() {
   function baseStrategyOfMode(mode) {
     var m = String(mode || "").toUpperCase();
     if (m === "SAIL_PIVOT_EMA_ST") m = "PIVOT_EMA_ST";
-    else m = m.replace(/^(BN|FUT)_/, "").replace(/^CMX_(CRUDE|GOLD|SILVER)_/, "");
+    else m = m.replace(/^(BN|FUT|SENSEX|CRUDE|GOLD|SILVER)_/, "").replace(/^CMX_(CRUDE|GOLD|SILVER)_/, "");
     return STRATEGY_ALIAS[m] || m;
   }
   /** Strategy id of one record; `known` = { ID: true } of strategies the page lists. */
