@@ -1174,14 +1174,14 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   let _warmupFetchCount = 0;
   const _pendingLongTimers = new Set();
 
-  // Clear the shared VIX + OI caches. Called on install (so the run reads only
+  // Clear the shared VIX + OI + market-data caches. Called on install (so the run reads only
   // recorded data) and on uninstall (so replay-clock-stamped entries can't be
   // inherited by the next live/paper session — their timestamps sit in the past,
   // which is self-healing for the TTL checks but NOT for the sync readers
   // oiFilter.checkCachedOi/getCachedOi, which classify off _series with no
   // freshness test at all). Best-effort: a missing module must never fail a run.
   function _resetMarketDataCaches() {
-    for (const m of ["./vixFilter", "./oiFilter"]) {
+    for (const m of ["./vixFilter", "./oiFilter", "./marketData"]) {
       try { require(m).resetCache(); } catch (_) { /* module absent or no resetCache */ }
     }
   }

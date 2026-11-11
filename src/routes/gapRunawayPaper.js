@@ -63,11 +63,11 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const tickRecorder  = require("../utils/tickRecorder");
 const optionFeed    = require("../utils/optionFeed");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { istDayFromAny, istIsoFromAny } = require("../utils/tradeUtils");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const chartBackfill = require("../utils/chartBackfill");
 const aiExport    = require("../utils/aiExport");
@@ -434,7 +434,7 @@ let _optionPollGen = 0;
 
 async function fetchOptionLtp(symbol) {
   try {
-    const response = await fyers.getQuotes([symbol]);
+    const response = await require("../services/marketData").getQuotes([symbol]);
     if (response.s === 'ok' && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price
@@ -614,7 +614,7 @@ function parseOptionDetails(symbol) {
 // so today's forming daily bar can never move the decision.
 let _setupInFlight = false;
 async function _fetchDaily() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const nowIst = new Date(Date.now() + 19800000);
   const from = new Date(nowIst.getTime() - engine.DAILY_LOOKBACK_DAYS * 86400000);
   const fmt = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
@@ -666,7 +666,7 @@ async function _refreshTodayOpen() {
   _openInFlight = true;
   ptState._openLastTryMs = Date.now();
   try {
-    const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandles } = require("../services/marketData");
     const today = _todayStr();
     // Bounded: a history call that never resolves must not also disable the tick fallback below.
     const bars = await Promise.race([
@@ -1336,7 +1336,7 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * live bar) and never fed to the engine.
  */
 async function _preloadSeries(resMin, days, todayStr) {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const fromDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   fromDate.setDate(fromDate.getDate() - (days * 2 + 7));
   const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });

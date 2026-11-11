@@ -42,11 +42,11 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const tickRecorder  = require("../utils/tickRecorder");
 const optionFeed    = require("../utils/optionFeed");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { istDayFromAny, istIsoFromAny } = require("../utils/tradeUtils");
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const vixFilter = require("../services/vixFilter");
 const tradeLogger = require("../utils/tradeLogger");
 const chartBackfill = require("../utils/chartBackfill");
@@ -520,7 +520,7 @@ let _optionPollGen = 0;
 async function fetchOptionLtp(symbol) {
   try {
     // Fyers v3 getQuotes accepts a comma-separated symbol string directly
-    const response = await fyers.getQuotes([symbol]);
+    const response = await require("../services/marketData").getQuotes([symbol]);
 
     if (response.s === 'ok' && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
@@ -1943,7 +1943,7 @@ router.get("/start", async (req, res) => {
 
   // Expiry day check
   if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-    const { isExpiryDay } = require("../utils/nseHolidays");
+    const { isExpiryDay } = require("../services/marketData");
     const isExpiry = await isExpiryDay();
     if (!isExpiry) ptState._expiryDayBlocked = true;
     log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
@@ -1969,7 +1969,7 @@ router.get("/start", async (req, res) => {
   // Telegram: session started + checklist (same as live trade)
   const _ptChecks = { fyers: { ok: false, msg: "" }, symbol: { ok: false, msg: "" } };
   try {
-    const { getLiveSpot, validateAndGetOptionSymbol } = require("../config/instrument");
+    const { getLiveSpot, validateAndGetOptionSymbol } = require("../services/marketData");
     const [spotResult] = await Promise.allSettled([
       getLiveSpot().then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
     ]);
@@ -2017,7 +2017,7 @@ router.get("/start", async (req, res) => {
   // Without this, EMA (needs 25 candles) / RSI (needs 16) won't fire for hours
   try {
     log(`📥 Pre-loading historical candles so strategy warms up instantly...`);
-    const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandles } = require("../services/marketData");
 
     // The engine refuses below engine.warmupBars() candles — 55 at the defaults,
     // i.e. MORE than one 5-min session (75 bars/day is only just enough, and a

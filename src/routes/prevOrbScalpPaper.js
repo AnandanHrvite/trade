@@ -41,11 +41,11 @@ const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
 const tradeGuards        = require("../utils/tradeGuards");
 const vixFilter          = require("../services/vixFilter");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog, inr } = require("../utils/bbRsiStyleUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
@@ -295,7 +295,7 @@ function startPolling() {
         let ltp = streamed ? streamed.ltp : null;
         if (!streamed) {
           const symbols = [optSym];
-          const r = await fyers.getQuotes(symbols);
+          const r = await require("../services/marketData").getQuotes(symbols);
           ltp = attributeQuotes(r, symbols, optSym).optLtp;
         }
         // The position may have closed while the quote was in flight.
@@ -382,14 +382,14 @@ function _todayIst() { return new Date().toLocaleDateString("en-CA", { timeZone:
 
 /** Today's spot bars at the strategy resolution. Uncached — today is live. */
 async function _fetchSpotToday() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const today = _todayIst();
   return fetchCandles(NIFTY_INDEX_SYMBOL, String(_resMin()), today, today);
 }
 
 /** Enough history to hold the previous session, ending today. */
 async function _fetchWarmupBars() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const from = new Date(Date.now() - _warmupDays() * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   return fetchCandles(NIFTY_INDEX_SYMBOL, String(_resMin()), from, _todayIst());
 }
@@ -474,7 +474,7 @@ async function simulateBuy(side, sig) {
     optionEntryLtp = spotPrice;
   } else {
     try {
-      const r = await fyers.getQuotes([optInfo.symbol]);
+      const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
       const q = attributeQuotes(r, [optInfo.symbol], optInfo.symbol);
       if (q.optLtp != null) {
         optionEntryLtp = q.optLtp;

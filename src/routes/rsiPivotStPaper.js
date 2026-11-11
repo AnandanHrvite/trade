@@ -52,11 +52,11 @@ const socketManager      = require("../utils/socketManager");
 const tradeGuards        = require("../utils/tradeGuards");
 const vixFilter          = require("../services/vixFilter");
 const tickRecorder       = require("../utils/tickRecorder");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog, inr } = require("../utils/bbRsiStyleUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
@@ -270,7 +270,7 @@ function startPolling() {
       }
       const optSym = (state.position && !state.position.isFutures) ? state.position.symbol : null;
       if (optSym) {
-        const r = await fyers.getQuotes([optSym]);
+        const r = await require("../services/marketData").getQuotes([optSym]);
         if (r && r.s === "ok" && Array.isArray(r.d) && r.d.length) {
           const v = r.d[0].v || {};
           const ltp = v.lp || v.ltp;
@@ -356,7 +356,7 @@ function _noteHistoryFailure(why) {
 
 /** Today's spot bars at the strategy resolution. Uncached — today is live. */
 async function _fetchSpotToday() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   return fetchCandles(NIFTY_INDEX_SYMBOL, String(_resMin()), today, today);
 }
@@ -367,7 +367,7 @@ async function _fetchSpotToday() {
  * then picks the newest bar strictly before today.
  */
 async function _fetchPivots() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const now = new Date(Date.now() + 19800000);
   const to = new Date(now.getTime());
   const from = new Date(now.getTime() - 20 * 86400000);
@@ -481,7 +481,7 @@ async function simulateBuy(side, sig) {
     optionEntryLtp = spot;
   } else {
     try {
-      const r = await fyers.getQuotes([optInfo.symbol]);
+      const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
       if (r && r.s === "ok" && r.d && r.d.length) {
         const v = r.d[0].v || {};
         const ltp = v.lp || v.ltp;

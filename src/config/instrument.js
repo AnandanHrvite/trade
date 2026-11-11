@@ -1019,7 +1019,7 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
 
   // ── Step 1: Option Chain REST API (most reliable — returns only live expiries) ──
   console.log(`${TAG} Step 1: Calling Option Chain API for ${U.spot}...`);
-  let chainDate = await getNearestExpiryDateFromOptionChain(U);
+  let chainDate = await _sharedChainExpiry(U);
   console.log(`${TAG} Step 1: Option Chain returned: ${chainDate ? formatDateToYYYYMMDD(chainDate) : "null"}`);
   // On expiry day the chain keeps listing the contract that expired at 15:30
   // until Fyers drops it (usually overnight), and getQuotes still answers for it
@@ -1099,9 +1099,23 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
   return { symbol: weeklySymbol, expiry: weeklyExpiry, expiryDate: formatDateToYYYYMMDD(weeklyDate), strike, side, invalid: true, underlying: U.key };
 }
 
+// The two broker calls of validateAndGetOptionSymbol go through the shared
+// market-data layer (src/services/marketData.js): every strategy resolving a
+// symbol at the same moment (a dashboard Start All) shares ONE option-chain call
+// per index and ONE contract check per symbol. Required lazily — marketData
+// requires this module. Same value, same failure semantics as the direct call.
+function _sharedChainExpiry(U) {
+  return require("../services/marketData")
+    .sharedOptionChainExpiry(U.key, () => getNearestExpiryDateFromOptionChain(U));
+}
+function _validationQuotes(symbols) {
+  const md = require("../services/marketData");
+  return md.getQuotes(symbols, { maxAgeMs: md.ttlMs() });
+}
+
 async function isSymbolValidViaQuotes(symbol, _retried = false) {
   try {
-    const res = await fyers.getQuotes([symbol]);
+    const res = await _validationQuotes([symbol]);
 
     // ── Auth / session errors — treat as "inconclusive", not "invalid symbol" ──
     // If Fyers returns a top-level error (expired token, rate limit, etc.) we

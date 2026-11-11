@@ -52,11 +52,11 @@ const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const tradeGuards        = require("../utils/tradeGuards");
 const vixFilter          = require("../services/vixFilter");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog, inr } = require("../utils/bbRsiStyleUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
@@ -323,7 +323,7 @@ function startPolling() {
       const optSym = (state.position && !state.position.isFutures) ? state.position.symbol : null;
       if (optSym) {
         const symbols = [optSym];
-        const r = await fyers.getQuotes(symbols);
+        const r = await require("../services/marketData").getQuotes(symbols);
         const q = attributeQuotes(r, symbols, optSym);
         if (q.optLtp != null) {
           state.optionLtp = q.optLtp;
@@ -426,7 +426,7 @@ function _noteHistoryFailure(why) {
 
 /** Today's spot bars at the strategy resolution. Uncached — today is live. */
 async function _fetchSpotToday() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   return fetchCandles(NIFTY_INDEX_SYMBOL, String(_resMin()), today, today);
 }
@@ -438,7 +438,7 @@ async function _fetchSpotToday() {
  * the ~51 the engine needs even after holidays.
  */
 async function _fetchWarmupBars() {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const days = _warmupDays();
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const from = new Date(Date.now() - days * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -555,7 +555,7 @@ async function simulateBuy(side, sig) {
     optionEntryLtp = indexSpot;
   } else {
     try {
-      const r = await fyers.getQuotes([optInfo.symbol]);
+      const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
       if (r && r.s === "ok" && r.d && r.d.length) {
         const v = r.d[0].v || {};
         const ltp = v.lp || v.ltp;

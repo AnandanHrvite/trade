@@ -102,11 +102,11 @@ const earlyBird          = require("../strategies/early_bird");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiActivityLog, inr } = require("../utils/bbRsiStyleUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const tradeLogger = require("../utils/tradeLogger");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
@@ -493,7 +493,7 @@ function _acquireSlot() {
 function _resetRateLimiter() { _reqLog.length = 0; _rateGate = Promise.resolve(); }
 
 async function _fetchIntradayToday(fySym, resMin) {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   const today = _todayIST();
   await _acquireSlot();
   return fetchCandles(fySym, String(resMin), today, today);
@@ -501,7 +501,7 @@ async function _fetchIntradayToday(fySym, resMin) {
 
 /** Daily bars back EARLYBIRD_WARMUP_DAYS calendar days, for the previous close. */
 async function _fetchDaily(fySym) {
-  const { fetchCandles } = require("../services/backtestEngine");
+  const { fetchCandles } = require("../services/marketData");
   await _acquireSlot();
   return fetchCandles(fySym, "D", _daysAgoIST(_warmupDays()), _todayIST());
 }
@@ -919,7 +919,7 @@ function _armOptionSetup(plan, cfg) {
  * single-row/single-request exception that every other quote reader here uses.
  */
 async function _fetchOptionPremium(symbol) {
-  const r = await fyers.getQuotes([symbol]);
+  const r = await require("../services/marketData").getQuotes([symbol]);
   if (!r || r.s !== "ok" || !Array.isArray(r.d) || !r.d.length) return null;
   for (const row of r.d) {
     const v = (row && row.v) || {};
@@ -1551,7 +1551,7 @@ async function _pollQuotes() {
   for (let i = 0; i < all.length; i += chunk) {
     const batch = all.slice(i, i + chunk);
     try {
-      const r = await fyers.getQuotes(batch);
+      const r = await require("../services/marketData").getQuotes(batch);
       const prices = attributeQuotes(r, batch);
       const now = Date.now();
       for (const [fySym, ltp] of prices) {

@@ -34,11 +34,11 @@ const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog } = require("../utils/bbRsiStyleUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter    = require("../services/oiFilter");
@@ -252,7 +252,7 @@ function startOptionPolling() {
         _applyOptionLtp(symbol, streamed.ltp, streamed.at, false);
       } else {
         try {
-          const r = await fyers.getQuotes([symbol]);
+          const r = await require("../services/marketData").getQuotes([symbol]);
           if (r && r.s === "ok" && r.d && r.d.length) {
             const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
             if (typeof ltp === "number" && ltp > 0) _applyOptionLtp(symbol, ltp, Date.now(), true);
@@ -328,7 +328,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     optionEntryLtp = spot;
   } else {
     try {
-      const r = await fyers.getQuotes([optInfo.symbol]);
+      const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
       if (r && r.s === "ok" && r.d && r.d.length) {
         const v = r.d[0].v || {};
         const ltp = v.lp || v.ltp;
@@ -710,7 +710,7 @@ function onTick(tick) {
 async function preloadHistory() {
   try {
     const { fetchCandlesCached } = require("../utils/candleCache");
-    const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandles } = require("../services/marketData");
     const _now = new Date();
     const istToday = _now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     // Preload ~7 calendar days so the entry indicators (ATR5/ATR15, RSI,
@@ -779,7 +779,7 @@ router.get("/start", async (req, res) => {
 
   let _expiryBlocked = false;
   if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-    const { isExpiryDay } = require("../utils/nseHolidays");
+    const { isExpiryDay } = require("../services/marketData");
     const isExpiry = await isExpiryDay();
     if (!isExpiry) _expiryBlocked = true;
     log(`📅 [ORB-PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — allowed" : "❌ Not expiry day — entries blocked"}`);

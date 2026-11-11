@@ -146,7 +146,8 @@ async function fetchLiveVix({ force = false } = {}) {
   }
 
   try {
-    const response = await fyers.getQuotes([VIX_SYMBOL]);
+    // Shared quote hub — concurrent strategies polling VIX share one request.
+    const response = await require("./marketData").getQuotes([VIX_SYMBOL]);
     if (response.s === "ok" && response.d && response.d.length > 0) {
       const ltp = response.d[0].v && response.d[0].v.lp;
       if (typeof ltp === "number" && ltp > 0) {

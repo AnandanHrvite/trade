@@ -26,10 +26,10 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
 const tickRecorder  = require("../utils/tickRecorder");
 const optionFeed    = require("../utils/optionFeed");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { verifyFyersToken } = require("../services/marketData");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { isTradingAllowed } = require("../services/marketData");
 const { istDayFromAny, istIsoFromAny, reverseSlice, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, isPreMarketBucket, parseOptionDetails, parseTimeToMinutes } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -256,7 +256,7 @@ let _rateLimitBackoff = 0; // 0 = normal 500ms; >0 triggers 2s wait & warn-once
 
 async function fetchOptionLtp(symbol) {
   try {
-    const response = await fyers.getQuotes([symbol]);
+    const response = await require("../services/marketData").getQuotes([symbol]);
     if (response.s === "ok" && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
@@ -1005,7 +1005,7 @@ async function resolveAndEnter(side, spot, result, sid = _entryGen) {
 async function preloadHistory() {
   try {
     const { fetchCandlesCached } = require("../utils/candleCache");
-    const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandles } = require("../services/marketData");
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     // Fetch from 7 days ago to cover weekends + holidays (e.g., Thu trading → Mon start)
     const lookbackDate = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -1025,7 +1025,7 @@ async function preloadHistory() {
 
   // Fetch previous day(s) OHLC (reference)
   try {
-    const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandles } = require("../services/marketData");
     // Fetch last 5 days of daily candles to get prev & prev-prev day
     const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const fiveDaysAgo = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -1120,7 +1120,7 @@ router.get("/start", async (req, res) => {
   // Expiry day check
   let _expiryBlocked = false;
   if ((process.env.BB_RSI_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-    const { isExpiryDay } = require("../utils/nseHolidays");
+    const { isExpiryDay } = require("../services/marketData");
     const isExpiry = await isExpiryDay();
     if (!isExpiry) _expiryBlocked = true;
     log(`📅 [BB_RSI-PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);

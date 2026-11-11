@@ -60,8 +60,8 @@ const capitalPool       = require("../utils/capitalPool");
 const tradeGuards       = require("../utils/tradeGuards");
 const portfolioRisk     = require("../utils/portfolioRisk");
 const aiExport          = require("../utils/aiExport");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
-const { isTradingAllowed } = require("../utils/nseHolidays");
+const { verifyFyersToken } = require("../services/marketData");
+const { isTradingAllowed } = require("../services/marketData");
 const { istDayFromAny }    = require("../utils/tradeUtils");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
@@ -328,7 +328,7 @@ async function _quotes(fsyms) {
   for (let i = 0; i < fsyms.length; i += QUOTE_BATCH) {
     const chunk = fsyms.slice(i, i + QUOTE_BATCH);
     try {
-      const r = await fyers.getQuotes(chunk);
+      const r = await require("../services/marketData").getQuotes(chunk);
       if (r && r.s === "ok" && Array.isArray(r.d)) {
         for (const q of r.d) if (q && q.n && q.v && q.s !== "error") out.set(q.n, q.v);
       }
