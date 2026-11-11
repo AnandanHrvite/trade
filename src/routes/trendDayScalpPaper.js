@@ -69,6 +69,7 @@ const capitalPool = require("../utils/capitalPool");
 const tradeGuards = require("../utils/tradeGuards");
 const pairs        = require("../config/pairs");
 const pairRuntime  = require("../utils/pairRuntime");
+const tradeJournal = require("../utils/tradeJournal");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUILDER: one paper engine per (strategy, market) pair. create(pair) returns an
@@ -168,6 +169,18 @@ async function _resolvePairEntry(spot, side) {
   const steps = parseInt(_env(`${PREFIX}_ITM_STEPS`) || "1", 10);
   const strike = steps > 0 ? _r2(side === "CE" ? base - steps * U.strikeStep : base + steps * U.strikeStep) : base;
   return instrumentConfig.validateAndGetOptionSymbol(spot, side, MODE, { underlying: U.key, strikeOverride: strike });
+}
+/** The live exit level the profit lock / premium stop holds (journal only). */
+function _stopLevel(pos) {
+  if (pos.isFutures) return tradeGuards.futuresStopLevel(pos.side, pos.entrySpot, pos.mfeSpotPts || 0);
+  return tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peakPremium);
+}
+function _exitKind(reason) {
+  const r = String(reason || "");
+  if (/^Manual/i.test(r)) return "manual";
+  if (/stopped|Auto-stop|Shutdown/i.test(r)) return "eod";
+  if (/Profit lock/i.test(r)) return "trail";
+  return "sl";
 }
 
 function ensureDir() {
@@ -524,6 +537,24 @@ async function simulateBuy(side, sig) {
   }
 
   state.position = pos;
+  // Trade journal (observer only — utils/tradeJournal.js).
+  tradeJournal.onEntry(pos, {
+    reason: pos.entryReason, signal: `BUY_${side}`,
+    indicators: {
+      vwap: sig.vwap, ema: sig.ema, atr: sig.atr, zone: sig.zone,
+      bodyPts: sig.bodyPts, bodyNeeded: sig.bodyNeeded,
+      pullbackLow: sig.pullbackLow, pullbackHigh: sig.pullbackHigh, slRawPts: sig.slRaw,
+      gateSide: pos.gateSide, gateRangePct: pos.gateRangePct, gateVwap: pos.gateVwap,
+    },
+    spot, optionLtp: _isFut ? null : optionEntryLtp,
+    bid: _entryQuote ? _entryQuote.bid : null, ask: _entryQuote ? _entryQuote.ask : null,
+    expiry: optInfo.expiryDate || optInfo.expiry || null,
+    market: rt.marketKey, strategy: rt.strategy.key,
+    isFutures: _isFut, qty, sl: _stopLevel(pos), target: null,
+    expectedPrice: _isFut ? sig.entrySpot : _ltpAtEntry,
+    candles: state.candles,
+    nowMs: Date.now(),
+  });
   capitalPool.block(MODE, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { rt.persist.save(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
@@ -568,6 +599,7 @@ function simulateSell(reason) {
   const qty        = pos.qty;
   // Another market SELLS AT THE BID of a fresh quote of the held contract when
   // <PAIR>_PAPER_FILL_AT_QUOTE is on (pairRuntime.exitFill); NIFTY unchanged.
+  const _ltpAtExit = exitOptLtp;
   let _exitFill = null, _exitQ = null;
   if (!rt.home && !pos.isFutures) {
     _exitQ = state.optionQuote && state.optionQuote.symbol === pos.symbol ? state.optionQuote : null;
@@ -584,6 +616,22 @@ function simulateSell(reason) {
   const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
+
+  // Trade journal (observer only): the exit, before the trade object is built.
+  {
+    const _kind = _exitKind(reason);
+    const _lvl = _kind === "trail" || _kind === "sl" ? _stopLevel(pos) : null;
+    tradeJournal.onExit(pos, {
+      reason, kind: _kind,
+      spot: exitSpot, optionLtp: pos.isFutures ? null : exitOptLtp,
+      bid: _exitQ ? _exitQ.bid : null, ask: _exitQ ? _exitQ.ask : null,
+      expectedPrice: _lvl != null ? _lvl : (pos.isFutures ? exitSpot : _ltpAtExit),
+      fillPrice: pos.isFutures ? exitSpot : exitOptLtp,
+      favPts: (exitSpot - pos.entrySpot) * (pos.side === "CE" ? 1 : -1),
+      pnlRs: _pnlRes.gross,
+      nowMs: Date.now(),
+    });
+  }
 
   const trade = {
     side:           pos.side,
@@ -634,6 +682,7 @@ function simulateSell(reason) {
     charges,
     isFutures:      !!pos.isFutures,
     instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
+    ...tradeJournal.fields(pos),
   };
   // Another market: the record names its market, strategy, spot and instrument
   // (consolidation, post-exit tracking and the MCP read them) and how each leg filled.
@@ -707,6 +756,7 @@ function _checkExits(spotPrice) {
   }
   const optLtp = state.optionLtp || pos.optionEntryLtp;
 
+  const _peakBefore = pos.peakPremium, _mfeBefore = pos.mfeSpotPts;
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
   const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
   const curPnl = _unrealisedPnl({
@@ -718,6 +768,20 @@ function _checkExits(spotPrice) {
   if (favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   trackPath(pos, favPts, Date.now());
   if (curPnl < (pos.maePnl     || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
+  // Trade journal (observer only): this tick, and the exit level whenever the
+  // peak moved it (the profit lock / premium stop trails the peak).
+  tradeJournal.onTick(pos, { favPts, pnlRs: curPnl, spot: spotPrice, ltp: pos.isFutures ? null : optLtp, nowMs: Date.now() });
+  if (pos.peakPremium !== _peakBefore || pos.mfeSpotPts !== _mfeBefore) {
+    const _lvl = _stopLevel(pos);
+    if (_lvl != null) {
+      const _locked = pos.isFutures ? (_lvl - pos.entrySpot) * (pos.side === "PE" ? -1 : 1) > 0 : _lvl > pos.optionEntryLtp;
+      tradeJournal.onStopChange(pos, {
+        to: _lvl, kind: _locked ? "lock" : "trail",
+        reason: _locked ? "profit lock floor trails the peak" : "premium stop trails the peak",
+        spot: spotPrice, ltp: pos.isFutures ? null : optLtp, nowMs: Date.now(),
+      });
+    }
+  }
 
   // Global profit lock (shared across every strategy — see tradeGuards). Options
   // only: the lock is defined on option premium, and in futures mode optLtp
@@ -881,6 +945,9 @@ function onCandleClose(bar) {
   // A new bar supersedes any setup still waiting on a failed fill — the market
   // has moved on, and this bar's own evaluation is the current truth.
   state._pendingEntry = null;
+  // Trade journal: a 1-minute candle size makes these the journal's minute rows
+  // (at 5 minutes the journal builds its own from the ticks).
+  if (state.position && bar && _resMin() === 1) tradeJournal.onCandle(state.position, { candle: bar, nowMs: Date.now() });
   if (state.position) return;                    // exits are per-tick, not per-bar
   // Gate on the BAR's close time, exactly as the engine does — not on the wall
   // clock. The two disagree at the boundary: the 13:55 bar closes AT 14:00, so a
