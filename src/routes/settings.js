@@ -1334,6 +1334,234 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
+// ── Trade days per strategy (home pair) ─────────────────────────────────────
+// Every strategy gets a "Trade days: Every day / Expiry day only" setting under
+// its own key, <ENVPREFIX>_EXPIRY_DAY_ONLY. ORB / PA / BB_RSI already have one
+// (a toggle) and keep it as it is; the rest get it generated here, default
+// "false" = every day = today's behaviour. The engines of those do not read
+// it yet — it is what every other market's pair inherits ("Same as NIFTY")
+// until that pair sets its own. The shared TRADE_EXPIRY_DAY_ONLY is untouched.
+const _strategyRegistry = require("../config/strategyRegistry");
+const pairs = require("../config/pairs");
+// Strategies whose NIFTY engine reads the shared TRADE_EXPIRY_DAY_ONLY today.
+const _READS_TRADE_EXPIRY_DAY_ONLY = new Set(["emaRsiSt", "emaRsiStV2", "ema9vwap", "sailVwapSt", "pivotEmaSt", "stRsiPivBb"]);
+const TRADE_DAYS_OPTIONS = [{ value: "false", label: "Every day" }, { value: "true", label: "Expiry day only" }];
+function homeSectionOf(strategyId) {
+  const s = _strategyRegistry.byId(strategyId);
+  return s ? SETTINGS_SCHEMA.find(x => x.section === MODE_SECTION_TITLES[s.modeKey]) || null : null;
+}
+for (const s of _strategyRegistry.strategies()) {
+  const section = homeSectionOf(s.id);
+  const key = `${s.envPrefix}_EXPIRY_DAY_ONLY`;
+  if (!section || section.fields.some(f => f.key === key)) continue;
+  const today = _READS_TRADE_EXPIRY_DAY_ONLY.has(s.id)
+    ? ` The ${s.label} engine does not read this yet — today it follows the shared "Trade Only on Expiry Day" switch (TRADE_EXPIRY_DAY_ONLY).`
+    : ` The ${s.label} engine does not read this yet — today it trades every day.`;
+  section.fields.push({
+    key, label: "Trade days", type: "select", options: TRADE_DAYS_OPTIONS, effect: EFFECT.INSTANT,
+    desc: `Every day, or only on the market's expiry day. Every other market's ${s.label} follows this until you change it there.${today}`,
+    default: "false", subheader: "Trade days", generated: "tradeDays",
+  });
+}
+
+// ── (strategy, market) pair settings — GENERATED from the home section ──────
+// A non-home pair has no hand-written fields: its list is the strategy's home
+// section, each own key renamed to the pair's key (config/pairs.js), grouped
+// Entry / Exit / Safety / Timing / Trade days. An unset pair key shows "Same as
+// NIFTY (value)" and is never written by a save; shared keys (global VIX,
+// RSI_CE_MIN, …) are not per pair and are left to the home section.
+const PAIR_GROUPS = ["Entry", "Exit", "Safety", "Timing", "Trade days"];
+function pairGroupOf(f) {
+  const k = f.homeKey || f.key;
+  if (/_EXPIRY_DAY_ONLY$/.test(k)) return "Trade days";
+  if (f.type === "time" || /(_ENTRY_(START|END)|_RANGE_(START|END)|SQUARE_?OFF|_EOD|_HARD_CLOSE|_EXIT_TIME|WARMUP|_SESSION_START|TIME_STOP)/.test(k)) return "Timing";
+  if (/(VIX|DAILY_LOSS|MAX_DAILY|MAX_TRADES|CONSEC|PAUSE|COOLDOWN|SPREAD|_OI_|CAPITAL|_LOTS$|_QTY|_TRADE_AMOUNT|_PAPER_ENABLED$|DEBUG|BREAKER|PREMIUM_(MIN|MAX|GATE))/.test(k)) return "Safety";
+  if (/(_SL_|_SL$|STOP|TARGET|TRAIL|EXIT|PROFIT|BREAKEVEN|_BE_|_TP_|LOCK|REVERSAL)/.test(k)) return "Exit";
+  return "Entry";
+}
+// A value in index points does not carry across markets (NIFTY 25 pts ≠ BANKNIFTY).
+function isPointsField(f) {
+  return /_PTS(_|$)|POINTS/.test(f.homeKey || f.key) || /\(pts|\bpts\)|points/i.test(f.label || "");
+}
+function pairFieldsFor(pair) {
+  const section = homeSectionOf(pair.strategyId);
+  const fields = [], shared = [];
+  if (!section) return { section: null, fields, shared };
+  for (const f of section.fields) {
+    const key = pairs.pairKey(pair, f.key);
+    if (!key) { shared.push(f.key); continue; }
+    if (/_LIVE_|_POS_FILE$/.test(f.key)) continue;   // pairs are paper + backtest only
+    const pf = { ...f, key, homeKey: f.key };
+    if (/_EXPIRY_DAY_ONLY$/.test(f.key)) { pf.type = "select"; pf.options = TRADE_DAYS_OPTIONS; pf.label = "Trade days"; }
+    pf.group = pairGroupOf(pf);
+    pf.pts = isPointsField(pf);
+    fields.push(pf);
+  }
+  return { section, fields, shared };
+}
+function _pairEsc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function _pairValueText(f, v) {
+  if (v === undefined || v === null || v === "") return "blank";
+  if (f.type === "toggle") return v === "true" || v === "1" ? "On" : "Off";
+  if (f.type === "select") {
+    const o = (f.options || []).find(o => String(o && typeof o === "object" ? o.value : o) === String(v));
+    if (o && typeof o === "object") return o.label;
+  }
+  return String(v);
+}
+function _pairInputHtml(f, val) {
+  const k = _pairEsc(f.key), v = _pairEsc(val);
+  if (f.type === "toggle") {
+    return `<label class="toggle-switch"><input type="checkbox" data-key="${k}" ${val === "true" || val === "1" ? "checked" : ""} onchange="markDirty(this)"/><span class="toggle-slider"></span></label>`;
+  }
+  if (f.type === "select") {
+    const opts = f.options.map(o => {
+      const ov = String(o && typeof o === "object" ? o.value : o), ol = o && typeof o === "object" ? o.label : o;
+      return `<option value="${_pairEsc(ov)}" ${ov === String(val) ? "selected" : ""}>${_pairEsc(ol)}</option>`;
+    }).join("");
+    return `<select data-key="${k}" onchange="markDirty(this)">${opts}</select>`;
+  }
+  if (f.type === "number") {
+    // No max on a points field — another market's sensible value can sit far
+    // above NIFTY's range.
+    return `<input type="number" data-key="${k}" value="${v}" ${f.min != null ? `min="${f.min}"` : ""} ${f.max != null && !f.pts ? `max="${f.max}"` : ""} ${f.step != null ? `step="${f.step}"` : ""} onchange="markDirty(this)" oninput="markDirty(this)"/>`;
+  }
+  const type = f.type === "time" ? "time" : f.type === "date" ? "date" : "text";
+  return `<input type="${type}" data-key="${k}" value="${v}" onchange="markDirty(this)"${type === "text" ? ` oninput="markDirty(this)"` : ""}/>`;
+}
+function _homeLabel(pair) { return pair.homeMarket === "NIFTY" ? "NIFTY" : pair.homeMarket; }
+function _marketShort(key) { return { NIFTY: "NIFTY", NIFTY_FUT: "NIFTY FUT", BANKNIFTY: "BANKNIFTY", CRUDE: "CRUDE" }[key] || key; }
+
+/** Own-value count of a non-home pair (how many fields differ from NIFTY). */
+function pairOwnCount(pair, env) {
+  if (!pair || pair.home) return 0;
+  return pairFieldsFor(pair).fields.filter(f => env[f.key] !== undefined && env[f.key] !== "").length;
+}
+
+/** The Settings pane of one non-home pair (fetched on demand by the page). */
+function renderPairSection(pair, env) {
+  const markets = require("../config/markets");
+  const M = markets.get(pair.marketKey);
+  const home = _homeLabel(pair);
+  const { fields, shared } = pairFieldsFor(pair);
+  let own = 0;
+  const byGroup = new Map(PAIR_GROUPS.map(g => [g, []]));
+  for (const f of fields) {
+    const r = pairs.resolve(pair, f.homeKey, env, f.default !== undefined ? String(f.default) : "");
+    if (r.own) own++;
+    const homeVal = r.homeValue !== undefined ? r.homeValue : (f.default !== undefined ? String(f.default) : "");
+    const homeText = _pairEsc(_pairValueText(f, homeVal));
+    byGroup.get(f.group).push(`
+        <div class="setting-row pair-row${r.own ? " pair-own" : ""}" data-own="${r.own ? 1 : 0}" data-state="${r.own ? "own" : "same"}" data-home="${_pairEsc(homeVal)}">
+          <div class="setting-info">
+            <div class="setting-label">${f.label}<span class="env-key-tag">${_pairEsc(f.key)}</span></div>
+            ${f.desc ? `<div class="field-desc">${f.desc}</div>` : ""}
+            <div class="pair-state">
+              <span class="pair-same">Same as ${home} (<b>${homeText}</b>)</span>
+              <span class="pair-changed">Changed · ${home} is <b>${homeText}</b></span>
+              <span class="pair-pending">Goes back to ${home} (<b>${homeText}</b>) when you save</span>
+              <button type="button" class="pair-reset" onclick="pairResetField(this)">↺ Reset to ${home}</button>
+            </div>
+            ${f.pts ? `<div class="pair-pts">⚠ Value in points — check it for ${_pairEsc(M.label)}; ${home}'s points rarely fit another market.</div>` : ""}
+          </div>
+          ${_pairInputHtml(f, r.value === undefined ? "" : r.value)}
+        </div>`);
+  }
+  const groups = PAIR_GROUPS.filter(g => byGroup.get(g).length);
+  const tabBar = `<div class="tab-bar">${groups.map((g, i) =>
+    `<button type="button" class="tab-btn${i === 0 ? " active" : ""}" data-tab="${i}" onclick="showTab(this)">${g}<span class="tab-n">${byGroup.get(g).length}</span></button>`).join("")}</div>`;
+  const panels = groups.map((g, i) => `<div class="tab-panel${i === 0 ? " active" : ""}" data-tab="${i}">${byGroup.get(g).join("")}</div>`).join("");
+  return `
+    <div class="settings-section pair-section" data-section="pair-${pair.slug}" data-market="${pair.marketKey}">
+      <div class="section-head">
+        <div class="section-head-title">
+          <button type="button" class="pair-back" onclick="showMarket('${pair.marketKey}')" aria-label="Back to ${_pairEsc(M.label)} strategies">‹ ${_pairEsc(_marketShort(pair.marketKey))}</button>
+          ${_pairEsc(M.label)} · ${_pairEsc(pair.label)}
+          <span class="sh-count">${fields.length} settings · <span data-pair-own-count>${own}</span> changed from ${home}</span>
+        </div>
+        <div class="section-head-actions">
+          <button type="button" class="section-defaults-btn" onclick="pairResetAll(this)" title="Every field back to ${home}'s value — does NOT save until you click Save Changes">↺ Reset all to ${home}</button>
+        </div>
+      </div>
+      <div class="pair-note">
+        <b>Not running yet.</b> These settings are saved now and used once ${_pairEsc(pair.label)} runs on ${_pairEsc(M.label)}.
+        A field that says <i>Same as ${home}</i> follows ${home} — change it there and it changes here too.
+        ${shared.length ? `${shared.length} more setting${shared.length === 1 ? " is" : "s are"} shared by every market (${_pairEsc(shared.slice(0, 4).join(", "))}${shared.length > 4 ? ", …" : ""}) — change ${shared.length === 1 ? "it" : "them"} on ${home}.` : ""}
+      </div>
+      ${tabBar}
+      <div class="section-card">${panels}</div>
+    </div>`;
+}
+
+/**
+ * The market picker (chip bar) and one pane per market listing its strategies,
+ * each with its ON/OFF switch and a way into its settings.
+ *   homeSlugs  strategyId → section id of the home section (only those on screen)
+ * A home pair's switch is a proxy for its *_MODE_ENABLED field in Menu
+ * Visibility (one key, one input — save and dirty tracking stay single-source).
+ */
+function renderMarketPicker(env, homeSlugs) {
+  const markets = require("../config/markets");
+  const list = markets.list();
+  const on = (p) => String(env[p.enabledKey] || p.enabledDefault || "false").toLowerCase() === "true";
+  const chips = list.map(M => {
+    const n = pairs.forMarket(M.key).filter(on).length;
+    return `<button type="button" class="mk-chip" data-market="${M.key}" onclick="showMarket('${M.key}')" title="${_pairEsc(M.label)} — ${n} strategies on">
+        <span class="mk-chip-name">${_pairEsc(_marketShort(M.key))}</span><span class="mk-chip-n${n ? "" : " zero"}">${n}</span></button>`;
+  }).join("");
+  const panes = list.map(M => {
+    const list2 = pairs.forMarket(M.key);
+    let info;
+    try { info = markets.expiryInfo(M.key); } catch (_) { info = { date: null }; }
+    const meta = [M.exchange, `${M.session.start}–${M.session.end}`, `lot ${M.lotSize}${M.lotUnit ? ` ${M.lotUnit}` : ""}`,
+      info.date ? `next expiry ${info.date}` : null].filter(Boolean).join(" · ");
+    const rows = list2.map(p => {
+      const ownN = pairOwnCount(p, env);
+      const sub = p.home
+        ? `Its ${M.key === "NIFTY" ? "NIFTY" : _pairEsc(M.label)} settings`
+        : (ownN ? `<span class="mk-own">${ownN} changed</span> from ${_homeLabel(p)} · rest same as ${_homeLabel(p)}` : `Same as ${_homeLabel(p)} — nothing changed yet`);
+      const checked = on(p) ? "checked" : "";
+      const sw = p.home
+        ? `<input type="checkbox" data-proxy-for="${p.enabledKey}" ${checked} onchange="proxyToggle(this)" aria-label="${_pairEsc(p.label)} on ${_pairEsc(M.label)}"/>`
+        : `<input type="checkbox" data-key="${p.enabledKey}" ${checked} onchange="markDirty(this)" aria-label="${_pairEsc(p.label)} on ${_pairEsc(M.label)}"/>`;
+      const open = p.home
+        ? `onclick="openHome('${homeSlugs[p.strategyId] || ""}')"`
+        : `onclick="openPair('${p.slug}')"`;
+      return `
+        <div class="setting-row mk-row${on(p) ? " mk-on" : ""}">
+          <div class="setting-info">
+            <div class="setting-label">${_pairEsc(p.label)}<span class="env-key-tag">${p.enabledKey}</span></div>
+            <div class="field-desc">${sub}</div>
+          </div>
+          <div class="mk-ctrls">
+            <label class="toggle-switch">${sw}<span class="toggle-slider"></span></label>
+            <button type="button" class="mk-open" ${open}>Settings ›</button>
+          </div>
+        </div>`;
+    }).join("");
+    const missing = M.kind === "mcx"
+      ? _strategyRegistry.strategies().filter(s => s.needsIndexOpen).map(s => s.label)
+      : [];
+    const note = M.key === "NIFTY"
+      ? `Every NIFTY strategy, switched on or off. The switch is the same one as in Menu Visibility.`
+      : `Switch a strategy on to add it to the sidebar under ${_pairEsc(M.label)}. Its settings start as <i>Same as NIFTY</i> — change only what this market needs. Nothing runs on ${_pairEsc(M.label)} yet.`;
+    return `
+    <div class="settings-section market-section" data-section="market-${M.key}" data-market="${M.key}">
+      <div class="section-head">
+        <div class="section-head-title">🌐 ${_pairEsc(M.label)} — strategies<span class="sh-count">${_pairEsc(meta)}</span></div>
+      </div>
+      <div class="section-card">
+        <div class="mk-note">${note}</div>
+        ${rows}
+        ${missing.length ? `<div class="mk-note mk-missing">Not offered on ${_pairEsc(M.label)} — they need the 09:15 index open: ${_pairEsc(missing.join(", "))}.</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  return { chips: `<div class="mk-bar" role="navigation" aria-label="Market"><span class="mk-bar-label">Market</span><div class="mk-chips">${chips}</div></div>`, panes };
+}
+
 const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), ema_rsi_st_v2: new Set(), early_bird: new Set() };
 _MODE_KEYS.st_rsi_piv_bb = new Set();
 _MODE_KEYS.sail_vwap_st = new Set();
@@ -1610,6 +1838,20 @@ router.get("/markets", async (req, res) => {
       rows.push({ key: m.key, nextExpiry: i.date, source: i.source, overrideStale: i.overrideStale });
     }
     res.json({ success: true, markets: rows });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── GET /settings/pair-section?slug=bn-orb — one market pair's settings pane ─
+// The Settings page fetches a non-home pair's pane when it is opened, so the
+// page does not ship 100+ generated panes up front. Read-only HTML.
+router.get("/pair-section", (req, res) => {
+  try {
+    const slug = String(req.query.slug || "");
+    const pair = pairs.all().find(p => !p.home && p.slug === slug);
+    if (!pair) return res.status(404).json({ success: false, error: `no market pair "${slug.slice(0, 40)}"` });
+    res.json({ success: true, html: renderPairSection(pair, { ...process.env, ...parseEnvFile() }) });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -2433,6 +2675,19 @@ router.get("/", (req, res) => {
       </button>`).join("");
   }).join("");
 
+  // ── Market picker → strategies of that market → their settings ──
+  // A home pair opens its existing section (only when it is on screen); every
+  // other pair's pane is fetched on demand from GET /settings/pair-section.
+  const homeSlugs = {};
+  const homeSectionMarket = {};
+  for (const s of _strategyRegistry.strategies()) {
+    const sec = homeSectionOf(s.id);
+    if (!sec || SECTION_TO_MASTER[sec.section] === false) continue;
+    homeSlugs[s.id] = sectionSlug(sec);
+    homeSectionMarket[sectionSlug(sec)] = pairs.homeMarket(s.id);
+  }
+  const picker = renderMarketPicker({ ...process.env, ...envData }, homeSlugs);
+
   const sectionSummaryJSON = JSON.stringify(sectionSummaries);
   const schemaDefaultsJSON = JSON.stringify(SCHEMA_DEFAULTS);
   const sectionNamesJSON = JSON.stringify(
@@ -3022,6 +3277,59 @@ router.get("/", (req, res) => {
     }
     .bulk-preview.visible { display: block; }
 
+    /* ── Market picker (top of page) ── */
+    .mk-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .mk-bar-label { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); flex-shrink: 0; }
+    .mk-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+    .mk-chip {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: 36px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+      background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+      font-family: inherit; font-size: 0.72rem; font-weight: 700;
+    }
+    .mk-chip:hover { color: var(--text2); border-color: var(--border2); }
+    .mk-chip.active { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.45); color: var(--accent); }
+    .mk-chip-n { font-size: 0.6rem; padding: 1px 6px; border-radius: 9px; background: rgba(16,185,129,0.14); color: var(--green); }
+    .mk-chip-n.zero { background: var(--surface2); color: var(--dim); }
+    .mk-note { padding: 12px 18px; font-size: 0.72rem; color: var(--muted); line-height: 1.5; border-bottom: 1px solid var(--border); }
+    .mk-missing { border-bottom: none; border-top: 1px solid var(--border); color: var(--dim); }
+    .mk-row .mk-ctrls { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .mk-row .mk-ctrls .toggle-switch { margin-left: 0; }
+    .mk-open {
+      min-height: 36px; padding: 6px 14px; border-radius: 7px; cursor: pointer;
+      background: var(--surface2); border: 1px solid var(--border2); color: var(--text2);
+      font-family: inherit; font-size: 0.72rem; font-weight: 700; white-space: nowrap;
+    }
+    .mk-open:hover { border-color: var(--accent); color: var(--accent); }
+    .mk-row:not(.mk-on) .setting-label { color: var(--muted); }
+    .mk-own { color: var(--yellow); font-weight: 700; }
+
+    /* ── A market pair's settings: Same as NIFTY / changed / reset ── */
+    .pair-back {
+      min-height: 30px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+      background: var(--surface2); border: 1px solid var(--border2); color: var(--muted);
+      font-family: inherit; font-size: 0.68rem; font-weight: 700;
+    }
+    .pair-back:hover { color: var(--accent); border-color: var(--accent); }
+    .pair-note {
+      padding: 10px 16px; font-size: 0.72rem; line-height: 1.5; color: var(--muted);
+      background: var(--surface); border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+    }
+    .pair-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.68rem; }
+    .pair-state > span { display: none; }
+    .pair-row[data-state="same"] .pair-same { display: inline; color: var(--dim); }
+    .pair-row[data-state="own"] .pair-changed { display: inline; color: var(--yellow); font-weight: 600; }
+    .pair-row[data-state="pending"] .pair-pending { display: inline; color: var(--accent); font-weight: 600; }
+    .pair-reset {
+      display: none; min-height: 28px; padding: 2px 10px; border-radius: 6px; cursor: pointer;
+      background: transparent; border: 1px solid var(--border2); color: var(--muted);
+      font-family: inherit; font-size: 0.66rem; font-weight: 600;
+    }
+    .pair-row[data-state="own"] .pair-reset { display: inline-flex; align-items: center; }
+    .pair-reset:hover { color: var(--accent); border-color: var(--accent); }
+    .pair-row.pair-own { box-shadow: inset 3px 0 0 var(--yellow); background: rgba(245,158,11,0.05); }
+    .pair-pts { margin-top: 6px; font-size: 0.66rem; color: var(--yellow); }
+
     /* ── Laptop / small-desktop band (13" MacBook etc.) ──
        The fixed 200px sidebar leaves a narrow content column here and the phone
        rules below don't start until 640px. Collapse the 2-up pattern grid, let
@@ -3097,9 +3405,26 @@ router.get("/", (req, res) => {
       .setting-row:has(> .toggle-switch) .setting-info { margin-bottom: 0; }
       .custom-row { flex-direction: column; align-items: stretch; }
       .custom-row input[type="text"] { min-width: 100%; }
-      .save-bar { padding: 10px 12px; }
+      /* Save bar sits at the bottom of the screen, above the home indicator,
+         where a thumb reaches it — the page gets room so nothing hides under it. */
+      .save-bar {
+        position: fixed; top: auto; bottom: 0; left: 0; right: 0; z-index: 150;
+        border-bottom: none; border-top: 1px solid var(--border);
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+        padding-left: calc(12px + env(safe-area-inset-left, 0px));
+        padding-right: calc(12px + env(safe-area-inset-right, 0px));
+      }
+      .page { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
       .save-bar .btn-group { flex: 1; }
       .save-bar .btn-group button { flex: 1; min-height: 44px; }
+      .mk-bar { flex-direction: column; align-items: stretch; gap: 6px; }
+      .mk-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .mk-chip { min-height: 44px; padding: 6px 4px; font-size: 0.64rem; flex-direction: column; gap: 2px; }
+      .mk-chip-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .mk-row .mk-ctrls { width: 100%; justify-content: space-between; }
+      .mk-open, .pair-back { min-height: 44px; }
+      .pair-reset { min-height: 44px; padding: 4px 12px; }
+      .pair-note { padding: 10px 12px; }
       .top-bar { padding: 12px 12px 12px 48px; }
       .summary-table { font-size: 0.7rem; }
     }
@@ -3159,6 +3484,7 @@ router.get("/", (req, res) => {
     </div>
 
     <div class="page">
+      ${picker.chips}
       <div class="settings-search-bar" id="settingsSearchBar">
         <span class="ssb-icon">🔎</span>
         <input id="settingsSearchInput" type="search" autocomplete="off" spellcheck="false"
@@ -3173,6 +3499,7 @@ router.get("/", (req, res) => {
         </aside>
 
         <div class="sec-pane" id="secPane">
+          ${picker.panes}
           ${sectionsHtml}
 
           <!-- Restart Server -->
@@ -3231,6 +3558,10 @@ router.get("/", (req, res) => {
 ${modalJS()}
 // ── Section index: exactly one section is on screen at a time ───────────────
 var _keySection     = ${keySectionJSON};
+var _homeSectionMarket = ${JSON.stringify(homeSectionMarket)};
+// Market-pair keys queued to be REMOVED from .env on the next save ("Reset to
+// NIFTY" on a field that had its own value) — sent as the save's deletes.
+window._pairDeletes = new Set();
 var _activeSection  = null;
 var _ssbPrevSection = null; // section open before a search began (restored on clear)
 
@@ -3245,6 +3576,7 @@ function showSection(id, opts) {
     b.classList.toggle('active', b.getAttribute('data-target') === id);
   });
   _activeSection = id;
+  paintMarketChips(target);
   // Picking a section by hand during a search is a real choice — don't snap
   // back to wherever the search started once the box is cleared.
   if (!opts.auto) _ssbPrevSection = null;
@@ -3304,17 +3636,25 @@ function updateRailDirty() {
 // The hash is matched against the index by value rather than fed into a
 // selector: a hand-edited '#a"]' would make querySelector throw and take the
 // rest of this script — dirty tracking included — down with it.
-(function initSections(){
+// With no (known) hash the page opens on the NIFTY strategy list. A #pair-…
+// hash (the sidebar's link for a market pair) loads that pair's pane.
+function openFromHash(){
   var wanted = '';
   try { wanted = decodeURIComponent((location.hash || '').replace(/^#/, '')); } catch (e) {}
-  var items = document.querySelectorAll('.rail-item');
-  if (!items.length) return;
+  if (/^pair-[a-z0-9-]+$/.test(wanted)) { openPair(wanted.slice(5), { hash: false }); return; }
   var target = null;
-  items.forEach(function(b){
-    if (!target && b.getAttribute('data-target') === wanted) target = wanted;
+  document.querySelectorAll('#secPane .settings-section[data-section]').forEach(function(s){
+    if (!target && s.getAttribute('data-section') === wanted) target = wanted;
   });
-  showSection(target || items[0].getAttribute('data-target'), { hash: false, top: false });
-})();
+  if (!target && document.querySelector('[data-section="market-NIFTY"]')) target = 'market-NIFTY';
+  if (!target) { var first = document.querySelector('.rail-item'); if (first) target = first.getAttribute('data-target'); }
+  if (target) showSection(target, { hash: false, top: false });
+}
+openFromHash();
+window.addEventListener('hashchange', function(){
+  // Our own replaceState never fires this; a sidebar link to /settings#… does.
+  if (('#' + (_activeSection || '')) !== location.hash) openFromHash();
+});
 
 // Broker-logout buttons depend on which broker holds a token, so they can only
 // be decided at runtime (the page HTML ships them hidden).
@@ -3452,6 +3792,135 @@ document.addEventListener('keydown', function(e){
 
 })();
 
+// ── Market picker → strategy list → pair settings ───────────────────────────
+function paintMarketChips(sec) {
+  var m = sec ? (sec.getAttribute('data-market') || _homeSectionMarket[sec.getAttribute('data-section')] || '') : '';
+  document.querySelectorAll('.mk-chip').forEach(function(c){
+    var on = c.getAttribute('data-market') === m;
+    c.classList.toggle('active', on);
+    c.setAttribute('aria-current', on ? 'true' : 'false');
+  });
+}
+function showMarket(key) { showSection('market-' + key); }
+function openHome(id) {
+  if (id && document.querySelector('.settings-section[data-section="' + id + '"]')) { showSection(id); return; }
+  showToast('Switch it on and save — its settings show once it is on.', 'info');
+}
+var _pairLoading = {};
+async function openPair(slug, opts) {
+  opts = opts || {};
+  if (!/^[a-z0-9-]+$/.test(slug)) return;
+  var id = 'pair-' + slug;
+  if (document.querySelector('.settings-section[data-section="' + id + '"]')) { showSection(id, opts); return; }
+  if (_pairLoading[slug]) return;
+  _pairLoading[slug] = true;
+  try {
+    var res = await secretFetch('/settings/pair-section?slug=' + encodeURIComponent(slug));
+    var data = res ? await res.json() : null;
+    if (!data || !data.success) throw new Error((data && data.error) || 'no answer from the server');
+    var wrap = document.createElement('div');
+    wrap.innerHTML = data.html;
+    var sec = wrap.firstElementChild;
+    document.getElementById('secPane').insertBefore(sec, document.getElementById('secNone'));
+    sec.querySelectorAll('[data-key]').forEach(function(el){
+      window._originals[el.getAttribute('data-key')] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+    sec.querySelectorAll('.pair-row').forEach(pairPaint);
+    showSection(id, opts);
+  } catch (e) {
+    showToast('Could not load these settings: ' + e.message, 'error');
+  } finally {
+    _pairLoading[slug] = false;
+  }
+}
+// One pair field's look: same as NIFTY / changed / going back to NIFTY on save.
+function pairPaint(row) {
+  var el = row.querySelector('[data-key]');
+  if (!el) return;
+  var key = el.getAttribute('data-key');
+  var state = window._pairDeletes.has(key) ? 'pending'
+    : (window._dirtyKeys.has(key) || row.getAttribute('data-own') === '1') ? 'own' : 'same';
+  row.setAttribute('data-state', state);
+  row.classList.toggle('pair-own', state === 'own');
+  var sec = row.closest('.pair-section');
+  var c = sec ? sec.querySelector('[data-pair-own-count]') : null;
+  if (c) c.textContent = sec.querySelectorAll('.pair-row[data-state="own"]').length;
+}
+function pairAfterChange(el) {
+  var row = el.closest ? el.closest('.pair-row') : null;
+  if (!row) return;
+  window._pairDeletes.delete(el.getAttribute('data-key'));
+  pairPaint(row);
+}
+function pairResetRow(row) {
+  var el = row.querySelector('[data-key]');
+  if (!el) return;
+  var key = el.getAttribute('data-key'), home = row.getAttribute('data-home');
+  if (el.type === 'checkbox') el.checked = (home === 'true' || home === '1');
+  else el.value = home;
+  el.classList.remove('dirty');
+  window._dirtyKeys.delete(key);
+  if (row.getAttribute('data-own') === '1') window._pairDeletes.add(key);
+  pairPaint(row);
+}
+function pairResetField(btn) {
+  var row = btn.closest('.pair-row');
+  if (row) pairResetRow(row);
+  updateSaveBar();
+}
+function pairResetAll(btn) {
+  var sec = btn.closest('.pair-section');
+  if (!sec) return;
+  sec.querySelectorAll('.pair-row').forEach(pairResetRow);
+  updateSaveBar();
+  showToast('Every field set back — Save Changes to apply', 'info');
+}
+function pairAfterSave(updatedKeys, deletedKeys) {
+  updatedKeys.forEach(function(k){
+    var el = document.querySelector('.pair-row [data-key="' + k + '"]');
+    if (el) el.closest('.pair-row').setAttribute('data-own', '1');
+  });
+  deletedKeys.forEach(function(k){
+    var el = document.querySelector('.pair-row [data-key="' + k + '"]');
+    if (el) {
+      el.closest('.pair-row').setAttribute('data-own', '0');
+      window._originals[k] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    window._pairDeletes.delete(k);
+  });
+  document.querySelectorAll('.pair-row').forEach(pairPaint);
+}
+// A NIFTY strategy's switch in the market list mirrors its *_MODE_ENABLED
+// field in Menu Visibility — that field is the one saved.
+function proxyToggle(p) {
+  var real = document.querySelector('[data-key="' + p.getAttribute('data-proxy-for') + '"]');
+  if (!real) { p.checked = !p.checked; return; }
+  real.checked = p.checked;
+  markDirty(real);
+}
+function syncProxies(key) {
+  document.querySelectorAll('[data-proxy-for]').forEach(function(p){
+    var k = p.getAttribute('data-proxy-for');
+    if (key && k !== key) return;
+    var real = document.querySelector('[data-key="' + k + '"]');
+    if (real) p.checked = real.checked;
+  });
+  paintMarketCounts();
+}
+function paintMarketCounts() {
+  document.querySelectorAll('.market-section').forEach(function(sec){
+    var n = 0;
+    sec.querySelectorAll('.mk-row').forEach(function(r){
+      var i = r.querySelector('.mk-ctrls input[type="checkbox"]');
+      var on = !!(i && i.checked);
+      r.classList.toggle('mk-on', on);
+      if (on) n++;
+    });
+    var chip = document.querySelector('.mk-chip[data-market="' + sec.getAttribute('data-market') + '"] .mk-chip-n');
+    if (chip) { chip.textContent = n; chip.classList.toggle('zero', n === 0); }
+  });
+}
+
 function togglePwdVis(btn) {
   var inp = btn.parentElement.querySelector('input');
   if (!inp) return;
@@ -3489,13 +3958,15 @@ function markDirty(el) {
   if (key === 'BB_RSI_MODE_ENABLED') toggleFreezeGroup('bb_rsi', !el.checked);
   if (key === 'BB_RSI_VIX_ENABLED')  toggleFreezeGroup('bb_rsi-vix', !el.checked);
   if (key === 'PA_VIX_ENABLED')     toggleFreezeGroup('pa-vix', !el.checked);
+  pairAfterChange(el);
+  syncProxies(key);
   updateSaveBar();
 }
 
 function updateSaveBar() {
   var bar = document.getElementById('saveBar');
   var count = document.getElementById('changeCount');
-  var n = window._dirtyKeys.size;
+  var n = window._dirtyKeys.size + window._pairDeletes.size;
   updateRailDirty();
   if (n > 0) {
     bar.classList.add('visible');
@@ -3516,6 +3987,9 @@ function discardChanges() {
     }
   });
   window._dirtyKeys.clear();
+  window._pairDeletes.clear();
+  document.querySelectorAll('.pair-row').forEach(pairPaint);
+  syncProxies();
   updateSaveBar();
   // Restore freeze state from original toggle values
   var vixOrig      = window._originals['VIX_FILTER_ENABLED'];
@@ -3543,16 +4017,18 @@ async function saveSettings() {
     }
   });
 
-  if (Object.keys(updates).length === 0) return;
+  var deletes = Array.from(window._pairDeletes);
+  if (Object.keys(updates).length === 0 && deletes.length === 0) return;
 
   // Ask for an optional checkpoint note before saving. Returns null on Cancel,
   // empty string when user just presses Enter / Submit without typing.
   var keys = Object.keys(updates);
-  var preview = keys.slice(0, 4).join(', ') + (keys.length > 4 ? ', +' + (keys.length - 4) + ' more' : '');
+  var all = keys.concat(deletes.map(function(k){ return k + ' (reset)'; }));
+  var preview = all.slice(0, 4).join(', ') + (all.length > 4 ? ', +' + (all.length - 4) + ' more' : '');
   var note = await showPrompt({
     icon: '🔖',
     title: 'Checkpoint Note',
-    message: 'Saving ' + keys.length + ' change' + (keys.length === 1 ? '' : 's') + ': ' + preview + '.\\n\\nDescribe WHY you are making this change (optional). It will be saved with the old→new diff in the audit log so future trade-log analysis can correlate outcomes with this change.\\n\\nLeave empty and press Submit to save without a note.',
+    message: 'Saving ' + all.length + ' change' + (all.length === 1 ? '' : 's') + ': ' + preview + '.\\n\\nDescribe WHY you are making this change (optional). It will be saved with the old→new diff in the audit log so future trade-log analysis can correlate outcomes with this change.\\n\\nLeave empty and press Submit to save without a note.',
     placeholder: 'e.g. loosening trend gate, ADX 22 rejecting too many entries',
     inputType: 'text',
   });
@@ -3565,7 +4041,7 @@ async function saveSettings() {
   secretFetch('/settings/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ updates: updates, note: note }),
+    body: JSON.stringify(deletes.length ? { updates: updates, deletes: deletes, note: note } : { updates: updates, note: note }),
   })
   .then(function(res) {
     if (!res) return null;
@@ -3586,6 +4062,7 @@ async function saveSettings() {
           }
         }
       });
+      pairAfterSave(Object.keys(updates), deletes);
       window._dirtyKeys.clear();
       updateSaveBar();
 
@@ -3593,7 +4070,8 @@ async function saveSettings() {
       if (updates.API_SECRET !== undefined) sessionStorage.removeItem('__api_secret');
 
       // Build message based on what was saved
-      var msg = data.updatedCount + ' setting' + (data.updatedCount > 1 ? 's' : '') + ' applied';
+      var nApplied = (data.updatedCount || 0) + deletes.length;
+      var msg = nApplied + ' setting' + (nApplied > 1 ? 's' : '') + ' applied';
       if (data.warning) setTimeout(function() { showToast(data.warning, 'info'); }, 2500);
       if (!data.fileSaved) {
         msg += ' ⚠️ NOT SAVED TO DISK — .env write failed: ' + (data.fileError || 'unknown') + '. Changes will be lost on restart!';
@@ -3632,6 +4110,10 @@ async function resetAndSaveAll() {
   document.querySelectorAll('[data-key]').forEach(function(el) {
     var key = el.getAttribute('data-key');
     if (!key) return;
+    // A market-pair field that follows NIFTY stays unset — writing it would
+    // freeze today's NIFTY value into that market. Only its own values go.
+    var prow = el.closest('.pair-row');
+    if (prow && !window._dirtyKeys.has(key) && (prow.getAttribute('data-own') !== '1' || window._pairDeletes.has(key))) return;
     if (el.type === 'checkbox') {
       updates[key] = el.checked ? 'true' : 'false';
     } else {
@@ -3667,6 +4149,7 @@ async function resetAndSaveAll() {
           }
         }
       });
+      pairAfterSave(Object.keys(updates), []);
       window._dirtyKeys.clear();
       updateSaveBar();
 
@@ -5368,5 +5851,7 @@ function sectionAnchorFor(key) {
 }
 
 router.sectionAnchorFor = sectionAnchorFor;
+// For tests/pairs.regression.js: the generated market-pair settings.
+router.pairSettings = { PAIR_GROUPS, pairFieldsFor, pairGroupOf, renderPairSection, renderMarketPicker, homeSectionOf };
 
 module.exports = router;
