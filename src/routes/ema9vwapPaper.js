@@ -47,6 +47,7 @@ const tickSimulator = require("../services/tickSimulator");
 const { EMA } = require("technicalindicators");
 const pairs         = require("../config/pairs");
 const pairRuntime   = require("../utils/pairRuntime");
+const tradeJournal  = require("../utils/tradeJournal");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUILDER — one paper engine per (strategy, market) pair.
@@ -975,6 +976,26 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
       }
     }
   }
+  // Trade journal (observer only — nothing reads pos.journal back).
+  tradeJournal.onEntry(ptState.position, {
+    reason, signal: side === "CE" ? "BUY_CE" : "BUY_PE",
+    indicators: {
+      ema9: ptState.position.ema9AtEntry, vwap: ptState.position.vwapAtEntry,
+      vwapUpper: ptState.position.vwapUpperAtEntry, vwapLower: ptState.position.vwapLowerAtEntry,
+      strength: _signalStrength,
+    },
+    spot: _entrySpot, optionLtp: ptState.position.optionEntryLtp,
+    bid: entryMeta.entryQuote ? entryMeta.entryQuote.bid : null,
+    ask: entryMeta.entryQuote ? entryMeta.entryQuote.ask : null,
+    vix: _vixAtEntry, expiry: optDetails ? optDetails.expiry : null,
+    market: rt.marketKey, strategy: rt.strategy.key,
+    isFutures: rt.instrumentName() === "NIFTY_FUTURES", qty, sl: stopLoss || null,
+    // The price the signal wanted, in the fill's own units: the quote's LTP for an
+    // ask fill, else the spot level (the premium is not known until the first poll).
+    expectedPrice: _askFill ? entryMeta.entryQuote.ltp : (ptState.position.optionEntryLtp ? null : price),
+    candles: ptState.candles, nowMs: simNow(),
+  });
+  _journalStopLvl = null;
   // Crash-recovery snapshot — real sessions only. A synthetic scenario position
   // written here makes the next boot Telegram "🚨 Persisted EMA9+VWAP position
   // found (crash recovery)!" for a trade that never existed.
@@ -1026,6 +1047,38 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
       ...(rt.home ? {} : { isFutures: rt.isFutures, instrument: rt.instrumentName() }),
     });
   }
+}
+
+// ── Trade journal: the effective exit level (observer only) ─────────────────
+// EMA9+VWAP keeps no stop field: its exits are the global profit lock / premium
+// stop (options) and the futures stop (index level), recomputed per tick. The
+// journal gets that level whenever it moves; nothing reads it back into a decision.
+let _journalStopLvl = null;
+function _journalStop(pos, spot, isFut) {
+  try {
+    let lvl = null, kind, why;
+    if (isFut) {
+      lvl = tradeGuards.futuresStopLevel(pos.side, pos.entryPrice, pos.mfeSpotPts);
+      kind = _journalStopLvl == null ? "initial" : "trail";
+      why = "futures stop (premium stop in index points)";
+    } else if (pos.optionEntryLtp) {
+      lvl = tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.bestOptionLtp);
+      kind = "lock";
+      why = "profit lock / premium stop level";
+    }
+    if (lvl == null || lvl === _journalStopLvl) return;
+    const from = _journalStopLvl;
+    _journalStopLvl = lvl;
+    tradeJournal.onStopChange(pos, { from, to: lvl, kind, reason: why, spot, ltp: ptState.optionLtp, nowMs: simNow() });
+  } catch (_) {}
+}
+// The journal's exit kind for an EMA9+VWAP exit reason.
+function _journalExitKind(reason) {
+  const r = String(reason || "");
+  if (/^Manual/i.test(r)) return "manual";
+  if (/Profit lock/i.test(r)) return "trail";
+  if (/Stop-loss|stop loss|hit the stop/i.test(r)) return "sl";
+  return "eod";   // EOD square-off / auto-stop / shutdown / simulation end
 }
 
 function simulateSell(exitPrice, reason, spotAtExit) {
@@ -1090,6 +1143,29 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // full indicator picture at exit, not just at entry.
   let _exitInd = {};
   try { _exitInd = _eng.getSignal(ptState.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+
+  // Trade journal: exit fill (observer only), before the trade object is built.
+  {
+    const _p = ptState.position;
+    const _xq = _exitFill === "bid" && ptState.optionQuote ? ptState.optionQuote : null;
+    let _aim = null;
+    try {
+      _aim = isFutures ? tradeGuards.futuresStopLevel(side, entryPrice, _p.mfeSpotPts)
+        : (optionEntryLtp ? tradeGuards.exitLevelLtp(optionEntryLtp, _p.bestOptionLtp) : null);
+    } catch (_) {}
+    const _kind = _journalExitKind(reason);
+    tradeJournal.onExit(_p, {
+      reason, kind: _kind,
+      indicators: { ema9: _exitInd.ema9, vwap: _exitInd.vwap, vwapUpper: _exitInd.vwapUpper, vwapLower: _exitInd.vwapLower, stdev: _exitInd.stdev },
+      spot: spotAtExit || exitPrice, optionLtp: isFutures ? null : (exitOptionLtp || null),
+      bid: _xq ? _xq.bid : null, ask: _xq ? _xq.ask : null,
+      // The level the exit aimed at (a stop / lock exit); a manual or session exit takes what it gets.
+      expectedPrice: (_kind === "sl" || _kind === "trail") ? _aim : null,
+      fillPrice: isFutures ? exitPrice : (exitOptionLtp || null),
+      favPts: _pnlPoints, pnlRs: netPnl, candlesHeld: _p.candlesHeld || 0,
+      nowMs: simNow(),
+    });
+  }
 
   const trade = {
     side,
@@ -1163,6 +1239,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       exitQuote:       (_exitFill === "bid" && ptState.optionQuote) ? { bid: ptState.optionQuote.bid, ask: ptState.optionQuote.ask, ltp: ptState.optionQuote.ltp } : null,
     });
   }
+  // Trade journal (observer — the golden harness ignores this one key).
+  try { Object.assign(trade, tradeJournal.fields(ptState.position)); } catch (_) {}
 
   ptState.sessionTrades.push(trade);
   // Simulation isolation: a /simulate run must never reach the canonical audit log.
@@ -1227,6 +1305,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   ptState.position = null;
   ptState.optionQuote = null;
+  _journalStopLvl = null;
   capitalPool.release(MODE, netPnl, { sim: (ptState._simMode || ptState._simSession) });
   if (!ptState._simMode && !ptState._simSession) {
     try {
@@ -1857,6 +1936,14 @@ function onTick(tick) {
     else                      { if (!_exPos.bestPrice || ltp < _exPos.bestPrice) _exPos.bestPrice = ltp; }
     // Peak option premium (long CE/PE both profit on premium rise) — the profit lock reads it.
     if (ptState.optionLtp && ptState.optionLtp > (_exPos.bestOptionLtp || 0)) _exPos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));
+    // Trade journal (observer): same favPts as the MFE/MAE above, a gross running
+    // P&L (premium move × qty; futures: points × qty), then the exit level.
+    const _jFut = rt.instrumentName() === "NIFTY_FUTURES";
+    const _jQty = _exPos.qty || 0;
+    const _jPnl = _jFut ? _favPts * _jQty
+      : (_exPos.optionEntryLtp && ptState.optionLtp ? (ptState.optionLtp - _exPos.optionEntryLtp) * _jQty : null);
+    tradeJournal.onTick(_exPos, { favPts: _favPts, pnlRs: _jPnl, spot: ltp, ltp: ptState.optionLtp, nowMs: simNow() });
+    _journalStop(_exPos, ltp, _jFut);
   }
 
   // ── Global profit lock (shared across every strategy — see tradeGuards) ──
