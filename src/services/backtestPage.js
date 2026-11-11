@@ -49,8 +49,10 @@ const resultStore  = require("../utils/resultStore");
 const _has = Object.prototype.hasOwnProperty;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Paper/live/UI switches are not backtest inputs.
-const NOT_BACKTEST = /(_MODE_ENABLED|_PAPER_ENABLED|_LIVE_ENABLED|_POS_FILE|_DEBUG\w*|_TRACE\w*|_TELEGRAM\w*)$|_LIVE_|^TG_/;
+// Paper/live/UI switches are not backtest inputs — nor are the pair-only paper
+// fill rules (fill at bid/ask, live spread limit), which the backtest engine
+// never reads and which have no home key to map onto.
+const NOT_BACKTEST = /(_MODE_ENABLED|_PAPER_ENABLED|_LIVE_ENABLED|_POS_FILE|_DEBUG\w*|_TRACE\w*|_TELEGRAM\w*|_PAPER_FILL_AT_QUOTE|_MAX_SPREAD_PTS)$|_LIVE_|^TG_/;
 
 function _settingsRouter() { return require("../routes/settings"); }
 
