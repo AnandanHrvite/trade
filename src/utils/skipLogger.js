@@ -33,27 +33,11 @@ const _HOME = require("os").homedir();
 const DATA_DIR  = path.join(_HOME, "trading-data");
 const SKIPS_DIR = path.join(DATA_DIR, "skips");
 
-const FILE_PREFIX_BY_MODE = {
-  ema_rsi_st:    "ema_rsi_st_paper_skips_",
-  bb_rsi:    "bb_rsi_paper_skips_",
-  pa:       "pa_paper_skips_",
-  orb:      "orb_paper_skips_",
-  ema9vwap: "ema9vwap_paper_skips_",
-  trend_pb: "trend_pb_paper_skips_",
-  trend_day_scalp: "trend_day_scalp_paper_skips_",
-  ha_scalp: "ha_scalp_paper_skips_",
-  prev_orb_scalp: "prev_orb_scalp_paper_skips_",
-  itm20_scalp: "itm20_scalp_paper_skips_",
-  early_bird: "early_bird_paper_skips_",
-  rsi_pivot_st: "rsi_pivot_st_paper_skips_",
-  ema_rsi_st_v2: "ema_rsi_st_v2_paper_skips_",
-  st_rsi_piv_bb: "st_rsi_piv_bb_paper_skips_",
-  sail_vwap_st: "sail_vwap_st_paper_skips_",
-  pivot_ema_st: "pivot_ema_st_paper_skips_",
-  gap_runaway: "gap_runaway_paper_skips_",
-  gap_runaway_stk: "gap_runaway_stk_paper_skips_",
-  simple930: "simple930_paper_skips_",
-};
+// Mode key → skip-file prefix (`skips/${modeKey}_paper_skips_YYYY-MM-DD.jsonl`),
+// one row per registry entry, in the historic key order (strategyRegistry
+// ORDERS.logs) — Object.keys() of this is the mode list the MCP skip reader walks.
+const FILE_PREFIX_BY_MODE = Object.fromEntries(require("../config/strategyRegistry").inOrder("logs")
+  .map(s => [s.modeKey, `${s.modeKey}_paper_skips_`]));
 
 try { fs.mkdirSync(SKIPS_DIR, { recursive: true }); } catch (_) {}
 

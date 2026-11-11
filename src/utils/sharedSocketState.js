@@ -557,19 +557,10 @@ module.exports = {
 
 // set*/clear* release the strategy's start reservation. Wrapped here (rather
 // than edited into 30 bodies) so a newly added slot cannot forget it.
-const _CLEAR_SLOT = {
-  clear: "EMA_RSI_ST", clearBbRsi: "BB_RSI", clearPA: "PA", clearOrb: "ORB",
-  clearEma9Vwap: "EMA9VWAP", clearTrendPb: "TREND_PB", clearTrendDayScalp: "TREND_DAY_SCALP",
-  clearHaScalp: "HA_SCALP", clearPrevOrbScalp: "PREV_ORB_SCALP", clearEarlyBird: "EARLY_BIRD",
-  clearRsiPivotSt: "RSI_PIVOT_ST",
-  clearEmaRsiStV2Mode: "EMA_RSI_ST_V2",
-  clearStRsiPivBbMode: "ST_RSI_PIV_BB",
-  clearSailVwapStMode: "SAIL_VWAP_ST",
-  clearPivotEmaStMode: "PIVOT_EMA_ST",
-  clearGapRunawayMode: "GAP_RUNAWAY", clearGapRunawayStkMode: "GAP_RUNAWAY_STK",
-  clearSimple930: "SIMPLE930",
-  clearItm20Scalp: "ITM20_SCALP",
-};
+// The clear* name → slot map comes from the registry (socket.clear; the slot is
+// the socket mode without its _PAPER suffix, as _slotOf() derives for set*).
+const _CLEAR_SLOT = Object.fromEntries(require("../config/strategyRegistry").all()
+  .map(s => [s.socket.clear, _slotOf(s.socket.mode)]));
 for (const name of Object.keys(module.exports)) {
   const fn = module.exports[name];
   if (typeof fn !== "function" || !/^(set|clear)/.test(name)) continue;

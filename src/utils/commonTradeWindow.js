@@ -12,24 +12,13 @@
 const ENTRY_START = "10:00";
 const ENTRY_END   = "14:00";
 
-const ENTRY_START_KEYS = [
-  "TRADE_ENTRY_START", "BB_RSI_ENTRY_START", "PA_ENTRY_START", "ORB_ENTRY_START",
-  "EMA9VWAP_ENTRY_START", "TREND_PB_ENTRY_START", "HA_SCALP_ENTRY_START",
-  "RSI_PIVOT_ST_ENTRY_START",
-  "EMA_RSI_ST_V2_ENTRY_START",
-  "ST_RSI_PIV_BB_ENTRY_START", "SAIL_VWAP_ST_ENTRY_START",
-  "PIVOT_EMA_ST_ENTRY_START",
-];
-const ENTRY_END_KEYS = [
-  // ORB_ENTRY_END is NOT here: ORB keeps its own, earlier cut-off (default 10:15 —
-  // its late breakouts lost money in the Jan–Nov 2026 backtest).
-  "TRADE_ENTRY_END", "BB_RSI_ENTRY_END", "PA_ENTRY_END",
-  "EMA9VWAP_ENTRY_END", "TREND_PB_ENTRY_END", "TDS_ENTRY_END", "HA_SCALP_ENTRY_END",
-  "PREV_ORB_SCALP_ENTRY_END", "RSI_PIVOT_ST_ENTRY_END",
-  "EMA_RSI_ST_V2_ENTRY_END",
-  "ST_RSI_PIV_BB_ENTRY_END", "SAIL_VWAP_ST_ENTRY_END",
-  "PIVOT_EMA_ST_ENTRY_END",
-];
+// Each strategy's own entry-window keys come from the registry
+// (strategyRegistry `commonWindow`). ORB has no end key there: it keeps its own,
+// earlier cut-off (ORB_ENTRY_END, default 10:15 — its late breakouts lost money
+// in the Jan–Nov 2026 backtest).
+const _REG = require("../config/strategyRegistry").all();
+const ENTRY_START_KEYS = _REG.map(s => s.commonWindow.start).filter(Boolean);
+const ENTRY_END_KEYS   = _REG.map(s => s.commonWindow.end).filter(Boolean);
 const OVERRIDES = [
   ...ENTRY_START_KEYS.map(k => [k, ENTRY_START]),
   ...ENTRY_END_KEYS.map(k => [k, ENTRY_END]),
