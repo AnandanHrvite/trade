@@ -179,8 +179,9 @@ function isInTradingWindow(unixSec, prefix) {
 // ── Indicator cache — avoid redundant recalculation on every tick ────────────
 // Cache key = last closed candle time + current candle OHLC (changes on each tick)
 // If the closed candles haven't changed AND current bar is same, reuse cached indicators.
-// One cache PER PREFIX: the key does not include the BB/RSI periods, so a twin tuned to
-// different periods must never be handed the other prefix's indicators for the same bars.
+// One cache PER PREFIX, and getSignal adds the BB/RSI periods to the key: a twin tuned to
+// different periods, or a /backtest run with custom periods (utils/scopedEnv.js) sharing
+// this process with paper, must never be handed indicators computed for other periods.
 const _indicatorCaches = {};
 function _emptyCache() { return { key: null, bb: null, rsiArr: null, adx: null }; }
 function _cacheFor(P) { return _indicatorCaches[P] || (_indicatorCaches[P] = _emptyCache()); }
@@ -295,6 +296,7 @@ function getSignal(candles, opts) {
 
   // ── Indicators (with cache to avoid redundant recalculation) ──────────────
   var cacheKey = _makeIndicatorKey(candles);
+  if (cacheKey) cacheKey += "|" + BB_PERIOD + ":" + BB_STDDEV + ":" + RSI_PERIOD;
   var bb, rsiArr, adx;
 
   if (cacheKey && _cache.key === cacheKey && _cache.bb) {

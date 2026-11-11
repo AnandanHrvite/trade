@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const scopedEnv = require("./scopedEnv");
 
 const DATA_DIR = path.join(__dirname, "../../data");
 const RESULTS_FILE = path.join(DATA_DIR, "backtest_results.json");
@@ -16,7 +17,16 @@ let _cache = null;
 let _cacheSig = null;
 let _corruptUnbacked = false;   // corrupt file we could NOT move aside → never overwrite it
 
+// The per-strategy "last run" slot (/all-backtest, /compare, each old page) means
+// "the strategy's current settings". A /backtest run with custom or another
+// market's settings (scopedEnv overrides active) is not that — it is kept as its
+// own saved run (saveRun) instead, so it never overwrites the slot.
 function saveResult(strategyKey, result) {
+  if (scopedEnv.current()) return false;
+  return module.exports._writeResult(strategyKey, result);
+}
+
+function _writeResult(strategyKey, result) {
   ensureDir();
   let all = loadAll();
   if (_corruptUnbacked) throw new Error("backtest_results.json is corrupt and could not be backed up — not overwriting it");
@@ -152,4 +162,4 @@ function listRuns(limit = MAX_RUNS) {
   return out.slice(0, limit);
 }
 
-module.exports = { saveResult, loadAll, loadResult, saveRun, loadRun, listRuns, _setRunsDir };
+module.exports = { saveResult, _writeResult, loadAll, loadResult, saveRun, loadRun, listRuns, _setRunsDir };

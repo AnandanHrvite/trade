@@ -63,7 +63,7 @@ engineSvc.fetchCandlesCachedBT = async (symbol, resolution, from, to) => synthCa
 
 const resultStore = require("../src/utils/resultStore");
 const legacySaves = [];
-resultStore.saveResult = (key, v) => { legacySaves.push(key); };
+resultStore._writeResult = (key, v) => { legacySaves.push(key); };
 resultStore._setRunsDir(path.join(SANDBOX, "runs"));
 
 const express      = require("express");
@@ -408,8 +408,10 @@ check("scopedEnv: overrides are visible inside the async scope only, and writes 
 
 check("a custom V2 entry window changes the run, is recorded, and never touches process.env", async () => {
   const cur = MKT_RUNS.NIFTY || await runNew({ strategy: "emaRsiStV2", market: "NIFTY", settings: "current", from: FROM, to: TO });
+  const saves = legacySaves.length;
   const neu = await runNew({ strategy: "emaRsiStV2", market: "NIFTY", settings: "custom", from: FROM, to: TO, "s.EMA_RSI_ST_V2_ENTRY_START": "12:00" });
   assert.strictEqual(process.env.EMA_RSI_ST_V2_ENTRY_START, undefined, "custom value leaked into process.env");
+  assert.strictEqual(legacySaves.length, saves, "a custom run overwrote the strategy's current-settings last-run slot");
   const row = neu.record.settings.find((s) => s.key === "EMA_RSI_ST_V2_ENTRY_START");
   assert.deepStrictEqual([row.value, row.source, row.engineValue], ["12:00", "custom", "12:00"]);
   assert.deepStrictEqual(neu.record.overriddenKeys, ["EMA_RSI_ST_V2_ENTRY_START"]);
@@ -418,6 +420,21 @@ check("a custom V2 entry window changes the run, is recorded, and never touches 
   assert.ok(neu.result.trades.length < cur.result.trades.length || cur.result.trades.every((t) => t.entry.split(", ")[1] >= "12:00"),
     "a later entry start should drop the pre-12:00 trades");
   assert.ok(/12:00/.test(neu.record.view.notes), "the results notes should show the custom window");
+});
+
+check("bb_rsi's shared indicator cache never hands a custom-period run's bands to paper (or back)", async () => {
+  const bbRsi = require("../src/strategies/bb_rsi");
+  const c = [];
+  for (let i = 0, p = 24000; i < 100; i++) { const o = p; p += Math.sin(i / 5) * 20; c.push({ time: 1762747200 + i * 300, open: o, high: Math.max(o, p) + 3, low: Math.min(o, p) - 3, close: p }); }
+  const o = { silent: true, skipTimeCheck: true };
+  bbRsi.reset();
+  const paper = bbRsi.getSignal(c, o);
+  const custom = { BB_RSI_BB_PERIOD: "20", BB_RSI_BB_STDDEV: "1", BB_RSI_RSI_PERIOD: "7" };
+  let run;
+  await scopedEnv.run(custom, async () => { run = bbRsi.getSignal(c, o); });
+  assert.notStrictEqual(run.bbUpper, paper.bbUpper, "the custom run was handed paper's cached bands");
+  assert.strictEqual(bbRsi.getSignal(c, o).bbUpper, paper.bbUpper, "paper was handed the custom run's cached bands");
+  bbRsi.reset();
 });
 
 check("a 'custom' value equal to the current one is not custom (no override, source unchanged)", () => {
