@@ -1,0 +1,1025 @@
+{
+  "baselineVersion": 1,
+  "strategy": "emaRsiStPaper.SENSEX",
+  "mode": "sensex_ema_rsi_st-paper",
+  "totalTrades": 24,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 546.68,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX2691082500PE",
+          "strike": 82500,
+          "qty": null,
+          "entryTime": "07/09/2026, 11:00:00",
+          "exitTime": "07/09/2026, 12:12:46",
+          "entrySpot": 82524.05,
+          "exitSpot": 82456.65,
+          "entryLtp": 483.7,
+          "exitLtp": 514.6,
+          "reason": "Profit lock trail 85% — premium Rs515.1 fell to the trailed floor Rs517.49 (keeps 85% of the gain to peak Rs523.45, entry Rs483.7)",
+          "pnl": 546.68
+        }
+      ],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 38,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 82500,
+          "expiry": "10 SEP 2026",
+          "entry": "07/09/2026, 11:00:00",
+          "exit": "07/09/2026, 12:12:46",
+          "eSpot": 82524.05,
+          "eOpt": 483.7,
+          "xSpot": 82456.65,
+          "xOpt": 514.6,
+          "pnl": 546.68,
+          "reason": "Profit lock trail 85% — premium Rs515.1 fell to the trailed floor Rs517.49 (keeps 85% of the gain to peak Rs523.45, entry Rs483.7)",
+          "symbol": "BSE:SENSEX2691082500PE",
+          "entryBarTime": 1788759000,
+          "exitBarTime": 1788763200,
+          "durationMs": 4200000
+        }
+      ]
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 582.92,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0177900CE",
+          "strike": 77900,
+          "qty": null,
+          "entryTime": "28/09/2026, 11:00:02",
+          "exitTime": "28/09/2026, 14:00:30",
+          "entrySpot": 77867.55,
+          "exitSpot": 77965,
+          "entryLtp": 434.95,
+          "exitLtp": 467.55,
+          "reason": "Profit lock trail 85% — premium Rs468.05 fell to the trailed floor Rs468.4 (keeps 85% of the gain to peak Rs474.3, entry Rs434.95)",
+          "pnl": 582.92
+        }
+      ],
+      "skips": {
+        "total": 37,
+        "dropped": 0,
+        "noSignalCandles": 37,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 77900,
+          "expiry": "01 OCT 2026",
+          "entry": "28/09/2026, 11:00:02",
+          "exit": "28/09/2026, 14:00:30",
+          "eSpot": 77867.55,
+          "eOpt": 434.95,
+          "xSpot": 77965,
+          "xOpt": 467.55,
+          "pnl": 582.92,
+          "reason": "Profit lock trail 85% — premium Rs468.05 fell to the trailed floor Rs468.4 (keeps 85% of the gain to peak Rs474.3, entry Rs434.95)",
+          "symbol": "BSE:SENSEX26O0177900CE",
+          "entryBarTime": 1790573400,
+          "exitBarTime": 1790584200,
+          "durationMs": 10800000
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 4,
+      "sessionPnl": -2037.39,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0178000CE",
+          "strike": 78000,
+          "qty": null,
+          "entryTime": "30/09/2026, 10:35:00",
+          "exitTime": "30/09/2026, 10:49:46",
+          "entrySpot": 77941.7,
+          "exitSpot": 77862.3,
+          "entryLtp": 232.65,
+          "exitLtp": 197.05,
+          "reason": "Stop-loss trail 20% — premium Rs197.55 fell to the trailed stop Rs197.6 (peak Rs247, entry Rs232.65)",
+          "pnl": -768.86
+        },
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0177800PE",
+          "strike": 77800,
+          "qty": null,
+          "entryTime": "30/09/2026, 11:00:00",
+          "exitTime": "30/09/2026, 11:17:20",
+          "entrySpot": 77774.95,
+          "exitSpot": 77850.25,
+          "entryLtp": 274.35,
+          "exitLtp": 233.4,
+          "reason": "Stop-loss trail 20% — premium Rs233.9 fell to the trailed stop Rs234.64 (peak Rs293.3, entry Rs274.35)",
+          "pnl": -877.63
+        },
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0177900CE",
+          "strike": 77900,
+          "qty": null,
+          "entryTime": "30/09/2026, 11:50:24",
+          "exitTime": "30/09/2026, 12:23:20",
+          "entrySpot": 77908.65,
+          "exitSpot": 77963.65,
+          "entryLtp": 259.35,
+          "exitLtp": 283.75,
+          "reason": "Profit lock trail 85% — premium Rs284.25 fell to the trailed floor Rs284.72 (keeps 85% of the gain to peak Rs289.2, entry Rs259.35)",
+          "pnl": 427.56
+        },
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0177800PE",
+          "strike": 77800,
+          "qty": null,
+          "entryTime": "30/09/2026, 12:50:04",
+          "exitTime": "30/09/2026, 13:24:26",
+          "entrySpot": 77769.6,
+          "exitSpot": 77837.1,
+          "entryLtp": 268.4,
+          "exitLtp": 230.4,
+          "reason": "Stop-loss trail 20% — premium Rs230.9 fell to the trailed stop Rs231.24 (peak Rs289.05, entry Rs268.4)",
+          "pnl": -818.46
+        }
+      ],
+      "skips": {
+        "total": 50,
+        "dropped": 0,
+        "noSignalCandles": 50,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 78000,
+          "expiry": "01 OCT 2026",
+          "entry": "30/09/2026, 10:35:00",
+          "exit": "30/09/2026, 10:49:46",
+          "eSpot": 77941.7,
+          "eOpt": 232.65,
+          "xSpot": 77862.3,
+          "xOpt": 197.05,
+          "pnl": -768.86,
+          "reason": "Stop-loss trail 20% — premium Rs197.55 fell to the trailed stop Rs197.6 (peak Rs247, entry Rs232.65)",
+          "symbol": "BSE:SENSEX26O0178000CE",
+          "entryBarTime": 1790744700,
+          "exitBarTime": 1790745300,
+          "durationMs": 600000
+        },
+        {
+          "side": "PE",
+          "strike": 77800,
+          "expiry": "01 OCT 2026",
+          "entry": "30/09/2026, 11:00:00",
+          "exit": "30/09/2026, 11:17:20",
+          "eSpot": 77774.95,
+          "eOpt": 274.35,
+          "xSpot": 77850.25,
+          "xOpt": 233.4,
+          "pnl": -877.63,
+          "reason": "Stop-loss trail 20% — premium Rs233.9 fell to the trailed stop Rs234.64 (peak Rs293.3, entry Rs274.35)",
+          "symbol": "BSE:SENSEX26O0177800PE",
+          "entryBarTime": 1790746200,
+          "exitBarTime": 1790747100,
+          "durationMs": 900000
+        },
+        {
+          "side": "CE",
+          "strike": 77900,
+          "expiry": "01 OCT 2026",
+          "entry": "30/09/2026, 11:50:24",
+          "exit": "30/09/2026, 12:23:20",
+          "eSpot": 77908.65,
+          "eOpt": 259.35,
+          "xSpot": 77963.65,
+          "xOpt": 283.75,
+          "pnl": 427.56,
+          "reason": "Profit lock trail 85% — premium Rs284.25 fell to the trailed floor Rs284.72 (keeps 85% of the gain to peak Rs289.2, entry Rs259.35)",
+          "symbol": "BSE:SENSEX26O0177900CE",
+          "entryBarTime": 1790749200,
+          "exitBarTime": 1790751000,
+          "durationMs": 1800000
+        },
+        {
+          "side": "PE",
+          "strike": 77800,
+          "expiry": "01 OCT 2026",
+          "entry": "30/09/2026, 12:50:04",
+          "exit": "30/09/2026, 13:24:26",
+          "eSpot": 77769.6,
+          "eOpt": 268.4,
+          "xSpot": 77837.1,
+          "xOpt": 230.4,
+          "pnl": -818.46,
+          "reason": "Stop-loss trail 20% — premium Rs230.9 fell to the trailed stop Rs231.24 (peak Rs289.05, entry Rs268.4)",
+          "symbol": "BSE:SENSEX26O0177800PE",
+          "entryBarTime": 1790752800,
+          "exitBarTime": 1790754600,
+          "durationMs": 1800000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -1170.37,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0878500CE",
+          "strike": 78500,
+          "qty": null,
+          "entryTime": "05/10/2026, 13:50:00",
+          "exitTime": "05/10/2026, 14:13:00",
+          "entrySpot": 78482.5,
+          "exitSpot": 78362.2,
+          "entryLtp": 343.7,
+          "exitLtp": 288.25,
+          "reason": "Stop-loss trail 20% — premium Rs288.75 fell to the trailed stop Rs291.08 (peak Rs363.85, entry Rs343.7)",
+          "pnl": -1170.37
+        }
+      ],
+      "skips": {
+        "total": 69,
+        "dropped": 0,
+        "noSignalCandles": 69,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 78500,
+          "expiry": "08 OCT 2026",
+          "entry": "05/10/2026, 13:50:00",
+          "exit": "05/10/2026, 14:13:00",
+          "eSpot": 78482.5,
+          "eOpt": 343.7,
+          "xSpot": 78362.2,
+          "xOpt": 288.25,
+          "pnl": -1170.37,
+          "reason": "Stop-loss trail 20% — premium Rs288.75 fell to the trailed stop Rs291.08 (peak Rs363.85, entry Rs343.7)",
+          "symbol": "BSE:SENSEX26O0878500CE",
+          "entryBarTime": 1791188400,
+          "exitBarTime": 1791189600,
+          "durationMs": 1200000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": 1861.2,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0878100PE",
+          "strike": 78100,
+          "qty": null,
+          "entryTime": "06/10/2026, 11:10:02",
+          "exitTime": "06/10/2026, 11:41:20",
+          "entrySpot": 78097.65,
+          "exitSpot": 77960.7,
+          "entryLtp": 379.4,
+          "exitLtp": 454.75,
+          "reason": "Profit lock trail 80% — premium Rs455.25 fell to the trailed floor Rs457.92 (keeps 80% of the gain to peak Rs477.55, entry Rs379.4)",
+          "pnl": 1438.91
+        },
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0878300CE",
+          "strike": 78300,
+          "qty": null,
+          "entryTime": "06/10/2026, 13:25:00",
+          "exitTime": "06/10/2026, 13:28:00",
+          "entrySpot": 78358.7,
+          "exitSpot": 78405.9,
+          "entryLtp": 391.6,
+          "exitLtp": 416.05,
+          "reason": "Profit lock trail 85% — premium Rs416.55 fell to the trailed floor Rs419.1 (keeps 85% of the gain to peak Rs423.95, entry Rs391.6)",
+          "pnl": 422.29
+        }
+      ],
+      "skips": {
+        "total": 52,
+        "dropped": 0,
+        "noSignalCandles": 52,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 78100,
+          "expiry": "08 OCT 2026",
+          "entry": "06/10/2026, 11:10:02",
+          "exit": "06/10/2026, 11:41:20",
+          "eSpot": 78097.65,
+          "eOpt": 379.4,
+          "xSpot": 77960.7,
+          "xOpt": 454.75,
+          "pnl": 1438.91,
+          "reason": "Profit lock trail 80% — premium Rs455.25 fell to the trailed floor Rs457.92 (keeps 80% of the gain to peak Rs477.55, entry Rs379.4)",
+          "symbol": "BSE:SENSEX26O0878100PE",
+          "entryBarTime": 1791265200,
+          "exitBarTime": 1791267000,
+          "durationMs": 1800000
+        },
+        {
+          "side": "CE",
+          "strike": 78300,
+          "expiry": "08 OCT 2026",
+          "entry": "06/10/2026, 13:25:00",
+          "exit": "06/10/2026, 13:28:00",
+          "eSpot": 78358.7,
+          "eOpt": 391.6,
+          "xSpot": 78405.9,
+          "xOpt": 416.05,
+          "pnl": 422.29,
+          "reason": "Profit lock trail 85% — premium Rs416.55 fell to the trailed floor Rs419.1 (keeps 85% of the gain to peak Rs423.95, entry Rs391.6)",
+          "symbol": "BSE:SENSEX26O0878300CE",
+          "entryBarTime": 1791273300,
+          "exitBarTime": 1791273300,
+          "durationMs": null
+        }
+      ]
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -1253.96,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0878300PE",
+          "strike": 78300,
+          "qty": null,
+          "entryTime": "07/10/2026, 10:50:00",
+          "exitTime": "07/10/2026, 11:01:46",
+          "entrySpot": 78223.75,
+          "exitSpot": 78338.1,
+          "entryLtp": 338.75,
+          "exitLtp": 279.1,
+          "reason": "Stop-loss trail 20% — premium Rs279.6 fell to the trailed stop Rs279.88 (peak Rs349.85, entry Rs338.75)",
+          "pnl": -1253.96
+        }
+      ],
+      "skips": {
+        "total": 36,
+        "dropped": 0,
+        "noSignalCandles": 36,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 78300,
+          "expiry": "08 OCT 2026",
+          "entry": "07/10/2026, 10:50:00",
+          "exit": "07/10/2026, 11:01:46",
+          "eSpot": 78223.75,
+          "eOpt": 338.75,
+          "xSpot": 78338.1,
+          "xOpt": 279.1,
+          "pnl": -1253.96,
+          "reason": "Stop-loss trail 20% — premium Rs279.6 fell to the trailed stop Rs279.88 (peak Rs349.85, entry Rs338.75)",
+          "symbol": "BSE:SENSEX26O0878300PE",
+          "entryBarTime": 1791350400,
+          "exitBarTime": 1791351000,
+          "durationMs": 600000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": 432.43,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0877700PE",
+          "strike": 77700,
+          "qty": null,
+          "entryTime": "08/10/2026, 11:25:00",
+          "exitTime": "08/10/2026, 11:26:50",
+          "entrySpot": 77708.2,
+          "exitSpot": 77681.6,
+          "entryLtp": 88.4,
+          "exitLtp": 100.85,
+          "reason": "Profit lock trail 85% — premium Rs101.35 fell to the trailed floor Rs102.98 (keeps 85% of the gain to peak Rs105.55, entry Rs88.4)",
+          "pnl": 197.14
+        },
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0877500PE",
+          "strike": 77500,
+          "qty": null,
+          "entryTime": "08/10/2026, 12:45:00",
+          "exitTime": "08/10/2026, 12:46:40",
+          "entrySpot": 77529.75,
+          "exitSpot": 77497.65,
+          "entryLtp": 62.25,
+          "exitLtp": 76.55,
+          "reason": "Profit lock trail 80% — premium Rs76.8 fell to the trailed floor Rs77.17 (keeps 80% of the gain to peak Rs80.9, entry Rs62.25)",
+          "pnl": 235.29
+        }
+      ],
+      "skips": {
+        "total": 59,
+        "dropped": 0,
+        "noSignalCandles": 59,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 77700,
+          "expiry": "08 OCT 2026",
+          "entry": "08/10/2026, 11:25:00",
+          "exit": "08/10/2026, 11:26:50",
+          "eSpot": 77708.2,
+          "eOpt": 88.4,
+          "xSpot": 77681.6,
+          "xOpt": 100.85,
+          "pnl": 197.14,
+          "reason": "Profit lock trail 85% — premium Rs101.35 fell to the trailed floor Rs102.98 (keeps 85% of the gain to peak Rs105.55, entry Rs88.4)",
+          "symbol": "BSE:SENSEX26O0877700PE",
+          "entryBarTime": 1791438900,
+          "exitBarTime": 1791438900,
+          "durationMs": null
+        },
+        {
+          "side": "PE",
+          "strike": 77500,
+          "expiry": "08 OCT 2026",
+          "entry": "08/10/2026, 12:45:00",
+          "exit": "08/10/2026, 12:46:40",
+          "eSpot": 77529.75,
+          "eOpt": 62.25,
+          "xSpot": 77497.65,
+          "xOpt": 76.55,
+          "pnl": 235.29,
+          "reason": "Profit lock trail 80% — premium Rs76.8 fell to the trailed floor Rs77.17 (keeps 80% of the gain to peak Rs80.9, entry Rs62.25)",
+          "symbol": "BSE:SENSEX26O0877500PE",
+          "entryBarTime": 1791443700,
+          "exitBarTime": 1791443700,
+          "durationMs": null
+        }
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 704.11,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578700CE",
+          "strike": 78700,
+          "qty": null,
+          "entryTime": "09/10/2026, 13:05:28",
+          "exitTime": "09/10/2026, 13:50:00",
+          "entrySpot": 78695.8,
+          "exitSpot": 78787.3,
+          "entryLtp": 531.55,
+          "exitLtp": 570.45,
+          "reason": "Profit lock trail 85% — premium Rs570.95 fell to the trailed floor Rs571.37 (keeps 85% of the gain to peak Rs578.4, entry Rs531.55)",
+          "pnl": 704.11
+        }
+      ],
+      "skips": {
+        "total": 63,
+        "dropped": 0,
+        "noSignalCandles": 63,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 78700,
+          "expiry": "15 OCT 2026",
+          "entry": "09/10/2026, 13:05:28",
+          "exit": "09/10/2026, 13:50:00",
+          "eSpot": 78695.8,
+          "eOpt": 531.55,
+          "xSpot": 78787.3,
+          "xOpt": 570.45,
+          "pnl": 704.11,
+          "reason": "Profit lock trail 85% — premium Rs570.95 fell to the trailed floor Rs571.37 (keeps 85% of the gain to peak Rs578.4, entry Rs531.55)",
+          "symbol": "BSE:SENSEX26O1578700CE",
+          "entryBarTime": 1791531300,
+          "exitBarTime": 1791534000,
+          "durationMs": 2700000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 581.66,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1577700PE",
+          "strike": 77700,
+          "qty": null,
+          "entryTime": "12/10/2026, 10:50:06",
+          "exitTime": "12/10/2026, 11:38:20",
+          "entrySpot": 77733.55,
+          "exitSpot": 77666.5,
+          "entryLtp": 482.8,
+          "exitLtp": 515.45,
+          "reason": "Profit lock trail 85% — premium Rs515.95 fell to the trailed floor Rs516.72 (keeps 85% of the gain to peak Rs522.7, entry Rs482.8)",
+          "pnl": 581.66
+        }
+      ],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 38,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 77700,
+          "expiry": "15 OCT 2026",
+          "entry": "12/10/2026, 10:50:06",
+          "exit": "12/10/2026, 11:38:20",
+          "eSpot": 77733.55,
+          "eOpt": 482.8,
+          "xSpot": 77666.5,
+          "xOpt": 515.45,
+          "pnl": 581.66,
+          "reason": "Profit lock trail 85% — premium Rs515.95 fell to the trailed floor Rs516.72 (keeps 85% of the gain to peak Rs522.7, entry Rs482.8)",
+          "symbol": "BSE:SENSEX26O1577700PE",
+          "entryBarTime": 1791782400,
+          "exitBarTime": 1791785100,
+          "durationMs": 2700000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 3,
+      "sessionPnl": 2392.05,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1577500PE",
+          "strike": 77500,
+          "qty": null,
+          "entryTime": "13/10/2026, 11:00:26",
+          "exitTime": "13/10/2026, 11:15:00",
+          "entrySpot": 77470.7,
+          "exitSpot": 77389.8,
+          "entryLtp": 352.35,
+          "exitLtp": 396.7,
+          "reason": "Profit lock trail 85% — premium Rs397.2 fell to the trailed floor Rs399.1 (keeps 85% of the gain to peak Rs407.35, entry Rs352.35)",
+          "pnl": 821.4
+        },
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1577600PE",
+          "strike": 77600,
+          "qty": null,
+          "entryTime": "13/10/2026, 12:10:00",
+          "exitTime": "13/10/2026, 12:19:40",
+          "entrySpot": 77533.05,
+          "exitSpot": 77422.1,
+          "entryLtp": 371.3,
+          "exitLtp": 432.65,
+          "reason": "Profit lock trail 85% — premium Rs433.15 fell to the trailed floor Rs434.28 (keeps 85% of the gain to peak Rs445.4, entry Rs371.3)",
+          "pnl": 1159.84
+        },
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1577700CE",
+          "strike": 77700,
+          "qty": null,
+          "entryTime": "13/10/2026, 12:55:54",
+          "exitTime": "13/10/2026, 13:27:10",
+          "entrySpot": 77719.75,
+          "exitSpot": 77771.55,
+          "entryLtp": 339.4,
+          "exitLtp": 363.15,
+          "reason": "Profit lock trail 85% — premium Rs363.65 fell to the trailed floor Rs364.81 (keeps 85% of the gain to peak Rs369.3, entry Rs339.4)",
+          "pnl": 410.81
+        }
+      ],
+      "skips": {
+        "total": 50,
+        "dropped": 0,
+        "noSignalCandles": 50,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 77500,
+          "expiry": "15 OCT 2026",
+          "entry": "13/10/2026, 11:00:26",
+          "exit": "13/10/2026, 11:15:00",
+          "eSpot": 77470.7,
+          "eOpt": 352.35,
+          "xSpot": 77389.8,
+          "xOpt": 396.7,
+          "pnl": 821.4,
+          "reason": "Profit lock trail 85% — premium Rs397.2 fell to the trailed floor Rs399.1 (keeps 85% of the gain to peak Rs407.35, entry Rs352.35)",
+          "symbol": "BSE:SENSEX26O1577500PE",
+          "entryBarTime": 1791869400,
+          "exitBarTime": 1791870300,
+          "durationMs": 900000
+        },
+        {
+          "side": "PE",
+          "strike": 77600,
+          "expiry": "15 OCT 2026",
+          "entry": "13/10/2026, 12:10:00",
+          "exit": "13/10/2026, 12:19:40",
+          "eSpot": 77533.05,
+          "eOpt": 371.3,
+          "xSpot": 77422.1,
+          "xOpt": 432.65,
+          "pnl": 1159.84,
+          "reason": "Profit lock trail 85% — premium Rs433.15 fell to the trailed floor Rs434.28 (keeps 85% of the gain to peak Rs445.4, entry Rs371.3)",
+          "symbol": "BSE:SENSEX26O1577600PE",
+          "entryBarTime": 1791873600,
+          "exitBarTime": 1791873900,
+          "durationMs": 300000
+        },
+        {
+          "side": "CE",
+          "strike": 77700,
+          "expiry": "15 OCT 2026",
+          "entry": "13/10/2026, 12:55:54",
+          "exit": "13/10/2026, 13:27:10",
+          "eSpot": 77719.75,
+          "eOpt": 339.4,
+          "xSpot": 77771.55,
+          "xOpt": 363.15,
+          "pnl": 410.81,
+          "reason": "Profit lock trail 85% — premium Rs363.65 fell to the trailed floor Rs364.81 (keeps 85% of the gain to peak Rs369.3, entry Rs339.4)",
+          "symbol": "BSE:SENSEX26O1577700CE",
+          "entryBarTime": 1791876300,
+          "exitBarTime": 1791878100,
+          "durationMs": 1800000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 4,
+      "sessionPnl": -177.58,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578600CE",
+          "strike": 78600,
+          "qty": null,
+          "entryTime": "14/10/2026, 10:30:00",
+          "exitTime": "14/10/2026, 10:44:50",
+          "entrySpot": 78571.05,
+          "exitSpot": 78457.25,
+          "entryLtp": 250.1,
+          "exitLtp": 199,
+          "reason": "Stop-loss -20% — premium Rs199.5 fell to the stop Rs200.08 (entry Rs250.1)",
+          "pnl": -1079.1
+        },
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578400CE",
+          "strike": 78400,
+          "qty": null,
+          "entryTime": "14/10/2026, 11:45:06",
+          "exitTime": "14/10/2026, 12:20:46",
+          "entrySpot": 78392.5,
+          "exitSpot": 78554.55,
+          "entryLtp": 257.8,
+          "exitLtp": 338.75,
+          "reason": "Profit lock trail 71% — premium Rs339.25 fell to the trailed floor Rs340.3 (keeps 71% of the gain to peak Rs373.95, entry Rs257.8)",
+          "pnl": 1556.48
+        },
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1578200PE",
+          "strike": 78200,
+          "qty": null,
+          "entryTime": "14/10/2026, 13:20:04",
+          "exitTime": "14/10/2026, 13:33:16",
+          "entrySpot": 78171.9,
+          "exitSpot": 78277.8,
+          "entryLtp": 272.55,
+          "exitLtp": 217.35,
+          "reason": "Stop-loss -20% — premium Rs217.85 fell to the stop Rs218.04 (entry Rs272.55)",
+          "pnl": -1162
+        },
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578400CE",
+          "strike": 78400,
+          "qty": null,
+          "entryTime": "14/10/2026, 13:50:16",
+          "exitTime": "14/10/2026, 14:16:56",
+          "entrySpot": 78389.5,
+          "exitSpot": 78453.4,
+          "entryLtp": 246.15,
+          "exitLtp": 274.5,
+          "reason": "Profit lock trail 85% — premium Rs275 fell to the trailed floor Rs275.01 (keeps 85% of the gain to peak Rs280.1, entry Rs246.15)",
+          "pnl": 507.04
+        }
+      ],
+      "skips": {
+        "total": 51,
+        "dropped": 0,
+        "noSignalCandles": 51,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 78600,
+          "expiry": "15 OCT 2026",
+          "entry": "14/10/2026, 10:30:00",
+          "exit": "14/10/2026, 10:44:50",
+          "eSpot": 78571.05,
+          "eOpt": 250.1,
+          "xSpot": 78457.25,
+          "xOpt": 199,
+          "pnl": -1079.1,
+          "reason": "Stop-loss -20% — premium Rs199.5 fell to the stop Rs200.08 (entry Rs250.1)",
+          "symbol": "BSE:SENSEX26O1578600CE",
+          "entryBarTime": 1791954000,
+          "exitBarTime": 1791954600,
+          "durationMs": 600000
+        },
+        {
+          "side": "CE",
+          "strike": 78400,
+          "expiry": "15 OCT 2026",
+          "entry": "14/10/2026, 11:45:06",
+          "exit": "14/10/2026, 12:20:46",
+          "eSpot": 78392.5,
+          "eOpt": 257.8,
+          "xSpot": 78554.55,
+          "xOpt": 338.75,
+          "pnl": 1556.48,
+          "reason": "Profit lock trail 71% — premium Rs339.25 fell to the trailed floor Rs340.3 (keeps 71% of the gain to peak Rs373.95, entry Rs257.8)",
+          "symbol": "BSE:SENSEX26O1578400CE",
+          "entryBarTime": 1791958500,
+          "exitBarTime": 1791960600,
+          "durationMs": 2100000
+        },
+        {
+          "side": "PE",
+          "strike": 78200,
+          "expiry": "15 OCT 2026",
+          "entry": "14/10/2026, 13:20:04",
+          "exit": "14/10/2026, 13:33:16",
+          "eSpot": 78171.9,
+          "eOpt": 272.55,
+          "xSpot": 78277.8,
+          "xOpt": 217.35,
+          "pnl": -1162,
+          "reason": "Stop-loss -20% — premium Rs217.85 fell to the stop Rs218.04 (entry Rs272.55)",
+          "symbol": "BSE:SENSEX26O1578200PE",
+          "entryBarTime": 1791964200,
+          "exitBarTime": 1791964800,
+          "durationMs": 600000
+        },
+        {
+          "side": "CE",
+          "strike": 78400,
+          "expiry": "15 OCT 2026",
+          "entry": "14/10/2026, 13:50:16",
+          "exit": "14/10/2026, 14:16:56",
+          "eSpot": 78389.5,
+          "eOpt": 246.15,
+          "xSpot": 78453.4,
+          "xOpt": 274.5,
+          "pnl": 507.04,
+          "reason": "Profit lock trail 85% — premium Rs275 fell to the trailed floor Rs275.01 (keeps 85% of the gain to peak Rs280.1, entry Rs246.15)",
+          "symbol": "BSE:SENSEX26O1578400CE",
+          "entryBarTime": 1791966000,
+          "exitBarTime": 1791967500,
+          "durationMs": 1500000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": 737.35,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1578300PE",
+          "strike": 78300,
+          "qty": null,
+          "entryTime": "15/10/2026, 10:20:04",
+          "exitTime": "15/10/2026, 10:24:30",
+          "entrySpot": 78323.7,
+          "exitSpot": 78300.25,
+          "entryLtp": 119.55,
+          "exitLtp": 128.9,
+          "reason": "Profit lock trail 85% — premium Rs129.4 fell to the trailed floor Rs130.39 (keeps 85% of the gain to peak Rs132.3, entry Rs119.55)",
+          "pnl": 133.77
+        },
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578600CE",
+          "strike": 78600,
+          "qty": null,
+          "entryTime": "15/10/2026, 12:20:02",
+          "exitTime": "15/10/2026, 12:21:00",
+          "entrySpot": 78610.85,
+          "exitSpot": 78669.85,
+          "entryLtp": 104.65,
+          "exitLtp": 137.5,
+          "reason": "Profit lock trail 79% — premium Rs138 fell to the trailed floor Rs138.14 (keeps 79% of the gain to peak Rs147.3, entry Rs104.65)",
+          "pnl": 603.58
+        }
+      ],
+      "skips": {
+        "total": 56,
+        "dropped": 0,
+        "noSignalCandles": 56,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": 78300,
+          "expiry": "15 OCT 2026",
+          "entry": "15/10/2026, 10:20:04",
+          "exit": "15/10/2026, 10:24:30",
+          "eSpot": 78323.7,
+          "eOpt": 119.55,
+          "xSpot": 78300.25,
+          "xOpt": 128.9,
+          "pnl": 133.77,
+          "reason": "Profit lock trail 85% — premium Rs129.4 fell to the trailed floor Rs130.39 (keeps 85% of the gain to peak Rs132.3, entry Rs119.55)",
+          "symbol": "BSE:SENSEX26O1578300PE",
+          "entryBarTime": 1792039800,
+          "exitBarTime": 1792039800,
+          "durationMs": null
+        },
+        {
+          "side": "CE",
+          "strike": 78600,
+          "expiry": "15 OCT 2026",
+          "entry": "15/10/2026, 12:20:02",
+          "exit": "15/10/2026, 12:21:00",
+          "eSpot": 78610.85,
+          "eOpt": 104.65,
+          "xSpot": 78669.85,
+          "xOpt": 137.5,
+          "pnl": 603.58,
+          "reason": "Profit lock trail 79% — premium Rs138 fell to the trailed floor Rs138.14 (keeps 79% of the gain to peak Rs147.3, entry Rs104.65)",
+          "symbol": "BSE:SENSEX26O1578600CE",
+          "entryBarTime": 1792047000,
+          "exitBarTime": 1792047000,
+          "durationMs": null
+        }
+      ]
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -1653.91,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O2278500CE",
+          "strike": 78500,
+          "qty": null,
+          "entryTime": "16/10/2026, 10:35:02",
+          "exitTime": "16/10/2026, 15:30:00",
+          "entrySpot": 78485.95,
+          "exitSpot": 78321.2,
+          "entryLtp": 627.25,
+          "exitLtp": 548.25,
+          "reason": "Manual stop",
+          "pnl": -1653.91
+        }
+      ],
+      "skips": {
+        "total": 15,
+        "dropped": 0,
+        "noSignalCandles": 15,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": 78500,
+          "expiry": "22 OCT 2026",
+          "entry": "16/10/2026, 10:35:02",
+          "exit": "16/10/2026, 15:30:00",
+          "eSpot": 78485.95,
+          "eOpt": 627.25,
+          "xSpot": 78321.2,
+          "xOpt": 548.25,
+          "pnl": -1653.91,
+          "reason": "Manual stop",
+          "symbol": "BSE:SENSEX26O2278500CE",
+          "entryBarTime": 1792127100,
+          "exitBarTime": 1792144500,
+          "durationMs": 17400000
+        }
+      ]
+    }
+  ]
+}

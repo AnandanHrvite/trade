@@ -175,6 +175,8 @@ function getISTHHMM(unixSec) {
 //                      charges, futures lot) without reading the global INSTRUMENT
 //   prefix:   "FUT_EMA_RSI_ST" → read the strategy-own engine keys
 //                      (ONE_TRADE_PER_MOVE_ENABLED, CONFIRM_CANDLE_ENABLED) under it
+//   lotQty:   the market's lot (backtestMarket.context().lotQty) instead of NIFTY's
+//   exchange: "BSE" → BSE exchange-txn charges (SENSEX); passed to getCharges
 // Omitted → exactly the original behaviour (EMA_RSI_ST_* keys, global instrument).
 async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress, activeFromTs = 0, btOpts) {
   const _btForceFut = !!(btOpts && btOpts.isFutures === true);
@@ -182,7 +184,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _btDefPfx   = _btPrefix === "EMA_RSI_ST";
   const trades    = [];
   let position    = null;
-  const LOT_SIZE  = _btForceFut ? getLotQty(undefined, "NIFTY_FUTURES") : getLotQty();
+  const _btLot     = btOpts && Number.isFinite(btOpts.lotQty) && btOpts.lotQty > 0 ? btOpts.lotQty : null;
+  const LOT_SIZE  = _btLot || (_btForceFut ? getLotQty(undefined, "NIFTY_FUTURES") : getLotQty());
+  // Another market's exchange (BSE for SENSEX) for the charges; NIFTY passes none.
+  const _btExch   = btOpts && btOpts.exchange ? { exchange: btOpts.exchange } : {};
 
   // ── VIX filter for backtest ─────────────────────────────────────────────────
   const lookupVix = buildVixLookup(vixCandles || []);
@@ -552,7 +557,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         let pnlMode;
         if (isFutures) {
           // Futures: direct point × lot size − charges (no delta/theta)
-          const _chg = getCharges({ isFutures: true, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
+          const _chg = getCharges({ isFutures: true, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE, ..._btExch });
           pnlRupees = quantize((spotPnlPts * LOT_SIZE) - _chg, 2);
           pnlMode   = `futures (${spotPnlPts}pt × ${LOT_SIZE}qty − ₹${_chg.toFixed(0)} charges)`;
         } else if (OPTION_SIM) {
@@ -569,7 +574,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           // Estimate option premium for charges calc (rough: entry ~200, exit = entry + move)
           const estEntryPrem = 200;
           const estExitPrem  = Math.max(1, estEntryPrem + netPremiumPts);
-          const _chg = getCharges({ isFutures: false, exitPremium: estExitPrem, entryPremium: estEntryPrem, qty: LOT_SIZE });
+          const _chg = getCharges({ isFutures: false, exitPremium: estExitPrem, entryPremium: estEntryPrem, qty: LOT_SIZE, ..._btExch });
           // Total rupees = net premium pts × lot size − charges
           pnlRupees = quantize((netPremiumPts * LOT_SIZE) - _chg, 2);
           pnlMode   = `opt_sim (spot=${spotPnlPts}pt × δ${DELTA}=${premiumMovePts.toFixed(1)}pt − θ${thetaDecay}pt) × ${LOT_SIZE}lots − ₹${_chg.toFixed(0)} charges`;
@@ -820,7 +825,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     const spotPnlPts = quantize((_finalExit - position.entryPrice) * (position.side === "CE" ? 1 : -1), 2);
     let pnlRupees, pnlMode;
     if (isFutures) {
-      const _chgEod = getCharges({ isFutures: true, exitPremium: lastCandle.close, entryPremium: position.entryPrice, qty: LOT_SIZE });
+      const _chgEod = getCharges({ isFutures: true, exitPremium: lastCandle.close, entryPremium: position.entryPrice, qty: LOT_SIZE, ..._btExch });
       pnlRupees = quantize((spotPnlPts * LOT_SIZE) - _chgEod, 2);
       pnlMode   = `futures`;
     } else if (OPTION_SIM) {
@@ -830,7 +835,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       const netPremPts     = premiumMovePts - thetaDecay;
       const estEntry       = 200;
       const estExit        = Math.max(1, estEntry + netPremPts);
-      const _chgEod = getCharges({ isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
+      const _chgEod = getCharges({ isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE, ..._btExch });
       pnlRupees = quantize((netPremPts * LOT_SIZE) - _chgEod, 2);
       pnlMode   = `opt_sim`;
     } else {

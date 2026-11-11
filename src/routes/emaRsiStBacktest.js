@@ -10,6 +10,7 @@ const { VIX_SYMBOL } = vixFilter;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const backtestJobs = require("../utils/backtestJobManager");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
+const backtestMarket = require("../services/backtestMarket");
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -71,9 +72,19 @@ function _jobParams(q) {
 /**
  * One run, start to finish, on job `id` — fetch, simulate, save, then
  * completeJob / failJob. This page and the unified /backtest page both call it.
+ *
+ * p.market (a markets.js key, default NIFTY): another market runs the SAME
+ * engine on that market's spot candles (backtestMarket.context — symbol, lot,
+ * exchange charges, futures flag); its pair settings reach the engine's home
+ * keys through the /backtest page's scoped env. NIFTY is exactly the old path.
  */
 async function _runJob(id, p) {
-  const { from, to, resolution, capital, symbol, skipCache } = p;
+  const { from, to, resolution, capital, skipCache } = p;
+  const M    = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  const symbol = home ? p.symbol : M.spotSymbol;
+  // NIFTY passes no options (the engine's original behaviour).
+  const btOpts = home ? undefined : { isFutures: M.isFutures, lotQty: M.lotQty, exchange: M.exchange };
   try {
     backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
     const strategy = getActiveStrategy();
@@ -109,18 +120,45 @@ async function _runJob(id, p) {
     }
 
     let _expiryDates = null;
-    if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+    if (home && (process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
       const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
       const expirySet = new Set();
       for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+      _expiryDates = expirySet;
+    } else if (!home && (process.env.EMA_RSI_ST_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      // Another market's <PAIR>_EXPIRY_DAY_ONLY (mapped onto EMA_RSI_ST_EXPIRY_DAY_ONLY
+      // by the /backtest page; unset = NIFTY's EMA_RSI_ST_EXPIRY_DAY_ONLY, exactly
+      // what paper's rt.expiryDayOnly() reads — not the shared TRADE_EXPIRY_DAY_ONLY)
+      // against THAT market's rule expiry (weekly SENSEX, monthly BANKNIFTY, futures roll).
+      const firstBar = new Map();
+      for (const c of _candles) {
+        const d = new Date((c.time + 19800) * 1000).toISOString().slice(0, 10);
+        if (!firstBar.has(d)) firstBar.set(d, c);
+      }
+      const expirySet = new Set();
+      // Futures: the traded contract rolls two days BEFORE its expiry, so its
+      // expiry never equals today — use the month's expiry day, as paper's
+      // rt.isExpiryDay() does.
+      const _futRt = M.isFutures ? require("../utils/pairRuntime").forStrategy("emaRsiSt", M.key) : null;
+      for (const [d, c] of firstBar) {
+        if (_futRt) { if (_futRt.isExpiryDay(c.time * 1000)) expirySet.add(d); continue; }
+        const k = backtestMarket.contractAt(M, c.close, "CE", c.time);
+        if (k && k.expiry === d) expirySet.add(d);
+      }
       _expiryDates = expirySet;
     }
 
     backtestJobs.updateProgress(id, { phase: 'Running backtest engine…', pct: 5, current: 0, total: _candles.length - 30 });
     const _result = await runBacktest(_candles, strategy, capital, _vixCandles, _expiryDates,
-      (p) => backtestJobs.updateProgress(id, p), activeFromTs);
+      (p) => backtestJobs.updateProgress(id, p), activeFromTs, btOpts);
     _result.candleCount = _candles.length;
-    saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
+    // The legacy last-run slot (/all-backtest) is NIFTY's; another market's run
+    // names its market and is kept by the /backtest page's own saved runs.
+    if (home) saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
+    else {
+      _result.market = M.key;
+      if (M.isFutures) _result.summary.isFutures = true;
+    }
     backtestJobs.completeJob(id, _result);
     console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);
   } catch (err) {
@@ -1618,12 +1656,23 @@ function errorPage(title, msg, from, to, resolution) {
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: { options: ["3", "5", "15"], default: () => _jobParams({}).resolution },
-  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to }, _jobParams({ resolution: p.resolution }))),
-  view: (r, p) => engineResultView({
-    result: r, rows: _tradeRows(r.trades || []), mode: "EMA_RSI_ST", accent: "#3b82f6", strategyName: ACTIVE,
-    endpoint: "/ema_rsi_st-backtest", activePage: "emaRsiStBacktest", from: p.from, to: p.to,
-    extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "held", label: "Held" }],
-  }),
+  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to, market: p.market }, _jobParams({ resolution: p.resolution }))),
+  view: (r, p) => {
+    const v = engineResultView({
+      result: r, rows: _tradeRows(r.trades || []), mode: "EMA_RSI_ST", accent: "#3b82f6", strategyName: ACTIVE,
+      endpoint: "/ema_rsi_st-backtest", activePage: "emaRsiStBacktest", from: p.from, to: p.to,
+      extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "held", label: "Held" }],
+    });
+    // Another market's run names it (NIFTY's view is exactly the old one).
+    if (r && r.market && r.market !== "NIFTY") {
+      const M = backtestMarket.context(r.market);
+      const esc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      v.notes = `<b>MARKET: ${esc(M.label)}</b> — ${esc(M.spotSymbol)} candles, lot ${M.lotQty}, ${esc(M.exchange)} charges. ` +
+        (M.isFutures ? "<b>FUTURES MODE</b> — P&L is index points × lot with futures charges, no δ/θ; a PE is a SHORT. " : "") +
+        v.notes.replace("P&L is in spot points (option simulation off).", M.isFutures ? "" : "P&L is in spot points (option simulation off).");
+    }
+    return v;
+  },
 };
