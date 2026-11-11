@@ -9,6 +9,7 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clear
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const { isExpiryDate } = require("../utils/nseHolidays");
+const backtestMarket = require("../services/backtestMarket");
 const backtestJobs = require("../utils/backtestJobManager");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 
@@ -95,7 +96,13 @@ function _jobParams(q) {
  * completeJob / failJob. This page and the unified /backtest page both call it.
  */
 async function _runJob(id, p) {
-  const { from, to, resolution, capital, symbol, skipCache } = p;
+  const { from, to, resolution, capital, skipCache } = p;
+  // Another market (the /backtest page): its spot candles, lot, exchange charges
+  // and — on NIFTY_FUT — futures pricing (services/backtestMarket.js). Its pair
+  // settings arrive mapped onto the EMA9VWAP_* keys the engine reads (scopedEnv).
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  const symbol = home ? p.symbol : M.spotSymbol;
   try {
     backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
     const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
@@ -130,18 +137,36 @@ async function _runJob(id, p) {
     }
 
     let _expiryDates = null;
-    if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+    if (home && (process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
       const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
       const expirySet = new Set();
       for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
       _expiryDates = expirySet;
     }
 
+    // Another market: its lot / exchange / futures flag, and its trade-days switch
+    // (EMA9VWAP_EXPIRY_DAY_ONLY here = the pair's <PAIR>_EXPIRY_DAY_ONLY, else NIFTY's)
+    // against THAT market's expiry day — the very check the pair's paper /start makes.
+    let _mktOpts;
+    if (!home) {
+      const rt = require("../utils/pairRuntime").forStrategy("ema9vwap", M.key);
+      _mktOpts = {
+        isFutures:   M.isFutures === true,
+        lotQty:      M.lotQty,
+        exchange:    M.exchange,
+        expiryOnly:  (process.env.EMA9VWAP_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true",
+        isExpiryDay: (d) => rt.isExpiryDay(Date.parse(`${d}T09:20:00+05:30`)),
+      };
+    }
+
     backtestJobs.updateProgress(id, { phase: 'Running EMA9+VWAP backtest…', pct: 5, current: 0, total: _candles.length - 30 });
     const _result = await runEma9VwapBacktest(_candles, capital,
-      (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles);
+      (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles, ...(home ? [] : [_mktOpts]));
     _result.candleCount = _candles.length;
-    saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are kept
+    // by the /backtest page's own saved runs.
+    if (home) saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
+    else _result.meta = { market: M.key };
     backtestJobs.completeJob(id, _result);
     console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);
   } catch (err) {
@@ -1645,13 +1670,25 @@ function errorPage(title, msg, from, to, resolution) {
 
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
+// MCX (no spot index / rule expiry in backtestMarket yet) and stocks stay "coming soon".
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: { options: ["3", "5", "15"], default: () => _jobParams({}).resolution },
-  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to }, _jobParams({ resolution: p.resolution }))),
-  view: (r, p) => engineResultView({
-    result: r, rows: _tradeRows(r.trades || []), mode: "EMA9+VWAP", accent: "#3b82f6", strategyName: ACTIVE,
-    endpoint: "/ema9vwap-backtest", activePage: "ema9vwapBacktest", from: p.from, to: p.to,
-    extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "held", label: "Held" }],
-  }),
+  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to, market: p.market }, _jobParams({ resolution: p.resolution }))),
+  view: (r, p) => {
+    const v = engineResultView({
+      result: r, rows: _tradeRows(r.trades || []), mode: "EMA9+VWAP", accent: "#3b82f6", strategyName: ACTIVE,
+      endpoint: "/ema9vwap-backtest", activePage: "ema9vwapBacktest", from: p.from, to: p.to,
+      extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "held", label: "Held" }],
+    });
+    const mk = (r.meta && r.meta.market) || (p.market && p.market !== "NIFTY" ? p.market : null);
+    if (mk) {
+      const M = backtestMarket.context(mk);
+      const esc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      v.notes = `<b>MARKET: ${esc(M.label)}</b> — ${esc(M.spotSymbol)} candles, lot ${M.lotQty}, ${esc(M.exchange)} charges. ` +
+        (M.isFutures ? "<b>FUTURES MODE</b> — P&L is index points × lot with futures charges, no δ/θ; a PE is a SHORT. " : "") +
+        (v.notes || "");
+    }
+    return v;
+  },
 };
