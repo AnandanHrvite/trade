@@ -16,6 +16,10 @@
  */
 
 process.env.UI_THEME = "dark";
+// The quick links follow the menu toggles; pin them so a local .env that hides a menu cannot fail the check.
+process.env.UI_SHOW_REALTIME = "true";
+process.env.UI_SHOW_PAPER_HISTORY = "true";
+process.env.UI_SHOW_BACKTEST_PAGE = "true";
 // A mix of markets: home strategies (NIFTY, SAIL → STOCKS, the stock scanner →
 // STOCKS) plus running non-home pairs on BANKNIFTY and CRUDE.
 process.env.SAIL_VWAP_ST_MODE_ENABLED = "true";
