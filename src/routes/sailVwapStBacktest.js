@@ -359,14 +359,14 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
-function _renderResults(res, from, to, trades, stats, meta) {
+function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = engine.getConfig();
   const bt = btConfig();
   const f = meta.funnel || {};
   const mix = meta.exitMix || {};
   const u = _u();
-  const html = renderBacktestResults({
+  return {
     mode: "SAIL_VWAP_ST",
     accent: ACCENT,
     strategyName: engine.NAME,
@@ -392,8 +392,68 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Exit mix", value: Object.keys(mix).length ? Object.entries(mix).map(([k, v]) => `${escHtml(k)} ${v}`).join(" · ") : "—" },
     ],
     notes: `<b>Instrument:</b> ${escHtml(u.label)} stock (<code>${escHtml(u.spot)}</code>) ${cfg.TRADE_RES}-min candles with volume; ATM monthly SAIL options, lot ${u.lotSize} × ${cfg.LOTS} lot(s). <b>Entry:</b> a candle closes across the session VWAP (hlc3, volume-weighted, restarts daily), then within ${cfg.BREAKOUT_BARS} candles one closes beyond the cross candle's high (CE) / low (PE) with every close staying on that side of VWAP, and SuperTrend(${cfg.ST_PERIOD},${cfg.ST_MULT}) agrees. Signal-candle close ${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)}; filled at the NEXT bar's open (= paper's first tick after the close). <b>Exit:</b> the profit lock only (on the simulated premium, peak tracked bar by bar); anything still open closes at the day's last candle (paper's session teardown). No stop loss, trail, target, signal exit or daily limit. <b>THE OPTION PREMIUM IS SIMULATED</b> — there is no historical option chain: premium = ₹${bt.SEED_PREMIUM} seed + δ ${bt.DELTA} × spot move − θ ₹${bt.THETA_DAY}/day (<code>SAIL_VWAP_ST_BT_SEED_PREMIUM</code> / <code>_BT_DELTA</code> / <code>_BT_THETA_DAY</code>), and the P&amp;L and the profit lock are both measured on that number, plus ₹${bt.SLIPPAGE_PTS} of SAIL spot slippage EACH way (<code>SAIL_VWAP_ST_BT_SLIPPAGE_PTS</code>). <b>Intra-bar ordering is conservative:</b> the adverse extreme is walked before the favourable one, a bar that opens through a level fills at the open, and a lock armed and given back inside one bar fills at the close. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded, paper or live, and no threshold in it has been fitted.</b>`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, meta));
   res.send(html);
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    const cfg = engine.getConfig();
+    const res_ = String(cfg.TRADE_RES);
+    const runwayFrom = _shiftDate(from, -runwayCalendarDays());
+    console.log(`🔍 SAIL_VWAP_ST Backtest job ${id}: ${from} → ${to} (warm-up runway from ${runwayFrom}, never traded)`);
+    console.log(`   └ instrument: ${_u().label} (${SAIL_SPOT_SYMBOL}) ${res_}-min, lot ${_u().lotSize} — premium SIMULATED (seed ₹${btConfig().SEED_PREMIUM}, δ ${btConfig().DELTA}, θ ₹${btConfig().THETA_DAY}/day)`);
+    backtestJobs.updateProgress(id, { phase: `Fetching ${res_}-min ${_u().label} candles (${SAIL_SPOT_SYMBOL})…`, pct: 25 });
+
+    let candles = [];
+    try {
+      candles = await fetchCandles(SAIL_SPOT_SYMBOL, res_, runwayFrom, to);
+    } catch (err) {
+      backtestJobs.failJob(id, `Fyers refused the request for ${SAIL_SPOT_SYMBOL} ${runwayFrom} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
+      return;
+    }
+    if (!Array.isArray(candles) || candles.length < 50) {
+      backtestJobs.failJob(id, (!candles || !candles.length)
+        ? `Fyers returned no historical candles for ${SAIL_SPOT_SYMBOL} ${runwayFrom} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`
+        : `Only ${candles.length} candle(s) for ${runwayFrom} → ${to} — widen the range.`);
+      return;
+    }
+    // VWAP is volume-weighted: a series with no volume cannot produce one signal.
+    if (!candles.some(c => Number.isFinite(c.volume) && c.volume > 0)) {
+      backtestJobs.failJob(id, `The ${SAIL_SPOT_SYMBOL} candles carry no volume, so the session VWAP cannot be computed and this strategy cannot take a single trade.`);
+      return;
+    }
+
+    backtestJobs.updateProgress(id, { phase: `Running SAIL VWAP ST backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
+    await new Promise(resolve => setImmediate(resolve));
+    const result = simulate(candles, { tradeFrom: from, tradeTo: to });
+    const stats = result.stats;
+    stats.optionSim = true;
+    stats.delta = result.params.bt.DELTA;
+    stats.thetaPerDay = result.params.bt.THETA_DAY;
+    for (const t of result.trades) {
+      console.log(`   ${t.pnl >= 0 ? "🟢" : "🔴"} ${t.entry} ${t.side} | spot ${t.entrySpot} → ${t.exitSpot}` +
+                  ` | prem ₹${t.entryPremium} → ₹${t.exitPremium} | ₹${t.pnl} | ${t.exitReason}`);
+    }
+
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: res_ } }); }
+    catch (e) { console.warn("[sail_vwap_st-backtest] saveResult failed:", e.message); }
+
+    backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, funnel: result.funnel, exitMix: result.exitMix } });
+    console.log(`✅ SAIL_VWAP_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
+  } catch (err) {
+    console.error("[sail_vwap_st-backtest] job error:", err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -408,56 +468,7 @@ router.get("/", async (req, res) => {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, TITLE));
     const { id } = backtestJobs.createJob("sail_vwap_st");
-    (async () => {
-      try {
-        const cfg = engine.getConfig();
-        const res_ = String(cfg.TRADE_RES);
-        const runwayFrom = _shiftDate(from, -runwayCalendarDays());
-        console.log(`🔍 SAIL_VWAP_ST Backtest job ${id}: ${from} → ${to} (warm-up runway from ${runwayFrom}, never traded)`);
-        console.log(`   └ instrument: ${_u().label} (${SAIL_SPOT_SYMBOL}) ${res_}-min, lot ${_u().lotSize} — premium SIMULATED (seed ₹${btConfig().SEED_PREMIUM}, δ ${btConfig().DELTA}, θ ₹${btConfig().THETA_DAY}/day)`);
-        backtestJobs.updateProgress(id, { phase: `Fetching ${res_}-min ${_u().label} candles (${SAIL_SPOT_SYMBOL})…`, pct: 25 });
-
-        let candles = [];
-        try {
-          candles = await fetchCandles(SAIL_SPOT_SYMBOL, res_, runwayFrom, to);
-        } catch (err) {
-          backtestJobs.failJob(id, `Fyers refused the request for ${SAIL_SPOT_SYMBOL} ${runwayFrom} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
-          return;
-        }
-        if (!Array.isArray(candles) || candles.length < 50) {
-          backtestJobs.failJob(id, (!candles || !candles.length)
-            ? `Fyers returned no historical candles for ${SAIL_SPOT_SYMBOL} ${runwayFrom} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`
-            : `Only ${candles.length} candle(s) for ${runwayFrom} → ${to} — widen the range.`);
-          return;
-        }
-        // VWAP is volume-weighted: a series with no volume cannot produce one signal.
-        if (!candles.some(c => Number.isFinite(c.volume) && c.volume > 0)) {
-          backtestJobs.failJob(id, `The ${SAIL_SPOT_SYMBOL} candles carry no volume, so the session VWAP cannot be computed and this strategy cannot take a single trade.`);
-          return;
-        }
-
-        backtestJobs.updateProgress(id, { phase: `Running SAIL VWAP ST backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
-        await new Promise(resolve => setImmediate(resolve));
-        const result = simulate(candles, { tradeFrom: from, tradeTo: to });
-        const stats = result.stats;
-        stats.optionSim = true;
-        stats.delta = result.params.bt.DELTA;
-        stats.thetaPerDay = result.params.bt.THETA_DAY;
-        for (const t of result.trades) {
-          console.log(`   ${t.pnl >= 0 ? "🟢" : "🔴"} ${t.entry} ${t.side} | spot ${t.entrySpot} → ${t.exitSpot}` +
-                      ` | prem ₹${t.entryPremium} → ₹${t.exitPremium} | ₹${t.pnl} | ${t.exitReason}`);
-        }
-
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: res_ } }); }
-        catch (e) { console.warn("[sail_vwap_st-backtest] saveResult failed:", e.message); }
-
-        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, funnel: result.funnel, exitMix: result.exitMix } });
-        console.log(`✅ SAIL_VWAP_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
-      } catch (err) {
-        console.error("[sail_vwap_st-backtest] job error:", err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, TITLE));
   }
 
@@ -491,6 +502,13 @@ a{display:inline-block;margin-top:16px;background:${ACCENT};color:#fff;padding:9
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["SAIL"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, funnel: {}, exitMix: {} }),
+};
 // Offline / test entry point — pure, no broker or network call.
 module.exports.simulate = simulate;
 module.exports.EXIT = EXIT;

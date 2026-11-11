@@ -291,11 +291,11 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
-function _renderResults(res, from, to, trades, stats, meta) {
+function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = rsiPivotStrategy.getConfig();
   const gs = meta.gateStats || { noPivots: 0, crossNoRsi: 0, rsiNoCross: 0, noSuperTrend: 0, setups: 0 };
-  const html = renderBacktestResults({
+  return {
     mode: "RSI_PIVOT_ST",
     accent: ACCENT,
     strategyName: rsiPivotStrategy.NAME,
@@ -323,8 +323,69 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
     notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 INDEX ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest 50. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>RSI_PIVOT_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, and the lock is measured against that simulated number rather than a real quote, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, meta));
   res.send(html);
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    console.log(`🔍 RSI_PIVOT_ST Backtest job ${id}: ${from} → ${to}`);
+    backtestJobs.updateProgress(id, { phase: `Fetching ${_resMin()}-min NIFTY candles…`, pct: 20 });
+
+    let intraday = [];
+    try {
+      intraday = await fetchCandles(SPOT_SYMBOL, String(_resMin()), from, to);
+    } catch (err) {
+      backtestJobs.failJob(id, `Fyers refused the intraday request for ${from} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
+      return;
+    }
+    if (!Array.isArray(intraday) || intraday.length < 50) {
+      backtestJobs.failJob(id, (!intraday || !intraday.length)
+        ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`
+        : `Only ${intraday.length} candle(s) for ${from} → ${to} — widen the range.`);
+      return;
+    }
+
+    // The DAILY series for the pivots, padded back a week so the first
+    // session in the range still has a yesterday to compute R1/S1 from.
+    backtestJobs.updateProgress(id, { phase: "Fetching daily candles for the pivot levels…", pct: 45 });
+    let daily = [];
+    try {
+      daily = await fetchCandles(SPOT_SYMBOL, "D", _shiftDate(from, -10), to);
+    } catch (err) {
+      backtestJobs.failJob(id, `Intraday candles fetched, but the DAILY series (needed for R1/S1) was refused: ${fyersErrText(err).slice(0, 300)}`);
+      return;
+    }
+    if (!Array.isArray(daily) || daily.length < 2) {
+      backtestJobs.failJob(id, `No usable daily candles for ${_shiftDate(from, -10)} → ${to}. Standard pivots are computed from the PREVIOUS day's high/low/close, so without a daily series this strategy cannot produce a single trade.`);
+      return;
+    }
+
+    backtestJobs.updateProgress(id, { phase: `Running RSI Pivot ST backtest (${intraday.length.toLocaleString()} candles, ${daily.length} daily bars)…`, pct: 75 });
+    const result = await runRsiPivotStBacktest(intraday, daily);
+    const stats = computeBacktestStats(result.trades);
+    stats.optionSim = true;
+    stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
+    catch (e) { console.warn("[rsi-pivot-st-backtest] saveResult failed:", e.message); }
+
+    backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, skipped: result.skipped, gateStats: result.gateStats } });
+    console.log(`✅ RSI_PIVOT_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
+  } catch (err) {
+    console.error("[rsi-pivot-st-backtest] job error:", err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -339,57 +400,7 @@ router.get("/", async (req, res) => {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "RSI Pivot ST Backtest"));
     const { id } = backtestJobs.createJob("rsi_pivot_st");
-    (async () => {
-      try {
-        console.log(`🔍 RSI_PIVOT_ST Backtest job ${id}: ${from} → ${to}`);
-        backtestJobs.updateProgress(id, { phase: `Fetching ${_resMin()}-min NIFTY candles…`, pct: 20 });
-
-        let intraday = [];
-        try {
-          intraday = await fetchCandles(SPOT_SYMBOL, String(_resMin()), from, to);
-        } catch (err) {
-          backtestJobs.failJob(id, `Fyers refused the intraday request for ${from} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
-          return;
-        }
-        if (!Array.isArray(intraday) || intraday.length < 50) {
-          backtestJobs.failJob(id, (!intraday || !intraday.length)
-            ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`
-            : `Only ${intraday.length} candle(s) for ${from} → ${to} — widen the range.`);
-          return;
-        }
-
-        // The DAILY series for the pivots, padded back a week so the first
-        // session in the range still has a yesterday to compute R1/S1 from.
-        backtestJobs.updateProgress(id, { phase: "Fetching daily candles for the pivot levels…", pct: 45 });
-        let daily = [];
-        try {
-          daily = await fetchCandles(SPOT_SYMBOL, "D", _shiftDate(from, -10), to);
-        } catch (err) {
-          backtestJobs.failJob(id, `Intraday candles fetched, but the DAILY series (needed for R1/S1) was refused: ${fyersErrText(err).slice(0, 300)}`);
-          return;
-        }
-        if (!Array.isArray(daily) || daily.length < 2) {
-          backtestJobs.failJob(id, `No usable daily candles for ${_shiftDate(from, -10)} → ${to}. Standard pivots are computed from the PREVIOUS day's high/low/close, so without a daily series this strategy cannot produce a single trade.`);
-          return;
-        }
-
-        backtestJobs.updateProgress(id, { phase: `Running RSI Pivot ST backtest (${intraday.length.toLocaleString()} candles, ${daily.length} daily bars)…`, pct: 75 });
-        const result = await runRsiPivotStBacktest(intraday, daily);
-        const stats = computeBacktestStats(result.trades);
-        stats.optionSim = true;
-        stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
-        catch (e) { console.warn("[rsi-pivot-st-backtest] saveResult failed:", e.message); }
-
-        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, skipped: result.skipped, gateStats: result.gateStats } });
-        console.log(`✅ RSI_PIVOT_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
-      } catch (err) {
-        console.error("[rsi-pivot-st-backtest] job error:", err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "RSI Pivot ST Backtest"));
   }
 
@@ -423,3 +434,10 @@ a{display:inline-block;margin-top:16px;background:${ACCENT};color:#fff;padding:9
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, skipped: [], gateStats: {} }),
+};

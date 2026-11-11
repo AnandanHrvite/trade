@@ -433,7 +433,7 @@ const MOBILE_CSS = `<style>
 }
 </style>`;
 
-function _renderResults(res, from, to, trades, stats, meta) {
+function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = haStrategy.getConfig();
   const f = meta.funnel || { barsSeen: 0, warmupBars: 0, tradableBars: 0, setups: 0, entries: 0, trendUp: 0, trendDown: 0, trendFlat: 0 };
@@ -442,7 +442,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
     ? Object.entries(xr).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(" · ")
     : "—";
 
-  const html = renderBacktestResults({
+  return {
     mode: "HA_SCALP",
     accent: ACCENT,
     strategyName: haStrategy.NAME,
@@ -473,10 +473,82 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
     notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 <b>INDEX spot</b> (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min — not futures, and no volume is read anywhere in this strategy. Heikin Ashi is built ${cfg.haContinuous ? "CONTINUOUSLY across days (TradingView's own behaviour)" : "reseeded each IST day"}. <b>Warm-up:</b> ${escHtml(String(meta.warmupDays))} calendar day(s) of history were fetched BEFORE ${escHtml(from)} so the first requested session could already decide — the engine refuses to signal until it holds ${Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1} bars (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the recursive HA seed decay); those runway bars never open a trade. <b>Trend gate:</b> raw close above the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} → CE only, below → PE only. A with-trend candle on the wrong side of the MA is skipped on purpose. <b>Entry candle:</b> a Heikin Ashi candle of the trend's colour with NO ${cfg.maxWickPct > 0 ? `wick beyond ${cfg.maxWickPct}% of its range` : "wick at all (exact zero — strict by the user's choice, so low frequency is expected)"} on the trend side, body ≥ ${cfg.minBodyPts}pt. <b>Fill:</b> the NEXT raw candle's OPEN — the signal fires on a closed bar and is filled on the bar that follows, which is what Paper and Live do on the first tick after the close. <b>Exit:</b> the global profit lock is the ONLY automatic exit — no stop, trail, target or candle exit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. A doji (HA body ≤ ${cfg.dojiBodyPct}% of range) is never an entry. The entry window is ${haStrategy._fmtMins(cfg.entryStartMin)}–${haStrategy._fmtMins(cfg.entryEndMin)}. Option premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}, θ ₹${escHtml(process.env.BACKTEST_THETA_DAY || "8")}/day) seeded at ₹${escHtml(backtestCosts.seedPremium())}, PLUS ${escHtml(backtestCosts.slippagePts())}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the no-wick frequency has never been measured.</b>`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, meta));
   // Appended, so the shared renderer's own responsive rules load first and these
   // ~440px overrides win.
   res.send(html.replace("</body>", `${MOBILE_CSS}</body>`));
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    const cfg = haStrategy.getConfig();
+    const minBars = Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1;
+    const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
+    console.log(`${LOG} job ${id}: ${from} → ${to} (fetching from ${fetchFrom} — ${warmupDays} warm-up day(s) so day one already holds the ${minBars} bars the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} + Heikin Ashi chain need)`);
+
+    backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} ${cfg.resolutionMins}-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
+    let intraday;
+    try {
+      intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(cfg.resolutionMins), fetchFrom, fetchTo, false,
+        (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
+    } catch (err) {
+      const msg = fyersErrText(err);
+      console.warn(`${LOG} fetch refused: ${msg.slice(0, 300)}`);
+      backtestJobs.failJob(id,
+        `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. ` +
+        `That wording is Fyers' own. "Could not authenticate the user" means the Fyers session needs re-login.`);
+      return;
+    }
+    intraday = Array.isArray(intraday) ? intraday.slice().sort((a, b) => a.time - b.time) : [];
+
+    if (intraday.length < minBars) {
+      // The overwhelmingly common cause in this repo is a dead Fyers token:
+      // an expired session returns no_data (zero candles), NOT an auth error.
+      backtestJobs.failJob(id, intraday.length === 0
+        ? `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error. Log in to Fyers again, then retry.`
+        : `Only ${intraday.length} ${cfg.resolutionMins}-min candle(s) for ${fetchFrom} → ${fetchTo}, and this engine cannot decide anything until it holds ${minBars} (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the Heikin Ashi warm-up). Widen the range or raise HA_SCALP_WARMUP_DAYS (currently ${warmupDays}).`);
+      return;
+    }
+    console.log(`${LOG} job ${id}: ${intraday.length.toLocaleString()} ${cfg.resolutionMins}-min spot candles fetched (warm-up included)`);
+
+    backtestJobs.updateProgress(id, { phase: `Running HA Scalp backtest (${intraday.length.toLocaleString()} spot candles)…`, pct: 75 });
+    const result = await runHaScalpBacktest(intraday, from);
+    const stats = computeBacktestStats(result.trades);
+    stats.optionSim = true;
+    stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(cfg.resolutionMins) } }); }
+    catch (e) { console.warn(`${LOG} saveResult failed:`, e.message); }
+
+    const topSkips = Object.entries(result.skipReasons).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    console.log(`${LOG} funnel: ${result.funnel.barsSeen} bars seen | ${result.funnel.warmupBars} warm-up | ${result.funnel.tradableBars} decided | trend UP ${result.funnel.trendUp} / DOWN ${result.funnel.trendDown} / FLAT ${result.funnel.trendFlat} | ${result.funnel.setups} setup(s) → ${result.funnel.entries} entr${result.funnel.entries === 1 ? "y" : "ies"}`);
+    if (topSkips.length) console.log(`${LOG} top skip reasons: ${topSkips.map(([k, v]) => `${v}× ${k}`).join(" | ")}`);
+    const exitMix = Object.entries(result.exitReasons).map(([k, v]) => `${k} ${v}`).join(", ") || "none";
+    console.log(`${LOG} exits: ${exitMix}`);
+
+    backtestJobs.completeJob(id, {
+      trades: result.trades, stats, from, to,
+      meta: {
+        days: result.days, skipped: result.skipped, funnel: result.funnel,
+        skipReasons: result.skipReasons, exitReasons: result.exitReasons,
+        warmupDays, fetchFrom, candles: intraday.length,
+      },
+    });
+    console.log(`${LOG} job ${id} complete — ${result.trades.length} trades over ${result.days} sessions (${result.funnel.setups} no-wick setups seen)`);
+  } catch (err) {
+    console.error(`${LOG} job error:`, err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -494,68 +566,7 @@ router.get("/", async (req, res) => {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "HA Scalp Backtest"));
     const { id } = backtestJobs.createJob("ha_scalp");
-    (async () => {
-      try {
-        const cfg = haStrategy.getConfig();
-        const minBars = Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1;
-        const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
-        console.log(`${LOG} job ${id}: ${from} → ${to} (fetching from ${fetchFrom} — ${warmupDays} warm-up day(s) so day one already holds the ${minBars} bars the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} + Heikin Ashi chain need)`);
-
-        backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} ${cfg.resolutionMins}-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
-        let intraday;
-        try {
-          intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(cfg.resolutionMins), fetchFrom, fetchTo, false,
-            (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
-        } catch (err) {
-          const msg = fyersErrText(err);
-          console.warn(`${LOG} fetch refused: ${msg.slice(0, 300)}`);
-          backtestJobs.failJob(id,
-            `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. ` +
-            `That wording is Fyers' own. "Could not authenticate the user" means the Fyers session needs re-login.`);
-          return;
-        }
-        intraday = Array.isArray(intraday) ? intraday.slice().sort((a, b) => a.time - b.time) : [];
-
-        if (intraday.length < minBars) {
-          // The overwhelmingly common cause in this repo is a dead Fyers token:
-          // an expired session returns no_data (zero candles), NOT an auth error.
-          backtestJobs.failJob(id, intraday.length === 0
-            ? `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error. Log in to Fyers again, then retry.`
-            : `Only ${intraday.length} ${cfg.resolutionMins}-min candle(s) for ${fetchFrom} → ${fetchTo}, and this engine cannot decide anything until it holds ${minBars} (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the Heikin Ashi warm-up). Widen the range or raise HA_SCALP_WARMUP_DAYS (currently ${warmupDays}).`);
-          return;
-        }
-        console.log(`${LOG} job ${id}: ${intraday.length.toLocaleString()} ${cfg.resolutionMins}-min spot candles fetched (warm-up included)`);
-
-        backtestJobs.updateProgress(id, { phase: `Running HA Scalp backtest (${intraday.length.toLocaleString()} spot candles)…`, pct: 75 });
-        const result = await runHaScalpBacktest(intraday, from);
-        const stats = computeBacktestStats(result.trades);
-        stats.optionSim = true;
-        stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(cfg.resolutionMins) } }); }
-        catch (e) { console.warn(`${LOG} saveResult failed:`, e.message); }
-
-        const topSkips = Object.entries(result.skipReasons).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        console.log(`${LOG} funnel: ${result.funnel.barsSeen} bars seen | ${result.funnel.warmupBars} warm-up | ${result.funnel.tradableBars} decided | trend UP ${result.funnel.trendUp} / DOWN ${result.funnel.trendDown} / FLAT ${result.funnel.trendFlat} | ${result.funnel.setups} setup(s) → ${result.funnel.entries} entr${result.funnel.entries === 1 ? "y" : "ies"}`);
-        if (topSkips.length) console.log(`${LOG} top skip reasons: ${topSkips.map(([k, v]) => `${v}× ${k}`).join(" | ")}`);
-        const exitMix = Object.entries(result.exitReasons).map(([k, v]) => `${k} ${v}`).join(", ") || "none";
-        console.log(`${LOG} exits: ${exitMix}`);
-
-        backtestJobs.completeJob(id, {
-          trades: result.trades, stats, from, to,
-          meta: {
-            days: result.days, skipped: result.skipped, funnel: result.funnel,
-            skipReasons: result.skipReasons, exitReasons: result.exitReasons,
-            warmupDays, fetchFrom, candles: intraday.length,
-          },
-        });
-        console.log(`${LOG} job ${id} complete — ${result.trades.length} trades over ${result.days} sessions (${result.funnel.setups} no-wick setups seen)`);
-      } catch (err) {
-        console.error(`${LOG} job error:`, err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "HA Scalp Backtest"));
   }
 
@@ -585,6 +596,13 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, skipped: [], funnel: {}, exitReasons: {}, warmupDays: _warmupDays() }),
+};
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).
 module.exports.runHaScalpBacktest = runHaScalpBacktest;
 module.exports.warmupRange = warmupRange;

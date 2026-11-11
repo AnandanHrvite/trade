@@ -13,6 +13,7 @@
 
 const express = require("express");
 const router  = express.Router();
+const { engineResultView } = require("../utils/backtestUI");
 const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngine");
 const bbRsiStrategy    = require("../strategies/bb_rsi");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
@@ -569,6 +570,98 @@ router.get("/idle", (req, res) => {
 });
 
 // ── Route ─────────────────────────────────────────────────────────────────────
+/** The results-page trade rows for this engine's trades (also the /backtest view). */
+function _tradeRows(trades) {
+  return trades.map(t => ({
+    side:      t.side || "",
+    entry:     t.entryTime  || "",
+    exit:      t.exitTime   || "",
+    entryTs:   typeof t.entryTs === "number" ? t.entryTs : 0,
+    exitTs:    typeof t.exitTs  === "number" ? t.exitTs  : 0,
+    ePrice:    typeof t.entryPrice === "number" ? t.entryPrice : 0,
+    xPrice:    typeof t.exitPrice  === "number" ? t.exitPrice  : 0,
+    sl:        (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null,
+    initialSL: (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss) : ((t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null),
+    pnl:       typeof t.pnl === "number" ? t.pnl : null,
+    spotPts:   typeof t.spotPnlPts === "number" ? t.spotPnlPts : null,
+    pnlMode:   t.pnlMode || null,
+    held:      typeof t.candlesHeld === "number" ? t.candlesHeld : null,
+    reason:    String(t.exitReason || ""),
+    entryReason: String(t.entryReason || ""),
+    risk_pts:  (() => {
+      const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
+               : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
+      if (!sl) return null;
+      return parseFloat(Math.abs(t.entryPrice - sl).toFixed(2));
+    })(),
+    rr:        (() => {
+      if (typeof t.pnl !== "number") return null;
+      const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
+               : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
+      if (!sl) return null;
+      const risk   = Math.abs(t.entryPrice - sl);
+      if (risk === 0) return null;
+      const rewardPts = typeof t.spotPnlPts === "number" ? Math.abs(t.spotPnlPts) : Math.abs(t.pnl);
+      const ratio = rewardPts / risk;
+      return (t.pnl >= 0 ? "1:" : "-1:") + ratio.toFixed(2);
+    })(),
+  }));
+}
+
+/** The run parameters a request asks for — this page and /backtest share these defaults. */
+function _jobParams(q) {
+  return {
+    // An explicit ?resolution= still wins (that is what "Run Again" and the unified
+    // dashboard send); with no query param the run uses BB_RSI's own candle size.
+    resolution: q.resolution || String(bbRsiStrategy.resolutionMin()),
+    capital:    parseInt(process.env.BACKTEST_CAPITAL || "100000", 10),
+    symbol:     "NSE:NIFTY50-INDEX",
+    skipCache:  q.skipCache === "true",
+  };
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to, resolution, capital, symbol, skipCache } = p;
+  try {
+    backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
+    const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
+    const [_candles, _vixCandles] = await Promise.all([
+      fetchCandlesCachedBT(symbol, resolution, from, to, skipCache, _onFetchProgress),
+      process.env.BB_RSI_VIX_ENABLED === "true"
+        ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+    if (_candles.length < 15) {
+      backtestJobs.failJob(id, 'Too few candles. Try a wider date range.');
+      return;
+    }
+
+    let _expiryDates = null;
+    if ((process.env.BB_RSI_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
+      const expirySet = new Set();
+      for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+      _expiryDates = expirySet;
+    }
+
+    backtestJobs.updateProgress(id, { phase: 'Running bb_rsi backtest…', pct: 5, current: 0, total: _candles.length - 30 });
+    const _result = await runBbRsiBacktest(_candles, capital, _vixCandles, _expiryDates,
+      (p) => backtestJobs.updateProgress(id, p));
+    _result.candleCount = _candles.length;
+    saveResult("BB_RSI_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
+    backtestJobs.completeJob(id, _result);
+    console.log(`\n ✅ BB_RSI backtest job ${id} complete — ${_result.trades.length} trades`);
+  } catch (err) {
+    console.error('[BB_RSI Backtest Job Error]', err);
+    backtestJobs.failJob(id, err.message);
+  }
+}
+
 router.get("/", async (req, res) => {
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
@@ -577,10 +670,7 @@ router.get("/", async (req, res) => {
   const to         = req.query.to         || defTo;
   // An explicit ?resolution= still wins (that is what "Run Again" and the unified
   // dashboard send); with no query param the run uses BB_RSI's own candle size.
-  const resolution = req.query.resolution || String(bbRsiStrategy.resolutionMin());
-  const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
-  const symbol     = "NSE:NIFTY50-INDEX";
-  const skipCache  = req.query.skipCache === "true";
+  const { resolution, capital, symbol, skipCache } = _jobParams(req.query);
 
   if (!process.env.ACCESS_TOKEN) {
     return res.status(401).send(errorPage("Not Authenticated", "Login with Fyers first."));
@@ -599,42 +689,7 @@ router.get("/", async (req, res) => {
 
     const { id } = backtestJobs.createJob('bb_rsi');
 
-    (async () => {
-      try {
-        backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
-        const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
-        const [_candles, _vixCandles] = await Promise.all([
-          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache, _onFetchProgress),
-          process.env.BB_RSI_VIX_ENABLED === "true"
-            ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
-            : Promise.resolve([]),
-        ]);
-
-        if (_candles.length < 15) {
-          backtestJobs.failJob(id, 'Too few candles. Try a wider date range.');
-          return;
-        }
-
-        let _expiryDates = null;
-        if ((process.env.BB_RSI_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-          const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
-          const expirySet = new Set();
-          for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
-          _expiryDates = expirySet;
-        }
-
-        backtestJobs.updateProgress(id, { phase: 'Running bb_rsi backtest…', pct: 5, current: 0, total: _candles.length - 30 });
-        const _result = await runBbRsiBacktest(_candles, capital, _vixCandles, _expiryDates,
-          (p) => backtestJobs.updateProgress(id, p));
-        _result.candleCount = _candles.length;
-        saveResult("BB_RSI_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
-        backtestJobs.completeJob(id, _result);
-        console.log(`\n ✅ BB_RSI backtest job ${id} complete — ${_result.trades.length} trades`);
-      } catch (err) {
-        console.error('[BB_RSI Backtest Job Error]', err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to, resolution, capital, symbol, skipCache });
 
     return res.send(backtestJobs.buildProgressPage(id, '/bb_rsi-backtest', 'BB_RSI Backtest'));
   }
@@ -654,40 +709,7 @@ router.get("/", async (req, res) => {
     const trades = [...(result.trades || [])].reverse();
 
     // Build trades array - embedded safely via JSON script tag
-    const tradesData = trades.map(t => ({
-      side:      t.side || "",
-      entry:     t.entryTime  || "",
-      exit:      t.exitTime   || "",
-      entryTs:   typeof t.entryTs === "number" ? t.entryTs : 0,
-      exitTs:    typeof t.exitTs  === "number" ? t.exitTs  : 0,
-      ePrice:    typeof t.entryPrice === "number" ? t.entryPrice : 0,
-      xPrice:    typeof t.exitPrice  === "number" ? t.exitPrice  : 0,
-      sl:        (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null,
-      initialSL: (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss) : ((t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null),
-      pnl:       typeof t.pnl === "number" ? t.pnl : null,
-      spotPts:   typeof t.spotPnlPts === "number" ? t.spotPnlPts : null,
-      pnlMode:   t.pnlMode || null,
-      held:      typeof t.candlesHeld === "number" ? t.candlesHeld : null,
-      reason:    String(t.exitReason || ""),
-      entryReason: String(t.entryReason || ""),
-      risk_pts:  (() => {
-        const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
-                 : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
-        if (!sl) return null;
-        return parseFloat(Math.abs(t.entryPrice - sl).toFixed(2));
-      })(),
-      rr:        (() => {
-        if (typeof t.pnl !== "number") return null;
-        const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
-                 : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
-        if (!sl) return null;
-        const risk   = Math.abs(t.entryPrice - sl);
-        if (risk === 0) return null;
-        const rewardPts = typeof t.spotPnlPts === "number" ? Math.abs(t.spotPnlPts) : Math.abs(t.pnl);
-        const ratio = rewardPts / risk;
-        return (t.pnl >= 0 ? "1:" : "-1:") + ratio.toFixed(2);
-      })(),
-    }));
+    const tradesData = _tradeRows(trades);
     // Escape </script> in JSON to prevent early tag termination
     // Cap embedded trades for browser performance — summary stats use full array
     const MAX_EMBEDDED_TRADES = 2000;
@@ -2089,3 +2111,14 @@ document.getElementById('btModal').addEventListener('click',function(e){
 });
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: { options: ["3", "5", "15"], default: () => _jobParams({}).resolution },
+  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to }, _jobParams({ resolution: p.resolution }))),
+  view: (r, p) => engineResultView({
+    result: r, rows: _tradeRows(r.trades || []), mode: "BB_RSI", accent: "#10b981", strategyName: "BB_RSI",
+    endpoint: "/bb_rsi-backtest", activePage: "bbRsiBacktest", from: p.from, to: p.to,
+    extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "risk_pts", label: "Risk (pt)" }, { key: "rr", label: "R:R" }, { key: "held", label: "Held" }],
+  }),
+};

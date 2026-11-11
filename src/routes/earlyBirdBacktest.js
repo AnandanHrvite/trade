@@ -106,6 +106,7 @@ const os   = require("os");
 
 const express = require("express");
 const router  = express.Router();
+const { engineResultView } = require("../utils/backtestUI");
 
 const earlyBird = require("../strategies/early_bird");
 const fyers     = require("../config/fyers");
@@ -2563,6 +2564,132 @@ router.get("/days.csv", (req, res) => {
   res.send(csv);
 });
 
+/**
+ * The refusals a run must pass BEFORE it starts — the memory ceiling (see the
+ * note below) and an empty universe. { error } when refused, else { symbols }
+ * ({ symbols: [], emptyError } for an empty universe). This page and the
+ * unified /backtest page both check it.
+ */
+function _preflight(from, to, universeKey) {
+  // ── MEMORY CEILING — this refusal protects the LIVE TRADING PROCESS ────────
+  const _estDays = Math.max(1, Math.round((Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 86400000) + 1);
+  const _estTradingDays = Math.max(1, Math.round(_estDays * (250 / 365)));
+  const _symbolsForEstimate = universe.getUniverse(universeKey).length || 1;
+  const _symbolDays = _symbolsForEstimate * _estTradingDays;
+  const _maxSymbolDays = maxSymbolDays();
+  if (_symbolDays > _maxSymbolDays) {
+    const _estMb = Math.round((_symbolDays * 25 * 130) / 1048576);
+    const _maxDaysForUniverse = Math.max(1, Math.floor(_maxSymbolDays / _symbolsForEstimate));
+    return { error: (
+      `That range is too large to hold in memory. ${_symbolsForEstimate} symbols × ~${_estTradingDays} trading days ` +
+      `≈ ${_estMb} MB of candles, and this process is capped at 620 MB heap (t3.micro) — exceeding it would make ` +
+      `PM2 restart the whole bot and kill any running paper or live session. ` +
+      `With the "${universeKey}" universe (${_symbolsForEstimate} symbols) the safe limit is about ` +
+      `${_maxDaysForUniverse} trading days (~${Math.max(1, Math.round(_maxDaysForUniverse / 21))} months). ` +
+      `Either shorten the range, pick a smaller universe (NIFTY50 is ~4× lighter than FNO), or raise ` +
+      `EARLYBIRD_BT_MAX_SYMBOL_DAYS if you are running on a larger machine.`) };
+  }
+  const symbols = universe.getUniverse(universeKey);
+  return {
+    symbols,
+    emptyError: `Universe "${universeKey}" is empty or unknown. Known presets: ` +
+      `${(universe.listUniverses().universes || []).map(u => u.key).join(", ")}.`,
+  };
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to, universeKey, symbols } = p;
+  try {
+    const cfg = earlyBird.getConfig();
+    const pruned = pruneCache(cacheRetainDays());
+    console.log(`${LOG} job ${id}: ${from} → ${to} | universe ${universeKey} (${symbols.length} symbols) | ` +
+      `${cfg.resolutionMins}-min | qty ${cfg.qty} | max ${cfg.maxConcurrent} concurrent | ` +
+      `slippage ₹${slippagePts()}/side` + (pruned ? ` | pruned ${pruned} stale cache file(s)` : ""));
+    console.log(`${LOG} job ${id}: rules — body ≥ ${cfg.minBodyPct}%, opposing wick ≤ ${cfg.maxOpposingWickPct}%, ` +
+      `gap ≤ ${cfg.maxGapPct}%, buffer ${cfg.entryBufferPts}, ` +
+      `entries ${earlyBird._fmtMins(cfg.entryStartMin)}–${earlyBird._fmtMins(cfg.entryEndMin)}, ` +
+      `exit = profit lock only`);
+
+    const report = (phase, pct) => backtestJobs.updateProgress(id, { phase, pct });
+
+    let data;
+    try {
+      data = await assembleData(from, to, symbols, cfg, report);
+    } catch (err) {
+      const msg = err && err.zeroCandles ? err.message : fyersErrText(err);
+      console.warn(`${LOG} job ${id}: fetch refused — ${String(msg).slice(0, 300)}`);
+      backtestJobs.failJob(id, String(msg).slice(0, 900));
+      return;
+    }
+
+    if (!data.dayKeys.length) {
+      backtestJobs.failJob(id,
+        `No NIFTY trading sessions inside ${from} → ${to}. ${data.niftyCandles} NIFTY candle(s) were ` +
+        `returned but none fell in the requested range — check the dates, or widen the range.`);
+      return;
+    }
+    if (!data.stocks.length) {
+      backtestJobs.failJob(id,
+        `0 candles — Fyers token likely expired. Not one of the ${symbols.length} ${universeKey} symbols ` +
+        `returned intraday history for ${from} → ${to}. An expired Fyers session returns no_data (zero ` +
+        `candles), NOT an auth error, so a universe-wide blank is a login problem far more often than a ` +
+        `data problem. ${data.failed.length} symbol(s) failed outright` +
+        `${data.failed.length ? `: ${data.failed.slice(0, 3).map(f => `${f.symbol} — ${String(f.reason).slice(0, 90)}`).join(" | ")}` : ""}. ` +
+        `Log in to Fyers again, then retry.`);
+      return;
+    }
+
+    report(`Simulating ${data.dayKeys.length} session(s) over ${data.stocks.length} symbol(s)…`, 72);
+    const result = await runEarlyBirdBacktest(data, (done, total) => {
+      report(`Simulating day ${done}/${total}…`, 72 + Math.round((done / total) * 25));
+    });
+
+    const stats = computeStats(result.trades);
+
+    console.log(`${LOG} job ${id}: FUNNEL — ${result.funnel.daysSeen} session(s) | ` +
+      `${result.funnel.tradeableDays} tradeable / ${result.funnel.noSignalDays} no-signal | ` +
+      `${result.funnel.scanned} symbol-days scanned → ${result.funnel.confirmed} confirmed → ` +
+      `${result.funnel.taken} taken → ${result.funnel.triggered} triggered, ` +
+      `${result.funnel.untriggered} NEVER triggered`);
+    console.log(`${LOG} job ${id}: exits — PROFIT_LOCK ${result.exitTypes.PROFIT_LOCK || 0} / ` +
+      `SESSION_END ${result.exitTypes.SESSION_END || 0} | ` +
+      `sides — LONG ${result.sides.LONG || 0} / SHORT ${result.sides.SHORT || 0}`);
+    console.log(`${LOG} job ${id}: RESULT — ${stats.totalTrades} trade(s), ${stats.winRate}% WR, ` +
+      `net ₹${stats.totalPnl} (gross ₹${_r2(stats.totalPnl + stats.totalCharges)} − charges ` +
+      `₹${stats.totalCharges}), PF ${stats.profitFactor === Infinity ? "∞" : stats.profitFactor}, ` +
+      `max DD ₹${stats.maxDrawdown}`);
+
+    try {
+      saveResult(RESULT_KEY, {
+        summary: stats,
+        params: { from, to, universe: universeKey, resolution: String(cfg.resolutionMins), qty: cfg.qty },
+      });
+    } catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
+
+    backtestJobs.completeJob(id, {
+      from, to, universeKey, stats, result,
+      meta: {
+        jobId: id,
+        symbolsRequested: symbols.length,
+        symbolsWithData: data.stocks.length,
+        noData: data.noData.length,
+        failed: data.failed.length,
+        cachedCount: data.cachedCount,
+        niftyCandles: data.niftyCandles,
+        slippage: slippagePts(),
+      },
+    });
+    console.log(`${LOG} job ${id} complete.`);
+  } catch (err) {
+    console.error(`${LOG} job ${id} error:`, err);
+    backtestJobs.failJob(id, (err && err.message) || String(err));
+  }
+}
+
 router.get("/", async (req, res) => {
   const from = typeof req.query.from === "string" ? req.query.from.trim() : "";
   const to   = typeof req.query.to   === "string" ? req.query.to.trim()   : "";
@@ -2601,24 +2728,8 @@ router.get("/", async (req, res) => {
   // front with the arithmetic shown, rather than being started and OOM-killed
   // half way through. EARLYBIRD_BT_MAX_SYMBOL_DAYS raises the ceiling for
   // anyone running on a bigger box.
-  const _estDays = Math.max(1, Math.round((Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 86400000) + 1);
-  const _estTradingDays = Math.max(1, Math.round(_estDays * (250 / 365)));
-  const _symbolsForEstimate = universe.getUniverse(universeKey).length || 1;
-  const _symbolDays = _symbolsForEstimate * _estTradingDays;
-  const _maxSymbolDays = maxSymbolDays();
-  if (_symbolDays > _maxSymbolDays) {
-    const _estMb = Math.round((_symbolDays * 25 * 130) / 1048576);
-    const _maxDaysForUniverse = Math.max(1, Math.floor(_maxSymbolDays / _symbolsForEstimate));
-    return res.status(400).send(renderErrorPage(
-      `That range is too large to hold in memory. ${_symbolsForEstimate} symbols × ~${_estTradingDays} trading days ` +
-      `≈ ${_estMb} MB of candles, and this process is capped at 620 MB heap (t3.micro) — exceeding it would make ` +
-      `PM2 restart the whole bot and kill any running paper or live session. ` +
-      `With the "${universeKey}" universe (${_symbolsForEstimate} symbols) the safe limit is about ` +
-      `${_maxDaysForUniverse} trading days (~${Math.max(1, Math.round(_maxDaysForUniverse / 21))} months). ` +
-      `Either shorten the range, pick a smaller universe (NIFTY50 is ~4× lighter than FNO), or raise ` +
-      `EARLYBIRD_BT_MAX_SYMBOL_DAYS if you are running on a larger machine.`,
-      from, to));
-  }
+  const _pf = _preflight(from, to, universeKey);
+  if (_pf.error) return res.status(400).send(renderErrorPage(_pf.error, from, to));
 
   const jobId = typeof req.query.jobId === "string" ? req.query.jobId : "";
 
@@ -2626,102 +2737,12 @@ router.get("/", async (req, res) => {
     const active = backtestJobs.getActiveJob();
     if (active) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "EarlyBird Backtest"));
 
-    const symbols = universe.getUniverse(universeKey);
-    if (!symbols.length) {
-      return res.status(400).send(renderErrorPage(
-        `Universe "${universeKey}" is empty or unknown. Known presets: ` +
-        `${(universe.listUniverses().universes || []).map(u => u.key).join(", ")}.`, from, to));
-    }
+    const symbols = _pf.symbols;
+    if (!symbols.length) return res.status(400).send(renderErrorPage(_pf.emptyError, from, to));
 
     const { id } = backtestJobs.createJob("early_bird");
 
-    (async () => {
-      try {
-        const cfg = earlyBird.getConfig();
-        const pruned = pruneCache(cacheRetainDays());
-        console.log(`${LOG} job ${id}: ${from} → ${to} | universe ${universeKey} (${symbols.length} symbols) | ` +
-          `${cfg.resolutionMins}-min | qty ${cfg.qty} | max ${cfg.maxConcurrent} concurrent | ` +
-          `slippage ₹${slippagePts()}/side` + (pruned ? ` | pruned ${pruned} stale cache file(s)` : ""));
-        console.log(`${LOG} job ${id}: rules — body ≥ ${cfg.minBodyPct}%, opposing wick ≤ ${cfg.maxOpposingWickPct}%, ` +
-          `gap ≤ ${cfg.maxGapPct}%, buffer ${cfg.entryBufferPts}, ` +
-          `entries ${earlyBird._fmtMins(cfg.entryStartMin)}–${earlyBird._fmtMins(cfg.entryEndMin)}, ` +
-          `exit = profit lock only`);
-
-        const report = (phase, pct) => backtestJobs.updateProgress(id, { phase, pct });
-
-        let data;
-        try {
-          data = await assembleData(from, to, symbols, cfg, report);
-        } catch (err) {
-          const msg = err && err.zeroCandles ? err.message : fyersErrText(err);
-          console.warn(`${LOG} job ${id}: fetch refused — ${String(msg).slice(0, 300)}`);
-          backtestJobs.failJob(id, String(msg).slice(0, 900));
-          return;
-        }
-
-        if (!data.dayKeys.length) {
-          backtestJobs.failJob(id,
-            `No NIFTY trading sessions inside ${from} → ${to}. ${data.niftyCandles} NIFTY candle(s) were ` +
-            `returned but none fell in the requested range — check the dates, or widen the range.`);
-          return;
-        }
-        if (!data.stocks.length) {
-          backtestJobs.failJob(id,
-            `0 candles — Fyers token likely expired. Not one of the ${symbols.length} ${universeKey} symbols ` +
-            `returned intraday history for ${from} → ${to}. An expired Fyers session returns no_data (zero ` +
-            `candles), NOT an auth error, so a universe-wide blank is a login problem far more often than a ` +
-            `data problem. ${data.failed.length} symbol(s) failed outright` +
-            `${data.failed.length ? `: ${data.failed.slice(0, 3).map(f => `${f.symbol} — ${String(f.reason).slice(0, 90)}`).join(" | ")}` : ""}. ` +
-            `Log in to Fyers again, then retry.`);
-          return;
-        }
-
-        report(`Simulating ${data.dayKeys.length} session(s) over ${data.stocks.length} symbol(s)…`, 72);
-        const result = await runEarlyBirdBacktest(data, (done, total) => {
-          report(`Simulating day ${done}/${total}…`, 72 + Math.round((done / total) * 25));
-        });
-
-        const stats = computeStats(result.trades);
-
-        console.log(`${LOG} job ${id}: FUNNEL — ${result.funnel.daysSeen} session(s) | ` +
-          `${result.funnel.tradeableDays} tradeable / ${result.funnel.noSignalDays} no-signal | ` +
-          `${result.funnel.scanned} symbol-days scanned → ${result.funnel.confirmed} confirmed → ` +
-          `${result.funnel.taken} taken → ${result.funnel.triggered} triggered, ` +
-          `${result.funnel.untriggered} NEVER triggered`);
-        console.log(`${LOG} job ${id}: exits — PROFIT_LOCK ${result.exitTypes.PROFIT_LOCK || 0} / ` +
-          `SESSION_END ${result.exitTypes.SESSION_END || 0} | ` +
-          `sides — LONG ${result.sides.LONG || 0} / SHORT ${result.sides.SHORT || 0}`);
-        console.log(`${LOG} job ${id}: RESULT — ${stats.totalTrades} trade(s), ${stats.winRate}% WR, ` +
-          `net ₹${stats.totalPnl} (gross ₹${_r2(stats.totalPnl + stats.totalCharges)} − charges ` +
-          `₹${stats.totalCharges}), PF ${stats.profitFactor === Infinity ? "∞" : stats.profitFactor}, ` +
-          `max DD ₹${stats.maxDrawdown}`);
-
-        try {
-          saveResult(RESULT_KEY, {
-            summary: stats,
-            params: { from, to, universe: universeKey, resolution: String(cfg.resolutionMins), qty: cfg.qty },
-          });
-        } catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
-
-        backtestJobs.completeJob(id, {
-          from, to, universeKey, stats, result,
-          meta: {
-            jobId: id,
-            symbolsRequested: symbols.length,
-            symbolsWithData: data.stocks.length,
-            noData: data.noData.length,
-            failed: data.failed.length,
-            cachedCount: data.cachedCount,
-            niftyCandles: data.niftyCandles,
-            slippage: slippagePts(),
-          },
-        });
-        console.log(`${LOG} job ${id} complete.`);
-      } catch (err) {
-        console.error(`${LOG} job ${id} error:`, err);
-        backtestJobs.failJob(id, (err && err.message) || String(err));
-      }
-    })();
+    _runJob(id, { from, to, universeKey, symbols });
 
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "EarlyBird Backtest"));
   }
@@ -2736,6 +2757,41 @@ router.get("/", async (req, res) => {
 });
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js). The
+// universe is the configured one (EARLYBIRD_UNIVERSE); the memory ceiling and
+// the empty-universe refusal apply exactly as on this page.
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: async (id, p) => {
+    const universeKey = earlyBird.getConfig().universe;
+    const pf = _preflight(p.from, p.to, universeKey);
+    if (pf.error) { backtestJobs.failJob(id, pf.error); return; }
+    if (!pf.symbols.length) { backtestJobs.failJob(id, pf.emptyError); return; }
+    await _runJob(id, { from: p.from, to: p.to, universeKey, symbols: pf.symbols });
+  },
+  view: (r, p) => {
+    const trades = (r.result && r.result.trades) || [];
+    const st = r.stats || {};
+    const f = (r.result && r.result.funnel) || {};
+    const m = r.meta || {};
+    const view = engineResultView({
+      result: { summary: {} }, rows: trades, mode: "EARLYBIRD", accent: ACCENT, strategyName: "EARLYBIRD",
+      endpoint: ENDPOINT, activePage: "earlyBirdBacktest", from: r.from || p.from, to: r.to || p.to,
+      extraTradeColumns: [{ key: "symbol", label: "Symbol" }, { key: "qty", label: "Qty" }, { key: "exitType", label: "Exit" }, { key: "charges", label: "Charges" }, { key: "held", label: "Held" }],
+    });
+    view.extraStats = [
+      { label: "Universe", value: escHtml(r.universeKey || ""), sub: `${m.symbolsWithData || 0}/${m.symbolsRequested || 0} symbols with data` },
+      { label: "Charges paid", value: `₹${st.totalCharges || 0}` },
+      { label: "Sessions", value: f.daysSeen || 0, sub: `${f.tradeableDays || 0} tradeable` },
+      { label: "Confirmed → taken", value: `${f.confirmed || 0} → ${f.taken || 0}`, sub: `${f.untriggered || 0} never triggered` },
+    ];
+    view.notes = "<b>Cash equity</b> on F&amp;O stocks (intraday shares, not options) — real 5-min stock candles, real equity charges. " +
+      "The universe and every rule come from the EARLYBIRD settings; the full per-day audit is on the EarlyBird backtest page.";
+    view.summary.optionSim = false;
+    return view;
+  },
+};
 
 // ── Exposed for offline unit testing (no Fyers token, no HTTP). ──────────────
 module.exports.runEarlyBirdBacktest = runEarlyBirdBacktest;

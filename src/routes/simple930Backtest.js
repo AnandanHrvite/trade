@@ -536,7 +536,7 @@ async function runJob(id, from, to) {
 }
 
 // ── Results page ─────────────────────────────────────────────────────────────
-function _renderResults(res, from, to, trades, stats, meta) {
+function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = strategy.getConfig();
   const dayLog  = meta.dayLog || [];
@@ -558,7 +558,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       `. Those rungs are simply ABSENT from the 09:25 ladder on the days that needed them — not priced at zero. `
     : `All ${meta.contracts} contract(s) asked for were served. `;
 
-  const html = renderBacktestResults({
+  return {
     mode: "SIMPLE930",
     accent: ACCENT,
     strategyName: strategy.NAME,
@@ -601,7 +601,11 @@ function _renderResults(res, from, to, trades, stats, meta) {
       `Slippage of ${_slippagePts()}pt is charged EACH way and Zerodha statutory charges are applied on ${meta.qty} qty. ` +
       `<b>A NIFTY weekly option is delisted at expiry</b>, so sessions older than the listed contracts cannot be fetched at all — they show as "no option data", not as flat days. ` +
       `<b>This strategy has NEVER traded live or on paper. Nothing here is validated.</b>${dayNote}`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, meta));
   res.send(html);
 }
 
@@ -633,6 +637,21 @@ router.get("/day-log", (req, res) => {
   }, null, 2));
 });
 
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    console.log(`🔍 SIMPLE_9:30 Backtest job ${id}: ${from} → ${to}`);
+    await runJob(id, from, to);
+  } catch (err) {
+    console.error("[simple930-backtest] job error:", err);
+    backtestJobs.failJob(id, err.message);
+  }
+}
+
 router.get("/", async (req, res) => {
   let { from, to } = req.query;
   if (!from || !to) {
@@ -648,15 +667,7 @@ router.get("/", async (req, res) => {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "SIMPLE_9:30 Backtest"));
     const { id } = backtestJobs.createJob("simple930");
-    (async () => {
-      try {
-        console.log(`🔍 SIMPLE_9:30 Backtest job ${id}: ${from} → ${to}`);
-        await runJob(id, from, to);
-      } catch (err) {
-        console.error("[simple930-backtest] job error:", err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "SIMPLE_9:30 Backtest"));
   }
 
@@ -685,6 +696,13 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, dayLog: [], refused: [] }),
+};
 // Exposed for offline unit-testing of the day simulation (no Fyers needed).
 module.exports.simulateDay = simulateDay;
 module.exports.tradingDaysIn = tradingDaysIn;

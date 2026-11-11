@@ -333,7 +333,7 @@ function _median(a) {
   return s.length % 2 ? s[m] : _r2((s[m - 1] + s[m]) / 2);
 }
 
-function _renderResults(res, from, to, trades, stats, meta) {
+function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = strat.getConfig();
   const f = meta.funnel || {};
@@ -341,7 +341,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
   const exitMix = Object.keys(xr).length ? Object.entries(xr).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(" · ") : "—";
   const sizes = meta.candleSizes || [];
 
-  const html = renderBacktestResults({
+  return {
     mode: "PREV_ORB_SCALP",
     accent: ACCENT,
     strategyName: strat.NAME,
@@ -372,12 +372,60 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
     notes: `<b>Chart:</b> NIFTY 50 INDEX spot (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min. The ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle is built from those bars. <b>Setup:</b> it closes below yesterday's LOW → PE day, above yesterday's HIGH → CE day. <b>Entry:</b> the FIRST ${cfg.resolutionMins}-min close beyond that candle's low/high, filled at the NEXT bar's open (paper fills on the first tick after the close), until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> the global profit lock (${lockText()}) is the ONLY automatic exit — no stop, target, trail or early square-off — simulated on the δ premium, each bar walked open → adverse → favourable → close; a trade still open at the day's last candle is closed there. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) fetched before ${escHtml(from)} so day one has a yesterday. Premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}) seeded at ₹${escHtml(backtestCosts.seedPremium())} with ${escHtml(backtestCosts.slippagePts())}pt slippage each way — treat ₹ as directional. <b>Never traded live or on paper; nothing here is validated.</b>`,
-  });
+  };
+}
+
+function _renderResults(res, from, to, trades, stats, meta) {
+  const html = renderBacktestResults(_resultsView(from, to, trades, stats, meta));
   res.send(html.replace("</body>", `${MOBILE_CSS}</body>`));
 }
 
 function lockText() {
   return tradeGuards.PROFIT_LOCK_ENABLED ? `arm +${tradeGuards.PROFIT_LOCK_ARM_PCT}% / floor +${tradeGuards.PROFIT_LOCK_FLOOR_PCT}%` : "OFF";
+}
+
+/**
+ * One run, start to finish, on job `id` — fetch, simulate, save, then
+ * completeJob / failJob. This page and the unified /backtest page both call it.
+ */
+async function _runJob(id, p) {
+  const { from, to } = p;
+  try {
+    const cfg = strat.getConfig();
+    const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
+    backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} ${cfg.resolutionMins}-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
+    let intraday;
+    try {
+      intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(cfg.resolutionMins), fetchFrom, fetchTo, false,
+        (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
+    } catch (err) {
+      const msg = fyersErrText(err);
+      backtestJobs.failJob(id, `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. "Could not authenticate the user" means the Fyers session needs re-login.`);
+      return;
+    }
+    intraday = Array.isArray(intraday) ? intraday : [];
+    if (!intraday.length) {
+      backtestJobs.failJob(id, `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error.`);
+      return;
+    }
+    backtestJobs.updateProgress(id, { phase: `Running Prev ORB Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 75 });
+    const result = await runPrevOrbScalpBacktest(intraday, from);
+    const stats = computeBacktestStats(result.trades);
+    stats.optionSim = true;
+    stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(cfg.resolutionMins) } }); }
+    catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
+    const fn = result.funnel;
+    console.log(`${LOG} ${from}→${to}: ${fn.days} days | PE ${fn.peDays} / CE ${fn.ceDays} / inside ${fn.insideRange} | breaks ${fn.breaks} → entries ${fn.entries} | exits ${JSON.stringify(result.exitReasons)}`);
+    backtestJobs.completeJob(id, {
+      trades: result.trades, stats, from, to,
+      meta: { days: result.days, skipped: result.skipped, funnel: result.funnel, exitReasons: result.exitReasons, candleSizes: result.candleSizes, warmupDays, fetchFrom, candles: intraday.length },
+    });
+  } catch (err) {
+    console.error(`${LOG} job error:`, err);
+    backtestJobs.failJob(id, err.message);
+  }
 }
 
 router.get("/", async (req, res) => {
@@ -392,44 +440,7 @@ router.get("/", async (req, res) => {
   if (!jobId) {
     if (backtestJobs.getActiveJob()) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "Prev ORB Scalp Backtest"));
     const { id } = backtestJobs.createJob("prev_orb_scalp");
-    (async () => {
-      try {
-        const cfg = strat.getConfig();
-        const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
-        backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} ${cfg.resolutionMins}-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
-        let intraday;
-        try {
-          intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(cfg.resolutionMins), fetchFrom, fetchTo, false,
-            (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
-        } catch (err) {
-          const msg = fyersErrText(err);
-          backtestJobs.failJob(id, `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. "Could not authenticate the user" means the Fyers session needs re-login.`);
-          return;
-        }
-        intraday = Array.isArray(intraday) ? intraday : [];
-        if (!intraday.length) {
-          backtestJobs.failJob(id, `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error.`);
-          return;
-        }
-        backtestJobs.updateProgress(id, { phase: `Running Prev ORB Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 75 });
-        const result = await runPrevOrbScalpBacktest(intraday, from);
-        const stats = computeBacktestStats(result.trades);
-        stats.optionSim = true;
-        stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-        try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(cfg.resolutionMins) } }); }
-        catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
-        const fn = result.funnel;
-        console.log(`${LOG} ${from}→${to}: ${fn.days} days | PE ${fn.peDays} / CE ${fn.ceDays} / inside ${fn.insideRange} | breaks ${fn.breaks} → entries ${fn.entries} | exits ${JSON.stringify(result.exitReasons)}`);
-        backtestJobs.completeJob(id, {
-          trades: result.trades, stats, from, to,
-          meta: { days: result.days, skipped: result.skipped, funnel: result.funnel, exitReasons: result.exitReasons, candleSizes: result.candleSizes, warmupDays, fetchFrom, candles: intraday.length },
-        });
-      } catch (err) {
-        console.error(`${LOG} job error:`, err);
-        backtestJobs.failJob(id, err.message);
-      }
-    })();
+    _runJob(id, { from, to });
     return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "Prev ORB Scalp Backtest"));
   }
 
@@ -453,6 +464,13 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 }
 
 module.exports = router;
+// The unified /backtest page's hook (see services/backtestPage.js).
+module.exports.backtestPage = {
+  markets: ["NIFTY"],
+  resolution: null,
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, funnel: {}, exitReasons: {}, warmupDays: _warmupDays() }),
+};
 module.exports.runPrevOrbScalpBacktest = runPrevOrbScalpBacktest;
 module.exports.warmupRange = warmupRange;
 module.exports.shiftDateStr = shiftDateStr;
