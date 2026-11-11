@@ -11,6 +11,17 @@
  *   GET /orb-backtest?…&jobId=       → render the completed job
  *   GET /orb-backtest/status?jobId=  → job progress poll (JSON)
  *   GET /orb-backtest/idle           → idle probe for /all-backtest (JSON or redirect)
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles, lot, exchange charges (BSE for SENSEX) and — for
+ * NIFTY_FUT — futures pricing (index points 1:1, the common futures stop in
+ * place of the premium lock) come from services/backtestMarket.js, the
+ * expiry-day-only filter uses that market's own rule expiry, and the market's
+ * pair settings are mapped onto the ORB_* keys for that run only
+ * (services/backtestPage.js). With market NIFTY nothing changes. MCX is not
+ * offered (ORB needs the 09:15 index open); the SAIL stock pair is not
+ * backtestable yet (no stock rule expiry / premium model here).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -28,6 +39,7 @@ const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
 const backtestCosts = require("../config/backtestCosts");
+const backtestMarket = require("../services/backtestMarket");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#10b981";
@@ -92,7 +104,12 @@ function istHHMMSS(unixSec) {
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
-async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
+/**
+ * `market` is a backtestMarket.context() for a non-NIFTY run (its lot, exchange
+ * and futures flag); omitted (or NIFTY) = NIFTY options, exactly as before
+ * markets existed.
+ */
+async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = null) {
   if (!allCandles || !allCandles.length) return [];
   // Ascending time order is required so the flat array aligns with the per-day
   // grouping below (globalBase bookkeeping) for the multi-day signal window.
@@ -107,7 +124,10 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   const THETA_DAY  = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   // Use the same lot-qty helper as paper/live so LOT_MULTIPLIER and
   // NIFTY_LOT_SIZE flow through end-to-end (lot qty = NIFTY_LOT_SIZE × LOT_MULTIPLIER).
-  const LOT_SIZE   = instrumentConfig.getLotQty();
+  const M          = market && market.key !== "NIFTY" ? market : null;
+  const LOT_SIZE   = M ? M.lotQty : instrumentConfig.getLotQty();
+  // Another market's charges are its own exchange's (BSE for SENSEX).
+  const _chg       = (o) => getCharges(M ? Object.assign({ exchange: M.exchange }, o) : o);
   // EXIT (mirrors paper/live, 2026-11-07): the global profit lock is the ONLY
   // automatic exit. It is defined on option premium, so it is simulated on the
   // δ-modelled premium below; a position it never closes is closed at the day's
@@ -118,7 +138,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   // Paper/live never apply the premium profit lock to a futures leg, so here too a
   // futures trade is held to the end of the session unless the common stop
   // (PREMIUM_SL_ENABLED, in index points) closes it first.
-  const IS_FUT = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const IS_FUT = M ? M.isFutures === true : instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "120");           // widened for slightly-ITM
   const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
@@ -324,7 +344,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
       // Index points, both ways, with the same per-side slippage the option run pays
       // (BACKTEST_SLIPPAGE_PTS, read here as INDEX points rather than premium points).
       const netPts  = spotMove - 2 * SLIPPAGE_PREM;
-      const charges = getCharges({ broker: "fyers", isFutures: true, entryPremium: pos.entrySpot, exitPremium: exitSpot, qty: LOT_SIZE });
+      const charges = _chg({ broker: "fyers", isFutures: true, entryPremium: pos.entrySpot, exitPremium: exitSpot, qty: LOT_SIZE });
       const fpnl = parseFloat((netPts * LOT_SIZE - charges).toFixed(2));
       pos.exitTime = exitTime;
       pos.exitSpot = exitSpot;
@@ -338,7 +358,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     // Buy high / sell low: haircut the exit premium by slippage on BOTH legs so
     // fills aren't frictionless (was overstating every ORB trade's P&L).
     const exitPrem = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE - 2 * SLIPPAGE_PREM);
-    const charges = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+    const charges = _chg({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
     const pnl = parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2));
     pos.exitTime = exitTime;
     pos.exitSpot = exitSpot;
@@ -387,7 +407,10 @@ router.get("/idle", (req, res) => {
 });
 
 // Rendered trade-log / stats helper — shared by the completed-job branch.
-function _resultsView(from, to, trades, stats) {
+// `market` is the run's market key (absent / "NIFTY" on a NIFTY run).
+function _resultsView(from, to, trades, stats, market) {
+  const M = market && market !== "NIFTY" ? backtestMarket.context(market) : null;
+  const futMode = M ? M.isFutures === true : instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   return {
     mode: "ORB",
     accent: ACCENT,
@@ -406,7 +429,7 @@ function _resultsView(from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "10:15"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
+    notes: `${M ? `<b>MARKET: ${M.label}</b> — ${M.spotSymbol} candles, lot ${M.lotQty}, ${M.exchange} charges; the seeded premium and the OR / point thresholds are NIFTY-calibrated unless this market sets its own. ` : ""}${futMode ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "10:15"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
   };
 }
 
@@ -421,11 +444,15 @@ function _renderOrbResults(res, from, to, trades, stats) {
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  // Another market (the unified /backtest page): its own spot candles, lot and
+  // charges. NIFTY keeps the symbol the page always used.
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
   try {
-    console.log(`🔍 ORB Backtest job ${id}: ${from} → ${to}`);
+    console.log(`🔍 ORB Backtest job ${id}: ${from} → ${to}${home ? "" : ` on ${M.key}`}`);
     backtestJobs.updateProgress(id, { phase: "Fetching candle data…", pct: 0 });
     const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
-    const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, _onFetchProgress);
+    const candles = await fetchCandlesCachedBT(home ? NIFTY_INDEX_SYMBOL : M.spotSymbol, "5", from, to, false, _onFetchProgress);
 
     if (!Array.isArray(candles) || candles.length < 5) {
       // Distinguish "Fyers had no data for this range" (0 candles — future dates,
@@ -451,8 +478,22 @@ async function _runJob(id, p) {
         uniqueDates.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`);
       }
       expirySet = new Set();
-      for (const dt of uniqueDates) {
-        try { if (await isExpiryDate(dt)) expirySet.add(dt); } catch (_) {}
+      if (home) {
+        for (const dt of uniqueDates) {
+          try { if (await isExpiryDate(dt)) expirySet.add(dt); } catch (_) {}
+        }
+      } else {
+        // That market's own expiry, as its paper pair reads it: an options market's
+        // rule expiry (weekly / monthly, holiday-preponed); futures: paper's rule
+        // (rt.isExpiryDay — the month contract's own expiry day; contractAt has
+        // already rolled to next month's contract by then, so it never matches).
+        const _futRt = M.isFutures ? require("../utils/pairRuntime").forStrategy("orb", M.key) : null;
+        for (const dt of uniqueDates) {
+          const t = Math.floor(Date.parse(`${dt}T09:15:00+05:30`) / 1000);
+          if (_futRt) { if (_futRt.isExpiryDay(t * 1000)) expirySet.add(dt); continue; }
+          const c = backtestMarket.contractAt(M, M.strikeStep || 100, "CE", t);
+          if (c && c.expiry === dt) expirySet.add(dt);
+        }
       }
       console.log(`📅 ORB expiry-only: ${expirySet.size}/${uniqueDates.size} trading days qualified`);
     }
@@ -468,20 +509,26 @@ async function _runJob(id, p) {
       : [];
 
     backtestJobs.updateProgress(id, { phase: `Running ORB backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-    const trades = await runOrbBacktest(candles, expirySet, vixCandles);
+    const trades = await runOrbBacktest(candles, expirySet, vixCandles, home ? null : M);
     const stats = computeBacktestStats(trades);
     // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
     // so /all-backtest renders it as ₹ instead of "pts".
-    stats.optionSim   = true;
+    stats.optionSim   = home ? true : !M.isFutures;
     stats.delta       = parseFloat(process.env.BACKTEST_DELTA     || "0.55");
     stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    if (!home && M.isFutures) stats.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
 
-    // Save for /all-backtest dashboard
-    try {
-      saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
-    } catch (e) { console.warn("[orb-backtest] saveResult failed:", e.message); }
+    // Save for /all-backtest dashboard — the legacy last-run slot is NIFTY's;
+    // other markets are kept by the /backtest page's own saved runs.
+    if (home) {
+      try {
+        saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
+      } catch (e) { console.warn("[orb-backtest] saveResult failed:", e.message); }
+    }
 
-    backtestJobs.completeJob(id, { trades, stats, from, to });
+    const result = { trades, stats, from, to };
+    if (!home) result.market = M.key;
+    backtestJobs.completeJob(id, result);
     console.log(`✅ ORB Backtest job ${id} complete — ${trades.length} trades`);
   } catch (err) {
     console.error("[orb-backtest] job error:", err);
@@ -548,10 +595,10 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
-  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats),
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to, market: p.market }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.market || p.market),
 };
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).
 module.exports.runOrbBacktest = runOrbBacktest;

@@ -236,8 +236,11 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   const on = v2.filter((m) => m.enabled).map((m) => m.key);
   assert.deepStrictEqual(on.sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of v2) if (!m.enabled) assert.strictEqual(m.note, "coming soon");
+  const orb = page.marketOptions("orb");
+  assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
   for (const s of page.strategies()) {
-    if (s.id === "emaRsiStV2") continue;
+    if (s.id === "emaRsiStV2" || s.id === "orb") continue;
     const on2 = page.marketOptions(s.id).filter((m) => m.enabled).map((m) => m.key);
     assert.deepStrictEqual(on2, [pairs.homeMarket(s.id)], `${s.id} runs only on its home market today`);
   }
@@ -246,7 +249,7 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
 check("a run on a non-offered / coming-soon market or a bad request is refused before any job starts", () => {
   const base = { strategy: "orb", from: FROM, to: TO, resolution: null, settingsSource: "current", custom: {} };
   assert.ok(/not offered/.test(page.start({ ...base, market: "CRUDE" }).error));
-  assert.ok(/coming soon/.test(page.start({ ...base, market: "BANKNIFTY" }).error));
+  assert.ok(/coming soon/.test(page.start({ ...base, strategy: "rsiPivotSt", market: "BANKNIFTY" }).error));
   assert.ok(/Unknown strategy/.test(page.start({ ...base, strategy: "nope", market: "NIFTY" }).error));
   assert.ok(/on or before/.test(page.start({ ...base, market: "NIFTY", from: TO, to: FROM }).error));
   assert.ok(/candle size/i.test(page.start({ ...base, strategy: "emaRsiSt", market: "NIFTY", resolution: "7" }).error));
@@ -385,6 +388,90 @@ check("the old V2 page is untouched by markets: NIFTY run reads NIFTY's candles 
   const oldRes = await runOld("emaRsiStV2", `from=${FROM}&to=${TO}`);
   assert.ok(fetchLog.slice(mark).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
   assert.strictEqual(oldRes.meta.market, undefined, "a NIFTY result must not grow a market field");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4c. ORB is market-aware");
+
+const ORB_RUNS = {};
+const _ymd = (ms) => new Date(ms + 19800000).toISOString().slice(0, 10);
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`ORB on ${mk}: its own candles, lot, exchange charges; NIFTY's legacy slot untouched`, async () => {
+    const mark = fetchLog.length, saves = legacySaves.length;
+    const neu = await runNew({ strategy: "orb", market: mk, settings: "current", from: FROM, to: TO });
+    ORB_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const asked = fetchLog.slice(mark).filter((f) => String(f.resolution) !== "D").map((f) => f.symbol);
+    assert.ok(asked.length && asked.every((s) => s === ctx.spotSymbol), `fetched ${asked.join(",")} for ${mk}`);
+    assert.strictEqual(neu.result.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    assert.strictEqual(legacySaves.length, saves, "a non-NIFTY run overwrote NIFTY's legacy slot");
+    const trades = neu.result.trades;
+    assert.ok(trades.length > 0, `${mk}: the synthetic market produced no trade`);
+    const slip = require("../src/config/backtestCosts").slippagePts();
+    for (const t of trades) {
+      let want;
+      if (ctx.isFutures) {
+        // Futures: index points × lot − futures charges, slippage in index points; no option leg.
+        const charges = getCharges({ broker: "fyers", isFutures: true, exchange: ctx.exchange, entryPremium: t.ePrice, exitPremium: t.xPrice, qty: ctx.lotQty });
+        want = ((t.xPrice - t.ePrice) * (t.side === "CE" ? 1 : -1) - 2 * slip) * ctx.lotQty - charges;
+        assert.strictEqual(t.xOpt, null, `${mk}: a futures trade carries an option exit`);
+      } else {
+        const charges = getCharges({ broker: "fyers", isFutures: false, exchange: ctx.exchange, entryPremium: t.eOpt, exitPremium: t.xOpt, qty: ctx.lotQty });
+        want = (t.xOpt - t.eOpt) * ctx.lotQty - charges;
+      }
+      assert.ok(Math.abs(t.pnl - want) <= ctx.lotQty * 0.005 + 0.02, `${mk} trade ${t.entry}: pnl ${t.pnl} ≠ ${want.toFixed(2)}`);
+    }
+    assert.strictEqual(!!neu.result.stats.isFutures, ctx.isFutures);
+    assert.strictEqual(neu.result.stats.optionSim, !ctx.isFutures);
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+    if (ctx.isFutures) assert.ok(/FUTURES MODE/.test(neu.record.view.notes), "a NIFTY_FUT run is not labelled futures");
+  });
+}
+check("ORB: SENSEX trades sit on the SENSEX series; the old NIFTY page reads NIFTY only", async () => {
+  assert.ok(ORB_RUNS.SENSEX && ORB_RUNS.SENSEX.result.trades.every((t) => t.ePrice > 50000));
+  const mark = fetchLog.length;
+  const oldRes = await runOld("orb", `from=${FROM}&to=${TO}`);
+  assert.ok(fetchLog.slice(mark).filter((f) => String(f.resolution) !== "D").every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
+  assert.strictEqual(oldRes.market, undefined, "a NIFTY result must not grow a market field");
+});
+check("ORB pair settings: a BANKNIFTY-own key reaches the engine for that run only", async () => {
+  process.env.BN_ORB_ENTRY_END = "09:50";
+  try {
+    const { overrides } = page.buildOverrides("orb", "BANKNIFTY", null);
+    assert.strictEqual(overrides.ORB_ENTRY_END, "09:50");
+    const neu = await runNew({ strategy: "orb", market: "BANKNIFTY", settings: "current", from: FROM, to: TO });
+    assert.ok(neu.record.overriddenKeys.includes("ORB_ENTRY_END"));
+    for (const t of neu.result.trades) assert.ok(t.entry.split(", ")[1].slice(0, 5) < "09:50", `BANKNIFTY trade entered at ${t.entry}`);
+    assert.ok(neu.result.trades.length < ORB_RUNS.BANKNIFTY.result.trades.length, "the earlier cut-off removed no trade");
+    assert.strictEqual(process.env.ORB_ENTRY_END, undefined, "the pair value leaked into the real env");
+  } finally { delete process.env.BN_ORB_ENTRY_END; }
+});
+check("ORB expiry-day-only: an options market trades its own rule expiry; NIFTY_FUT uses paper's expiry rule", async () => {
+  // BANKNIFTY is monthly-only: only its rule expiry days may trade.
+  process.env.BN_ORB_EXPIRY_DAY_ONLY = "true";
+  try {
+    const neu = await runNew({ strategy: "orb", market: "BANKNIFTY", settings: "current", from: FROM, to: TO });
+    const ctx = bm.context("BANKNIFTY");
+    for (const t of neu.result.trades) {
+      const d = _ymd(t.entryTs * 1000);
+      assert.strictEqual(bm.contractAt(ctx, 100, "CE", Math.floor(Date.parse(`${d}T09:15:00+05:30`) / 1000)).expiry, d, `BANKNIFTY traded ${d}, not its expiry`);
+    }
+    assert.ok(neu.result.trades.length < ORB_RUNS.BANKNIFTY.result.trades.length, "expiry-day-only removed no BANKNIFTY trade");
+  } finally { delete process.env.BN_ORB_EXPIRY_DAY_ONLY; }
+  // NIFTY_FUT: pin paper's rule to a day the synthetic market trades, and only it may trade.
+  const days0 = ORB_RUNS.NIFTY_FUT.result.trades.map((t) => _ymd(t.entryTs * 1000));
+  assert.ok(days0.length > 1, "NIFTY_FUT baseline run too thin");
+  const rt = require("../src/utils/pairRuntime").forStrategy("orb", "NIFTY_FUT");
+  const real = rt.isExpiryDay;
+  rt.isExpiryDay = (ms) => _ymd(ms) === days0[0];
+  process.env.FUT_ORB_EXPIRY_DAY_ONLY = "true";
+  try {
+    const neu = await runNew({ strategy: "orb", market: "NIFTY_FUT", settings: "current", from: FROM, to: TO });
+    const days = neu.result.trades.map((t) => _ymd(t.entryTs * 1000));
+    assert.ok(days.length > 0, "an expiry-day-only NIFTY_FUT run found no expiry day");
+    assert.ok(days.every((d) => d === days0[0]), `traded off paper's expiry day: ${days.join(",")}`);
+  } finally { rt.isExpiryDay = real; delete process.env.FUT_ORB_EXPIRY_DAY_ONLY; }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
