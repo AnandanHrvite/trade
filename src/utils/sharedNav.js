@@ -37,6 +37,17 @@ const STRATEGY_MODES = require('../config/strategyRegistry').all().map((s) => {
   return row;
 });
 
+// (strategy, market) pairs and the market list — the sidebar's Market → Strategy
+// parents for the markets other than NIFTY and the stocks.
+const pairs   = require('../config/pairs');
+const markets = require('../config/markets');
+const PAIR_MARKET_PARENTS = Object.keys(markets.MARKET_DEFS)
+  .filter(k => k !== 'NIFTY' && markets.MARKET_DEFS[k].group !== 'stock')
+  .map(k => ({
+    id: `nav-parent-${k.toLowerCase()}`, key: k.toLowerCase(),
+    header: { NIFTY_FUT: 'NIFTY FUT', BANKNIFTY: 'BANKNIFTY', CRUDE: 'CRUDE OIL' }[k] || k,
+  }));
+
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
 // Read from process.env on every call — Settings saves mutate process.env live,
 // so callers must not cache the result across requests.
@@ -94,6 +105,21 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
+
+  // Sidebar groups for the non-home pairs that are switched ON (default OFF),
+  // read live from process.env like every other toggle here.
+  function pairNavSections() {
+    return pairs.all().filter(p => !p.home && pairs.isEnabled(p)).map(p => {
+      const stock = markets.MARKET_DEFS[p.marketKey].group === 'stock';
+      return {
+        header: stock ? `${p.marketKey} · ${p.label}` : p.label,
+        collapsible: true, collapsed: true,
+        groupId: `nav-pair-${p.slug}`,
+        parent: stock ? 'stocks' : p.marketKey.toLowerCase(),
+        items: [{ key: `pair:${p.modeKey}`, href: `/settings#pair-${p.slug}`, icon: '⚙️', label: 'Settings' }],
+      };
+    });
+  }
 
   // Hide Replay while any paper trade is running — Replay cannot run with a
   // running session anyway (it blocks on running modes), so keep the menu clean.
@@ -562,6 +588,12 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       parent: 'nifty',
       items: gapRunawayItems,
     }] : []),
+    // ── Other markets: one group per (strategy, market) pair switched ON ──
+    // Generated from the pair model (config/pairs.js). Only non-home pairs are
+    // here — the NIFTY groups above and SAIL VWAP+ST are those strategies' home
+    // pairs. A pair is not executed yet, so its group holds just its Settings
+    // page; its ON/OFF switch (<PAIR>_MODE_ENABLED, default OFF) is in Settings.
+    ...pairNavSections(),
     ...(gapRunawayStkModeOn ? [{
       header: 'GAP_RUNAWAY SCANNER', collapsible: true, collapsed: !isGapRunawayStkOpen,
       groupId: 'nav-gap_runaway_stk',
@@ -691,6 +723,9 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   // was open inside it untouched.
   const parentDefs = [
     { id: 'nav-parent-nifty', key: 'nifty', header: 'NIFTY' },
+    // The other markets (NIFTY FUT, BANKNIFTY, SENSEX, MCX) — each rendered only
+    // while one of its pairs is switched ON.
+    ...PAIR_MARKET_PARENTS,
     // STOCKS — rendered only when one of its sections (SAIL_VWAP_ST) is enabled.
     { id: 'nav-parent-stocks', key: 'stocks', header: 'STOCKS' },
   ];
