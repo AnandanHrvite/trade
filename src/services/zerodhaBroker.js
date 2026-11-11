@@ -174,6 +174,12 @@ function isAuthenticated() {
   return !!process.env.ZERODHA_ACCESS_TOKEN;
 }
 
+/** ms timestamp of the last validated login, or 0 if unknown */
+function tokenSavedAt() {
+  const raw = loadRawToken();
+  return (raw && raw.validated && Number(raw.savedAt)) || 0;
+}
+
 /** Logout — clear token so dashboard shows Disconnected */
 function logout() {
   clearZerodhaToken();
@@ -508,7 +514,7 @@ async function getTrades() {
 
 module.exports = {
   getLoginUrl, generateAccessToken, setAccessToken,
-  isAuthenticated, logout, clearZerodhaToken,
+  isAuthenticated, tokenSavedAt, logout, clearZerodhaToken,
   convertSymbol, placeMarketOrder,
   placeEquityOrder, getEquityLTP,
   placeSLMOrder, modifySLMOrder, cancelOrder,

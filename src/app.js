@@ -1953,7 +1953,13 @@ app.get("/", (req, res) => {
   const istHour    = nowIST.getHours();
   const istMin     = nowIST.getMinutes();
   const nearExpiry = istHour === 5 && istMin >= 45;  // 5:45–5:59 AM: expiring soon
-  const pastExpiry = istHour >= 6 && istHour < 9;   // 6:00–8:59 AM: already expired
+  // 6:00–8:59 AM: already expired — unless the login happened after today's 6 AM.
+  const _savedAt   = zerodha.tokenSavedAt();
+  const _savedIST  = _savedAt ? new Date(new Date(_savedAt).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })) : null;
+  const loggedInAfter6 = !!_savedIST
+    && _savedIST.toDateString() === nowIST.toDateString()
+    && _savedIST.getHours() >= 6;
+  const pastExpiry = istHour >= 6 && istHour < 9 && !loggedInAfter6;
 
   // Only the two states that need acting on. A permanent "token is valid" strip
   // is noise the whole trading day and trains the eye to skip the banner —
