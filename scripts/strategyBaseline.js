@@ -146,6 +146,9 @@ const PAIRS = [
   { route: "emaRsiStPaper",   market: "SENSEX",    mode: "sensex_ema_rsi_st-paper",    enabledKey: "SENSEX_EMA_RSI_ST_MODE_ENABLED" },
   { route: "emaRsiStPaper",   market: "BANKNIFTY", mode: "bn_ema_rsi_st-paper",        enabledKey: "BN_EMA_RSI_ST_MODE_ENABLED" },
   { route: "emaRsiStPaper",   market: "NIFTY_FUT", mode: "fut_ema_rsi_st-paper",       enabledKey: "FUT_EMA_RSI_ST_MODE_ENABLED" },
+  { route: "bbRsiPaper",      market: "SENSEX",    mode: "sensex_bb_rsi-paper",        enabledKey: "SENSEX_BB_RSI_MODE_ENABLED" },
+  { route: "bbRsiPaper",      market: "BANKNIFTY", mode: "bn_bb_rsi-paper",            enabledKey: "BN_BB_RSI_MODE_ENABLED" },
+  { route: "bbRsiPaper",      market: "NIFTY_FUT", mode: "fut_bb_rsi-paper",           enabledKey: "FUT_BB_RSI_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {
@@ -324,7 +327,7 @@ async function main() {
       const pg = await runWorker(["--generate", "--market", p.market, "--ticks", p.ticksDir, "--settings", pSpec, "--out", pOut], tmpRoot, `generate-${p.name}`);
       if (pg.code !== 0) throw new Error(`${p.market} recording generation failed (exit ${pg.code}) — see ${pg.log}\n${pg.stderr}`);
       const pr = JSON.parse(fs.readFileSync(pOut, "utf8"));
-      console.log(`📼 ${p.market}: ${pr.summary.map(s => `${s.date.slice(5)}→${s.expiry.slice(5)}`).join(" ")}`);
+      console.log(`📼 ${p.name}: ${pr.summary.map(s => `${s.date.slice(5)}→${s.expiry.slice(5)}`).join(" ")}`);
     }
 
     // 2. One child per (strategy, session).

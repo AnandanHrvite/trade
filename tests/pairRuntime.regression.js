@@ -79,7 +79,7 @@ check("BANKNIFTY / NIFTY_FUT keep the old twins' paths and data files", () => {
 });
 check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; none other runs", () => {
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
-  for (const id of ["emaRsiStV2", "emaRsiSt"]) {
+  for (const id of ["emaRsiStV2", "emaRsiSt", "bbRsi"]) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), MK, id);
   }
   assert.ok(pairs.all().filter(p => p.runs).every(p => pairs.RUNS_AS_PAIR.has(p.strategyId)));
@@ -354,6 +354,74 @@ check("V1 route: one builder file; NIFTY default export, one router per pair wit
   assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(src), "the OI gate stays NIFTY-only");
   assert.ok(/if \(!rt\.enabled\(\)\) \{\s*return res\.status\(403\)/.test(src), "a pair's /start refuses while <PAIR>_MODE_ENABLED is off");
 });
+section("BB_RSI runs as a pair");
+
+const bbOf = (mk) => pairRuntime.forStrategy("bbRsi", mk);
+check("NIFTY BB_RSI is the home pair: the old keys, path, file, slot; OI is NIFTY-only", () => {
+  const rt = bbOf("NIFTY");
+  assert.deepStrictEqual([rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.tradesFile, rt.socketSlot.mode, rt.notifyMode, rt.oiApplies],
+    [true, "bb_rsi", "BB_RSI", "/bb_rsi-paper", "bb_rsi_paper_trades.json", "BB_RSI_PAPER", "BB_RSI-PAPER", true]);
+  for (const [mk, pre] of [["BANKNIFTY", "bn"], ["SENSEX", "sensex"], ["NIFTY_FUT", "fut"]]) {
+    const r = bbOf(mk);
+    assert.deepStrictEqual([r.home, r.modeKey, r.envPrefix, r.paperPath, r.tradesFile, r.oiApplies],
+      [false, `${pre}_bb_rsi`, `${pre.toUpperCase()}_BB_RSI`, `/${pre}_bb_rsi-paper`, `${pre}_bb_rsi_paper_trades.json`, false], mk);
+  }
+});
+check("bbRsiPaper exports the NIFTY router; forMarket builds one memoised router per offered market", () => {
+  const R = require("../src/routes/bbRsiPaper");
+  assert.strictEqual(typeof R, "function", "the default export must still be an express router");
+  assert.strictEqual(R.forMarket("NIFTY"), R, "the home instance is the default export");
+  const bn = R.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== R, "BANKNIFTY gets its own router");
+  assert.strictEqual(R.forMarket("BANKNIFTY"), bn, "forMarket is memoised (one engine per market)");
+  assert.notStrictEqual(R.forMarket("SENSEX"), bn);
+  assert.strictEqual(R.forMarket("NOPE"), null);
+  assert.strictEqual(R.forPair(pairs.get("bbRsi", "NIFTY_FUT")), R.forMarket("NIFTY_FUT"));
+});
+check("the BB_RSI engine reads a pair's own key, else inherits NIFTY's", () => {
+  const eng = require("../src/strategies/bb_rsi");
+  withEnv({ BB_RSI_DIRECTION: undefined, BN_BB_RSI_DIRECTION: undefined }, () => {
+    assert.deepStrictEqual([eng.direction(), eng.direction("BN_BB_RSI")], ["fade", "fade"]);
+  });
+  withEnv({ BB_RSI_DIRECTION: "breakout", BN_BB_RSI_DIRECTION: undefined }, () => {
+    assert.strictEqual(eng.direction("BN_BB_RSI"), "breakout", "an unset pair key inherits NIFTY's value");
+  });
+  withEnv({ BB_RSI_DIRECTION: undefined, BN_BB_RSI_DIRECTION: "breakout" }, () => {
+    assert.deepStrictEqual([eng.direction(), eng.direction("BN_BB_RSI"), eng.direction("SENSEX_BB_RSI")], ["fade", "breakout", "fade"],
+      "a pair key must not leak into NIFTY or another pair");
+  });
+});
+check("bbRsiPaper: per-market facts come from rt; journal hooks + NIFTY-only OI are wired", () => {
+  const code = fs.readFileSync(path.join(__dirname, "../src/routes/bbRsiPaper.js"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(/function create\(pair\)\s*\{\s*const rt\s*=\s*pairRuntime\.forPair\(pair\)/.test(code), "create(pair) builder");
+  assert.ok(/const ROUTE\s*=\s*rt\.paperPath;/.test(code) && /const MODE\s*=\s*rt\.modeKey;/.test(code), "path / mode key must come from rt");
+  assert.ok(!/router\.(get|post)\(\s*["'`]\/bb_rsi-paper/.test(code), "no literal NIFTY route path");
+  assert.ok(!/NSE:NIFTY50-INDEX/.test(code), "the spot symbol must come from rt");
+  for (const h of ["onEntry", "onTick", "onStopChange", "onExit", "fields"]) {
+    assert.ok(new RegExp(`tradeJournal\\.${h}\\(`).test(code), `tradeJournal.${h} hook missing`);
+  }
+  assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(code), "the OI gate must stay NIFTY-only");
+});
+check("bbRsiPaper: a pair's own VIX switch (Settings → that market) drives its gate, as in its backtest", () => {
+  const R = require("../src/routes/bbRsiPaper");
+  const vixOn = (router) => {
+    const layer = router.stack.find(l => l.route && l.route.path === "/status" && l.route.methods.get);
+    let html = "";
+    layer.route.stack[0].handle({ query: {}, headers: {} }, { send: (h) => { html = h; }, setHeader() {}, set() {}, status() { return this; }, json() {} });
+    return /VIX (n\/a|\d)/.test(html);
+  };
+  const S = R.forMarket("SENSEX");
+  withEnv({ BB_RSI_VIX_ENABLED: undefined, SENSEX_BB_RSI_VIX_ENABLED: undefined }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [false, false]));
+  withEnv({ BB_RSI_VIX_ENABLED: undefined, SENSEX_BB_RSI_VIX_ENABLED: "true" }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [false, true], "SENSEX's own key ON must not need NIFTY's"));
+  withEnv({ BB_RSI_VIX_ENABLED: "true", SENSEX_BB_RSI_VIX_ENABLED: undefined }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, true], "an unset pair key inherits NIFTY's"));
+  withEnv({ BB_RSI_VIX_ENABLED: "true", SENSEX_BB_RSI_VIX_ENABLED: "false" }, () =>
+    assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, false], "SENSEX's own key OFF wins over NIFTY's"));
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Async checks above return promises; wait for them before reporting.
 (async () => {

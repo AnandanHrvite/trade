@@ -24,7 +24,8 @@ const { VIX_SYMBOL } = vixFilter;
 const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
-const { getCharges } = require("../utils/charges");
+const { getCharges: _getCharges } = require("../utils/charges");
+const backtestMarket = require("../services/backtestMarket");
 const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards = require("../utils/tradeGuards");
 
@@ -70,18 +71,25 @@ function buildDailyOHLC(candles) {
 }
 
 // ── BB_RSI Backtest Engine ─────────────────────────────────────────────────────
-async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onProgress) {
+// `mkt` is a backtestMarket.context() — the market's lot, exchange and futures flag.
+// Omitted (or NIFTY) = NIFTY options, exactly as before markets existed.
+async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onProgress, mkt) {
   const trades   = [];
   let position   = null;
   // Confirmation candle (cross & close): { side, armedBarTime, triggerLevel, result } | null.
   let _armed     = null;
-  const LOT_SIZE  = getLotQty();
+  const _otherMkt = !!(mkt && mkt.key !== "NIFTY");
+  const LOT_SIZE  = _otherMkt ? mkt.lotQty : getLotQty();
+  // Another market's exchange (BSE for SENSEX) on every charges call; NIFTY passes none.
+  const EXCHANGE  = _otherMkt ? mkt.exchange : undefined;
+  const getCharges = (o) => _getCharges(EXCHANGE ? Object.assign({}, o, { exchange: EXCHANGE }) : o);
 
   // VIX
   const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
 
-  // Option sim
-  const isFutures   = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  // Option sim. FUTURES (the NIFTY_FUT market): the index candles priced 1:1 —
+  // no δ/θ, P&L = index points × lot − futures charges, the common futures stop.
+  const isFutures   = _otherMkt ? mkt.isFutures === true : instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
@@ -248,7 +256,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           const thetaCost = (THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY;
           return (pts * DELTA * LOT_SIZE) - thetaCost - _estCharges;
         }
-        return pts - _estCharges / LOT_SIZE;
+        return (_otherMkt && isFutures) ? (pts * LOT_SIZE) - _estCharges : pts - _estCharges / LOT_SIZE;
       };
 
       // ── Track peak PNL + peak favourable spot points (record-keeping only) ──
@@ -326,7 +334,10 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           pnl = parseFloat(((spotPnlPts * DELTA * LOT_SIZE) - thetaCost - _chg).toFixed(2));
         } else {
           const _chg = getCharges({ broker: "fyers", isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
-          pnl = parseFloat((spotPnlPts - _chg / LOT_SIZE).toFixed(2));
+          // The NIFTY_FUT market books rupees (index pts × lot − charges), as its paper page does.
+          pnl = (_otherMkt && isFutures)
+            ? parseFloat((spotPnlPts * LOT_SIZE - _chg).toFixed(2))
+            : parseFloat((spotPnlPts - _chg / LOT_SIZE).toFixed(2));
         }
 
         trades.push({
@@ -343,7 +354,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           candlesHeld:  position.candlesHeld,
           exitReason,
           entryReason:  position.entryReason || "",
-          pnlMode:      OPTION_SIM ? "option sim" : "raw pts",
+          pnlMode:      OPTION_SIM ? "option sim" : ((_otherMkt && isFutures) ? "futures" : "raw pts"),
         });
 
         _dailyTradeCount++;
@@ -540,6 +551,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     });
   }
   summary.rejectBreakdown = sortedRejects.slice(0, 10).map(([reason, count]) => ({ reason, count }));
+  if (_otherMkt && isFutures) summary.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
 
   console.log(`\n📊 BB_RSI BACKTEST RESULT: ${trades.length} trades | WR ${winRate}% | PnL ${inr(totalPnl)}`);
 
@@ -625,7 +637,13 @@ function _jobParams(q) {
  * completeJob / failJob. This page and the unified /backtest page both call it.
  */
 async function _runJob(id, p) {
-  const { from, to, resolution, capital, symbol, skipCache } = p;
+  const { from, to, resolution, capital, skipCache } = p;
+  // Another market (the /backtest page): its spot candles, lot, exchange charges
+  // and — on NIFTY_FUT — futures pricing (services/backtestMarket.js). Its pair
+  // settings arrive mapped onto the BB_RSI_* keys this file reads (scopedEnv).
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  const symbol = home ? p.symbol : M.spotSymbol;
   try {
     backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
     const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
@@ -645,15 +663,27 @@ async function _runJob(id, p) {
     if ((process.env.BB_RSI_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
       const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
       const expirySet = new Set();
-      for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+      if (home) {
+        for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+      } else {
+        // That market's expiry day (weekly / monthly / the futures month expiry,
+        // holiday-preponed) — the very check the pair's paper /start makes.
+        const rt = require("../utils/pairRuntime").forStrategy("bbRsi", M.key);
+        for (const d of uniqueDates) {
+          if (rt.isExpiryDay(Date.parse(`${d}T09:20:00+05:30`))) expirySet.add(d);
+        }
+      }
       _expiryDates = expirySet;
     }
 
     backtestJobs.updateProgress(id, { phase: 'Running bb_rsi backtest…', pct: 5, current: 0, total: _candles.length - 30 });
     const _result = await runBbRsiBacktest(_candles, capital, _vixCandles, _expiryDates,
-      (p) => backtestJobs.updateProgress(id, p));
+      (p) => backtestJobs.updateProgress(id, p), home ? undefined : M);
     _result.candleCount = _candles.length;
-    saveResult("BB_RSI_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are kept
+    // by the /backtest page's own saved runs.
+    if (home) saveResult("BB_RSI_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
+    else _result.meta = { market: M.key };
     backtestJobs.completeJob(id, _result);
     console.log(`\n ✅ BB_RSI backtest job ${id} complete — ${_result.trades.length} trades`);
   } catch (err) {
@@ -2112,13 +2142,25 @@ document.getElementById('btModal').addEventListener('click',function(e){
 
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
+// MCX (no spot index / rule expiry in backtestMarket yet) and stocks stay "coming soon".
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: { options: ["3", "5", "15"], default: () => _jobParams({}).resolution },
-  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to }, _jobParams({ resolution: p.resolution }))),
-  view: (r, p) => engineResultView({
-    result: r, rows: _tradeRows(r.trades || []), mode: "BB_RSI", accent: "#10b981", strategyName: "BB_RSI",
-    endpoint: "/bb_rsi-backtest", activePage: "bbRsiBacktest", from: p.from, to: p.to,
-    extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "risk_pts", label: "Risk (pt)" }, { key: "rr", label: "R:R" }, { key: "held", label: "Held" }],
-  }),
+  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to, market: p.market }, _jobParams({ resolution: p.resolution }))),
+  view: (r, p) => {
+    const v = engineResultView({
+      result: r, rows: _tradeRows(r.trades || []), mode: "BB_RSI", accent: "#10b981", strategyName: "BB_RSI",
+      endpoint: "/bb_rsi-backtest", activePage: "bbRsiBacktest", from: p.from, to: p.to,
+      extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "risk_pts", label: "Risk (pt)" }, { key: "rr", label: "R:R" }, { key: "held", label: "Held" }],
+    });
+    const mk = (r.meta && r.meta.market) || (p.market && p.market !== "NIFTY" ? p.market : null);
+    if (mk) {
+      const M = backtestMarket.context(mk);
+      const esc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      v.notes = `<b>MARKET: ${esc(M.label)}</b> — ${esc(M.spotSymbol)} candles, lot ${M.lotQty}, ${esc(M.exchange)} charges. ` +
+        (M.isFutures ? "<b>FUTURES MODE</b> — P&L is index points × lot with futures charges, no δ/θ; a PE is a SHORT. " : "") +
+        (v.notes || "");
+    }
+    return v;
+  },
 };

@@ -1,0 +1,405 @@
+{
+  "baselineVersion": 1,
+  "strategy": "bbRsiPaper.BANKNIFTY",
+  "mode": "bn_bb_rsi-paper",
+  "totalTrades": 4,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -4166.26,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:BANKNIFTY26OCT56400PE",
+          "strike": 56400,
+          "qty": 30,
+          "entryTime": "05/10/2026, 10:50:00",
+          "exitTime": "05/10/2026, 11:54:20",
+          "entrySpot": 56446.95,
+          "exitSpot": 56723.15,
+          "entryLtp": 680.35,
+          "exitLtp": 544.4,
+          "reason": "Stop-loss trail 20% — premium Rs544.9 fell to the trailed stop Rs546.84 (peak Rs683.55, entry Rs680.35)",
+          "pnl": -4166.26
+        }
+      ],
+      "skips": {
+        "total": 34,
+        "dropped": 0,
+        "noSignalCandles": 34,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "NSE:BANKNIFTY26OCT56400PE",
+          "strike": 56400,
+          "expiry": "OCT 2026",
+          "optionType": "PE",
+          "qty": 30,
+          "entry": "05/10/2026, 10:50:00",
+          "exit": "05/10/2026, 11:54:20",
+          "entryBarTime": 1791177600,
+          "exitBarTime": 1791181200,
+          "eSpot": 56446.95,
+          "eOpt": 680.35,
+          "eSl": null,
+          "xSpot": 56723.15,
+          "xOpt": 544.4,
+          "peakOpt": 683.55,
+          "pnl": -4166.26,
+          "pnlMode": "option: ₹680.35 → ₹544.4",
+          "entryReason": "PE fade: above BB upper(56457) + RSI=75 | BB mid(56250) | SL line=56489.30 [2.9pts] | CONFIRM PE close 56446.95",
+          "reason": "Stop-loss trail 20% — premium Rs544.9 fell to the trailed stop Rs546.84 (peak Rs683.55, entry Rs680.35)"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": -3096.47,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:BANKNIFTY26OCT56700PE",
+          "strike": 56700,
+          "qty": 30,
+          "entryTime": "06/10/2026, 13:20:00",
+          "exitTime": "06/10/2026, 14:37:30",
+          "entrySpot": 56727.7,
+          "exitSpot": 57014.2,
+          "entryLtp": 821.2,
+          "exitLtp": 671.25,
+          "reason": "Stop-loss trail 20% — premium Rs671.75 fell to the trailed stop Rs672.32 (peak Rs840.4, entry Rs821.2)",
+          "pnl": -4595.47
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:BANKNIFTY26OCT56500CE",
+          "strike": 56500,
+          "qty": 30,
+          "entryTime": "06/10/2026, 10:55:00",
+          "exitTime": "06/10/2026, 12:49:10",
+          "entrySpot": 56493.5,
+          "exitSpot": 56612.8,
+          "entryLtp": 846.65,
+          "exitLtp": 900.3,
+          "reason": "Profit lock trail 85% — premium Rs900.8 fell to the trailed floor Rs904.75 (keeps 85% of the gain to peak Rs915, entry Rs846.65)",
+          "pnl": 1499
+        }
+      ],
+      "skips": {
+        "total": 12,
+        "dropped": 0,
+        "noSignalCandles": 12,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "NSE:BANKNIFTY26OCT56700PE",
+          "strike": 56700,
+          "expiry": "OCT 2026",
+          "optionType": "PE",
+          "qty": 30,
+          "entry": "06/10/2026, 13:20:00",
+          "exit": "06/10/2026, 14:37:30",
+          "entryBarTime": 1791273000,
+          "exitBarTime": 1791277500,
+          "eSpot": 56727.7,
+          "eOpt": 821.2,
+          "eSl": null,
+          "xSpot": 57014.2,
+          "xOpt": 671.25,
+          "peakOpt": 840.4,
+          "pnl": -4595.47,
+          "pnlMode": "option: ₹821.2 → ₹671.25",
+          "entryReason": "PE fade: above BB upper(56729) + RSI=75 | BB mid(56489) | SL line=56749.45 [2.8pts] | CONFIRM PE close 56727.7",
+          "reason": "Stop-loss trail 20% — premium Rs671.75 fell to the trailed stop Rs672.32 (peak Rs840.4, entry Rs821.2)"
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:BANKNIFTY26OCT56500CE",
+          "strike": 56500,
+          "expiry": "OCT 2026",
+          "optionType": "CE",
+          "qty": 30,
+          "entry": "06/10/2026, 10:55:00",
+          "exit": "06/10/2026, 12:49:10",
+          "entryBarTime": 1791264300,
+          "exitBarTime": 1791270900,
+          "eSpot": 56493.5,
+          "eOpt": 846.65,
+          "eSl": null,
+          "xSpot": 56612.8,
+          "xOpt": 900.3,
+          "peakOpt": 915,
+          "pnl": 1499,
+          "pnlMode": "option: ₹846.65 → ₹900.3",
+          "entryReason": "CE fade: below BB lower(56538) + RSI=16 | BB mid(56829) | SL line=56474.90 [11.9pts] | CONFIRM CE close 56493.5",
+          "reason": "Profit lock trail 85% — premium Rs900.8 fell to the trailed floor Rs904.75 (keeps 85% of the gain to peak Rs915, entry Rs846.65)"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -5116.84,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:BANKNIFTY26OCT56700CE",
+          "strike": 56700,
+          "qty": 30,
+          "entryTime": "07/10/2026, 12:30:00",
+          "exitTime": "07/10/2026, 15:20:36",
+          "entrySpot": 56678.05,
+          "exitSpot": 56242.7,
+          "entryLtp": 889.6,
+          "exitLtp": 722.4,
+          "reason": "Stop-loss trail 20% — premium Rs722.9 fell to the trailed stop Rs723.36 (peak Rs904.2, entry Rs889.6)",
+          "pnl": -5116.84
+        }
+      ],
+      "skips": {
+        "total": 28,
+        "dropped": 0,
+        "noSignalCandles": 28,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:BANKNIFTY26OCT56700CE",
+          "strike": 56700,
+          "expiry": "OCT 2026",
+          "optionType": "CE",
+          "qty": 30,
+          "entry": "07/10/2026, 12:30:00",
+          "exit": "07/10/2026, 15:20:36",
+          "entryBarTime": 1791356400,
+          "exitBarTime": 1791366600,
+          "eSpot": 56678.05,
+          "eOpt": 889.6,
+          "eSl": null,
+          "xSpot": 56242.7,
+          "xOpt": 722.4,
+          "peakOpt": 904.2,
+          "pnl": -5116.84,
+          "pnlMode": "option: ₹889.6 → ₹722.4",
+          "entryReason": "CE fade: below BB lower(56633) + RSI=23 | BB mid(56850) | SL line=56615.40 [5.0pts] | CONFIRM CE close 56678.05",
+          "reason": "Stop-loss trail 20% — premium Rs722.9 fell to the trailed stop Rs723.36 (peak Rs904.2, entry Rs889.6)"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 46,
+        "dropped": 0,
+        "noSignalCandles": 46,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    }
+  ]
+}

@@ -240,8 +240,12 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   const v1 = page.marketOptions("emaRsiSt").filter((m) => m.enabled).map((m) => m.key);
   assert.deepStrictEqual(v1.sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"], "EMA_RSI_ST backtests the index + futures pairs");
   for (const m of page.marketOptions("emaRsiSt")) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `EMA_RSI_ST ${m.key}`);
+  const bb = page.marketOptions("bbRsi");
+  assert.deepStrictEqual(bb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of bb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `bbRsi ${m.key}`);
+  assert.ok(bb.some((m) => m.key === "CRUDE" && !m.enabled) && bb.some((m) => m.key === "SAIL" && !m.enabled), "BB_RSI MCX / stock backtests are coming soon");
   for (const s of page.strategies()) {
-    if (s.id === "emaRsiStV2" || s.id === "emaRsiSt") continue;
+    if (s.id === "emaRsiStV2" || s.id === "emaRsiSt" || s.id === "bbRsi") continue;
     const on2 = page.marketOptions(s.id).filter((m) => m.enabled).map((m) => m.key);
     assert.deepStrictEqual(on2, [pairs.homeMarket(s.id)], `${s.id} runs only on its home market today`);
   }
@@ -531,6 +535,72 @@ check("the old EMA_RSI_ST page stays NIFTY: NIFTY candles, NIFTY lot, no market 
   assert.notStrictEqual(JSON.stringify(oldRes.trades.map((t) => t.pnl)), JSON.stringify(V1_RUNS.SENSEX.result.trades.map((t) => t.pnl)), "SENSEX priced like NIFTY");
   assert.strictEqual(oldRes.market, undefined, "a NIFTY result must not grow a market field");
   assert.strictEqual(oldRes.summary.lotSize, require("../src/config/instrument").getLotQty());
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4c. BB_RSI is market-aware");
+
+const BB_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`BB_RSI on ${mk}: its own candles, lot + exchange charges (futures: ₹ on the index), market recorded`, async () => {
+    const mark = fetchLog.length, saves = legacySaves.length;
+    const neu = await runNew({ strategy: "bbRsi", market: mk, settings: "current", from: FROM, to: TO, resolution: "5" });
+    BB_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const asked = fetchLog.slice(mark).map((f) => f.symbol).filter((s) => !/VIX/.test(s));
+    assert.ok(asked.length && asked.every((s) => s === ctx.spotSymbol), `fetched ${asked.join(",")} for ${mk}`);
+    assert.strictEqual(neu.result.meta.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    assert.strictEqual(legacySaves.length, saves, `a ${mk} run overwrote NIFTY's legacy BB_RSI slot`);
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+    const CPD = Math.max(1, Math.round(390 / 5)), DELTA = 0.55, THETA = 10;
+    for (const t of neu.result.trades) {
+      let want;
+      if (ctx.isFutures) {
+        assert.strictEqual(t.pnlMode, "futures");
+        const chg = getCharges({ broker: "fyers", isFutures: true, exchange: ctx.exchange, exitPremium: t.exitPrice, entryPremium: t.entryPrice, qty: ctx.lotQty });
+        want = t.spotPnlPts * ctx.lotQty - chg;
+      } else {
+        const theta = (THETA * t.candlesHeld) / CPD;
+        const estExit = Math.max(1, 200 + t.spotPnlPts * DELTA - theta / ctx.lotQty);
+        const chg = getCharges({ broker: "fyers", isFutures: false, exchange: ctx.exchange, exitPremium: estExit, entryPremium: 200, qty: ctx.lotQty });
+        want = t.spotPnlPts * DELTA * ctx.lotQty - theta - chg;
+      }
+      // spotPnlPts is stored rounded to the paisa; allow half a paisa per unit of the lot.
+      assert.ok(Math.abs(t.pnl - want) <= ctx.lotQty * 0.01 + 0.05, `${mk} trade ${t.entryTime}: pnl ${t.pnl} ≠ ${want.toFixed(2)}`);
+    }
+    assert.strictEqual(!!neu.result.summary.isFutures, ctx.isFutures);
+  });
+}
+
+check("BB_RSI market runs traded on their own (scaled) series", () => {
+  const n = Object.values(BB_RUNS).reduce((k, r) => k + r.result.trades.length, 0);
+  assert.ok(n > 0, "no BB_RSI market run produced a trade — the market checks above proved nothing");
+  assert.ok((BB_RUNS.SENSEX ? BB_RUNS.SENSEX.result.trades : []).every((t) => t.entryPrice > 50000), "SENSEX trades should be on the SENSEX (scaled) series");
+});
+
+for (const mk of ["SENSEX", "NIFTY_FUT"]) {
+  check(`BB_RSI on ${mk} with <PAIR>_EXPIRY_DAY_ONLY trades only that market's expiry days (the paper /start rule)`, async () => {
+    const rt = require("../src/utils/pairRuntime").forStrategy("bbRsi", mk);
+    const key = `${rt.envPrefix}_EXPIRY_DAY_ONLY`;
+    const neu = await runNew({ strategy: "bbRsi", market: mk, settings: "custom", from: FROM, to: TO, resolution: "5", [`s.${key}`]: "true" });
+    assert.deepStrictEqual(neu.record.overriddenKeys, ["BB_RSI_EXPIRY_DAY_ONLY"]);
+    assert.strictEqual(process.env.BB_RSI_EXPIRY_DAY_ONLY, undefined, "custom value leaked into process.env");
+    const all = BB_RUNS[mk].result.trades;
+    const exp = all.filter((t) => rt.isExpiryDay(t.entryTs * 1000));
+    assert.ok(neu.result.trades.every((t) => rt.isExpiryDay(t.entryTs * 1000)), `${mk}: an expiry-only run entered off ${mk}'s expiry day`);
+    assert.ok(neu.result.trades.length < all.length || all.length === exp.length, `${mk}: expiry-only dropped nothing`);
+    assert.ok(exp.length === 0 || neu.result.trades.length > 0, `${mk}: expiry-only blocked every expiry day too`);
+    if (mk === "SENSEX") assert.ok(exp.length > 0, "the SENSEX run must trade an expiry day, or this check proves nothing");
+  });
+}
+
+check("the old BB_RSI page is untouched by markets: NIFTY run reads NIFTY's candles and saves its slot", async () => {
+  const mark = fetchLog.length, saves = legacySaves.length;
+  const oldRes = await runOld("bbRsi", `from=${FROM}&to=${TO}&resolution=5`);
+  assert.ok(fetchLog.slice(mark).filter((f) => !/VIX/.test(f.symbol)).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
+  assert.strictEqual(oldRes.meta, undefined, "a NIFTY result must not grow a market field");
+  assert.ok(legacySaves.slice(saves).includes("BB_RSI_BACKTEST"));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
