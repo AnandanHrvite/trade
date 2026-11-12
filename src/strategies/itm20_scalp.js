@@ -161,7 +161,7 @@ function getConfig(prefix) {
     slPts:         _numEnv("ITM20_SCALP_SL_PTS", 10, 0, 500, true, P),
     maxTrades:     _intEnv("ITM20_SCALP_MAX_TRADES", 2, 1, 5, P),
     dailyLossPts:  _numEnv("ITM20_SCALP_DAILY_LOSS_PTS", 20, 0, 1000, true, P),
-    tradeExpiryDay: String((P ? _rawEnv("ITM20_SCALP_TRADE_EXPIRY_DAY", P) : process.env.ITM20_SCALP_TRADE_EXPIRY_DAY) || "false").toLowerCase() === "true",
+    tradeExpiryDay: String((P ? _rawEnv("ITM20_SCALP_TRADE_EXPIRY_DAY", P) : undefined) || process.env.ITM20_SCALP_TRADE_EXPIRY_DAY || "false").toLowerCase() === "true",
   };
 }
 
