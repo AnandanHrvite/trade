@@ -745,8 +745,8 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     // The other markets (NIFTY FUT, BANKNIFTY, SENSEX, MCX) — each rendered only
     // while one of its pairs is switched ON.
     ...PAIR_MARKET_PARENTS,
-    // STOCKS — rendered only when one of its sections (SAIL_VWAP_ST) is enabled.
-    { id: 'nav-parent-stocks', key: 'stocks', header: 'STOCKS' },
+    // SAIL — rendered only when one of its sections (SAIL_VWAP_ST) is enabled.
+    { id: 'nav-parent-stocks', key: 'stocks', header: 'SAIL' },
   ];
   const parentOpen = { nifty: true };
   // STOCKS opens when its own page is showing (and then NIFTY stays closed).
