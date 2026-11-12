@@ -81,7 +81,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, pivotEmaSt: MK };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -757,6 +757,81 @@ check("route builder: NIFTY is the default export; one cached router per market;
             assert.strictEqual(res.statusCode, 403);
             assert.ok(body.includes("SENSEX_TDS_MODE_ENABLED"), "names the pair's switch");
             assert.ok(!sx.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+            resolve();
+          } catch (e) { reject(e); }
+        });
+      }).on("error", (e) => { srv.close(); reject(e); });
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("PIVOT_EMA_ST runs as a pair (routes/pivotEmaStPaper.js)");
+
+const pesOf = (mk) => pairRuntime.forStrategy("pivotEmaSt", mk);
+check("NIFTY is the registry's PIVOT_EMA_ST: path, file, slot, sidebar, notify tag", () => {
+  const rt = pesOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey, rt.notifyMode],
+    [true, "pivot_ema_st", "PIVOT_EMA_ST", "/pivot_ema_st-paper", "pivot_ema_st-paper", "pivot_ema_st-paper", "pivot_ema_st_paper_trades.json", "PIVOT_EMA_ST_PAPER", "pivotEmaStPaper", "pivotEmaStHistory", "PIVOT_EMA_ST-PAPER"]);
+});
+check("BN / SAIL / FUT keep the old twins' paths, keys and files; SENSEX / MCX get their own", () => {
+  const rows = ["BANKNIFTY", "SAIL", "NIFTY_FUT", "SENSEX", "CRUDE"].map(mk => { const r = pesOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["BANKNIFTY", "BN_PIVOT_EMA_ST", "/bn_pivot_ema_st-paper", "bn_pivot_ema_st_paper_trades.json", "BN_PIVOT_EMA_ST_PAPER", "BANKNIFTY_OPTIONS"],
+    ["SAIL", "SAIL_PIVOT_EMA_ST", "/sail_pivot_ema_st-paper", "sail_pivot_ema_st_paper_trades.json", "SAIL_PIVOT_EMA_ST_PAPER", "SAIL_OPTIONS"],
+    ["NIFTY_FUT", "FUT_PIVOT_EMA_ST", "/fut_pivot_ema_st-paper", "fut_pivot_ema_st_paper_trades.json", "FUT_PIVOT_EMA_ST_PAPER", "NIFTY_FUTURES"],
+    ["SENSEX", "SENSEX_PIVOT_EMA_ST", "/sensex_pivot_ema_st-paper", "sensex_pivot_ema_st_paper_trades.json", "SENSEX_PIVOT_EMA_ST_PAPER", "SENSEX_OPTIONS"],
+    ["CRUDE", "CRUDE_PIVOT_EMA_ST", "/crude_pivot_ema_st-paper", "crude_pivot_ema_st_paper_trades.json", "CRUDE_PIVOT_EMA_ST_PAPER", "MCX_OPTIONS"],
+  ]);
+  assert.strictEqual(pairs.byReplayMode("bn_pivot_ema_st-paper").strategyId, "pivotEmaSt");
+  assert.strictEqual(pairs.byReplayMode("pivot_ema_st-paper"), null, "the home mode is the registry's");
+});
+check("engine config: NIFTY reads PIVOT_EMA_ST_* exactly; a pair its own key, else NIFTY's", () => {
+  const eng = require("../src/strategies/pivot_ema_st");
+  withEnv({ PIVOT_EMA_ST_TF: "5", PIVOT_EMA_ST_EMA_FAST: "21", BN_PIVOT_EMA_ST_TF: "15", BN_PIVOT_EMA_ST_EMA_FAST: undefined, SENSEX_PIVOT_EMA_ST_TF: undefined, SENSEX_PIVOT_EMA_ST_EMA_FAST: undefined }, () => {
+    const n = eng.getConfig("PIVOT_EMA_ST"), b = eng.getConfig("BN_PIVOT_EMA_ST"), s = eng.getConfig("SENSEX_PIVOT_EMA_ST");
+    assert.deepStrictEqual([n.TF, n.EMA_FAST], [5, 21]);
+    assert.deepStrictEqual([b.TF, b.EMA_FAST], [15, 21], "own TF, inherited EMA");
+    assert.deepStrictEqual([s.TF, s.EMA_FAST], [5, 21], "inherits NIFTY");
+    assert.strictEqual(eng.warmupDays("BN_PIVOT_EMA_ST"), 11, "warm-up follows the pair's own TF");
+  });
+  withEnv({ SENSEX_PIVOT_EMA_ST_ST_MULT: "abc", PIVOT_EMA_ST_ST_MULT: undefined }, () => assert.strictEqual(eng.getConfig("SENSEX_PIVOT_EMA_ST").ST_MULT, 3, "bad own value falls to the default"));
+});
+check("crash snapshot, logs and tags per PIVOT_EMA_ST pair", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.savePivotEmaStPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger");
+  assert.ok(tl.modes().includes("sensex_pivot_ema_st") && sl.modes().includes("fut_pivot_ema_st"));
+  pesOf("SENSEX").persist.save({ side: "CE", symbol: "BSE:SENSEX26N1981000CE", entryPrice: 80950 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("sensex_pivot_ema_st").position.symbol, "BSE:SENSEX26N1981000CE");
+    pp.clearPairPositions();
+  });
+});
+check("route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/pivotEmaStPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/pivot_ema_st-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  const bn = route.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== route && route.forMarket("BANKNIFTY") === bn, "one instance per market");
+  assert.strictEqual(bn.pairRuntime.paperPath, "/bn_pivot_ema_st-paper");
+  assert.strictEqual(typeof bn.stopSession, "function");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(bn.pairRuntime.paperPath, bn);
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, () => {
+      http.get(`http://127.0.0.1:${srv.address().port}/bn_pivot_ema_st-paper/start`, (res) => {
+        let body = "";
+        res.on("data", (c) => { body += c; });
+        res.on("end", () => {
+          srv.close();
+          try {
+            assert.strictEqual(res.statusCode, 403);
+            assert.ok(body.includes("BN_PIVOT_EMA_ST_MODE_ENABLED"), "names the pair's switch");
+            assert.ok(!bn.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
             resolve();
           } catch (e) { reject(e); }
         });
