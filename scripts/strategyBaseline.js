@@ -190,6 +190,9 @@ const PAIRS = [
   { route: "pivotEmaStPaper",    market: "SENSEX",    mode: "sensex_pivot_ema_st-paper",    enabledKey: "SENSEX_PIVOT_EMA_ST_MODE_ENABLED" },
   { route: "pivotEmaStPaper",    market: "BANKNIFTY", mode: "bn_pivot_ema_st-paper",        enabledKey: "BN_PIVOT_EMA_ST_MODE_ENABLED" },
   { route: "pivotEmaStPaper",    market: "NIFTY_FUT", mode: "fut_pivot_ema_st-paper",       enabledKey: "FUT_PIVOT_EMA_ST_MODE_ENABLED" },
+  { route: "stRsiPivBbPaper",    market: "SENSEX",    mode: "sensex_st_rsi_piv_bb-paper",   enabledKey: "SENSEX_ST_RSI_PIV_BB_MODE_ENABLED" },
+  { route: "stRsiPivBbPaper",    market: "BANKNIFTY", mode: "bn_st_rsi_piv_bb-paper",       enabledKey: "BN_ST_RSI_PIV_BB_MODE_ENABLED" },
+  { route: "stRsiPivBbPaper",    market: "NIFTY_FUT", mode: "fut_st_rsi_piv_bb-paper",      enabledKey: "FUT_ST_RSI_PIV_BB_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {

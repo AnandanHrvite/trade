@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -361,7 +361,7 @@ check("logs: a pair logs under its own mode key; the registry maps are untouched
   assert.ok(sl.filePathFor("bn_ema_rsi_st_v2", "2026-11-12").endsWith("skips/bn_ema_rsi_st_v2_paper_skips_2026-11-12.jsonl"));
   assert.ok(!("sensex_ema_rsi_st_v2" in tl.DAILY_PREFIX_BY_MODE));
   assert.ok(tl.modes().includes("sensex_ema_rsi_st_v2") && sl.modes().includes("fut_ema_rsi_st_v2"));
-  assert.throws(() => tl.dailyFilePathFor("bn_st_rsi_piv_bb"), /unknown mode/, "a pair that does not run has no log");
+  assert.throws(() => tl.dailyFilePathFor("bn_sail_vwap_st"), /unknown mode/, "a pair that does not run has no log");
 });
 check("market tags: a pair names its market and its strategy", () => {
   const tags = require("../src/utils/logTags");
@@ -393,7 +393,7 @@ check("SENSEX stays marketOnly until a running SENSEX pair is switched on", () =
     assert.strictEqual(require("../src/config/markets").get("SENSEX").traded, true);
   });
   // A pair that does not run lifts nothing.
-  withEnv({ SENSEX_ST_RSI_PIV_BB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
+  withEnv({ SENSEX_SAIL_VWAP_ST_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
   // A running ORB pair does.
   withEnv({ SENSEX_ORB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), true));
 });
@@ -1020,6 +1020,80 @@ check("route builder: NIFTY is the default export; one cached router per market;
             assert.strictEqual(res.statusCode, 403);
             assert.ok(body.includes("BN_PIVOT_EMA_ST_MODE_ENABLED"), "names the pair's switch");
             assert.ok(!bn.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+            resolve();
+          } catch (e) { reject(e); }
+        });
+      }).on("error", (e) => { srv.close(); reject(e); });
+    });
+  });
+});
+
+section("ST+RSI+PIV+BB runs as a pair (routes/stRsiPivBbPaper.js)");
+
+const srpbOf = (mk) => pairRuntime.forStrategy("stRsiPivBb", mk);
+check("NIFTY is the registry's ST_RSI_PIV_BB: path, file, slot, sidebar, notify tag", () => {
+  const rt = srpbOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey, rt.notifyMode],
+    [true, "st_rsi_piv_bb", "ST_RSI_PIV_BB", "/st_rsi_piv_bb-paper", "st_rsi_piv_bb-paper", "st_rsi_piv_bb-paper", "st_rsi_piv_bb_paper_trades.json", "ST_RSI_PIV_BB_PAPER", "stRsiPivBbPaper", "stRsiPivBbHistory", "ST_RSI_PIV_BB-PAPER"]);
+});
+check("FUT keeps the old twin's path, keys and file; BN / SENSEX / MCX / stocks get their own", () => {
+  const rows = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "SAIL"].map(mk => { const r = srpbOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["NIFTY_FUT", "FUT_ST_RSI_PIV_BB", "/fut_st_rsi_piv_bb-paper", "fut_st_rsi_piv_bb_paper_trades.json", "FUT_ST_RSI_PIV_BB_PAPER", "NIFTY_FUTURES"],
+    ["BANKNIFTY", "BN_ST_RSI_PIV_BB", "/bn_st_rsi_piv_bb-paper", "bn_st_rsi_piv_bb_paper_trades.json", "BN_ST_RSI_PIV_BB_PAPER", "BANKNIFTY_OPTIONS"],
+    ["SENSEX", "SENSEX_ST_RSI_PIV_BB", "/sensex_st_rsi_piv_bb-paper", "sensex_st_rsi_piv_bb_paper_trades.json", "SENSEX_ST_RSI_PIV_BB_PAPER", "SENSEX_OPTIONS"],
+    ["CRUDE", "CRUDE_ST_RSI_PIV_BB", "/crude_st_rsi_piv_bb-paper", "crude_st_rsi_piv_bb_paper_trades.json", "CRUDE_ST_RSI_PIV_BB_PAPER", "MCX_OPTIONS"],
+    ["SAIL", "SAIL_ST_RSI_PIV_BB", "/sail_st_rsi_piv_bb-paper", "sail_st_rsi_piv_bb_paper_trades.json", "SAIL_ST_RSI_PIV_BB_PAPER", "SAIL_OPTIONS"],
+  ]);
+  assert.strictEqual(pairs.byReplayMode("fut_st_rsi_piv_bb-paper").strategyId, "stRsiPivBb");
+  assert.strictEqual(pairs.byReplayMode("st_rsi_piv_bb-paper"), null, "the home mode is the registry's");
+});
+check("engine config: NIFTY reads ST_RSI_PIV_BB_* exactly; a pair its own key, else NIFTY's", () => {
+  const eng = require("../src/strategies/st_rsi_piv_bb");
+  withEnv({ ST_RSI_PIV_BB_ENTRY_TF: "5", ST_RSI_PIV_BB_RSI_CE_MIN: "65", FUT_ST_RSI_PIV_BB_ENTRY_TF: "3", FUT_ST_RSI_PIV_BB_RSI_CE_MIN: undefined, SENSEX_ST_RSI_PIV_BB_ENTRY_TF: undefined, SENSEX_ST_RSI_PIV_BB_RSI_CE_MIN: undefined }, () => {
+    const n = eng.getConfig(), f = eng.forPrefix("FUT_ST_RSI_PIV_BB").getConfig(), s = eng.getConfig("SENSEX_ST_RSI_PIV_BB");
+    assert.deepStrictEqual([n.ENTRY_TF, n.TRADE_RES, n.RSI_CE_MIN], ["5", 5, 65]);
+    assert.deepStrictEqual([f.ENTRY_TF, f.TRADE_RES, f.RSI_CE_MIN], ["3", 3, 65], "own TF, inherited RSI");
+    assert.deepStrictEqual([s.ENTRY_TF, s.RSI_CE_MIN], ["5", 65], "inherits NIFTY");
+  });
+  withEnv({ ST_RSI_PIV_BB_WARMUP_DAYS: "6", BN_ST_RSI_PIV_BB_WARMUP_DAYS: undefined }, () => assert.strictEqual(eng.warmupDays("BN_ST_RSI_PIV_BB"), 6, "warm-up days inherit NIFTY's"));
+  withEnv({ SENSEX_ST_RSI_PIV_BB_ST_MULT: "abc", ST_RSI_PIV_BB_ST_MULT: undefined }, () => assert.strictEqual(eng.getConfig("SENSEX_ST_RSI_PIV_BB").ST_MULT, 2, "bad own value falls to the default"));
+});
+check("crash snapshot, logs and tags per ST_RSI_PIV_BB pair", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveStRsiPivBbPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger");
+  assert.ok(tl.modes().includes("sensex_st_rsi_piv_bb") && sl.modes().includes("fut_st_rsi_piv_bb"));
+  srpbOf("SENSEX").persist.save({ side: "CE", symbol: "BSE:SENSEX26N1981000CE", entryPrice: 80950 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("sensex_st_rsi_piv_bb").position.symbol, "BSE:SENSEX26N1981000CE");
+    pp.clearPairPositions();
+  });
+});
+check("route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/stRsiPivBbPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/st_rsi_piv_bb-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  const fut = route.forMarket("NIFTY_FUT");
+  assert.ok(fut && fut !== route && route.forMarket("NIFTY_FUT") === fut, "one instance per market");
+  assert.strictEqual(fut.pairRuntime.paperPath, "/fut_st_rsi_piv_bb-paper");
+  assert.strictEqual(typeof fut.stopSession, "function");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(fut.pairRuntime.paperPath, fut);
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, () => {
+      http.get(`http://127.0.0.1:${srv.address().port}/fut_st_rsi_piv_bb-paper/start`, (res) => {
+        let body = "";
+        res.on("data", (c) => { body += c; });
+        res.on("end", () => {
+          srv.close();
+          try {
+            assert.strictEqual(res.statusCode, 403);
+            assert.ok(body.includes("FUT_ST_RSI_PIV_BB_MODE_ENABLED"), "names the pair's switch");
+            assert.ok(!fut.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
             resolve();
           } catch (e) { reject(e); }
         });
