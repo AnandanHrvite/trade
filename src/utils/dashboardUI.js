@@ -65,11 +65,11 @@ function dashCSS() {
 
   /* ── Summary table: grouped by market, subtotal on each market row ── */
   .dh-sum { width:100%; border-collapse:collapse; background:var(--dh-card); border:1px solid var(--dh-border); border-radius:10px; overflow:hidden; color:var(--dh-text); }
-  .dh-sum th { background:var(--dh-card-2); color:var(--dh-muted); font-size:0.7rem; font-weight:600; letter-spacing:0.4px; padding:10px 12px; text-align:right; border-bottom:1px solid var(--dh-border); }
+  .dh-sum th { background:var(--dh-card-2); color:var(--dh-muted); font-size:0.7rem; font-weight:600; letter-spacing:0.4px; padding:7px 12px; text-align:right; border-bottom:1px solid var(--dh-border); }
   .dh-sum th:first-child, .dh-sum td:first-child { text-align:left; }
-  .dh-sum td { padding:10px 12px; font-size:0.85rem; text-align:right; border-bottom:1px solid var(--dh-line); font-variant-numeric:tabular-nums; }
+  .dh-sum td { padding:6px 12px; font-size:0.85rem; text-align:right; border-bottom:1px solid var(--dh-line); font-variant-numeric:tabular-nums; }
   .dh-sum td:first-child { font-weight:600; }
-  .dh-sum td:first-child a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; display:inline-block; padding:6px 0; }
+  .dh-sum td:first-child a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; display:inline-block; padding:2px 0; }
   .dh-sum td:first-child a:hover { border-bottom-style:solid; }
   .dh-sum .dh-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px; background:var(--acc,#3b82f6); vertical-align:middle; }
   .dh-sum tr.dh-mrow td { background:var(--dh-card-2); font-weight:700; font-size:0.8rem; }
@@ -79,6 +79,10 @@ function dashCSS() {
   .dh-sum .dh-st { font-size:0.68rem; font-weight:700; letter-spacing:0.4px; color:var(--dh-dim); }
   .dh-sum .dh-st.run { color:var(--dh-pos); }
   .dh-sum .dh-st.err { color:var(--dh-neg); }
+  /* Split layout (opts.split): one small table per market, side by side on wide
+     screens so a 4-column table does not stretch across the whole page. */
+  .dh-sum-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap:10px; align-items:start; }
+  .dh-sum-grid .dh-sum-total { grid-column:1 / -1; }
   .dh-sum-empty { background:var(--dh-card); border:1px dashed var(--dh-border); border-radius:10px; padding:18px 16px; text-align:center; color:var(--dh-dim); font-size:0.84rem; }
   /* Phones: every row becomes a card — no horizontal page scroll, numbers
      still right-aligned against their labels. */
@@ -97,6 +101,7 @@ function dashCSS() {
     .dh-sum tr.dh-grand { border-width:2px; }
     .dh-sum td.dh-daytot { grid-column:1 / -1; font-size:1rem; font-weight:700; border-top:1px solid var(--dh-line); padding-top:7px; margin-top:2px; }
     .dh-sum tr.dh-quiet { display:block; }
+    .dh-sum td:first-child a { padding:6px 0; }
   }
 
   /* ── Quick links ── */
@@ -229,7 +234,8 @@ function dhHero(byMarket, sub){
  *          trades, w, l, quiet }]  — quiet rows count toward the totals but get no line.
  * markets: [{ key, label }] in display order.
  * opts.market  only this market ("ALL" = every one); opts.closedOnly hides Status/Open
- * (a past day: Net P&L only); opts.quietText words the "no trade" line.
+ * (a past day: Net P&L only); opts.quietText words the "no trade" line;
+ * opts.split renders one table per market in a grid (narrow tables on wide screens).
  * Market rows carry that market's subtotal; the grand TOTAL is the sum of them.
  */
 function dhSummary(rows, markets, opts){
@@ -287,7 +293,14 @@ function dhSummary(rows, markets, opts){
   var head = '<thead><tr><th>Strategy</th>' + (closedOnly ? '' : '<th>Status</th><th>Open P&amp;L</th>')
     + '<th>' + (closedOnly ? 'Net P&amp;L' : 'Closed P&amp;L') + '</th><th>Trades</th><th>W / L</th>'
     + (closedOnly ? '' : '<th>Today total</th>') + '</tr></thead>';
-  var grand = '<tbody class="dh-grand-body">' + line(only ? 'TOTAL · ' + _dhEsc((markets.filter(function(m){ return m.key === only; })[0] || {}).label || only) : 'TOTAL', stOf(total), total, 'dh-grand') + '</tbody>';
+  var grandLabel = only ? 'TOTAL · ' + _dhEsc((markets.filter(function(m){ return m.key === only; })[0] || {}).label || only) : 'TOTAL';
+  if (opts.split) {
+    // One table per market (each with its own header) in a grid, TOTAL full-width below.
+    var tables = body.split('</tbody>').filter(function(t){ return t; })
+      .map(function(t){ return '<table class="dh-sum">' + head + t + '</tbody></table>'; }).join('');
+    return { html:'<div class="dh-sum-grid">' + tables + '<table class="dh-sum dh-sum-total"><tbody class="dh-grand-body">' + line(grandLabel, stOf(total), total, 'dh-grand') + '</tbody></table></div>', byMarket:byMarket, total:total };
+  }
+  var grand = '<tbody class="dh-grand-body">' + line(grandLabel, stOf(total), total, 'dh-grand') + '</tbody>';
   return { html:'<table class="dh-sum">' + head + body + grand + '</table>', byMarket:byMarket, total:total };
 }
 function _dhName(r){
