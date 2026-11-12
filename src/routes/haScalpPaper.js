@@ -107,7 +107,7 @@ const TITLE       = rt.home ? "HA Scalp" : `${rt.market().label} · HA Scalp`;
 // What the page / logs call the decision chart ("NIFTY 50" on NIFTY, as always).
 const SPOT_LABEL  = rt.home ? "NIFTY 50" : rt.market().label;
 // A non-home pair's own value of one of HA_SCALP's keys (else NIFTY's —
-// pairs.envGet); undefined on NIFTY, so `PV("X") || process.env.HA_SCALP_X || d`
+// pairs.envGet); undefined on NIFTY, so `PV(k) || <the literal NIFTY read> || d`
 // is the old read there.
 const PV = (k) => (rt.home ? undefined : pairs.envGet(`${PREFIX}_${k}`));
 // Spot symbol the bars are fetched for: resolved at /start (MCX: the series' future).
@@ -180,12 +180,12 @@ function _computePnl(o) {
   const exchange = rt.market().exchange;
   if (rt.isFutures) {
     const gross = (o.exitSpot - o.entrySpot) * _dir(o.side) * qty;
-    const charges = getCharges({ broker: o.broker, isFutures: true, exchange, entryPremium: o.entrySpot, exitPremium: o.exitSpot, qty });
-    return { gross: _r2(gross), charges, pnl: _r2(gross - charges), pnlMode: `futures: entry ₹${o.entrySpot} → exit ₹${o.exitSpot} (${_dir(o.side) > 0 ? "LONG" : "SHORT"})`, isFutures: true };
+    const charges = getCharges({ broker: o.broker, isFutures: rt.isFutures, exchange, entryPremium: o.entrySpot, exitPremium: o.exitSpot, qty });
+    return { gross: _r2(gross), charges, pnl: _r2(gross - charges), pnlMode: `futures: entry ₹${o.entrySpot} → exit ₹${o.exitSpot} (${_dir(o.side) > 0 ? "LONG" : "SHORT"})`, isFutures: rt.isFutures };
   }
   const gross = (o.exitPremium - o.entryPremium) * qty;
-  const charges = getCharges({ broker: o.broker, isFutures: false, exchange, entryPremium: o.entryPremium, exitPremium: o.exitPremium, qty });
-  return { gross: _r2(gross), charges, pnl: _r2(gross - charges), pnlMode: `option premium: entry ₹${o.entryPremium} → exit ₹${o.exitPremium}`, isFutures: false };
+  const charges = getCharges({ broker: o.broker, isFutures: rt.isFutures, exchange, entryPremium: o.entryPremium, exitPremium: o.exitPremium, qty });
+  return { gross: _r2(gross), charges, pnl: _r2(gross - charges), pnlMode: `option premium: entry ₹${o.entryPremium} → exit ₹${o.exitPremium}`, isFutures: rt.isFutures };
 }
 function _unrealisedPnl(o) {
   if (rt.home || !rt.isFutures) return instrumentMode.unrealisedPnl(o);
@@ -1759,7 +1759,11 @@ function _positionCardHtml(pos, optLtp) {
   if (!pos) {
     return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No open position.</div>`;
   }
-  const live = optLtp != null ? ((optLtp - pos.optionEntryLtp) * pos.qty).toFixed(0) : "—";
+  // Another market's future is direction-aware (a PE is a SHORT); NIFTY as always.
+  const live = optLtp == null ? "—" : (rt.home
+    ? ((optLtp - pos.optionEntryLtp) * pos.qty).toFixed(0)
+    : _unrealisedPnl({ side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice || pos.entrySpot,
+        entryPremium: pos.optionEntryLtp, currentPremium: optLtp, qty: pos.qty }).toFixed(0));
   const wickLabel = pos.side === "CE" ? "bottom" : "top";
   const wickPct = pos.side === "CE" ? pos.lowerWickPct : pos.upperWickPct;
   return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;">
