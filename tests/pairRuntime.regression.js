@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX, itm20Scalp: NO_MCX, simple930: NO_MCX, gapRunaway: NO_MCX, earlyBird: NO_MCX };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX, itm20Scalp: NO_MCX, simple930: NO_MCX, gapRunaway: NO_MCX, earlyBird: NO_MCX, sailVwapSt: ["NIFTY", ...MK.filter(m => m !== "SAIL")] };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -361,7 +361,7 @@ check("logs: a pair logs under its own mode key; the registry maps are untouched
   assert.ok(sl.filePathFor("bn_ema_rsi_st_v2", "2026-11-12").endsWith("skips/bn_ema_rsi_st_v2_paper_skips_2026-11-12.jsonl"));
   assert.ok(!("sensex_ema_rsi_st_v2" in tl.DAILY_PREFIX_BY_MODE));
   assert.ok(tl.modes().includes("sensex_ema_rsi_st_v2") && sl.modes().includes("fut_ema_rsi_st_v2"));
-  assert.throws(() => tl.dailyFilePathFor("bn_sail_vwap_st"), /unknown mode/, "a pair that does not run has no log");
+  assert.throws(() => tl.dailyFilePathFor("bn_not_a_strategy"), /unknown mode/, "a mode no pair runs has no log");
 });
 check("market tags: a pair names its market and its strategy", () => {
   const tags = require("../src/utils/logTags");
@@ -393,7 +393,7 @@ check("SENSEX stays marketOnly until a running SENSEX pair is switched on", () =
     assert.strictEqual(require("../src/config/markets").get("SENSEX").traded, true);
   });
   // A pair that does not run lifts nothing.
-  withEnv({ SENSEX_SAIL_VWAP_ST_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
+  withEnv({ SENSEX_NOT_A_STRATEGY_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), false));
   // A running ORB pair does.
   withEnv({ SENSEX_ORB_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SENSEX"), true));
 });
@@ -1589,6 +1589,94 @@ check("EARLYBIRD route builder: NIFTY is the default export; one cached router p
         assert.deepStrictEqual([a.tradeMode, a.tradesStock, a.tradesOption], ["option", false, true], "the SENSEX instance runs the option leg only");
         const page = (await get(port, "/sensex_early_bird-paper/status")).body;
         assert.ok(page.includes("/sensex_early_bird-paper/status/data") && !page.includes("'/early-bird-paper/status/data'"), "the SENSEX page polls its own data");
+        srv.close();
+        resolve();
+      } catch (e) { srv.close(); reject(e); }
+    });
+  });
+});
+
+section("SAIL_VWAP_ST runs as a pair (routes/sailVwapStPaper.js)");
+
+const svOf = (mk) => pairRuntime.forStrategy("sailVwapSt", mk);
+check("SAIL is the registry's SAIL_VWAP_ST (its home): path, file, slot, sidebar, notify tag", () => {
+  const rt = svOf("SAIL");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey, rt.notifyMode],
+    [true, "sail_vwap_st", "SAIL_VWAP_ST", "/sail_vwap_st-paper", "sail_vwap_st-paper", "sail_vwap_st-paper", "sail_vwap_st_paper_trades.json", "SAIL_VWAP_ST_PAPER", "sailVwapStPaper", "sailVwapStHistory", "SAIL_VWAP_ST-PAPER"]);
+  assert.strictEqual(svOf(), rt, "the home market is SAIL");
+});
+check("SAIL_VWAP_ST other markets: own path, file, slot, prefix and instrument (NIFTY too, as a pair)", () => {
+  const rows = ["NIFTY", "SENSEX", "BANKNIFTY", "NIFTY_FUT", "CRUDE"].map(mk => { const r = svOf(mk); return [mk, r.home, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["NIFTY", false, "NIFTY_SAIL_VWAP_ST", "/nifty_sail_vwap_st-paper", "nifty_sail_vwap_st_paper_trades.json", "NIFTY_SAIL_VWAP_ST_PAPER", "NIFTY_SAIL_VWAP_ST-PAPER", "NIFTY_OPTIONS"],
+    ["SENSEX", false, "SENSEX_SAIL_VWAP_ST", "/sensex_sail_vwap_st-paper", "sensex_sail_vwap_st_paper_trades.json", "SENSEX_SAIL_VWAP_ST_PAPER", "SENSEX_SAIL_VWAP_ST-PAPER", "SENSEX_OPTIONS"],
+    ["BANKNIFTY", false, "BN_SAIL_VWAP_ST", "/bn_sail_vwap_st-paper", "bn_sail_vwap_st_paper_trades.json", "BN_SAIL_VWAP_ST_PAPER", "BN_SAIL_VWAP_ST-PAPER", "BANKNIFTY_OPTIONS"],
+    ["NIFTY_FUT", false, "FUT_SAIL_VWAP_ST", "/fut_sail_vwap_st-paper", "fut_sail_vwap_st_paper_trades.json", "FUT_SAIL_VWAP_ST_PAPER", "FUT_SAIL_VWAP_ST-PAPER", "NIFTY_FUTURES"],
+    ["CRUDE", false, "CRUDE_SAIL_VWAP_ST", "/crude_sail_vwap_st-paper", "crude_sail_vwap_st_paper_trades.json", "CRUDE_SAIL_VWAP_ST_PAPER", "CRUDE_SAIL_VWAP_ST-PAPER", "MCX_OPTIONS"],
+  ]);
+  assert.strictEqual(pairs.byReplayMode("nifty_sail_vwap_st-paper").strategyId, "sailVwapSt");
+  assert.strictEqual(pairs.byReplayMode("sail_vwap_st-paper"), null, "the home mode is the registry's");
+});
+check("SAIL_VWAP_ST engine: SAIL reads SAIL_VWAP_ST_* exactly; a pair its own key, else SAIL's; an index weighs VWAP equally", () => {
+  const eng = require("../src/strategies/sail_vwap_st");
+  withEnv({ SAIL_VWAP_ST_TF: "5", SAIL_VWAP_ST_BREAKOUT_BARS: "4", BN_SAIL_VWAP_ST_TF: "3", BN_SAIL_VWAP_ST_BREAKOUT_BARS: undefined, SENSEX_SAIL_VWAP_ST_TF: undefined }, () => {
+    const h = eng.getConfig(), b = eng.forPrefix("BN_SAIL_VWAP_ST").getConfig(), s = eng.getConfig("SENSEX_SAIL_VWAP_ST");
+    assert.deepStrictEqual([h.TRADE_RES, h.BREAKOUT_BARS, h.PREFIX], [5, 4, "SAIL_VWAP_ST"]);
+    assert.deepStrictEqual([b.TRADE_RES, b.BREAKOUT_BARS], [3, 4], "own TF, inherited breakout bars");
+    assert.deepStrictEqual([s.TRADE_RES, s.BREAKOUT_BARS], [5, 4], "inherits SAIL");
+    assert.strictEqual(h.VWAP_WEIGHT, undefined, "SAIL's config is unchanged");
+  });
+  withEnv({ SAIL_VWAP_ST_WARMUP_DAYS: "5", FUT_SAIL_VWAP_ST_WARMUP_DAYS: undefined }, () => assert.strictEqual(eng.warmupDays("FUT_SAIL_VWAP_ST"), 5, "warm-up days inherit SAIL's"));
+  const T = 1730000000 - (1730000000 % 300);
+  const bars = [{ time: T, open: 1, high: 2, low: 1, close: 1.5, volume: 0 }, { time: T + 300, open: 1.5, high: 3, low: 1, close: 2, volume: 0 }];
+  assert.deepStrictEqual(eng.computeSeries(bars).vwap, [null, null], "SAIL: no volume, no VWAP — as before");
+  const idx = eng.forPrefix("BN_SAIL_VWAP_ST", { equalWeightVwap: true, label: "NIFTY BANK" });
+  assert.deepStrictEqual(idx.computeSeries(bars).vwap.map(v => +v.toFixed(4)), [1.5, 1.75], "an index: equal-weighted hlc3");
+  assert.ok(/no CRUDE volume/.test(eng.forPrefix("CRUDE_SAIL_VWAP_ST", { label: "CRUDE" }).getSignal(Array.from({ length: 20 }, (_, i) => ({ time: T + i * 300, open: 1, high: 2, low: 1, close: 1.5, volume: 0 }))).reason), "a pair's reasons name its own instrument");
+});
+check("SAIL_VWAP_ST crash snapshot, logs and tags per pair; capital on the Fyers pool", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveSailVwapStPosition, "function", "SAIL keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger");
+  assert.ok(tl.modes().includes("nifty_sail_vwap_st") && sl.modes().includes("bn_sail_vwap_st"));
+  assert.strictEqual(pairs.get("sailVwapSt", "NIFTY").broker, "fyers");
+  assert.strictEqual(pairs.get("sailVwapSt", "SAIL").broker, "zerodha", "the home keeps its broker");
+  svOf("SENSEX").persist.save({ side: "CE", symbol: "BSE:SENSEX26N1981000CE", entryPrice: 80950 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("sensex_sail_vwap_st").position.symbol, "BSE:SENSEX26N1981000CE");
+    pp.clearPairPositions();
+  });
+});
+check("SAIL_VWAP_ST route builder: SAIL is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/sailVwapStPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/sail_vwap_st-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(route.forMarket("SAIL"), route);
+  const nf = route.forMarket("NIFTY"), fut = route.forMarket("NIFTY_FUT");
+  assert.ok(nf && nf !== route && route.forMarket("NIFTY") === nf, "one instance per market");
+  assert.ok(fut && fut !== nf, "each market its own instance");
+  assert.strictEqual(nf.pairRuntime.paperPath, "/nifty_sail_vwap_st-paper");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(nf.pairRuntime.paperPath, nf);
+  const get = (port, p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${p}`, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => resolve({ code: res.statusCode, body }));
+    }).on("error", reject);
+  });
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, async () => {
+      const port = srv.address().port;
+      try {
+        const r = await get(port, "/nifty_sail_vwap_st-paper/start");
+        assert.strictEqual(r.code, 403);
+        assert.ok(r.body.includes("NIFTY_SAIL_VWAP_ST_MODE_ENABLED"), "names the pair's switch");
+        assert.ok(!nf.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+        const page = (await get(port, "/nifty_sail_vwap_st-paper/status")).body;
+        assert.ok(page.includes("/nifty_sail_vwap_st-paper/status/data") && !page.includes("'/sail_vwap_st-paper/status/data'"), "the NIFTY page polls its own data");
         srv.close();
         resolve();
       } catch (e) { srv.close(); reject(e); }

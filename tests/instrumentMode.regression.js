@@ -475,7 +475,9 @@ check("a builder route's home instance answers the options-only getter (only its
   const instrument = require("../src/config/instrument");
   const pairs = require("../src/config/pairs");
   for (const id of pairs.RUNS_AS_PAIR) {
-    assert.strictEqual(pairRuntime.forStrategy(id).instrumentName(), instrument.INSTRUMENT, id);
+    // A strategy whose home is not NIFTY (SAIL_VWAP_ST) answers its own options instrument.
+    const home = pairRuntime.forStrategy(id);
+    assert.strictEqual(home.instrumentName(), pairs.homeMarket(id) === "NIFTY" ? instrument.INSTRUMENT : `${home.underlyingKey}_OPTIONS`, id);
     for (const p of pairs.runnable().filter(x => x.strategyId === id)) {
       assert.strictEqual(pairRuntime.forPair(p).instrumentName() === "NIFTY_FUTURES", p.marketKey === "NIFTY_FUT", p.id);
     }
