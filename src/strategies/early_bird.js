@@ -198,50 +198,69 @@ function _okBar(c) {
   return !!c && _num(c.open) && _num(c.high) && _num(c.low) && _num(c.close);
 }
 
+// A (strategy, market) pair's value for one EARLYBIRD_* key: its own key
+// (<PREFIX>_<rest>) when set, else NIFTY's EARLYBIRD_* value (config/pairs.js
+// envGet). `key` is always the NIFTY key, so the literal names stay greppable.
+const ENV_PREFIX = "EARLYBIRD";
+let _pairsMod = null;
+function _pairEnv(prefix, key) {
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(`${prefix}${key.slice(ENV_PREFIX.length)}`);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Config — read live from process.env on EVERY call. Never cache: the Settings
 // page writes process.env at runtime and a cached config would serve stale
 // numbers to the strategy while the UI showed the new ones.
 // ─────────────────────────────────────────────────────────────────────────────
-function getConfig() {
-  return {
+function getConfig(prefix) {
+  // `prefix`: a (strategy, market) pair's env prefix ("SENSEX_EARLYBIRD",
+  // "BN_EARLYBIRD" ...), whose keys are read with pair inheritance. Omitted (or
+  // "EARLYBIRD") = the NIFTY keys, read exactly as before.
+  const P = prefix && prefix !== ENV_PREFIX ? prefix : null;
+  const R = (key, raw) => (P ? _pairEnv(P, key) : raw);
+  const cfg = {
     // Timeframe. The rules were read off a 15-minute chart; the repo-wide
     // 5-minute default does not apply to this strategy.
-    resolutionMins:   _intEnv(process.env.EARLYBIRD_RESOLUTION, 15, 1, 60),
-    sessionStartMin:  _parseHHMM(process.env.EARLYBIRD_SESSION_START, 9 * 60 + 15),
+    resolutionMins:   _intEnv(R("EARLYBIRD_RESOLUTION", process.env.EARLYBIRD_RESOLUTION), 15, 1, 60),
+    sessionStartMin:  _parseHHMM(R("EARLYBIRD_SESSION_START", process.env.EARLYBIRD_SESSION_START), 9 * 60 + 15),
 
     // Windows
-    entryStartMin:    _parseHHMM(process.env.EARLYBIRD_ENTRY_START,   9 * 60 + 30),
-    entryEndMin:      _parseHHMM(process.env.EARLYBIRD_ENTRY_END,    10 * 60 + 45),
+    entryStartMin:    _parseHHMM(R("EARLYBIRD_ENTRY_START", process.env.EARLYBIRD_ENTRY_START),   9 * 60 + 30),
+    entryEndMin:      _parseHHMM(R("EARLYBIRD_ENTRY_END", process.env.EARLYBIRD_ENTRY_END),    10 * 60 + 45),
 
     // Signal-candle shape (applies identically to NIFTY and to each stock)
-    maxOpposingWickPct: _numEnv(process.env.EARLYBIRD_MAX_OPPOSING_WICK_PCT, 30, 0, 100),
-    minBodyPct:         _numEnv(process.env.EARLYBIRD_MIN_BODY_PCT, 40, 0, 100),
-    minRangePts:        _numEnv(process.env.EARLYBIRD_MIN_RANGE_PTS, 0, 0),
+    maxOpposingWickPct: _numEnv(R("EARLYBIRD_MAX_OPPOSING_WICK_PCT", process.env.EARLYBIRD_MAX_OPPOSING_WICK_PCT), 30, 0, 100),
+    minBodyPct:         _numEnv(R("EARLYBIRD_MIN_BODY_PCT", process.env.EARLYBIRD_MIN_BODY_PCT), 40, 0, 100),
+    minRangePts:        _numEnv(R("EARLYBIRD_MIN_RANGE_PTS", process.env.EARLYBIRD_MIN_RANGE_PTS), 0, 0),
 
     // Confirmation
-    minConfirmingStocks: _intEnv(process.env.EARLYBIRD_MIN_CONFIRMING_STOCKS, 1, 1, 500),
+    minConfirmingStocks: _intEnv(R("EARLYBIRD_MIN_CONFIRMING_STOCKS", process.env.EARLYBIRD_MIN_CONFIRMING_STOCKS), 1, 1, 500),
 
     // The 2% gap rule
-    maxGapPct:        _numEnv(process.env.EARLYBIRD_MAX_GAP_PCT, 2, 0, 100),
+    maxGapPct:        _numEnv(R("EARLYBIRD_MAX_GAP_PCT", process.env.EARLYBIRD_MAX_GAP_PCT), 2, 0, 100),
 
     // Entry
-    entryBufferPts:   _numEnv(process.env.EARLYBIRD_ENTRY_BUFFER_PTS, 5, 0),
+    entryBufferPts:   _numEnv(R("EARLYBIRD_ENTRY_BUFFER_PTS", process.env.EARLYBIRD_ENTRY_BUFFER_PTS), 5, 0),
 
     // Sizing + exposure
-    qty:              _intEnv(process.env.EARLYBIRD_QTY, 100, 1, 100000),
-    maxConcurrent:    _intEnv(process.env.EARLYBIRD_MAX_CONCURRENT, 5, 1, 50),
+    qty:              _intEnv(R("EARLYBIRD_QTY", process.env.EARLYBIRD_QTY), 100, 1, 100000),
+    maxConcurrent:    _intEnv(R("EARLYBIRD_MAX_CONCURRENT", process.env.EARLYBIRD_MAX_CONCURRENT), 5, 1, 50),
 
     // Universe
-    universe:         String(process.env.EARLYBIRD_UNIVERSE || "FNO").trim().toUpperCase(),
+    universe:         String(R("EARLYBIRD_UNIVERSE", process.env.EARLYBIRD_UNIVERSE) || "FNO").trim().toUpperCase(),
 
     // WHAT WE TRADE. See the TRADE MODE block at the top of this file.
     //   "stock"  — cash equity in the confirming F&O stocks (the original rules)
     //   "option" — ONE NIFTY CE/PE off NIFTY's own candle, no stock confirmation
     //   "both"   — run both at once, independently
     tradeMode:        _tradeMode(),
-    optionLots:       _intEnv(process.env.EARLYBIRD_OPTION_LOTS, 1, 1, 50),
+    optionLots:       _intEnv(R("EARLYBIRD_OPTION_LOTS", process.env.EARLYBIRD_OPTION_LOTS), 1, 1, 50),
   };
+  // Another market's pair runs ONLY the index option leg: the stock leg trades
+  // NIFTY-50 constituents' cash equity, which belongs to no other market.
+  if (P) cfg.tradeMode = "option";
+  return cfg;
 }
 
 const TRADE_MODES = ["stock", "option", "both"];
@@ -374,6 +393,7 @@ function firstCandleOfDay(candles, opts) {
 function getNiftySignal(niftyCandles, opts) {
   const o = opts || {};
   const cfg = o.cfg || getConfig();
+  const IX = cfg.indexLabel || "NIFTY";   // another market's pair names its own index
   const base = {
     signal: false, side: null, direction: null,
     reason: "", skipReason: "", warmup: false,
@@ -382,7 +402,7 @@ function getNiftySignal(niftyCandles, opts) {
 
   if (!Array.isArray(niftyCandles) || !niftyCandles.length) {
     base.warmup = true;
-    base.skipReason = base.reason = "No NIFTY candles yet — cannot read the opening candle";
+    base.skipReason = base.reason = `No ${IX} candles yet — cannot read the opening candle`;
     return base;
   }
 
@@ -390,7 +410,7 @@ function getNiftySignal(niftyCandles, opts) {
   if (!first) {
     base.warmup = true;
     base.skipReason = base.reason =
-      `No ${_fmtMins(cfg.sessionStartMin)} NIFTY candle in the series yet — ` +
+      `No ${_fmtMins(cfg.sessionStartMin)} ${IX} candle in the series yet — ` +
       `the signal candle closes at ${_fmtMins(cfg.sessionStartMin + cfg.resolutionMins)}`;
     return base;
   }
@@ -403,7 +423,7 @@ function getNiftySignal(niftyCandles, opts) {
   base.detail = cls;
 
   if (!cls.ok) {
-    base.skipReason = base.reason = `NIFTY opening candle is not a signal candle — ${cls.reason}`;
+    base.skipReason = base.reason = `${IX} opening candle is not a signal candle — ${cls.reason}`;
     return base;
   }
 
@@ -411,7 +431,7 @@ function getNiftySignal(niftyCandles, opts) {
   base.direction = cls.direction;
   base.side = cls.direction === "BULLISH" ? "LONG" : "SHORT";
   base.reason =
-    `NIFTY ${_fmtMins(cfg.sessionStartMin)} candle is ${cls.reason} → ` +
+    `${IX} ${_fmtMins(cfg.sessionStartMin)} candle is ${cls.reason} → ` +
     `${base.side} day (${base.side === "LONG" ? "buy" : "short"} stocks only)`;
   return base;
 }
@@ -525,6 +545,7 @@ function evaluateStock(input, opts) {
 function buildNiftyOptionSetup(niftyCandles, opts) {
   const o = opts || {};
   const cfg = o.cfg || getConfig();
+  const IX = cfg.indexLabel || "NIFTY";
 
   const out = {
     ok: false, side: null, optionSide: null, reason: "", skipReason: "",
@@ -544,7 +565,7 @@ function buildNiftyOptionSetup(niftyCandles, opts) {
 
   const first = firstCandleOfDay(niftyCandles, { cfg, istDay: o.istDay });
   if (!first) {
-    out.skipReason = out.reason = "no opening NIFTY candle";
+    out.skipReason = out.reason = `no opening ${IX} candle`;
     return out;
   }
 
@@ -558,7 +579,7 @@ function buildNiftyOptionSetup(niftyCandles, opts) {
   out.rangePts   = _r2(first.high - first.low);
   out.ok         = true;
   out.reason =
-    `NIFTY ${out.optionSide} — ${nifty.detail ? nifty.detail.shape : "signal candle"}, ` +
+    `${IX} ${out.optionSide} — ${nifty.detail ? nifty.detail.shape : "signal candle"}, ` +
     `entry ${out.entry} (spot level) | candle range ${out.rangePts}pt`;
   return out;
 }
