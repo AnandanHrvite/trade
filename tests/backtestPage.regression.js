@@ -87,7 +87,7 @@ function check(name, fn) { _queue.push({ name, fn }); }
 
 // ── HTTP harness: the old pages + the new page on one throwaway server ──────
 const app = express();
-const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp"];
+const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp", "rsiPivotSt"];
 for (const id of OLD) {
   const s = registry.byId(id);
   app.use(s.backtest.path, require(registry.srcPath(s.backtest.module)));
@@ -259,7 +259,10 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   assert.deepStrictEqual(tds.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of tds) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `trendDayScalp ${m.key}`);
   assert.ok(page.marketOptions("trendDayScalp").some((m) => m.key === "CRUDE" && !m.enabled), "TDS on MCX is offered, coming soon");
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp"]);
+  const rps = page.marketOptions("rsiPivotSt");
+  assert.deepStrictEqual(rps.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of rps) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `rsiPivotSt ${m.key}`);
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "rsiPivotSt"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -273,7 +276,7 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
 check("a run on a non-offered / coming-soon market or a bad request is refused before any job starts", () => {
   const base = { strategy: "orb", from: FROM, to: TO, resolution: null, settingsSource: "current", custom: {} };
   assert.ok(/not offered/.test(page.start({ ...base, market: "CRUDE" }).error));
-  assert.ok(/coming soon/.test(page.start({ ...base, strategy: "rsiPivotSt", market: "BANKNIFTY" }).error));
+  assert.ok(/coming soon/.test(page.start({ ...base, strategy: "rsiPivotSt", market: "CRUDE" }).error));
   assert.ok(/Unknown strategy/.test(page.start({ ...base, strategy: "nope", market: "NIFTY" }).error));
   assert.ok(/on or before/.test(page.start({ ...base, market: "NIFTY", from: TO, to: FROM }).error));
   assert.ok(/candle size/i.test(page.start({ ...base, strategy: "emaRsiSt", market: "NIFTY", resolution: "7" }).error));
@@ -293,6 +296,7 @@ const PARITY = [
   { id: "haScalp",    qs: `from=${FROM}&to=${TO}` },
   { id: "pa",         qs: `from=${FROM}&to=${TO}&resolution=5` },
   { id: "trendDayScalp", qs: `from=${FROM}&to=${TO}` },
+  { id: "rsiPivotSt", qs: `from=${FROM}&to=${TO}` },
 ];
 const parityNotes = [];
 for (const P of PARITY) {
@@ -978,6 +982,54 @@ check("the old TDS page is untouched by markets: NIFTY run reads NIFTY's candles
   const oldRes = await runOld("trendDayScalp", `from=${FROM}&to=${TO}`);
   assert.ok(fetchLog.slice(mark).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
   assert.strictEqual(oldRes.meta.market, undefined, "a NIFTY result must not grow a market field");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4i. RSI PIVOT ST is market-aware");
+
+const RPS_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`RSI PIVOT ST ${mk}: fetches its own intraday + daily candles, prices with its lot + exchange charges, records the market`, async () => {
+    const mark = fetchLog.length;
+    const neu = await runNew({ strategy: "rsiPivotSt", market: mk, settings: "current", from: FROM, to: TO });
+    RPS_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const asked = fetchLog.slice(mark);
+    assert.ok(asked.length && asked.every((f) => f.symbol === ctx.spotSymbol), `fetched ${asked.map((f) => f.symbol).join(",")} for ${mk}`);
+    assert.ok(asked.some((f) => String(f.resolution).toUpperCase() === "D"), "the pivots' daily series must be the market's own");
+    assert.strictEqual(neu.result.meta.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    for (const t of neu.result.trades) {
+      const charges = getCharges({ broker: "fyers", isFutures: ctx.isFutures, exchange: ctx.exchange, entryPremium: t.eOpt, exitPremium: t.xOpt, qty: ctx.lotQty });
+      const want = (t.xOpt - t.eOpt) * ctx.lotQty - charges;
+      assert.ok(Math.abs(t.pnl - want) <= ctx.lotQty * 0.005 + 0.02, `${mk} trade ${t.entry}: pnl ${t.pnl} ≠ (${t.xOpt}−${t.eOpt})×${ctx.lotQty}−${charges}`);
+      if (ctx.isFutures) assert.ok(Math.abs(t.eOpt - t.ePrice) < 50, `${mk}: futures entry ${t.eOpt} is not the index level ${t.ePrice}`);
+      else assert.strictEqual(t.strike % ctx.strikeStep, 0, `${mk}: strike ${t.strike} is off the ${ctx.strikeStep}-pt grid`);
+    }
+    assert.strictEqual(!!neu.result.stats.isFutures, ctx.isFutures);
+    assert.strictEqual(neu.result.stats.optionSim, !ctx.isFutures);
+    assert.ok(!legacySaves.slice(-1).includes("RSI_PIVOT_ST_BACKTEST"), "a non-NIFTY run overwrote NIFTY's legacy slot");
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+  });
+}
+check("RSI PIVOT ST: the market runs scanned their own scaled series", () => {
+  const S = RPS_RUNS.SENSEX, B = RPS_RUNS.BANKNIFTY, F = RPS_RUNS.NIFTY_FUT;
+  assert.ok(S && B && F, "market runs missing");
+  for (const r of [S, B, F]) assert.ok(r.result.meta.days > 0, "no sessions scanned");
+  assert.ok(S.result.trades.every((t) => t.ePrice > 50000), "SENSEX trades should be on the SENSEX (scaled) series");
+  assert.ok(F.result.trades.every((t) => t.eOpt > 1000), "futures entries should be index levels, not option premiums");
+  say(`       RSI PIVOT ST trades: SENSEX ${S.result.trades.length} · BANKNIFTY ${B.result.trades.length} · NIFTY_FUT ${F.result.trades.length}`);
+});
+check("RSI PIVOT ST pair settings: a BANKNIFTY-own key (BN_PIVOT_RSI_ST_*) reaches the engine for that run only", async () => {
+  process.env.BN_PIVOT_RSI_ST_ENTRY_END = "11:00";
+  try {
+    const { overrides } = page.buildOverrides("rsiPivotSt", "BANKNIFTY", null);
+    assert.strictEqual(overrides.RSI_PIVOT_ST_ENTRY_END, "11:00");
+    const neu = await runNew({ strategy: "rsiPivotSt", market: "BANKNIFTY", settings: "current", from: FROM, to: TO });
+    assert.ok(neu.record.overriddenKeys.includes("RSI_PIVOT_ST_ENTRY_END"));
+    for (const t of neu.result.trades) assert.ok(t.entry.split(", ")[1].slice(0, 5) < "11:00", `BANKNIFTY RSI PIVOT ST entered at ${t.entry}`);
+    assert.strictEqual(process.env.RSI_PIVOT_ST_ENTRY_END, undefined, "the pair value leaked into the real env");
+  } finally { delete process.env.BN_PIVOT_RSI_ST_ENTRY_END; }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
