@@ -51,7 +51,7 @@ function dashCSS() {
   /* ── Market filter — one scrollable row; it never widens the page ── */
   .dh-filter { display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; margin:0 0 14px; padding-bottom:2px; }
   .dh-filter::-webkit-scrollbar { display:none; }
-  .dh-fbtn { flex:0 0 auto; min-height:44px; padding:0 14px; border-radius:22px; border:1px solid var(--dh-border); background:var(--dh-card); color:var(--dh-muted); font:inherit; font-size:0.8rem; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .dh-fbtn { flex:0 0 auto; min-height:30px; padding:0 12px; border-radius:16px; border:1px solid var(--dh-border); background:var(--dh-card); color:var(--dh-muted); font:inherit; font-size:0.74rem; font-weight:600; cursor:pointer; white-space:nowrap; }
   .dh-fbtn:hover { color:var(--dh-text); border-color:var(--dh-focus); }
   .dh-fbtn.active { background:var(--dh-blue); border-color:var(--dh-blue); color:#fff; }
 
@@ -105,8 +105,8 @@ function dashCSS() {
   }
 
   /* ── Quick links ── */
-  .dh-links { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 4px; }
-  .dh-link { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 14px; border-radius:10px; border:1px solid var(--dh-border); background:var(--dh-card); color:var(--dh-text); font-size:0.8rem; font-weight:600; text-decoration:none; }
+  .dh-links { display:flex; flex-wrap:wrap; gap:6px; margin:16px 0 4px; }
+  .dh-link { display:inline-flex; align-items:center; gap:6px; min-height:30px; padding:0 12px; border-radius:7px; border:1px solid var(--dh-border); background:var(--dh-card); color:var(--dh-text); font-size:0.74rem; font-weight:600; text-decoration:none; }
   .dh-link:hover { border-color:var(--dh-focus); }
   @media (max-width:640px) {
     .dh-hero { padding:12px 14px; }
@@ -115,6 +115,9 @@ function dashCSS() {
     .dh-chip { flex:1 1 calc(50% - 4px); min-width:0; }
     .dh-links { display:grid; grid-template-columns:1fr 1fr; }
     .dh-link { justify-content:center; }
+    /* Phones keep the 44px tap target; desktop buttons are compact. */
+    .dh-fbtn { min-height:44px; font-size:0.8rem; }
+    .dh-link { min-height:44px; font-size:0.8rem; }
   }`;
 }
 

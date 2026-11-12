@@ -374,6 +374,7 @@ function renderDashboard() {
     /* ── PAGE WRAPPER ── */
     .page { padding:14px max(20px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); display:flex; flex-direction:column; gap:8px; }
     .page > .dh-hero, .page > .dh-filter { margin-bottom:0; }
+    .page > .dh-links { margin:0; }
     .page > .dh-h { margin:10px 0 0; }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
@@ -880,23 +881,6 @@ ${buildSidebar('dashboard', false)}
   ${optionExpiryAlertHtml}
   ${manualSyncAlertHtml}
 
-  <!-- ① TODAY'S P&L — big total, one chip per market (tap = filter to it). -->
-  ${dashboardUI.heroHTML(_dashMarkets, { sub: 'Loading…' })}
-  ${dashboardUI.filterHTML(_dashMarkets)}
-
-  ${analyticsPanelOn ? `
-  <!-- ② TODAY SO FAR (market open) / LAST SESSION (closed) — every strategy,
-       grouped by market with a subtotal on each market row and a grand TOTAL. -->
-  <section id="dashAnalytics" class="dash-analytics">
-    <div class="da-header">
-      <div class="da-title"><span id="da-mode-badge" class="da-badge">—</span><span id="da-title-txt">Today</span></div>
-      <div class="da-sub" id="da-sub-txt">Loading…</div>
-    </div>
-    <div id="da-body" class="da-body">
-      <div class="da-loading">Loading…</div>
-    </div>
-  </section>` : ''}
-
   <!-- ③ QUICK LINKS -->
   ${dashboardUI.quickLinksHTML({ demo: demoMode.isDemo() })}
 
@@ -950,6 +934,23 @@ ${buildSidebar('dashboard', false)}
     </div>
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : 'expiring'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>`}
+
+  <!-- ① TODAY'S P&L — big total, one chip per market (tap = filter to it). -->
+  ${dashboardUI.heroHTML(_dashMarkets, { sub: 'Loading…' })}
+  ${dashboardUI.filterHTML(_dashMarkets)}
+
+  ${analyticsPanelOn ? `
+  <!-- ② TODAY SO FAR (market open) / LAST SESSION (closed) — every strategy,
+       grouped by market with a subtotal on each market row and a grand TOTAL. -->
+  <section id="dashAnalytics" class="dash-analytics">
+    <div class="da-header">
+      <div class="da-title"><span id="da-mode-badge" class="da-badge">—</span><span id="da-title-txt">Today</span></div>
+      <div class="da-sub" id="da-sub-txt">Loading…</div>
+    </div>
+    <div id="da-body" class="da-body">
+      <div class="da-loading">Loading…</div>
+    </div>
+  </section>` : ''}
 
   <!-- ⑤ P&L OVER TIME — the top-bar Range applies. A strategy's card shows only
        when it traded in the range (see _renderModuleChart). -->
