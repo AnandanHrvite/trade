@@ -28,6 +28,23 @@
  * Signal engine: src/strategies/simple930.js (shared by paper, backtest
  * and replay — no rule is re-implemented in this file).
  *
+ * MARKETS. This file is a create(pair) builder (see utils/pairRuntime.js and
+ * routes/emaRsiStV2Paper.js, the pilot). The default export is the NIFTY
+ * instance: /simple930-paper, the same files, keys, Zerodha book, logs and
+ * decisions. forMarket(key) builds the same engine for every other market
+ * pairs.js offers it on (SENSEX, BANKNIFTY, NIFTY futures — never MCX: it
+ * needs the 09:15 index open), each with its own route /<modeKey>-paper,
+ * trades file, logs, crash snapshot, socket slot and Fyers capital book. The
+ * ATM comes from THAT market's index, the ladder walks its own strike grid
+ * (100 on SENSEX / BANKNIFTY) on its own expiry (SENSEX weekly, BANKNIFTY
+ * monthly) and its lot sizes the trade. Pair-only behaviour sits behind
+ * `!rt.home`: its own ON switch (<PAIR>_MODE_ENABLED, default off),
+ * <PAIR>_EXPIRY_DAY_ONLY on that market's expiry, the spread limit and the
+ * fill at the ask / bid of a fresh quote (<PAIR>_PAPER_FILL_AT_QUOTE), that
+ * exchange's charges. NIFTY futures refuse exactly as NIFTY does with the
+ * futures instrument: every level here is an option premium, and a future has
+ * none — the pair runs, logs why, and never builds a watchlist.
+ *
  * Uses LIVE data but SIMULATES orders locally.
  * Endpoints: GET  /start /stop /exit /status /status/data /status/chart-data
  *                 /history /reset /download/... /view/...
@@ -37,7 +54,6 @@
 
 const express = require("express");
 const { trackPath, pathFields } = require("../utils/tradePath");
-const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 
@@ -60,22 +76,15 @@ const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport, sendIfMaster } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const instrumentMode = require("../utils/instrumentMode");
-
-/** Configured premium trigger — read lazily for the futures-refusal message. */
-function earlyCfgTrigger() {
-  try { return strategy.getConfig().triggerPremium; } catch (_) { return "?"; }
-}
 const { istDayFromAny, istIsoFromAny, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger  = require("../utils/skipLogger");
 const { freshSpot } = require("../utils/freshSpot");
 const capitalPool = require("../utils/capitalPool");
+const pairs        = require("../config/pairs");
+const pairRuntime  = require("../utils/pairRuntime");
+const tradeJournal = require("../utils/tradeJournal");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
-const CALLBACK_ID        = "simple930Paper";
-const MODE_KEY           = "simple930";        // tradeLogger / skipLogger / capitalPool key
-const MODE_TAG           = "SIMPLE930-PAPER";  // notify + tickRecorder mode string
-const OPTION_FEED_OWNER  = "simple930-paper";  // optionFeed lease id (one per leg: -CE / -PE)
-const LOG_TAG            = "[SIMPLE930-PAPER]";
 /** Fyers getQuotes accepts up to 50 symbols per call. */
 const MAX_SYMBOLS_PER_CALL = 50;
 /** Premium chart resolution, in minutes. Display only — no rule reads a bar. */
@@ -83,27 +92,69 @@ const PREMIUM_BAR_MIN = 1;
 
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const PT_FILE  = path.join(DATA_DIR, "simple930_paper_trades.json");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUILDER: one paper engine per (strategy, market) pair. create(pair) returns an
+// Express router holding ALL of that pair's state. See the MARKETS note above.
+// ═══════════════════════════════════════════════════════════════════════════════
+function create(pair) {
+const rt     = pairRuntime.forPair(pair);
+const router = express.Router();
+const MODE              = rt.modeKey;     // "simple930" on NIFTY: tradeLogger / skipLogger / capitalPool key
+const PREFIX            = rt.envPrefix;   // "SIMPLE930" on NIFTY
+const ROUTE             = rt.paperPath;   // "/simple930-paper" on NIFTY
+const OWNER             = rt.ownerId;     // "simple930-paper" on NIFTY: recorder tag, session id
+const CALLBACK_ID       = rt.home ? "simple930Paper" : OWNER;   // socketManager callback id
+const MODE_TAG          = rt.home ? "SIMPLE930-PAPER" : rt.notifyMode;   // notify mode string
+const OPTION_FEED_OWNER = OWNER;          // optionFeed lease id (one per leg: -CE / -PE)
+const LOG_TAG           = rt.home ? "[SIMPLE930-PAPER]" : `[${rt.tag}-PAPER]`;
+const TITLE             = rt.home ? "SIMPLE_9:30" : `${rt.market().label} · SIMPLE_9:30`;
+// What the logs / page call the index the ATM comes from ("NIFTY" on NIFTY, as always).
+const SPOT_LABEL        = rt.home ? "NIFTY" : rt.spotLabel;
+// The index the ATM strike is rounded off: NIFTY 50 as always, else the market's own.
+const SPOT = () => (rt.home ? NIFTY_INDEX_SYMBOL : rt.spotSymbol());
+// Another market's option-symbol stem ("BSE:SENSEX", "NSE:BANKNIFTY"); NIFTY builds its own.
+const OPT_STEM = () => { const u = rt.U(); return `${u.exchange}:${u.optPrefix}`; };
+// Orders: NIFTY's Zerodha book as always; another market draws on the Fyers pool.
+const BROKER = rt.home ? "zerodha" : pair.broker;
+// A non-home pair's own value of one of SIMPLE930's keys (else NIFTY's —
+// pairs.envGet); undefined on NIFTY, so `PV(k) || <the literal NIFTY read> || d`
+// is the old read there.
+const PV = (k) => (rt.home ? undefined : pairs.envGet(`${PREFIX}_${k}`));
+rt.registerCapital();
+const PT_FILE  = path.join(DATA_DIR, rt.tradesFile);
+
+/**
+ * The engine's config. NIFTY: getConfig() exactly as before. Another market:
+ * its own keys with inheritance (<PAIR>_TRIGGER_PREMIUM, else NIFTY's …).
+ */
+function _cfg() { return rt.home ? strategy.getConfig() : strategy.getConfig(PREFIX); }
+
+/** Configured premium trigger — read lazily for the futures-refusal message. */
+function earlyCfgTrigger() {
+  try { return _cfg().triggerPremium; } catch (_) { return "?"; }
+}
 
 // ── Config readers (Settings mutates process.env live — never cache) ─────────
 function _startCapital() {
+  if (!rt.home) return parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   return parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000");
 }
 /** The rule is ONE trade a day — part of the entry definition, not a setting. */
 const TRADES_PER_DAY = 1;
 function _pollMs() {
-  const v = parseInt(process.env.SIMPLE930_POLL_MS || "1000", 10);
+  const v = parseInt(PV("POLL_MS") || process.env.SIMPLE930_POLL_MS || "1000", 10);
   return Number.isFinite(v) && v >= 250 && v <= 15000 ? v : 1000;
 }
 /** How long a polled premium may be stale before an entry is refused. */
 function _ltpStaleMs() {
-  const v = parseInt(process.env.SIMPLE930_LTP_STALE_MS || "15000", 10);
+  const v = parseInt(PV("LTP_STALE_MS") || process.env.SIMPLE930_LTP_STALE_MS || "15000", 10);
   return Number.isFinite(v) && v >= 1000 && v <= 120000 ? v : 15000;
 }
 
-/** Position size — the one common Lot Multiplier (Settings → Common Rules). */
+/** Position size — the one common Lot Multiplier (Settings → Common Rules), on this market's lot. */
 function simpleLotQty() {
-  return instrumentConfig.getLotQty();
+  return rt.home ? instrumentConfig.getLotQty() : rt.lotQty();
 }
 
 function ensureDir() {
@@ -122,7 +173,7 @@ function loadData() {
   }
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
-    console.error("[simple930-paper] simple930_paper_trades.json corrupt — resetting:", e.message);
+    console.error(`[${OWNER}] ${rt.tradesFile} corrupt — resetting:`, e.message);
     _dataCache = { capital: _startCapital(), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
@@ -255,7 +306,7 @@ function rehydrateSessionFromJsonl() {
     const data = loadData();
     const keyOf = (t) => String(t.entryTimeMs || t.entryTime || `${t.symbol}@${t.optionEntryLtp}@${t.entryTime}`);
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades(MODE_KEY, today)
+    const all = tradeLogger.readDailyTrades(MODE, today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) for (const t of (s.trades || [])) seen.add(keyOf(t));
@@ -298,7 +349,7 @@ require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, 
 // A replay re-requires this module — it must not replace the live instance's getter.
 let _replayLoad = false;
 try { _replayLoad = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
-if (!_replayLoad) capitalPool.trackSession(MODE_KEY, () => (state._unsaved ? state.sessionPnl : 0));
+if (!_replayLoad) capitalPool.trackSession(MODE, () => (state._unsaved ? state.sessionPnl : 0));
 
 /**
  * Realised P&L for the current ISO week (Mon → today) from the per-day JSONL
@@ -317,7 +368,7 @@ function weeklyPnl() {
       const d = new Date(nowIst.getTime() - i * 86400000);
       const ds = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
       if (ds === todayStr && state.running) { total += state.sessionPnl; continue; }
-      const trades = tradeLogger.readDailyTrades(MODE_KEY, ds) || [];
+      const trades = tradeLogger.readDailyTrades(MODE, ds) || [];
       for (const t of trades) if (t && !t.type && typeof t.pnl === "number") total += t.pnl;
     }
     return parseFloat(total.toFixed(2));
@@ -398,20 +449,33 @@ const SELECTION_RETRY_MS = 5000;
 async function runSelection() {
   if (state.selection || state._selectionInFlight) return;
   if (state._lastSelectionTryMs && Date.now() - state._lastSelectionTryMs < SELECTION_RETRY_MS) return;
-  const cfg = strategy.getConfig();
+  const cfg = _cfg();
   const nowMin = getISTMinutes();
   if (nowMin < cfg.selectionMin) return;
+  // Another market's <PAIR>_EXPIRY_DAY_ONLY on a day that is not its expiry.
+  if (!rt.home && state._expiryDayBlocked) return;
 
   // SIMPLE930 is premium-denominated end to end: the entry trigger and the
   // profit lock are both option-premium levels (see the pnlMode
   // string — "every level is a premium, not a spot"). NIFTY futures have no
   // premium, so there is no faithful futures translation of this strategy.
   // Refuse loudly rather than trade options against an explicit FUTURES toggle.
-  if (instrumentMode.isFutures()) {
+  // Another market: its own instrument — the NIFTY_FUT pair trades the month
+  // future, which has no premium either, so it refuses the same way.
+  if (rt.home ? instrumentMode.isFutures() : rt.isFutures) {
     if (!state._futuresRefusalLogged) {
       state._futuresRefusalLogged = true;
+      if (!rt.home) {
+        log(`⛔ ${LOG_TAG} ${rt.market().label} trades the month FUTURE — this strategy trades an option PREMIUM level (trigger ₹${earlyCfgTrigger()}), which has no futures equivalent. No watchlist, no entries on this market.`);
+        skipLogger.appendSkipLog(MODE, {
+          gate: "instrument",
+          reason: `SIMPLE930 is premium-denominated — not defined for ${rt.instrumentName()}`,
+          spot: state.lastTickPrice,
+        });
+        return;
+      }
       log(`⛔ ${LOG_TAG} INSTRUMENT=NIFTY_FUTURES — this strategy trades an option PREMIUM level (trigger ₹${earlyCfgTrigger()}), which has no futures equivalent. No watchlist, no entries. Switch INSTRUMENT back to NIFTY_OPTIONS to run it.`);
-      skipLogger.appendSkipLog(MODE_KEY, {
+      skipLogger.appendSkipLog(MODE, {
         gate: "instrument",
         reason: "SIMPLE930 is premium-denominated — not defined for NIFTY_FUTURES",
         spot: state.lastTickPrice,
@@ -427,38 +491,45 @@ async function runSelection() {
     // frozen at the last tick — on 2026-10-08 the previous close) would centre
     // the whole ladder on a stale number. Fall back to a direct quote.
     const _sid = state._sessionId;
-    const _spot = await freshSpot({ tickPrice: state.lastTickPrice, tickAt: state.lastTickTime });
+    const _spot = rt.home
+      ? await freshSpot({ tickPrice: state.lastTickPrice, tickAt: state.lastTickTime })
+      : await freshSpot({ tickPrice: state.lastTickPrice, tickAt: state.lastTickTime, underlying: rt.underlyingKey });
     if (state._sessionId !== _sid || state.selection) return;
     const spot = _spot.spot;
     if (!strategy._px(spot)) {
-      log(`⚠️ ${LOG_TAG} No NIFTY index price yet — cannot compute the ATM strike, selection deferred`);
+      log(`⚠️ ${LOG_TAG} No ${SPOT_LABEL} index price yet — cannot compute the ATM strike, selection deferred`);
       return;
     }
-    if (_spot.source === "quote") log(`📡 ${LOG_TAG} Live feed stale (${_spot.ageMs == null ? "no tick yet" : Math.round(_spot.ageMs / 1000) + "s old"}) — ATM from quoted NIFTY ${spot}`);
+    if (_spot.source === "quote") log(`📡 ${LOG_TAG} Live feed stale (${_spot.ageMs == null ? "no tick yet" : Math.round(_spot.ageMs / 1000) + "s old"}) — ATM from quoted ${SPOT_LABEL} ${spot}`);
     state.selectionTried++;
-    const atm = instrumentConfig.calcATMStrike(spot);
+    const atm = rt.home ? instrumentConfig.calcATMStrike(spot) : instrumentConfig.calcATMStrike(spot, null, rt.underlyingKey);
 
     // Resolve (and validate) the expiry ONCE, off the ATM contract. Every ladder
     // symbol is then built from that code, so a validated expiry costs one call
     // rather than one per rung.
     let ref;
     try {
-      ref = await instrumentConfig.validateAndGetOptionSymbol(spot, "CE", "SIMPLE930", { strikeOverride: atm });
+      ref = rt.home
+        ? await instrumentConfig.validateAndGetOptionSymbol(spot, "CE", "SIMPLE930", { strikeOverride: atm })
+        : await instrumentConfig.validateAndGetOptionSymbol(spot, "CE", "SIMPLE930", { strikeOverride: atm, underlying: rt.underlyingKey });
     } catch (e) {
       log(`❌ ${LOG_TAG} Expiry resolve failed: ${e.message} — selection will retry`);
       return;
     }
     if (!ref || ref.invalid || !ref.expiry) {
       log(`❌ ${LOG_TAG} No valid option expiry${ref && ref.staleExpiry ? ` (stale override ${ref.staleExpiry})` : ""} — no watchlist today`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: "no valid option expiry", spot, atm });
+      skipLogger.appendSkipLog(MODE, { gate: "expiry", reason: "no valid option expiry", spot, atm });
       decide("SKIP", "No valid option expiry — the watchlist could not be built", { spot, atm });
       _closeDay("No valid option expiry — no watchlist could be built");
       return;
     }
     const expiryCode = ref.expiry;
 
-    const ladder  = strategy.buildCandidateStrikes(atm, cfg);
-    const symbols = ladder.map(c => strategy.optionSymbol(expiryCode, c.strike, c.side));
+    // Another market: its own strike grid and symbol stem; NIFTY's calls as always.
+    const ladder  = rt.home ? strategy.buildCandidateStrikes(atm, cfg) : strategy.buildCandidateStrikes(atm, cfg, rt.strikeStep());
+    const symbols = rt.home
+      ? ladder.map(c => strategy.optionSymbol(expiryCode, c.strike, c.side))
+      : ladder.map(c => strategy.optionSymbol(expiryCode, c.strike, c.side, OPT_STEM()));
     const quotes  = await fetchQuotes(symbols);
 
     const rungs = ladder.map((c, i) => {
@@ -468,7 +539,7 @@ async function runSelection() {
         // Record EVERY rung we quoted. This is what lets Replay re-derive the
         // same 09:25 pick instead of falling back to whatever the day-wide
         // chain recorder happened to cover.
-        try { tickRecorder.recordOptionQuote(sym, q.ltp, q.bid, q.ask, "simple930-scan"); } catch (_) {}
+        try { tickRecorder.recordOptionQuote(sym, q.ltp, q.bid, q.ask, `${MODE}-scan`); } catch (_) {}
       }
       return { ...c, symbol: sym, ltp: q ? q.ltp : null };
     });
@@ -523,7 +594,7 @@ async function runSelection() {
     }
 
     // ── The log the operator actually reads ──
-    log(`🎯 ${LOG_TAG} 09:25 SELECTION — NIFTY ${sel.spot} → ATM ${atm} · expiry ${expiryCode}${sel.late ? " (late: session started after the selection time)" : ""}`);
+    log(`🎯 ${LOG_TAG} 09:25 SELECTION — ${SPOT_LABEL} ${sel.spot} → ATM ${atm} · expiry ${expiryCode}${sel.late ? " (late: session started after the selection time)" : ""}`);
     log(`   ├─ Quoted ${sel.quoted}/${sel.ladderSize} ladder rungs (${cfg.scanItmStrikes} ITM${cfg.scanOtmStrikes ? ` + ${cfg.scanOtmStrikes} OTM` : ""} per side), target ₹${cfg.triggerPremium}`);
     for (const side of ["CE", "PE"]) {
       const w = state.watch[side];
@@ -531,7 +602,7 @@ async function runSelection() {
       else {
         const why = (picked.notes.rejected.find(r => r.side === side) || {}).why || "no usable premium";
         log(`   ├─ ${side} NOT WATCHED — ${why}`);
-        skipLogger.appendSkipLog(MODE_KEY, { gate: "no_candidate", side, reason: why, spot: sel.spot, atm });
+        skipLogger.appendSkipLog(MODE, { gate: "no_candidate", side, reason: why, spot: sel.spot, atm });
       }
     }
     if (picked.notes.missing.length) {
@@ -573,7 +644,7 @@ const ENTRY_RETRY_MS = 5000;
 async function evaluateEntry() {
   if (state.position || state._entryInFlight || state.dayClosed) return;
   if (!state.selection) return;
-  const cfg = strategy.getConfig();
+  const cfg = _cfg();
   const nowMin = getISTMinutes();
   if (!strategy.inEntryWindow(nowMin, cfg)) return;
   if (state.tradesTaken >= TRADES_PER_DAY) return;
@@ -621,7 +692,7 @@ async function evaluateEntry() {
     if (!state._staleSkipLoggedMs || Date.now() - state._staleSkipLoggedMs > 60000) {
       state._staleSkipLoggedMs = Date.now();
       log(`🚫 ${LOG_TAG} ${verdict.leg} premium is ${Math.round(age / 1000)}s stale — entry refused rather than filled on an old quote`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "stale_ltp", side: verdict.leg, reason: `premium ${Math.round(age / 1000)}s old`, symbol: leg.symbol });
+      skipLogger.appendSkipLog(MODE, { gate: "stale_ltp", side: verdict.leg, reason: `premium ${Math.round(age / 1000)}s old`, symbol: leg.symbol });
     }
     return;
   }
@@ -649,7 +720,7 @@ async function evaluateEntry() {
 }
 
 async function simulateBuy(side, leg, verdict, cfg) {
-  cfg = cfg || strategy.getConfig();
+  cfg = cfg || _cfg();
   // The session this fill belongs to. The re-quote below is the ONLY await in
   // the entry path, and /stop (or the 15:30 auto-stop) can land inside it.
   const sessionId = state._sessionId;
@@ -657,6 +728,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
   // Re-quote the leg we are about to buy so the fill is the freshest price
   // available, not the one that happened to trip the trigger a poll ago.
   let fillLtp = leg.ltp;
+  let _entryQuote = null;   // another market's fresh bid / ask (spread limit + ask fill)
   try {
     const q = await fetchQuotes([leg.symbol]);
     const fresh = q.get(leg.symbol);
@@ -664,7 +736,8 @@ async function simulateBuy(side, leg, verdict, cfg) {
       fillLtp = fresh.ltp;
       leg.ltp = fresh.ltp;
       leg.ltpAt = Date.now();
-      try { tickRecorder.recordOptionQuote(leg.symbol, fresh.ltp, fresh.bid, fresh.ask, "simple930-entry"); } catch (_) {}
+      if (!rt.home) _entryQuote = { ltp: fresh.ltp, bid: fresh.bid, ask: fresh.ask, at: Date.now() };
+      try { tickRecorder.recordOptionQuote(leg.symbol, fresh.ltp, fresh.bid, fresh.ask, `${MODE}-entry`); } catch (_) {}
     }
   } catch (e) {
     log(`⚠️ ${LOG_TAG} Entry re-quote failed (${e.message}) — filling on the triggering quote ₹${fillLtp}`);
@@ -676,22 +749,43 @@ async function simulateBuy(side, leg, verdict, cfg) {
   // broker order with nothing left to manage it or square it off.
   if (!state.running || state._sessionId !== sessionId) {
     log(`🚫 ${LOG_TAG} Session ended while the ${side} fill was in flight — entry abandoned, no order placed`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "session_ended", side, reason: "session stopped mid-fill", symbol: leg.symbol });
+    skipLogger.appendSkipLog(MODE, { gate: "session_ended", side, reason: "session stopped mid-fill", symbol: leg.symbol });
     return;
   }
 
   if (!strategy._px(fillLtp)) {
     log(`❌ ${LOG_TAG} No usable premium for ${leg.symbol} — entry skipped`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP at fill", symbol: leg.symbol, side });
+    skipLogger.appendSkipLog(MODE, { gate: "option_ltp", reason: "no option LTP at fill", symbol: leg.symbol, side });
     return;
   }
   // The re-quote can land back BELOW the trigger. Buying anyway would be an
   // entry the rule never asked for, so refuse and let the next poll decide.
   if (!(fillLtp > cfg.triggerPremium)) {
     log(`🚫 ${LOG_TAG} ${side} fell back to ₹${fillLtp} (≤ ₹${cfg.triggerPremium}) before the fill — entry abandoned, still watching`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "trigger_lost", side, reason: `re-quote ₹${fillLtp} is no longer above ₹${cfg.triggerPremium}`, symbol: leg.symbol });
+    skipLogger.appendSkipLog(MODE, { gate: "trigger_lost", side, reason: `re-quote ₹${fillLtp} is no longer above ₹${cfg.triggerPremium}`, symbol: leg.symbol });
     state.sustain[side] = 0;
     return;
+  }
+
+  // Another market: its bid-ask spread limit (<PAIR>_MAX_SPREAD_PTS) on the
+  // re-quote, then the fill at the ASK of that fresh quote
+  // (<PAIR>_PAPER_FILL_AT_QUOTE, default on there). The trigger above is still
+  // read off the LTP — the rule's own price. NIFTY fills at the LTP as always.
+  const _ltpAtEntry = fillLtp;
+  let _askFill = null;
+  if (!rt.home && _entryQuote) {
+    const _sp = tradeGuards.checkSpread(_entryQuote.bid, _entryQuote.ask, rt.maxSpreadPts());
+    if (!_sp.ok) {
+      if (!state._spreadSkipLoggedMs || Date.now() - state._spreadSkipLoggedMs > 60000) {
+        state._spreadSkipLoggedMs = Date.now();
+        log(`⏭️ ${LOG_TAG} SKIP ${side} entry — spread too wide (${_sp.reason}, limit ${rt.maxSpreadPts()}pt)`);
+        skipLogger.appendSkipLog(MODE, { gate: "spread", reason: _sp.reason, side, symbol: leg.symbol, spread: _sp.spread, limit: rt.maxSpreadPts() });
+      }
+      state.sustain[side] = 0;
+      return;
+    }
+    const f = rt.entryFill(fillLtp, _entryQuote, Date.now());
+    if (f.source === "ask") { _askFill = f.price; fillLtp = f.price; }
   }
 
   const qty  = simpleLotQty();
@@ -700,11 +794,11 @@ async function simulateBuy(side, leg, verdict, cfg) {
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    Sits AFTER the last abort path. The sustain counter restarts so the leg
   //    must prove itself again; the ENTRY_RETRY_MS backoff above paces retries.
-  const _cap = capitalPool.gate(MODE_KEY, qty * fillLtp, { side, symbol: leg.symbol, qty });
+  const _cap = capitalPool.gate(MODE, qty * fillLtp, { side, symbol: leg.symbol, qty });
   if (!_cap.ok) {
     if (!_cap.muted) {
       log(`❌ ${LOG_TAG} Entry REFUSED — ${_cap.reason}`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", reason: _cap.reason, side, symbol: leg.symbol, qty, premium: fillLtp, cost: _cap.cost, available: _cap.available });
+      skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _cap.reason, side, symbol: leg.symbol, qty, premium: fillLtp, cost: _cap.cost, available: _cap.available });
     }
     state.sustain[side] = 0;
     return;
@@ -737,16 +831,44 @@ async function simulateBuy(side, leg, verdict, cfg) {
     bothAbove:     verdict ? !!verdict.both : false,
     mfePts: 0, mfePnl: 0, maePts: 0, maePnl: 0, secsToMFE: 0, secsToMAE: 0,
   };
+  // Another market: the position names its market and instrument, and how its
+  // entry was filled. NIFTY's position is exactly as above.
+  if (!rt.home) {
+    Object.assign(pos, {
+      market: rt.marketKey, instrument: rt.instrumentName(), spotSymbol: SPOT(),
+      optionEntryFill: _askFill ? "ask" : "ltp",
+      entryQuote: _entryQuote ? { bid: _entryQuote.bid, ask: _entryQuote.ask, ltp: _entryQuote.ltp } : null,
+    });
+  }
 
   state.position = pos;
-  capitalPool.block(MODE_KEY, qty * fillLtp, { side, symbol: leg.symbol, qty, premium: fillLtp });
-  try { require("../utils/positionPersist").saveSimple930Position(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+  // Trade journal (observer only — utils/tradeJournal.js).
+  _jLastStop = _stopLevel(pos);
+  tradeJournal.onEntry(pos, {
+    reason: pos.entryReason, signal: `BUY_${side}`,
+    indicators: { trigger: cfg.triggerPremium, selectionLtp: leg.selLtp, strike: leg.strike, moneyness: leg.moneyness || null, bothAbove: pos.bothAbove },
+    spot: state.lastTickPrice, optionLtp: pos.optionEntryLtp,
+    bid: _entryQuote ? _entryQuote.bid : null, ask: _entryQuote ? _entryQuote.ask : null,
+    vix: pos.vixAtEntry,
+    expiry: (state.selection && state.selection.expiryDate) || null,
+    market: rt.marketKey, strategy: rt.strategy.key,
+    isFutures: false, qty, sl: _jLastStop, target: null,
+    expectedPrice: _ltpAtEntry,
+    optionCandles: leg.bars,
+    nowMs: Date.now(),
+  });
+  capitalPool.block(MODE, qty * fillLtp, { side, symbol: leg.symbol, qty, premium: fillLtp });
+  try {
+    if (rt.home) require("../utils/positionPersist").saveSimple930Position(pos, { sessionPnl: state.sessionPnl });
+    else rt.persist.save(pos, { sessionPnl: state.sessionPnl });
+  } catch (_) {}
   state.optionLtp = fillLtp;
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
   _syncDayGuard();
 
   log(`🟢 ${LOG_TAG} BUY ${side} ${leg.symbol} qty=${qty} @ ₹${pos.optionEntryLtp}`);
+  if (_askFill) log(`📌 ${LOG_TAG} Entry filled at the ASK ₹${_askFill} (LTP ₹${_ltpAtEntry}, bid ₹${_entryQuote.bid}) — ${rt.fillAtQuoteKey}`);
   log(`   ├─ Trigger: ${pos.entryReason}`);
   log(`   └─ Exit: global profit lock only`);
 
@@ -765,6 +887,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
     qty, stopLoss: null, target: null,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
+    ...(rt.home ? {} : { instrument: rt.instrumentName() }),
   });
 }
 
@@ -773,16 +896,45 @@ function simulateSell(reason, opts) {
   if (!state.position) return;
   const o   = opts || {};
   const pos = state.position;
-  const exitLtp = strategy._px(state.optionLtp) ? state.optionLtp : pos.optionEntryLtp;
+  let exitLtp = strategy._px(state.optionLtp) ? state.optionLtp : pos.optionEntryLtp;
+  // Another market SELLS AT THE BID of a fresh quote of the held contract when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (pairRuntime.exitFill); NIFTY unchanged.
+  const _ltpAtExit = exitLtp;
+  let _exitFill = null, _exitQ = null;
+  if (!rt.home) {
+    const _w = state.watch[pos.side];
+    _exitQ = _w && _w.symbol === pos.symbol && _w.quote ? _w.quote : null;
+    const f = rt.exitFill(exitLtp, _exitQ, Date.now());
+    _exitFill = f.source;
+    if (f.source === "bid") exitLtp = f.price;
+  }
   // Whether the price this exit was booked at was actually current. A stale exit
   // would make the RECORD fiction, so the trade carries the age it was priced at.
   const exitAgeSec  = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
   const exitStale   = strategy._num(exitAgeSec) && exitAgeSec * 1000 > _ltpStaleMs();
   const qty     = pos.qty;
-  const charges = getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitLtp, qty });
+  // Another market: its exchange's charges (BSE for SENSEX) on its broker's schedule.
+  const charges = rt.home
+    ? getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitLtp, qty })
+    : getCharges({ broker: BROKER, isFutures: false, exchange: rt.market().exchange, entryPremium: pos.optionEntryLtp, exitPremium: exitLtp, qty });
   const pnl     = parseFloat(((exitLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
+
+  // Trade journal (observer only): the exit, before the trade object is built.
+  {
+    const _k = o.kind === "PROFIT_LOCK" ? "trail" : "manual";
+    tradeJournal.onExit(pos, {
+      reason, kind: _k,
+      spot: state.lastTickPrice, optionLtp: exitLtp,
+      bid: _exitQ ? _exitQ.bid : null, ask: _exitQ ? _exitQ.ask : null,
+      expectedPrice: _k === "trail" && _jLastStop != null ? _jLastStop : _ltpAtExit,
+      fillPrice: exitLtp,
+      favPts: strategy._r2(exitLtp - pos.optionEntryLtp),
+      pnlRs: parseFloat(((exitLtp - pos.optionEntryLtp) * qty).toFixed(2)),
+      nowMs: Date.now(),
+    });
+  }
 
   const trade = {
     side:            pos.side,
@@ -833,9 +985,26 @@ function simulateSell(reason, opts) {
     broker:          "zerodha",
     exitLtpAgeSec:   exitAgeSec,
     exitPriceStale:  exitStale,
+    ...tradeJournal.fields(pos),
   };
+  // Another market: the record names its market, strategy, spot, instrument and
+  // broker (consolidation, post-exit tracking and the MCP read them) and how
+  // each leg filled.
+  if (!rt.home) {
+    Object.assign(trade, {
+      market:          rt.marketKey,
+      strategyId:      rt.strategy.key,
+      spotSymbol:      pos.spotSymbol,
+      instrument:      rt.instrumentName(),
+      broker:          BROKER,
+      optionEntryFill: pos.optionEntryFill || "ltp",
+      optionExitFill:  _exitFill,
+      entryQuote:      pos.entryQuote || null,
+      exitQuote:       _exitFill === "bid" && _exitQ ? { bid: _exitQ.bid, ask: _exitQ.ask, ltp: _exitQ.ltp } : null,
+    });
+  }
   state.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog(MODE_KEY, trade);
+  tradeLogger.appendTradeLog(MODE, trade);
 
   log(`🔴 ${LOG_TAG} EXIT ${pos.side} ${pos.symbol} @ ₹${trade.optionExitLtp} | PnL=₹${pnl} (${reason})`);
   if (exitStale) log(`   ⚠️ Booked on a ${exitAgeSec}s-OLD premium — this P&L is NOT a real fill. In live the broker filled at the market price, not this one.`);
@@ -858,14 +1027,19 @@ function simulateSell(reason, opts) {
     entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
     peakPremium: pos.peak, peakPnl: trade.mfePnl,
     maxDrawdown: trade.maePnl, heldMs: trade.durationMs,
+    ...(rt.home ? {} : { instrument: rt.instrumentName() }),
   });
 
   state.position = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles
   // (1-min: the premium-bar resolution, the one the backtest walks).
   state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), PREMIUM_BAR_MIN);
-  capitalPool.release(MODE_KEY, pnl);
-  try { require("../utils/positionPersist").clearSimple930Position(); } catch (_) {}
+  capitalPool.release(MODE, pnl);
+  try {
+    if (rt.home) require("../utils/positionPersist").clearSimple930Position();
+    else rt.persist.clear();
+  } catch (_) {}
+  _jLastStop = null;
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
 
@@ -887,7 +1061,29 @@ function _closeDay(reason) {
   _syncDayGuard();
   log(`⏸️ ${LOG_TAG} ${reason} — no more entries today`);
   decide("DAY", reason, { sessionPnl: state.sessionPnl, tradesTaken: state.tradesTaken });
-  skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl });
+  skipLogger.appendSkipLog(MODE, { gate: "day_closed", reason, sessionPnl: state.sessionPnl });
+}
+
+// ── Trade journal: the exit level (observer only) ────────────────────────────
+// The level the profit lock / premium stop would fill this position at — the
+// higher of the armed lock floor and the premium stop (tradeGuards.exitLevelLtp,
+// the same function checkProfitLock decides with). Recorded on every move.
+let _jLastStop = null;
+function _stopLevel(pos) {
+  try { return tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak); } catch (_) { return null; }
+}
+function _journalStop(pos, ltp) {
+  try {
+    const lvl = _stopLevel(pos);
+    if (lvl == null || lvl === _jLastStop) return;
+    const stop = tradeGuards.premiumStopLtp(pos.optionEntryLtp, pos.peak);
+    let kind = lvl !== stop ? "lock" : (_jLastStop == null ? "initial" : "trail");
+    const why = lvl !== stop ? `profit lock floor (peak ₹${pos.peak}, entry ₹${pos.optionEntryLtp})` : `premium stop (peak ₹${pos.peak}, entry ₹${pos.optionEntryLtp})`;
+    // Only a settings change can loosen it (every level here only ratchets tighter).
+    if (_jLastStop != null && lvl < _jLastStop) kind = "manual";
+    tradeJournal.onStopChange(pos, { from: _jLastStop, to: lvl, kind, reason: why, spot: state.lastTickPrice, ltp, nowMs: Date.now() });
+    _jLastStop = lvl;
+  } catch (_) {}
 }
 
 /**
@@ -918,7 +1114,7 @@ function _checkExits() {
       log(`🚨 ${LOG_TAG} ${pos.symbol} premium is ${secs}s STALE — the profit lock cannot fire on a frozen price. Check the Fyers feed; square off manually if this persists.`);
       decide("SKIP", `Premium feed stale for ${secs}s — exits are running on an old price`, { symbol: pos.symbol, ageSec: secs, lastPremium: ltp });
       try {
-        sendIfMaster(`🚨 SIMPLE_9:30 — premium feed STALE\n${pos.symbol} last priced ₹${ltp}, ${secs}s ago.\nThe profit lock CANNOT fire while the price is frozen.\nCheck the Fyers feed and square off manually if it does not recover.`);
+        sendIfMaster(`🚨 ${TITLE} — premium feed STALE\n${pos.symbol} last priced ₹${ltp}, ${secs}s ago.\nThe profit lock CANNOT fire while the price is frozen.\nCheck the Fyers feed and square off manually if it does not recover.`);
       } catch (_) {}
     }
   } else {
@@ -936,6 +1132,10 @@ function _checkExits() {
   if (favPts < (pos.maePts || 0)) { pos.maePts = favPts; pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   trackPath(pos, favPts, Date.now());
   if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
+  // Trade journal (observer only): this quote, and the exit level whenever the
+  // peak moved it (the profit lock / premium stop trails the peak).
+  tradeJournal.onTick(pos, { favPts, pnlRs: curPnl, spot: state.lastTickPrice, ltp, nowMs: Date.now() });
+  _journalStop(pos, ltp);
 
   // Global profit lock (shared across every strategy — see tradeGuards) — the
   // ONLY automatic exit this strategy has.
@@ -958,12 +1158,12 @@ function _checkExits() {
  */
 function _closeIfWindowMissed() {
   if (state.dayClosed || state.position || state.tradesTaken > 0) return;
-  const cfg = strategy.getConfig();
+  const cfg = _cfg();
   if (getISTMinutes() <= cfg.entryEndMin) return;
   const ce = state.watch.CE, pe = state.watch.PE;
   const detail = `CE ${ce ? `${ce.strike} peaked ₹${ce.high}` : "not watched"} · PE ${pe ? `${pe.strike} peaked ₹${pe.high}` : "not watched"}`;
   _closeDay(`No leg cleared ₹${cfg.triggerPremium} by ${strategy._fmtMins(cfg.entryEndMin)} — no trade today (${detail})`);
-  skipLogger.appendSkipLog(MODE_KEY, {
+  skipLogger.appendSkipLog(MODE, {
     gate: "no_trigger", reason: `neither watchlist leg traded above ₹${cfg.triggerPremium} inside the entry window`,
     cePeak: ce ? ce.high : null, pePeak: pe ? pe.high : null, trigger: cfg.triggerPremium,
   });
@@ -1013,7 +1213,8 @@ function startPolling() {
             if (row.ltp < w.low)  w.low  = strategy._r2(row.ltp);
             _updatePremiumBar(w, row.ltp);
             // A streamed price is already recorded by optionFeed.
-            if (!row.streamed) { try { tickRecorder.recordOptionQuote(w.symbol, row.ltp, row.bid, row.ask, "simple930-paper"); } catch (_) {} }
+            if (!row.streamed) { try { tickRecorder.recordOptionQuote(w.symbol, row.ltp, row.bid, row.ask, OWNER); } catch (_) {} }
+            if (!rt.home && !row.streamed) w.quote = { ltp: row.ltp, bid: row.bid, ask: row.ask, at: w.ltpAt };
             if (state.position && state.position.symbol === w.symbol) {
               state.optionLtp = row.ltp;
               state.optionLtpUpdatedAt = w.ltpAt;
@@ -1083,7 +1284,7 @@ function _lateStartStopMins() {
 
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
-  const raw = process.env.TRADE_STOP_TIME || "15:30";
+  const raw = rt.home ? (process.env.TRADE_STOP_TIME || "15:30") : rt.stopTimeLabel();
   const [h, m] = raw.split(":").map(Number);
   const stopMin = h * 60 + (isNaN(m) ? 0 : m);
   let minsLeft = stopMin - getISTMinutes();
@@ -1093,17 +1294,28 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  if (state.running) return res.redirect("/simple930-paper/status");
+  if (state.running) return res.redirect(`${ROUTE}/status`);
 
-  if (String(process.env.SIMPLE930_MODE_ENABLED || "true").toLowerCase() !== "true") {
-    return res.status(403).send(_errorPage("SIMPLE_9:30 Disabled", "Enable SIMPLE_9:30 Mode in Settings first", "/settings", "Go to Settings"));
-  }
-  if (String(process.env.SIMPLE930_PAPER_ENABLED || "true").toLowerCase() !== "true") {
-    return res.status(403).send(_errorPage("SIMPLE_9:30 Paper Disabled", "Enable SIMPLE_9:30 Paper Trading in Settings first", "/settings", "Go to Settings"));
+  if (rt.home) {
+    if (String(process.env.SIMPLE930_MODE_ENABLED || "true").toLowerCase() !== "true") {
+      return res.status(403).send(_errorPage("SIMPLE_9:30 Disabled", "Enable SIMPLE_9:30 Mode in Settings first", "/settings", "Go to Settings"));
+    }
+    if (String(process.env.SIMPLE930_PAPER_ENABLED || "true").toLowerCase() !== "true") {
+      return res.status(403).send(_errorPage("SIMPLE_9:30 Paper Disabled", "Enable SIMPLE_9:30 Paper Trading in Settings first", "/settings", "Go to Settings"));
+    }
+  } else {
+    // Every non-home pair ships OFF: its own switch, then the strategy's paper
+    // switch (its own value, else NIFTY's — config/pairs.js).
+    if (!rt.enabled()) {
+      return res.status(403).send(_errorPage(`${TITLE} Disabled`, `Turn on ${pair.enabledKey} in Settings → ${rt.market().label} first`, `/settings#pair-${pair.slug}`, "Go to Settings"));
+    }
+    if (!rt.paperEnabled()) {
+      return res.status(403).send(_errorPage(`${TITLE} Paper Disabled`, `${pairs.pairKey(pair, rt.strategy.paperEnabled.key)} (or SIMPLE930_PAPER_ENABLED) is off`, `/settings#pair-${pair.slug}`, "Go to Settings"));
+    }
   }
 
-  const check = sharedSocketState.canStart("SIMPLE930_PAPER");
-  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, "/simple930-paper/status", "← Back"));
+  const check = rt.home ? sharedSocketState.canStart("SIMPLE930_PAPER") : rt.socketSlot.canStart();
+  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, `${ROUTE}/status`, "← Back"));
 
   // Fyers is the DATA broker for every strategy in this repo, including the ones
   // that place their orders on Zerodha. Without it there is no option chain to
@@ -1111,16 +1323,18 @@ router.get("/start", async (req, res) => {
   const auth = await verifyFyersToken();
   if (!auth.ok) return res.status(401).send(_errorPage("Not Authenticated", auth.message, "/auth/login", "Login with Fyers"));
 
-  const holiday = await isTradingAllowed();
-  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/simple930-paper/status", "← Back"));
+  // This market's exchange calendar (NSE / BSE holidays).
+  const holiday = rt.home ? await isTradingAllowed() : await rt.isTradingAllowed();
+  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, `${ROUTE}/status`, "← Back"));
+  if (!rt.home && !SPOT()) return res.status(400).send(_errorPage("Cannot Start", `${TITLE}: no spot symbol for ${rt.market().label}`, `${ROUTE}/status`, "← Back"));
 
-  const cfg = strategy.getConfig();
+  const cfg = _cfg();
 
   state = _freshState();
   state.running = true;
   state._unsaved = true;
   state.sessionStart = new Date().toISOString();
-  state._sessionId = `simple930-paper:${Date.now()}`;
+  state._sessionId = `${rt.replayMode}:${Date.now()}`;
 
   // Carry today's already-spent trade budget across a restart — of the session
   // OR of the whole process. Without this a /stop → /start, or any deploy, buys
@@ -1139,11 +1353,12 @@ router.get("/start", async (req, res) => {
     log(`♻️ ${LOG_TAG} Same-day restart — carrying forward ${state.tradesTaken} trade(s)${state.dayClosed ? ` · day already closed: ${state.dayClosedReason}` : ""}`);
   }
 
-  sharedSocketState.setSimple930Active("SIMPLE930_PAPER");
+  if (rt.home) sharedSocketState.setSimple930Active("SIMPLE930_PAPER");
+  else rt.socketSlot.set();
 
   log(`🟢 ${LOG_TAG} Session started — ${strategy.NAME}`);
   log(`⚙️ ${LOG_TAG} ${strategy.describePlan(cfg)}`);
-  log(`⚙️ ${LOG_TAG} Ladder ${cfg.scanItmStrikes} ITM${cfg.scanOtmStrikes ? ` + ${cfg.scanOtmStrikes} OTM` : ""} per side · qty ${simpleLotQty()} · ${TRADES_PER_DAY} trade/day · orders route to ZERODHA · quotes every ${_pollMs()}ms`);
+  log(`⚙️ ${LOG_TAG} Ladder ${cfg.scanItmStrikes} ITM${cfg.scanOtmStrikes ? ` + ${cfg.scanOtmStrikes} OTM` : ""} per side · qty ${simpleLotQty()} · ${TRADES_PER_DAY} trade/day · orders route to ${BROKER.toUpperCase()} · quotes every ${_pollMs()}ms`);
   if (cfg.maxPremiumDist || cfg.minPremium || cfg.sustainPolls > 1) {
     log(`⚙️ ${LOG_TAG} Optional guards ON — ${[
       cfg.maxPremiumDist ? `reject a side further than ₹${cfg.maxPremiumDist} from ₹${cfg.triggerPremium}` : null,
@@ -1155,8 +1370,19 @@ router.get("/start", async (req, res) => {
     trigger: cfg.triggerPremium,
     selection: strategy._fmtMins(cfg.selectionMin),
     entryWindow: `${strategy._fmtMins(cfg.entryStartMin)}–${strategy._fmtMins(cfg.entryEndMin)}`,
-    qty: simpleLotQty(), tradesPerDay: TRADES_PER_DAY, broker: "zerodha",
+    qty: simpleLotQty(), tradesPerDay: TRADES_PER_DAY, broker: BROKER,
   });
+
+  // Another market: what it trades, and its trades days — <PAIR>_EXPIRY_DAY_ONLY
+  // against THAT market's expiry calendar. NIFTY has no expiry-day rule here.
+  if (!rt.home) {
+    log(`🌐 ${LOG_TAG} ${rt.market().label} · ATM from ${SPOT()} · ${rt.instrumentName()} · strike grid ${rt.strikeStep() || "—"} · lot ${simpleLotQty()}`);
+    if (rt.expiryDayOnly()) {
+      const isExpiry = rt.isExpiryDay();
+      if (!isExpiry) state._expiryDayBlocked = true;
+      log(`📅 ${LOG_TAG} Expiry-only mode (${rt.market().label}): ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not this market's expiry day — no watchlist, no entries"}`);
+    }
+  }
 
   if (getISTMinutes() > cfg.entryEndMin) {
     log(`⚠️ ${LOG_TAG} Started after ${strategy._fmtMins(cfg.entryEndMin)} — the entry window has already closed, so today is monitor-only`);
@@ -1165,14 +1391,14 @@ router.get("/start", async (req, res) => {
 
   try {
     tickRecorder.recordSessionStart({
-      mode: "simple930-paper",
+      mode: OWNER,
       sessionId: state._sessionId,
       settings: tickRecorder.snapshotSettings ? tickRecorder.snapshotSettings() : {},
       warmup: [],
       meta: {
-        instrument: instrumentConfig.INSTRUMENT,
+        instrument: rt.home ? instrumentConfig.INSTRUMENT : rt.instrumentName(),
         resolutionMin: PREMIUM_BAR_MIN,
-        spotSymbol: NIFTY_INDEX_SYMBOL,
+        spotSymbol: SPOT(),
         decisionSymbol: "option premium (watchlist)",
         sessionStartISO: state.sessionStart,
         recordsOptionLtps: true,
@@ -1180,13 +1406,21 @@ router.get("/start", async (req, res) => {
     });
   } catch (_) {}
 
-  if (socketManager.isRunning()) {
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log(`📡 ${LOG_TAG} Piggybacking on existing WebSocket (NIFTY 50 index — ATM strike + heartbeat only)`);
+  if (rt.home) {
+    if (socketManager.isRunning()) {
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log(`📡 ${LOG_TAG} Piggybacking on existing WebSocket (NIFTY 50 index — ATM strike + heartbeat only)`);
+    } else {
+      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log(`📡 ${LOG_TAG} Started WebSocket (NIFTY 50 index — ATM strike + heartbeat only)`);
+    }
   } else {
-    socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log(`📡 ${LOG_TAG} Started WebSocket (NIFTY 50 index — ATM strike + heartbeat only)`);
+    // Bound to this market's index: the shared socket adds it beside NIFTY.
+    const _wasRunning = socketManager.isRunning();
+    if (!_wasRunning) socketManager.start(SPOT(), () => {}, log);
+    socketManager.addCallback(CALLBACK_ID, onTick, log, SPOT());
+    log(`📡 ${LOG_TAG} ${_wasRunning ? "Piggybacking on existing WebSocket" : "Started WebSocket"} — ${SPOT()} (ATM strike + heartbeat only)`);
   }
 
   startPolling();
@@ -1195,7 +1429,7 @@ router.get("/start", async (req, res) => {
   notifyStarted({
     mode: MODE_TAG,
     text: [
-      `📄 SIMPLE_9:30 PAPER — STARTED`,
+      `📄 ${rt.home ? "SIMPLE_9:30" : rt.title} PAPER — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
@@ -1203,11 +1437,11 @@ router.get("/start", async (req, res) => {
       `Strategy  : ${strategy.NAME}`,
       `Select    : ${strategy._fmtMins(cfg.selectionMin)} — the strike nearest ₹${cfg.triggerPremium} on each side`,
       `Entry     : first watchlist leg above ₹${cfg.triggerPremium}, ${strategy._fmtMins(cfg.entryStartMin)}–${strategy._fmtMins(cfg.entryEndMin)}`,
-      `Exit      : global profit lock only · orders → Zerodha`,
+      `Exit      : global profit lock only · orders → ${rt.home ? "Zerodha" : "Fyers"}`,
     ].join("\n"),
   });
 
-  res.redirect("/simple930-paper/status");
+  res.redirect(`${ROUTE}/status`);
 });
 
 function stopSession() {
@@ -1216,10 +1450,11 @@ function stopSession() {
   state.running = false;
   stopPolling();
 
-  try { tickRecorder.recordSessionStop({ mode: "simple930-paper", sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
+  try { tickRecorder.recordSessionStop({ mode: OWNER, sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
 
   socketManager.removeCallback(CALLBACK_ID);
-  sharedSocketState.clearSimple930();   // clear OWN mode first (else the socket never stops → leak)
+  if (rt.home) sharedSocketState.clearSimple930();   // clear OWN mode first (else the socket never stops → leak)
+  else rt.socketSlot.clear();
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -1232,7 +1467,7 @@ function stopSession() {
       data.capital  = parseFloat((_startCapital() + data.totalPnl).toFixed(2));
       saveData(data);
       state._unsaved = false;   // now inside totalPnl — the pool must not add it twice
-      capitalPool.sessionSaved(MODE_KEY);
+      capitalPool.sessionSaved(MODE);
       log(`💾 ${LOG_TAG} Session saved — ${state.sessionTrades.length} trade(s), PnL ₹${state.sessionPnl}`);
     } catch (e) {
       log(`⚠️ ${LOG_TAG} Save failed: ${e.message}`);
@@ -1251,13 +1486,13 @@ function stopSession() {
   });
 }
 
-router.get("/stop", (req, res) => { stopSession(); res.redirect("/simple930-paper/status"); });
-router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit", { kind: "MANUAL" }); res.redirect("/simple930-paper/status"); });
+router.get("/stop", (req, res) => { stopSession(); res.redirect(`${ROUTE}/status`); });
+router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit", { kind: "MANUAL" }); res.redirect(`${ROUTE}/status`); });
 
 // ── /status/chart-data — the two premium charts + the index context chart ────
 router.get("/status/chart-data", (req, res) => {
   try {
-    const cfg = strategy.getConfig();
+    const cfg = _cfg();
     const pos = state.position;
     const legOf = (side) => {
       const w = state.watch[side];
@@ -1311,7 +1546,7 @@ router.get("/status/data", (req, res) => {
   const pos = state.position;
   const optAge = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
   const data = loadData();
-  const cfg  = strategy.getConfig();
+  const cfg  = _cfg();
 
   let livePnl = null;
   if (pos && strategy._px(state.optionLtp)) {
@@ -1374,7 +1609,7 @@ router.get("/status/data", (req, res) => {
       entryEnd: strategy._fmtMins(cfg.entryEndMin),
       scanItm: cfg.scanItmStrikes, scanOtm: cfg.scanOtmStrikes,
       sustainPolls: cfg.sustainPolls, maxPremiumDist: cfg.maxPremiumDist, minPremium: cfg.minPremium,
-      pollMs: _pollMs(), qty: simpleLotQty(), broker: "zerodha",
+      pollMs: _pollMs(), qty: simpleLotQty(), broker: BROKER,
     },
     position: pos ? {
       side: pos.side, symbol: pos.symbol, optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
@@ -1390,7 +1625,7 @@ router.get("/status/data", (req, res) => {
 // ── The page ─────────────────────────────────────────────────────────────────
 router.get("/status", (req, res) => {
   const data = loadData();
-  const cfg  = strategy.getConfig();
+  const cfg  = _cfg();
 
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
   const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
@@ -1398,7 +1633,7 @@ router.get("/status", (req, res) => {
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>SIMPLE_9:30 — Paper</title>${faviconLink()}
+<title>${TITLE} — Paper</title>${faviconLink()}
 <style>${sidebarCSS()}${modalCSS()}${bbRsiStyleCSS()}
 .s930-card{background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;margin-bottom:18px;}
 .s930-hdr{font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
@@ -1461,15 +1696,15 @@ router.get("/status", (req, res) => {
 </style>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head><body>
-${buildSidebar('simple930Paper', false)}
+${buildSidebar(rt.sidebarKey, false)}
 <div class="main-content">
 ${bbRsiTopBar({
-  title: "⏰ SIMPLE_9:30 — Paper",
-  metaLine: `${strategy.describePlan(cfg)} · orders → Zerodha`,
+  title: `⏰ ${TITLE} — Paper`,
+  metaLine: `${strategy.describePlan(cfg)} · orders → ${rt.home ? "Zerodha" : "Fyers"}`,
   running: state.running,
-  primaryAction: { href: "/simple930-paper/start", label: "▶ Start", color: "#0369a1" },
-  stopAction:    { href: "/simple930-paper/stop",  label: "■ Stop" },
-  historyHref: "/simple930-paper/history",
+  primaryAction: { href: `${ROUTE}/start`, label: "▶ Start", color: "#0369a1" },
+  stopAction:    { href: `${ROUTE}/stop`,  label: "■ Stop" },
+  historyHref: `${ROUTE}/history`,
 })}
 
 ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 0), allTime: data.totalPnl || 0 })}
@@ -1492,7 +1727,7 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
     <div class="step" data-step="exit">
       <div class="step-t">on fill</div>
       <div class="step-h">Exit on the profit lock</div>
-      <div class="step-d">The global profit lock is the only automatic exit. Anything still open at the session auto-stop is closed at market. ${simpleLotQty()} qty · orders → Zerodha.</div>
+      <div class="step-d">The global profit lock is the only automatic exit. Anything still open at the session auto-stop is closed at market. ${simpleLotQty()} qty · orders → ${rt.home ? "Zerodha" : "Fyers"}.</div>
       <div class="step-s" id="step-s-exit">waiting</div>
     </div>
   </div>
@@ -1510,7 +1745,7 @@ ${bbRsiStatGrid([
   { label: "Trades", value: `${state.tradesTaken}/${TRADES_PER_DAY}` },
   { label: "W / L", value: `${wins} / ${losses}` },
   { label: "Trigger", value: `₹${cfg.triggerPremium}` },
-  { label: "NIFTY", value: state.lastTickPrice != null ? String(state.lastTickPrice) : "—" },
+  { label: SPOT_LABEL, value: state.lastTickPrice != null ? String(state.lastTickPrice) : "—" },
 ])}
 
 <div id="pos-card" style="margin-bottom:18px;">${_positionCardHtml(state.position, state.optionLtp)}</div>
@@ -1531,13 +1766,13 @@ ${bbRsiStatGrid([
 </div>
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY 50 INDEX ${PREMIUM_BAR_MIN}m — context only (the ATM strike came from it at ${strategy._fmtMins(cfg.selectionMin)}; no rule reads it)</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">${rt.home ? "NIFTY 50" : rt.market().label} INDEX ${PREMIUM_BAR_MIN}m — context only (the ATM strike came from it at ${strategy._fmtMins(cfg.selectionMin)}; no rule reads it)</div>
   <div class="chart-box" style="height:220px;"><div id="idxchart" style="width:100%;height:100%;"></div></div>
 </div>
 
 <div class="s930-card">
   <div class="s930-hdr"><span>Decision trail — every choice the engine made today</span>
-    <a href="/simple930-paper/download/decisions.json" style="font-size:0.66rem;color:#38bdf8;text-decoration:none;text-transform:none;letter-spacing:0;">⬇ download JSON</a></div>
+    <a href="${ROUTE}/download/decisions.json" style="font-size:0.66rem;color:#38bdf8;text-decoration:none;text-transform:none;letter-spacing:0;">⬇ download JSON</a></div>
   <div id="s930-decisions" style="max-height:340px;overflow-y:auto;"><div style="color:var(--muted-1,#8ba1c2);font-size:0.75rem;">Nothing decided yet.</div></div>
 </div>
 
@@ -1655,7 +1890,7 @@ function renderSteps(d) {
 }
 async function s930Refresh() {
   try {
-    const r = await fetch('/simple930-paper/status/data', { cache: 'no-store' });
+    const r = await fetch('${ROUTE}/status/data', { cache: 'no-store' });
     const d = await r.json();
     var legs = document.getElementById('s930-legs');
     if (legs) {
@@ -1668,14 +1903,14 @@ async function s930Refresh() {
     }
     var selEl = document.getElementById('s930-sel');
     if (selEl) selEl.textContent = d.selection
-      ? (d.selection.atTime + ' · NIFTY ' + d.selection.spot + ' → ATM ' + d.selection.atm + ' · ' + d.selection.expiryCode + ' · ' + d.selection.quoted + '/' + d.selection.ladderSize + ' rungs quoted' + (d.selection.late ? ' · LATE' : ''))
+      ? (d.selection.atTime + ' · ${SPOT_LABEL} ' + d.selection.spot + ' → ATM ' + d.selection.atm + ' · ' + d.selection.expiryCode + ' · ' + d.selection.quoted + '/' + d.selection.ladderSize + ' rungs quoted' + (d.selection.late ? ' · LATE' : ''))
       : (d.selectionPending ? 'pending' : '—');
     var tg = document.getElementById('s930-trigger');
     if (tg) tg.textContent = d.position ? '' : (d.lastTriggerNote || '');
     var dayEl = document.getElementById('s930-day');
     if (dayEl) dayEl.textContent = d.dayClosed ? '⏸️ ' + d.dayClosedReason : '';
     var ck = document.getElementById('s930-clock');
-    if (ck) ck.textContent = (d.inEntryWindow ? 'ENTRY WINDOW OPEN' : 'entry window closed') + ' · NIFTY ' + (d.lastTickPrice != null ? d.lastTickPrice : '—') + ' · ' + d.tickCount + ' ticks';
+    if (ck) ck.textContent = (d.inEntryWindow ? 'ENTRY WINDOW OPEN' : 'entry window closed') + ' · ${SPOT_LABEL} ' + (d.lastTickPrice != null ? d.lastTickPrice : '—') + ' · ' + d.tickCount + ' ticks';
     renderLadder(d); renderDecisions(d); renderPos(d); renderSteps(d);
   } catch (e) {}
 }
@@ -1712,7 +1947,7 @@ setInterval(s930Refresh, 3000);
   }
   async function fetchChart(){
     try {
-      var r = await fetch('/simple930-paper/status/chart-data', { cache:'no-store' });
+      var r = await fetch('${ROUTE}/status/chart-data', { cache:'no-store' });
       var d = await r.json();
       ['CE','PE'].forEach(function(s){
         var leg = d[s.toLowerCase()];
@@ -1762,23 +1997,23 @@ function _positionCardHtml(pos, optLtp) {
 router.get("/history", (req, res) => {
   const data = loadData();
   res.send(renderHistoryPage({
-    routePrefix: "/simple930-paper",
-    sidebarKey: "simple930History",
-    pageTitle: "⏰ SIMPLE_9:30 Paper Trade History",
-    pageDocTitle: "SIMPLE_9:30 Paper — History",
-    modalLabel: "SIMPLE_9:30 Paper",
+    routePrefix: ROUTE,
+    sidebarKey: rt.historySidebarKey,
+    pageTitle: `⏰ ${TITLE} Paper Trade History`,
+    pageDocTitle: `${TITLE} Paper — History`,
+    modalLabel: `${TITLE} Paper`,
     sessions: data.sessions || [],
     totalPnl: data.totalPnl,
     startCap: _startCapital(),
-    emptyLabel: "Start SIMPLE_9:30 paper trading to record your first session.",
+    emptyLabel: `Start ${TITLE} paper trading to record your first session.`,
   }));
 });
 
 const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates(MODE_KEY);
-  const trades = tradeLogger.listDailyDates(MODE_KEY);
+  const skips  = skipLogger.listDates(MODE);
+  const trades = tradeLogger.listDailyDates(MODE);
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) { const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 }; row.tradesSize = t.size; byDate.set(t.date, row); }
@@ -1790,11 +2025,11 @@ router.get("/download/daily-files", (req, res) => {
 router.get("/download/decisions.json", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="simple930_decisions_${today}.json"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${MODE}_decisions_${today}.json"`);
   res.send(JSON.stringify({
     strategy: strategy.NAME,
     sessionStart: state.sessionStart,
-    config: strategy.getConfig(),
+    config: _cfg(),
     selection: state.selection,
     decisions: state.decisions,
     log: state.log,
@@ -1805,33 +2040,33 @@ router.get("/download/decisions.json", (req, res) => {
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="simple930_paper_skips_all_${today}.txt"`);
-  const dates = skipLogger.listDates(MODE_KEY).map(d => d.date).sort();
+  res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates(MODE).map(d => d.date).sort();
   let body = "";
-  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE_KEY, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
+  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
   res.send(body);
 });
 
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor(MODE_KEY, date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `simple930_paper_skips_${date}.txt`);
+  res.download(p, `${MODE}_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `simple930_paper_trades_${date}.txt`);
+  res.download(p, `${MODE}_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor(MODE_KEY, date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1841,7 +2076,7 @@ router.get("/view/skips/:date", (req, res) => {
 router.get("/view/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1849,7 +2084,7 @@ router.get("/view/trades/:date", (req, res) => {
 });
 
 router.delete("/session/:index", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop SIMPLE_9:30 paper trading first before deleting a session." });
+  if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading first before deleting a session.` });
   const data = loadData();
   const idx = parseInt(req.params.index, 10);
   if (isNaN(idx) || idx < 0 || idx >= (data.sessions || []).length) return res.status(400).json({ success: false, error: "Invalid session index." });
@@ -1861,10 +2096,10 @@ router.delete("/session/:index", (req, res) => {
 });
 
 router.post("/restore-session/:date", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop SIMPLE_9:30 paper trading before restoring." });
+  if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading before restoring.` });
   const date = String(req.params.date || "").trim();
   if (!_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
-  const allTrades = tradeLogger.readDailyTrades(MODE_KEY, date).filter(t => t && !t.type);
+  const allTrades = tradeLogger.readDailyTrades(MODE, date).filter(t => t && !t.type);
   if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   const data = loadData();
   const keyOf = (t) => String(t.entryTimeMs || t.entryTime || `${t.symbol}@${t.optionEntryLtp}@${t.entryTime}`);
@@ -1880,35 +2115,35 @@ router.post("/restore-session/:date", (req, res) => {
   saveData(data);
   // Today's restored trades are the ones a restart rehydrated as unsaved — now in totalPnl.
   if (date === tradeLogger.istDateString(Date.now())) state._unsaved = false;
-  capitalPool.sessionSaved(MODE_KEY);   // drop the pool's file-P&L memo now
+  capitalPool.sessionSaved(MODE);   // drop the pool's file-P&L memo now
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
 router.get("/reset", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop SIMPLE_9:30 paper trading before resetting." });
+  if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading before resetting.` });
   const fresh = _startCapital();
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
-  require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
+  require("../utils/paperReset").clearTodayFiles(MODE); // else restart rehydrates today's session
   state._unsaved = false;   // the rehydrated unsaved trades were just wiped with the history
-  capitalPool.sessionSaved(MODE_KEY);
-  return res.json({ success: true, message: `SIMPLE_9:30 paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
+  capitalPool.sessionSaved(MODE);
+  return res.json({ success: true, message: `${TITLE} paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
 router.get("/download/trades.jsonl", (req, res) => {
   try {
     const data = loadData();
     const records = [];
-    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE_KEY, strategy: s.strategy }, t));
+    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE, strategy: s.strategy }, t));
     const today = new Date().toISOString().slice(0, 10);
     const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
     if (ai) {
-      const md = aiExport.buildMarkdown(records, { title: "SIMPLE_9:30 paper trades (full log)", source: "simple930-paper" });
+      const md = aiExport.buildMarkdown(records, { title: `${TITLE} paper trades (full log)`, source: OWNER });
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="simple930_paper_trades_AI_${today}.md"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_AI_${today}.md"`);
       return res.send(md);
     }
     res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Content-Disposition", `attachment; filename="simple930_paper_trades_${today}.jsonl"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_${today}.jsonl"`);
     res.send(records.map(r => JSON.stringify(r)).join("\n"));
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1925,8 +2160,26 @@ a{color:#3b82f6;text-decoration:none;border:0.5px solid #0e1e36;padding:8px 14px
 </head><body><h2>${title}</h2><p>${message}</p><a href="${backHref}">${backLabel}</a></body></html>`;
 }
 
-module.exports = router;
-module.exports.stopSession = stopSession;
+router.stopSession = stopSession;
+router.pairRuntime = rt;
 // Exposed for offline unit-testing — this decides which number every entry and
 // every exit is measured against, so it is tested rather than trusted.
-module.exports.attributeQuotes = attributeQuotes;
+router.attributeQuotes = attributeQuotes;
+return router;
+}   // ── end create(pair) ──
+
+// One instance per pair, built on first use — the NIFTY one at load.
+const _instances = new Map();
+function forPairInstance(p) {
+  if (!p) return null;
+  if (!_instances.has(p.id)) _instances.set(p.id, create(p));
+  return _instances.get(p.id);
+}
+/** The router of this strategy on `marketKey` ("BANKNIFTY", "SENSEX", …), or null when not offered. */
+function forMarket(marketKey) { return forPairInstance(pairs.get("simple930", marketKey)); }
+
+const home = forMarket("NIFTY");
+home.create    = create;
+home.forMarket = forMarket;
+home.forPair   = forPairInstance;
+module.exports = home;

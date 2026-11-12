@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, simple930: NO_MCX };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -1024,6 +1024,101 @@ check("route builder: NIFTY is the default export; one cached router per market;
           } catch (e) { reject(e); }
         });
       }).on("error", (e) => { srv.close(); reject(e); });
+    });
+  });
+});
+
+section("SIMPLE 9:30 runs as a pair (routes/simple930Paper.js)");
+
+const s930Of = (mk) => pairRuntime.forStrategy("simple930", mk);
+check("NIFTY is the registry's SIMPLE 9:30: path, file, slot, sidebar, notify tag", () => {
+  const rt = s930Of("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey, rt.notifyMode],
+    [true, "simple930", "SIMPLE930", "/simple930-paper", "simple930-paper", "simple930-paper", "simple930_paper_trades.json", "SIMPLE930_PAPER", "simple930Paper", "simple930History", "SIMPLE930-PAPER"]);
+});
+check("SIMPLE 9:30 other markets: own path, file, slot, prefix and instrument; never MCX", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "SAIL"].map(mk => { const r = s930Of(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName(), r.strikeStep()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_SIMPLE930", "/sensex_simple930-paper", "sensex_simple930_paper_trades.json", "SENSEX_SIMPLE930_PAPER", "SENSEX_SIMPLE930-PAPER", "SENSEX_OPTIONS", 100],
+    ["BANKNIFTY", "BN_SIMPLE930", "/bn_simple930-paper", "bn_simple930_paper_trades.json", "BN_SIMPLE930_PAPER", "BN_SIMPLE930-PAPER", "BANKNIFTY_OPTIONS", 100],
+    ["NIFTY_FUT", "FUT_SIMPLE930", "/fut_simple930-paper", "fut_simple930_paper_trades.json", "FUT_SIMPLE930_PAPER", "FUT_SIMPLE930-PAPER", "NIFTY_FUTURES", null],
+    ["SAIL", "SAIL_SIMPLE930", "/sail_simple930-paper", "sail_simple930_paper_trades.json", "SAIL_SIMPLE930_PAPER", "SAIL_SIMPLE930-PAPER", "SAIL_OPTIONS", 2.5],
+  ]);
+  assert.strictEqual(s930Of("CRUDE"), null, "needs the 09:15 index open — not offered on MCX");
+  assert.strictEqual(pairs.byReplayMode("bn_simple930-paper").strategyId, "simple930");
+  assert.strictEqual(pairs.byReplayMode("simple930-paper"), null, "the home mode is the registry's");
+});
+check("SIMPLE 9:30 engine: NIFTY reads SIMPLE930_* exactly; a pair its own key, else NIFTY's; its own grid and stem", () => {
+  const eng = require("../src/strategies/simple930");
+  withEnv({ SIMPLE930_TRIGGER_PREMIUM: "200", SIMPLE930_ENTRY_END: "09:40", SENSEX_SIMPLE930_TRIGGER_PREMIUM: "600", BN_SIMPLE930_TRIGGER_PREMIUM: undefined, SENSEX_SIMPLE930_ENTRY_END: undefined }, () => {
+    const n = eng.getConfig(), s = eng.getConfig("SENSEX_SIMPLE930"), b = eng.getConfig("BN_SIMPLE930");
+    assert.deepStrictEqual([n.triggerPremium, n.entryEndMin], [200, 580]);
+    assert.deepStrictEqual([s.triggerPremium, s.entryEndMin], [600, 580], "own trigger, inherited window");
+    assert.deepStrictEqual([b.triggerPremium, b.entryEndMin], [200, 580], "inherits NIFTY");
+    assert.deepStrictEqual(eng.getConfig("SIMPLE930"), n, "the SIMPLE930 prefix is NIFTY");
+  });
+  withEnv({ SENSEX_SIMPLE930_SCAN_ITM_STRIKES: "abc", SIMPLE930_SCAN_ITM_STRIKES: undefined }, () => assert.strictEqual(eng.getConfig("SENSEX_SIMPLE930").scanItmStrikes, 8, "bad own value falls to the default"));
+  const cfg = eng.getConfig();
+  assert.deepStrictEqual(eng.buildCandidateStrikes(24000, cfg).slice(0, 3).map(c => c.strike), [24000, 23950, 23900], "NIFTY's 50-pt ladder");
+  assert.deepStrictEqual(eng.buildCandidateStrikes(80000, cfg, 100).slice(0, 3).map(c => c.strike), [80000, 79900, 79800], "SENSEX's 100-pt ladder");
+  assert.strictEqual(eng.optionSymbol("26N19", 24000, "CE"), "NSE:NIFTY26N1924000CE");
+  assert.strictEqual(eng.optionSymbol("26N19", 80000, "PE", "BSE:SENSEX"), "BSE:SENSEX26N1980000PE");
+  assert.strictEqual(eng.optionSymbol("26NOV", 57000, "CE", "NSE:BANKNIFTY"), "NSE:BANKNIFTY26NOV57000CE");
+});
+check("SIMPLE 9:30 crash snapshot, logs and tags per pair; capital on the Fyers pool", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveSimple930Position, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger");
+  assert.ok(tl.modes().includes("sensex_simple930") && sl.modes().includes("bn_simple930"));
+  assert.strictEqual(pairs.get("simple930", "SENSEX").broker, "fyers");
+  assert.strictEqual(pairs.get("simple930", "NIFTY").broker, "zerodha", "NIFTY keeps its Zerodha book");
+  s930Of("SENSEX").persist.save({ side: "CE", symbol: "BSE:SENSEX26N1980000CE", optionEntryLtp: 610, peak: 640, trough: 600 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("sensex_simple930").position.symbol, "BSE:SENSEX26N1980000CE");
+    pp.clearPairPositions();
+  });
+});
+check("SIMPLE 9:30 route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/simple930Paper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/simple930-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(typeof route.attributeQuotes, "function", "the quote attribution stays exported");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.forMarket("CRUDE"), null, "no MCX instance");
+  const sx = route.forMarket("SENSEX");
+  assert.ok(sx && sx !== route && route.forMarket("SENSEX") === sx, "one instance per market");
+  assert.strictEqual(sx.pairRuntime.paperPath, "/sensex_simple930-paper");
+  assert.strictEqual(typeof sx.stopSession, "function");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(sx.pairRuntime.paperPath, sx);
+  app.use(route.pairRuntime.paperPath, route);
+  const get = (port, p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${p}`, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => resolve({ code: res.statusCode, body }));
+    }).on("error", reject);
+  });
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, async () => {
+      const port = srv.address().port;
+      try {
+        const r = await get(port, "/sensex_simple930-paper/start");
+        assert.strictEqual(r.code, 403);
+        assert.ok(r.body.includes("SENSEX_SIMPLE930_MODE_ENABLED"), "names the pair's switch");
+        assert.ok(!sx.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+        const a = JSON.parse((await get(port, "/sensex_simple930-paper/status/data")).body);
+        const b = JSON.parse((await get(port, "/simple930-paper/status/data")).body);
+        assert.strictEqual(a.cfg.broker, "fyers", "the SENSEX instance draws on the Fyers book");
+        assert.strictEqual(b.cfg.broker, "zerodha");
+        assert.strictEqual(a.running, false);
+        const page = (await get(port, "/sensex_simple930-paper/status")).body;
+        assert.ok(page.includes("/sensex_simple930-paper/status/data") && !page.includes("'/simple930-paper/status/data'"), "the SENSEX page polls its own data");
+        srv.close();
+        resolve();
+      } catch (e) { srv.close(); reject(e); }
     });
   });
 });
