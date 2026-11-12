@@ -248,7 +248,7 @@ function getConfig(prefix) {
     maxConcurrent:    _intEnv(R("EARLYBIRD_MAX_CONCURRENT", process.env.EARLYBIRD_MAX_CONCURRENT), 5, 1, 50),
 
     // Universe
-    universe:         String(R("EARLYBIRD_UNIVERSE", process.env.EARLYBIRD_UNIVERSE) || "FNO").trim().toUpperCase(),
+    universe:         String((P ? _pairEnv(P, "EARLYBIRD_UNIVERSE") : process.env.EARLYBIRD_UNIVERSE || "FNO") || "FNO").trim().toUpperCase(),
 
     // WHAT WE TRADE. See the TRADE MODE block at the top of this file.
     //   "stock"  — cash equity in the confirming F&O stocks (the original rules)

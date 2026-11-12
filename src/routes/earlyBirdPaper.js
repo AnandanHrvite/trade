@@ -240,6 +240,7 @@ function create(pair) {
 const rt     = pairRuntime.forPair(pair);
 const router = express.Router();
 const MODE_KEY    = rt.modeKey;     // "early_bird" on NIFTY: tradeLogger / skipLogger / capitalPool key
+const MODE        = MODE_KEY;       // the capitalPool key (the name the capital-gate test reads)
 const PREFIX      = rt.envPrefix;   // "EARLYBIRD" on NIFTY
 const ROUTE       = rt.paperPath;   // "/early-bird-paper" on NIFTY
 const OWNER       = rt.ownerId;     // OWNER on NIFTY: recorder tag, session id
@@ -274,7 +275,6 @@ function _lotQty() { return rt.home ? instrumentConfig.getLotQty() : rt.lotQty()
 // ── Instrument maths. NIFTY: instrumentMode exactly as before. Another market:
 //    its own instrument (NIFTY_FUT trades the month future at the index level)
 //    and its exchange's charges (BSE for SENSEX). ───────────────────────────────
-function _isFutures() { return rt.home ? instrumentMode.isFutures() : rt.isFutures; }
 function _dir(side) { return side === "PE" ? -1 : 1; }
 function _computePnl(o) {
   if (rt.home) return instrumentMode.computePnl(o);
@@ -282,8 +282,8 @@ function _computePnl(o) {
   const exchange = rt.market().exchange;
   if (rt.isFutures) {
     const gross = (o.exitSpot - o.entrySpot) * _dir(o.side) * qty;
-    const charges = getCharges({ broker: o.broker, isFutures: true, exchange, entryPremium: o.entrySpot, exitPremium: o.exitSpot, qty });
-    return { gross: _r2(gross), charges, pnl: _r2(gross - charges), isFutures: true };
+    const charges = getCharges({ broker: o.broker, isFutures: rt.isFutures, exchange, entryPremium: o.entrySpot, exitPremium: o.exitSpot, qty });
+    return { gross: _r2(gross), charges, pnl: _r2(gross - charges), isFutures: rt.isFutures };
   }
   const gross = (o.exitPremium - o.entryPremium) * qty;
   const charges = getCharges({ broker: o.broker, isFutures: false, exchange, entryPremium: o.entryPremium, exitPremium: o.exitPremium, qty });
@@ -543,7 +543,7 @@ rehydrateSessionFromJsonl();
 // on every call: the running session's closed trades (and today's trades
 // rehydrated after a restart that the file does not hold yet), and 0 once
 // stopSession / restore-session has written them into the file.
-capitalPool.trackSession(MODE_KEY, () => (state._saved ? 0 : (Number(state.sessionPnl) || 0)));
+capitalPool.trackSession(MODE, () => (state._saved ? 0 : (Number(state.sessionPnl) || 0)));
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, LOG_TAG);
 
 /**
@@ -1199,7 +1199,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
 
   log(`⚡ ${LOG_TAG} OPTION TRIGGER — ${IX} spot ${triggerSpot} ${setup.side === "LONG" ? "traded UP through" : "traded DOWN through"} the ${setup.entry} entry level. Resolving the ${optionSide} strike…`);
 
-  const _isFut = _isFutures();
+  const _isFut = rt.home ? instrumentMode.isFutures() : rt.isFutures;
 
   let optInfo;
   try {
@@ -1303,7 +1303,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   // ── Capital gate — HARD, exactly as on the stock leg. A refused option leg
   //    counts as the day's one attempt (no retry loop against an empty pool);
   //    the flag is persisted the same way a fill persists it.
-  const _cap = capitalPool.gate(MODE_KEY, _capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty });
+  const _cap = capitalPool.gate(MODE, _capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
     log(`❌ ${LOG_TAG} OPTION — entry REFUSED, no retry today — ${_cap.reason}`);
     skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", leg: "option", reason: _cap.reason, symbol: optInfo.symbol, side: optionSide, spot: triggerSpot, qty, premium, cost: _cap.cost, available: _cap.available });
@@ -1377,7 +1377,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   state.optionLtpFailAt = null;
   state.tradesTaken++;
   // add:true — this engine holds several positions at once; each gets its own block.
-  capitalPool.block(MODE_KEY, _capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty, premium }, { add: true });
+  capitalPool.block(MODE, _capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty, premium }, { add: true });
   _persist();
 
   const slip = _r2(Math.abs(triggerSpot - entrySpot));
@@ -1595,7 +1595,7 @@ async function _closeOptionPositionInner(ex) {
     s.sessionTrades.push(trade);
     tradeLogger.appendTradeLog(MODE_KEY, trade);
     released = true;
-    capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
+    capitalPool.release(MODE, pnl, { symbol: pos.symbol });   // frees this position's block only
     if (s === state) _persist();   // never re-snapshot over a newer session
 
     const held = Math.round(trade.durationMs / 1000);
@@ -1627,7 +1627,7 @@ async function _closeOptionPositionInner(ex) {
   } finally {
     if (!released) {
       log(`⚠️ ${LOG_TAG} OPTION — exit for ${pos.symbol} did not complete; releasing its capital block (P&L ₹${bookedPnl}).`);
-      try { capitalPool.release(MODE_KEY, bookedPnl, { symbol: pos.symbol }); } catch (_) {}
+      try { capitalPool.release(MODE, bookedPnl, { symbol: pos.symbol }); } catch (_) {}
     }
     if (!_exitNotified) {
       try {
@@ -1951,7 +1951,7 @@ function _openPosition(setup, triggerPrice, nowMins) {
   //    refused. The setup is consumed (pending → attempted) exactly as a fill
   //    would consume it: _checkTriggers runs on every tick, and leaving it
   //    pending would re-run this refusal on every tick until the window closes.
-  const _cap = capitalPool.gate(MODE_KEY, qty * fillPrice, { side: setup.side, symbol: setup.symbol, qty });
+  const _cap = capitalPool.gate(MODE, qty * fillPrice, { side: setup.side, symbol: setup.symbol, qty });
   if (!_cap.ok) {
     log(`❌ ${LOG_TAG} ${setup.symbol} entry REFUSED — ${_cap.reason}`);
     skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", leg: "stock", reason: _cap.reason, symbol: setup.symbol, side: setup.side, price: fillPrice, qty, cost: _cap.cost, available: _cap.available });
@@ -2003,7 +2003,7 @@ function _openPosition(setup, triggerPrice, nowMins) {
   state.attempted.add(setup.symbol);
   state.tradesTaken++;
   // add:true — this engine holds several positions at once; each gets its own block.
-  capitalPool.block(MODE_KEY, qty * fillPrice, { side: setup.side, symbol: setup.symbol, qty, premium: fillPrice }, { add: true });
+  capitalPool.block(MODE, qty * fillPrice, { side: setup.side, symbol: setup.symbol, qty, premium: fillPrice }, { add: true });
   _persist();
 
   const slip = _r2(Math.abs(triggerPrice - fillPrice));
@@ -2205,7 +2205,7 @@ function _closePosition(pos, ex) {
   try {
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);
-  capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
+  capitalPool.release(MODE, pnl, { symbol: pos.symbol });   // frees this position's block only
   _persist();
 
   const held = Math.round(trade.durationMs / 1000);
@@ -2492,7 +2492,7 @@ router.get("/start", async (req, res) => {
  */
 function _markSavedToFile(s) {
   s._saved = true;
-  try { capitalPool.sessionSaved(MODE_KEY); } catch (_) {}
+  try { capitalPool.sessionSaved(MODE); } catch (_) {}
 }
 
 async function stopSession() {
