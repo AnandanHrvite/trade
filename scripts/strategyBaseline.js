@@ -347,10 +347,10 @@ async function main() {
       p.ticksDir = path.join(tmpRoot, `ticks-${p.name}`);
       fs.mkdirSync(p.ticksDir, { recursive: true });
       const pSpec = path.join(tmpRoot, `recording-spec-${p.name}.json`);
-      fs.writeFileSync(pSpec, JSON.stringify({ ...RECORDING_SPEC, settings: { ...SETTINGS, [p.enabledKey]: "true" }, modes: [p.mode] }));
+      fs.writeFileSync(pSpec, JSON.stringify({ ...RECORDING_SPEC, settings: { ...SETTINGS, [p.enabledKey]: "true", ...(p.settings || {}) }, modes: [p.mode] }));
       const pOut = path.join(tmpRoot, `generate-${p.name}.json`);
       const pg = await runWorker(["--generate", "--market", p.market, "--ticks", p.ticksDir, "--settings", pSpec, "--out", pOut], tmpRoot, `generate-${p.name}`);
-      if (pg.code !== 0) throw new Error(`${p.market} recording generation failed (exit ${pg.code}) — see ${pg.log}\n${pg.stderr}`);
+      if (pg.code !== 0) throw new Error(`${p.name} recording generation failed (exit ${pg.code}) — see ${pg.log}\n${pg.stderr}`);
       const pr = JSON.parse(fs.readFileSync(pOut, "utf8"));
       console.log(`📼 ${p.name}: ${pr.summary.map(s => `${s.date.slice(5)}→${s.expiry.slice(5)}`).join(" ")}`);
     }
