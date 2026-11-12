@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX, itm20Scalp: NO_MCX, simple930: NO_MCX };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX, itm20Scalp: NO_MCX, simple930: NO_MCX, earlyBird: NO_MCX };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -1402,6 +1402,101 @@ check("SIMPLE 9:30 route builder: NIFTY is the default export; one cached router
         assert.strictEqual(a.running, false);
         const page = (await get(port, "/sensex_simple930-paper/status")).body;
         assert.ok(page.includes("/sensex_simple930-paper/status/data") && !page.includes("'/simple930-paper/status/data'"), "the SENSEX page polls its own data");
+        srv.close();
+        resolve();
+      } catch (e) { srv.close(); reject(e); }
+    });
+  });
+});
+
+section("EARLYBIRD runs as a pair (routes/earlyBirdPaper.js)");
+
+const ebOf = (mk) => pairRuntime.forStrategy("earlyBird", mk);
+check("NIFTY is the registry's EARLYBIRD: path, file, slot, sidebar, notify tag", () => {
+  const rt = ebOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey, rt.notifyMode],
+    [true, "early_bird", "EARLYBIRD", "/early-bird-paper", "early-bird-paper", "early-bird-paper", "early_bird_paper_trades.json", "EARLY_BIRD_PAPER", "earlyBirdPaper", "earlyBirdHistory", "EARLYBIRD-PAPER"]);
+});
+check("EARLYBIRD other markets: own path, file, slot, prefix and instrument; never MCX", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "SAIL"].map(mk => { const r = ebOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName(), r.strikeStep(), r.spotSymbol()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_EARLYBIRD", "/sensex_early_bird-paper", "sensex_early_bird_paper_trades.json", "SENSEX_EARLYBIRD_PAPER", "SENSEX_EARLYBIRD-PAPER", "SENSEX_OPTIONS", 100, "BSE:SENSEX-INDEX"],
+    ["BANKNIFTY", "BN_EARLYBIRD", "/bn_early_bird-paper", "bn_early_bird_paper_trades.json", "BN_EARLYBIRD_PAPER", "BN_EARLYBIRD-PAPER", "BANKNIFTY_OPTIONS", 100, "NSE:NIFTYBANK-INDEX"],
+    ["NIFTY_FUT", "FUT_EARLYBIRD", "/fut_early_bird-paper", "fut_early_bird_paper_trades.json", "FUT_EARLYBIRD_PAPER", "FUT_EARLYBIRD-PAPER", "NIFTY_FUTURES", null, "NSE:NIFTY50-INDEX"],
+    ["SAIL", "SAIL_EARLYBIRD", "/sail_early_bird-paper", "sail_early_bird_paper_trades.json", "SAIL_EARLYBIRD_PAPER", "SAIL_EARLYBIRD-PAPER", "SAIL_OPTIONS", 2.5, "NSE:SAIL-EQ"],
+  ]);
+  assert.strictEqual(ebOf("CRUDE"), null, "needs the 09:15 index open — not offered on MCX");
+  assert.strictEqual(pairs.byReplayMode("bn_early_bird-paper").strategyId, "earlyBird");
+  assert.strictEqual(pairs.byReplayMode("early-bird-paper"), null, "the home mode is the registry's");
+});
+check("EARLYBIRD engine: NIFTY reads EARLYBIRD_* exactly; a pair its own key, else NIFTY's; a pair trades the option leg only", () => {
+  const eng = require("../src/strategies/early_bird");
+  withEnv({ EARLYBIRD_TRADE_MODE: "stock", EARLYBIRD_ENTRY_BUFFER_PTS: "7", EARLYBIRD_MIN_BODY_PCT: "45", SENSEX_EARLYBIRD_ENTRY_BUFFER_PTS: "20", BN_EARLYBIRD_ENTRY_BUFFER_PTS: undefined, SENSEX_EARLYBIRD_MIN_BODY_PCT: undefined, SENSEX_EARLYBIRD_TRADE_MODE: "both" }, () => {
+    const n = eng.getConfig(), s = eng.getConfig("SENSEX_EARLYBIRD"), b = eng.getConfig("BN_EARLYBIRD");
+    assert.deepStrictEqual([n.entryBufferPts, n.minBodyPct, n.tradeMode], [7, 45, "stock"]);
+    assert.deepStrictEqual([s.entryBufferPts, s.minBodyPct], [20, 45], "own buffer, inherited body %");
+    assert.deepStrictEqual([b.entryBufferPts, b.minBodyPct], [7, 45], "inherits NIFTY");
+    assert.deepStrictEqual([s.tradeMode, b.tradeMode], ["option", "option"], "the stock leg is NIFTY-50 cash equity — a pair never runs it");
+    assert.ok(!eng.tradesStock(s) && eng.tradesOption(s));
+    assert.deepStrictEqual(eng.getConfig("EARLYBIRD"), n, "the EARLYBIRD prefix is NIFTY");
+  });
+  const cfg = Object.assign(eng.getConfig("SENSEX_EARLYBIRD"), { indexLabel: "SENSEX" });
+  assert.ok(/^No SENSEX candles/.test(eng.getNiftySignal([], { cfg }).reason), "a pair's reasons name its own index");
+  assert.ok(/^No NIFTY candles/.test(eng.getNiftySignal([], {}).reason), "NIFTY's reasons are unchanged");
+});
+check("EARLYBIRD crash snapshot, logs and tags per pair; capital on the Fyers pool", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveEarlyBirdPositions, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger");
+  assert.ok(tl.modes().includes("sensex_early_bird") && sl.modes().includes("bn_early_bird"));
+  assert.strictEqual(pairs.get("earlyBird", "SENSEX").broker, "fyers");
+  ebOf("SENSEX").persist.save({ side: "SHORT", optionSide: "PE", symbol: "BSE:SENSEX26N1980100PE", optionEntryLtp: 560, bestPremium: 600 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("sensex_early_bird").position.symbol, "BSE:SENSEX26N1980100PE");
+    pp.clearPairPositions();
+  });
+});
+check("EARLYBIRD route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/earlyBirdPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/early-bird-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(typeof route.attributeQuotes, "function", "the quote attribution stays exported");
+  assert.strictEqual(typeof route._prevCloseFrom, "function");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.forMarket("CRUDE"), null, "no MCX instance");
+  const sx = route.forMarket("SENSEX"), bn = route.forMarket("BANKNIFTY");
+  assert.ok(sx && sx !== route && route.forMarket("SENSEX") === sx, "one instance per market");
+  assert.ok(sx.__state !== route.__state && sx.__state !== bn.__state, "each market holds its own session state");
+  assert.strictEqual(sx.pairRuntime.paperPath, "/sensex_early_bird-paper");
+  withEnv({ EARLYBIRD_TRADE_MODE: "stock" }, () => {
+    assert.strictEqual(route.__optionView(), null, "NIFTY in stock mode has no option leg");
+    assert.deepStrictEqual([sx.__optionView().lotQty, bn.__optionView().lotQty], [ebOf("SENSEX").lotQty(), ebOf("BANKNIFTY").lotQty()], "a pair's option leg sizes on its own lot");
+  });
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(sx.pairRuntime.paperPath, sx);
+  app.use(route.pairRuntime.paperPath, route);
+  const get = (port, p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${p}`, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => resolve({ code: res.statusCode, body }));
+    }).on("error", reject);
+  });
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, async () => {
+      const port = srv.address().port;
+      try {
+        const r = await get(port, "/sensex_early_bird-paper/start");
+        assert.strictEqual(r.code, 403);
+        assert.ok(r.body.includes("SENSEX_EARLYBIRD_MODE_ENABLED"), "names the pair's switch");
+        assert.ok(!sx.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+        const a = JSON.parse((await get(port, "/sensex_early_bird-paper/status/data")).body);
+        assert.strictEqual(a.running, false);
+        assert.deepStrictEqual([a.tradeMode, a.tradesStock, a.tradesOption], ["option", false, true], "the SENSEX instance runs the option leg only");
+        const page = (await get(port, "/sensex_early_bird-paper/status")).body;
+        assert.ok(page.includes("/sensex_early_bird-paper/status/data") && !page.includes("'/early-bird-paper/status/data'"), "the SENSEX page polls its own data");
         srv.close();
         resolve();
       } catch (e) { srv.close(); reject(e); }
