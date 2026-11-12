@@ -1,0 +1,424 @@
+{
+  "baselineVersion": 1,
+  "strategy": "simple930Paper.NIFTY_FUT",
+  "mode": "fut_simple930-paper",
+  "totalTrades": 0,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 3,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "instrument",
+            "count": 1
+          },
+          {
+            "gate": "day_closed",
+            "count": 1
+          },
+          {
+            "gate": "no_trigger",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    }
+  ]
+}
