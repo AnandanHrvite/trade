@@ -59,8 +59,8 @@
  * them against /replay before any live gate is touched.
  *
  * Contract:
- *   getConfig()                              -> live env read (never cached)
- *   buildCandidateStrikes(atm, cfg)          -> the ladder quoted at 09:25
+ *   getConfig(prefix?)                       -> live env read (never cached); prefix = a pair's own keys
+ *   buildCandidateStrikes(atm, cfg, step?)   -> the ladder quoted at 09:25 (step = the market's grid)
  *   selectWatchlist(quotes, atm, cfg)        -> { ce, pe, candidates, notes }
  *   evaluateTrigger(legs, cfg, sustain)      -> { fire, leg, ltp, reason, … }
  */
@@ -117,16 +117,29 @@ function _num(x) { return typeof x === "number" && Number.isFinite(x); }
 /** A usable premium: finite AND positive. A ₹0 quote is a dead contract, not a price. */
 function _px(x) { return _num(x) && x > 0; }
 
-function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+// Env read for one key. The home pair (no prefix / "SIMPLE930") reads
+// process.env exactly as it always did; another market's pair (SENSEX_SIMPLE930,
+// BN_SIMPLE930 ...) reads its own key with pair inheritance: its value when set,
+// else NIFTY's SIMPLE930_* value (config/pairs.js envGet). `key` is always the
+// NIFTY key, so the literal names stay greppable.
+const ENV_PREFIX = "SIMPLE930";
+let _pairsMod = null;
+function _rawEnv(key, prefix) {
+  if (!prefix || prefix === ENV_PREFIX) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(`${prefix}${key.slice(ENV_PREFIX.length)}`);
+}
+
+function _numEnv(key, def, min, max, prefix) {
+  const v = parseFloat(_rawEnv(key, prefix));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
 
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+function _intEnv(key, def, min, max, prefix) {
+  const v = parseInt(_rawEnv(key, prefix), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
@@ -136,17 +149,22 @@ function _intEnv(key, def, min, max) {
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ *
+ * `prefix`: a (strategy, market) pair's env prefix ("SENSEX_SIMPLE930",
+ * "BN_SIMPLE930" ...), whose keys are read with pair inheritance. Omitted (or
+ * "SIMPLE930") = the NIFTY keys, read exactly as before.
  */
-function getConfig() {
-  const trigger = _numEnv("SIMPLE930_TRIGGER_PREMIUM", 180, 1, 5000);
+function getConfig(prefix) {
+  const P = prefix && prefix !== ENV_PREFIX ? prefix : null;   // a pair: read through pairs.envGet
+  const trigger = _numEnv("SIMPLE930_TRIGGER_PREMIUM", 180, 1, 5000, P);
   return {
     // ── The clock (IST) ──
     // Selection is a single instant, not a window: the chain is quoted once.
-    selectionMin:   _parseHHMM(process.env.SIMPLE930_SELECTION_TIME, 9 * 60 + 25),
+    selectionMin:   _parseHHMM(P ? _rawEnv("SIMPLE930_SELECTION_TIME", P) : process.env.SIMPLE930_SELECTION_TIME, 9 * 60 + 25),
     // Entries are allowed from the moment the watchlist exists — the operator's
     // rule is "if it is above 180, take it", not "wait for 09:30".
-    entryStartMin:  _parseHHMM(process.env.SIMPLE930_ENTRY_START,    9 * 60 + 25),
-    entryEndMin:    _parseHHMM(process.env.SIMPLE930_ENTRY_END,      9 * 60 + 35),
+    entryStartMin:  _parseHHMM(P ? _rawEnv("SIMPLE930_ENTRY_START", P) : process.env.SIMPLE930_ENTRY_START,    9 * 60 + 25),
+    entryEndMin:    _parseHHMM(P ? _rawEnv("SIMPLE930_ENTRY_END", P) : process.env.SIMPLE930_ENTRY_END,      9 * 60 + 35),
 
     // ── The premium level ──
     // ONE number drives both the strike search and the breakout level, because
@@ -156,16 +174,16 @@ function getConfig() {
     // ── The ladder quoted at 09:25 ──
     // ITM depth per side. 8 × 50 = 400 points, which covers a ₹180 premium from
     // a fresh weekly (barely ITM) to expiry day (almost all intrinsic).
-    scanItmStrikes: _intEnv("SIMPLE930_SCAN_ITM_STRIKES", 8, 1, 20),
+    scanItmStrikes: _intEnv("SIMPLE930_SCAN_ITM_STRIKES", 8, 1, 20, P),
     // OTM depth. 0 = the rule as written (ATM + ITM only). Raise it when the
     // whole ITM ladder sits far ABOVE ₹180 — that happens on a fresh weekly
     // where even the ATM contract is dearer than the trigger.
-    scanOtmStrikes: _intEnv("SIMPLE930_SCAN_OTM_STRIKES", 0, 0, 20),
+    scanOtmStrikes: _intEnv("SIMPLE930_SCAN_OTM_STRIKES", 0, 0, 20, P),
 
     // ── Guards that default to OFF (see the header) ──
-    maxPremiumDist: _numEnv("SIMPLE930_MAX_PREMIUM_DIST", 0, 0, 5000),
-    minPremium:     _numEnv("SIMPLE930_MIN_PREMIUM",      0, 0, 5000),
-    sustainPolls:   _intEnv("SIMPLE930_SUSTAIN_POLLS",    1, 1, 60),
+    maxPremiumDist: _numEnv("SIMPLE930_MAX_PREMIUM_DIST", 0, 0, 5000, P),
+    minPremium:     _numEnv("SIMPLE930_MIN_PREMIUM",      0, 0, 5000, P),
+    sustainPolls:   _intEnv("SIMPLE930_SUSTAIN_POLLS",    1, 1, 60, P),
   };
 }
 
@@ -180,11 +198,14 @@ function getConfig() {
  *
  * @param {number} atm  ATM strike (a multiple of 50)
  * @param {object} cfg  getConfig()
+ * @param {number} [step] the market's strike grid (another market's pair:
+ *        SENSEX / BANKNIFTY 100). Omitted = NIFTY's 50, exactly as before.
  * @returns {Array<{strike:number, side:"CE"|"PE", steps:number, moneyness:string}>}
  *          `steps` is signed: negative = ITM, 0 = ATM, positive = OTM.
  */
-function buildCandidateStrikes(atm, cfg) {
+function buildCandidateStrikes(atm, cfg, step) {
   cfg = cfg || getConfig();
+  const STEP = _num(step) && step > 0 ? step : STRIKE_STEP;
   const out = [];
   if (!_num(atm) || atm <= 0) return out;
   for (const side of ["CE", "PE"]) {
@@ -192,7 +213,7 @@ function buildCandidateStrikes(atm, cfg) {
     const itmDir = side === "CE" ? -1 : 1;
     for (let k = -cfg.scanOtmStrikes; k <= cfg.scanItmStrikes; k++) {
       // k < 0 → OTM, k = 0 → ATM, k > 0 → ITM
-      const strike = atm + itmDir * k * STRIKE_STEP;
+      const strike = atm + itmDir * k * STEP;
       if (strike <= 0) continue;
       out.push({
         strike,
@@ -205,9 +226,12 @@ function buildCandidateStrikes(atm, cfg) {
   return out;
 }
 
-/** Full Fyers option symbol for one ladder rung. */
-function optionSymbol(expiryCode, strike, side) {
-  return `NSE:NIFTY${expiryCode}${strike}${side}`;
+/**
+ * Full Fyers option symbol for one ladder rung. `stem` = "<exchange>:<optPrefix>"
+ * of another market ("BSE:SENSEX", "NSE:BANKNIFTY"); omitted = NIFTY, as before.
+ */
+function optionSymbol(expiryCode, strike, side, stem) {
+  return `${stem || "NSE:NIFTY"}${expiryCode}${strike}${side}`;
 }
 
 // ── The 09:25 selection ──────────────────────────────────────────────────────
