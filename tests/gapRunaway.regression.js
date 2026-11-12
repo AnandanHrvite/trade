@@ -263,7 +263,11 @@ check("both routes exit on the common profit lock and nothing else automatic", (
   }
 });
 check("NIFTY: no other common rule: no breakeven, cooldown, spread check, LOT_MULTIPLIER", () => {
-  assert.ok(!/checkBreakevenStop|reentryCooldown|checkSpread|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(paper));
+  assert.ok(!/checkBreakevenStop|reentryCooldown|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(paper));
+  // The spread limit is a market pair's (<PAIR>_MAX_SPREAD_PTS): every check
+  // sits inside a `!rt.home` branch, so NIFTY never runs one.
+  const spreads = [...paper.matchAll(/tradeGuards\.checkSpread\(/g)];
+  for (const m of spreads) assert.ok(/if \(!rt\.home\)/.test(paper.slice(Math.max(0, m.index - 300), m.index)), "a spread check outside a pair-only branch");
 });
 check("scanner: common profit lock, cooldown, spread — but no trade window / lot multiplier", () => {
   for (const re of [/tradeGuards\.checkProfitLock\(/, /tradeGuards\.reentryCooldownUntil\(/, /tradeGuards\.checkSpread\(/]) assert.ok(re.test(stk), String(re));
@@ -288,7 +292,7 @@ check("entry guards are synchronous before the first await (_entryPending set fi
   assert.ok(!/\bawait\b/.test(fn.replace(/\/\/.*$/gm, "")), "_tryDayEntry must not await");
 });
 check("one trade per day, restart-proof (day file counted on /start)", () => {
-  assert.ok(/_taken >= 1/.test(paper)); assert.ok(/readDailyTrades\("gap_runaway", todayStr\)/.test(paper));
+  assert.ok(/_taken >= 1/.test(paper)); assert.ok(/readDailyTrades\(MODE, todayStr\)/.test(paper) && /const MODE\s+= rt\.modeKey;/.test(paper));
   assert.ok(/_priorTradesToday/.test(stk) && /_tradedToday/.test(stk));
 });
 check("restart-proof: a crash snapshot from today and a settled decision both block a second decision", () => {
@@ -299,7 +303,10 @@ check("restart-proof: a crash snapshot from today and a settled decision both bl
 check("a fill re-checks the day and its own token after every await (a hung attempt can never open)", () => {
   const fe = paper.slice(paper.indexOf("async function _fillEntry"), paper.indexOf("function _tryDayEntry"));
   assert.ok(/ptState\._fillTok !== tok/.test(fe) && /ptState\._dayDone/.test(fe));
-  assert.strictEqual((fe.match(/if \(_stale\(\)\)/g) || []).length, 2, "both awaits must be followed by _stale()");
+  // The contract, a market pair's spread quote, the premium.
+  const awaits = (fe.match(/\bawait\b/g) || []).length;
+  assert.ok(awaits >= 2, "could not isolate _fillEntry's awaits");
+  assert.strictEqual((fe.match(/if \(_stale\(\)\)/g) || []).length, awaits, "every await must be followed by _stale()");
 });
 check("the manual entry honours one trade per day", () => {
   const me = paper.slice(paper.indexOf('router.post("/manualEntry"'), paper.indexOf("function buildSessionTradeRows"));
