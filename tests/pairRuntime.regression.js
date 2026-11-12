@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX, itm20Scalp: NO_MCX, simple930: NO_MCX };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX, itm20Scalp: NO_MCX, simple930: NO_MCX, gapRunaway: NO_MCX };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -1402,6 +1402,98 @@ check("SIMPLE 9:30 route builder: NIFTY is the default export; one cached router
         assert.strictEqual(a.running, false);
         const page = (await get(port, "/sensex_simple930-paper/status")).body;
         assert.ok(page.includes("/sensex_simple930-paper/status/data") && !page.includes("'/simple930-paper/status/data'"), "the SENSEX page polls its own data");
+        srv.close();
+        resolve();
+      } catch (e) { srv.close(); reject(e); }
+    });
+  });
+});
+
+section("GAP_RUNAWAY runs as a pair (routes/gapRunawayPaper.js)");
+
+const grOf = (mk) => pairRuntime.forStrategy("gapRunaway", mk);
+check("NIFTY is the registry's GAP_RUNAWAY: path, file, slot, sidebar, notify tag", () => {
+  const rt = grOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey, rt.notifyMode],
+    [true, "gap_runaway", "GAP_RUNAWAY", "/gap_runaway-paper", "gap_runaway-paper", "gap_runaway-paper", "gap_runaway_paper_trades.json", "GAP_RUNAWAY_PAPER", "gapRunawayPaper", "gapRunawayHistory", "GAP_RUNAWAY-PAPER"]);
+});
+check("GAP_RUNAWAY other markets: own path, file, slot, prefix and instrument; never MCX; the stock scanner is not paired", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "SAIL"].map(mk => { const r = grOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName(), r.strikeStep(), r.spotSymbol()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_GAP_RUNAWAY", "/sensex_gap_runaway-paper", "sensex_gap_runaway_paper_trades.json", "SENSEX_GAP_RUNAWAY_PAPER", "SENSEX_GAP_RUNAWAY-PAPER", "SENSEX_OPTIONS", 100, instrument.underlyingOf("SENSEX").spot],
+    ["BANKNIFTY", "BN_GAP_RUNAWAY", "/bn_gap_runaway-paper", "bn_gap_runaway_paper_trades.json", "BN_GAP_RUNAWAY_PAPER", "BN_GAP_RUNAWAY-PAPER", "BANKNIFTY_OPTIONS", 100, instrument.underlyingOf("BANKNIFTY").spot],
+    ["NIFTY_FUT", "FUT_GAP_RUNAWAY", "/fut_gap_runaway-paper", "fut_gap_runaway_paper_trades.json", "FUT_GAP_RUNAWAY_PAPER", "FUT_GAP_RUNAWAY-PAPER", "NIFTY_FUTURES", null, "NSE:NIFTY50-INDEX"],
+    ["SAIL", "SAIL_GAP_RUNAWAY", "/sail_gap_runaway-paper", "sail_gap_runaway_paper_trades.json", "SAIL_GAP_RUNAWAY_PAPER", "SAIL_GAP_RUNAWAY-PAPER", "SAIL_OPTIONS", 2.5, instrument.underlyingOf("SAIL").spot],
+  ]);
+  assert.strictEqual(grOf("CRUDE"), null, "needs the 09:15 index open — not offered on MCX");
+  assert.strictEqual(pairs.get("gapRunawayStk", "SENSEX"), null, "the stock scanner (kind: tool) has no pairs");
+  assert.strictEqual(pairs.byReplayMode("bn_gap_runaway-paper").strategyId, "gapRunaway");
+  assert.strictEqual(pairs.byReplayMode("gap_runaway-paper"), null, "the home mode is the registry's");
+});
+check("GAP_RUNAWAY engine: NIFTY and the stock scanner read their keys exactly; a pair its own key, else NIFTY's", () => {
+  const eng = require("../src/strategies/gap_runaway");
+  withEnv({ GAP_RUNAWAY_RSI_LOWER: "15", GAP_RUNAWAY_ENTRY_END: "09:40", GAP_RUNAWAY_STK_RSI_LOWER: "20", SENSEX_GAP_RUNAWAY_RSI_LOWER: "25", BN_GAP_RUNAWAY_RSI_LOWER: undefined, SENSEX_GAP_RUNAWAY_ENTRY_END: undefined, GAP_RUNAWAY_REFERENCE_URL: undefined, SENSEX_GAP_RUNAWAY_REFERENCE_URL: "https://example.com/sx" }, () => {
+    const n = eng.getConfig("GAP_RUNAWAY"), k = eng.getConfig("GAP_RUNAWAY_STK"), s = eng.getConfig("SENSEX_GAP_RUNAWAY"), b = eng.getConfig("BN_GAP_RUNAWAY");
+    assert.deepStrictEqual([n.PREFIX, n.RSI_LOWER, n.ENTRY_END], ["GAP_RUNAWAY", 15, 580]);
+    assert.deepStrictEqual([k.PREFIX, k.RSI_LOWER], ["GAP_RUNAWAY_STK", 20], "the scanner keeps its own keys");
+    assert.deepStrictEqual([s.PREFIX, s.RSI_LOWER, s.ENTRY_END], ["SENSEX_GAP_RUNAWAY", 25, 580], "own RSI, inherited window");
+    assert.deepStrictEqual([b.RSI_LOWER, b.ENTRY_END], [15, 580], "inherits NIFTY");
+    assert.strictEqual(eng.referenceUrl("SENSEX_GAP_RUNAWAY"), "https://example.com/sx");
+    assert.strictEqual(eng.referenceUrl("BN_GAP_RUNAWAY"), eng.referenceUrl("GAP_RUNAWAY"), "unset → NIFTY's link");
+    assert.strictEqual(eng.getConfig("JUNK").PREFIX, "GAP_RUNAWAY", "an unknown prefix is NIFTY");
+  });
+});
+check("GAP_RUNAWAY crash snapshot, logs and tags per pair; capital on the Fyers pool", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveGapRunawayPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger");
+  assert.ok(tl.modes().includes("sensex_gap_runaway") && sl.modes().includes("fut_gap_runaway"));
+  assert.strictEqual(pairs.get("gapRunaway", "BANKNIFTY").broker, "fyers");
+  assert.strictEqual(pairs.get("gapRunaway", "NIFTY").broker, "zerodha", "NIFTY keeps its Zerodha book");
+  grOf("BANKNIFTY").persist.save({ side: "PE", symbol: "NSE:BANKNIFTY26NOV57000PE", entryPrice: 57010 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("bn_gap_runaway").position.symbol, "NSE:BANKNIFTY26NOV57000PE");
+    pp.clearPairPositions();
+  });
+});
+check("GAP_RUNAWAY route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/gapRunawayPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/gap_runaway-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.forMarket("CRUDE"), null, "no MCX instance");
+  const sx = route.forMarket("SENSEX");
+  assert.ok(sx && sx !== route && route.forMarket("SENSEX") === sx, "one instance per market");
+  assert.strictEqual(sx.pairRuntime.paperPath, "/sensex_gap_runaway-paper");
+  assert.strictEqual(typeof sx.stopSession, "function");
+  const fut = route.forMarket("NIFTY_FUT");
+  assert.ok(fut && fut !== sx && fut.pairRuntime.isFutures, "the NIFTY_FUT pair trades the future");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(sx.pairRuntime.paperPath, sx);
+  app.use(route.pairRuntime.paperPath, route);
+  const get = (port, p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${p}`, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => resolve({ code: res.statusCode, body }));
+    }).on("error", reject);
+  });
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, async () => {
+      const port = srv.address().port;
+      try {
+        const r = await get(port, "/sensex_gap_runaway-paper/start");
+        assert.strictEqual(r.code, 403);
+        assert.ok(r.body.includes("SENSEX_GAP_RUNAWAY_MODE_ENABLED"), "names the pair's switch");
+        assert.ok(!sx.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+        const a = JSON.parse((await get(port, "/sensex_gap_runaway-paper/status/data")).body);
+        assert.strictEqual(a.running, false);
+        const page = (await get(port, "/sensex_gap_runaway-paper/status")).body;
+        assert.ok(page.includes("/sensex_gap_runaway-paper/status/data") && !page.includes("'/gap_runaway-paper/status/data'"), "the SENSEX page polls its own data");
+        const home = (await get(port, "/gap_runaway-paper/status")).body;
+        assert.ok(home.includes("'/gap_runaway-paper/status/data'"), "the NIFTY page keeps its own URL");
         srv.close();
         resolve();
       } catch (e) { srv.close(); reject(e); }

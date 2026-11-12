@@ -55,7 +55,7 @@
  *   28% winners, −10.4 pts a trade — see documents/GAP_RUNAWAY_Strategy_Guide.html.
  *
  * Contract:
- *   getConfig(prefix)                     -> live env read (never cached)
+ *   getConfig(prefix)                     -> live env read (never cached); prefix may be a market pair's
  *   minDailyBars(cfg)                     -> daily bars refused below
  *   computeDaily(daily, cfg)              -> { ema, rsi } 1:1 with daily (null = warm-up)
  *   dailySetup(daily, forDayKey, cfg)     -> yesterday's RSI zone + close, or a refusal
@@ -100,15 +100,28 @@ function _parseHHMM(raw, def) {
 function _fmtMins(mins) {
   return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 }
+// Env read for one key. The NIFTY options keys (GAP_RUNAWAY_*) and the stock
+// scanner's (GAP_RUNAWAY_STK_*) read process.env exactly as they always did;
+// another market's pair prefix (SENSEX_GAP_RUNAWAY, BN_GAP_RUNAWAY ...) reads its
+// own key with pair inheritance: its value when set, else NIFTY's GAP_RUNAWAY_*
+// value (config/pairs.js envGet).
+let _pairsMod = null;
+function _isPairPrefix(p) { return !!p && !PREFIXES.includes(p) && /^[A-Z0-9]+_GAP_RUNAWAY$/.test(p); }
+function _env(key) {
+  const i = key.indexOf("_GAP_RUNAWAY_");
+  if (i <= 0 || !_isPairPrefix(key.slice(0, i + "_GAP_RUNAWAY".length))) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(key);
+}
 function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+  const v = parseFloat(_env(key));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
 function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+  const v = parseInt(_env(key), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
@@ -116,20 +129,24 @@ function _intEnv(key, def, min, max) {
 }
 function _prefixOf(p) {
   const s = String(p || "").trim().toUpperCase();
-  return PREFIXES.includes(s) ? s : DEFAULT_PREFIX;
+  return PREFIXES.includes(s) || _isPairPrefix(s) ? s : DEFAULT_PREFIX;
 }
 
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ *
+ * `prefix`: "GAP_RUNAWAY" (NIFTY options), "GAP_RUNAWAY_STK" (the stock
+ * scanner), or a (strategy, market) pair's prefix ("SENSEX_GAP_RUNAWAY",
+ * "BN_GAP_RUNAWAY" ...) whose keys are read with pair inheritance.
  */
 function getConfig(prefix) {
   const P = _prefixOf(prefix);
   let rsiLower = _numEnv(P + "_RSI_LOWER", 10, 0, 100);
   let rsiUpper = _numEnv(P + "_RSI_UPPER", 90, 0, 100);
   if (!(rsiUpper > rsiLower)) { rsiLower = 10; rsiUpper = 90; }
-  let entryStart = _parseHHMM(process.env[P + "_ENTRY_START"], 9 * 60 + 15);
-  let entryEnd   = _parseHHMM(process.env[P + "_ENTRY_END"], 9 * 60 + 30);
+  let entryStart = _parseHHMM(_env(P + "_ENTRY_START"), 9 * 60 + 15);
+  let entryEnd   = _parseHHMM(_env(P + "_ENTRY_END"), 9 * 60 + 30);
   if (!(entryEnd >= entryStart)) { entryStart = 9 * 60 + 15; entryEnd = 9 * 60 + 30; }
   return {
     PREFIX:           P,
@@ -314,7 +331,7 @@ function isInEntryWindow(unixSec, cfg) {
 /** The YouTube reference link (Settings key {P}_REFERENCE_URL, default the video). */
 function referenceUrl(prefix) {
   const P = _prefixOf(prefix);
-  const v = String(process.env[P + "_REFERENCE_URL"] || "").trim();
+  const v = String(_env(P + "_REFERENCE_URL") || "").trim();
   return /^https?:\/\//i.test(v) ? v : REFERENCE_URL;
 }
 

@@ -214,6 +214,9 @@ const PAIRS = [
   { route: "simple930Paper",     market: "BANKNIFTY", mode: "bn_simple930-paper",           enabledKey: "BN_SIMPLE930_MODE_ENABLED",
     settings: { BN_SIMPLE930_TRIGGER_PREMIUM: "430", BN_SIMPLE930_SCAN_OTM_STRIKES: "8" } },
   { route: "simple930Paper",     market: "NIFTY_FUT", mode: "fut_simple930-paper",          enabledKey: "FUT_SIMPLE930_MODE_ENABLED" },
+  { route: "gapRunawayPaper",    market: "SENSEX",    mode: "sensex_gap_runaway-paper",     enabledKey: "SENSEX_GAP_RUNAWAY_MODE_ENABLED" },
+  { route: "gapRunawayPaper",    market: "BANKNIFTY", mode: "bn_gap_runaway-paper",         enabledKey: "BN_GAP_RUNAWAY_MODE_ENABLED" },
+  { route: "gapRunawayPaper",    market: "NIFTY_FUT", mode: "fut_gap_runaway-paper",        enabledKey: "FUT_GAP_RUNAWAY_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {

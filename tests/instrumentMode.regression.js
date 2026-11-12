@@ -535,13 +535,16 @@ for (const file of nonFutRoutes) {
       assert.strictEqual(eng.UNDERLYING, U);
     });
   } else if (OPTIONS_ONLY_BY_RULE.has(file)) {
+    // Its NIFTY instance always buys the exact-ATM NIFTY option; another
+    // market's pair (create(pair)) buys that market's exact ATM, and only the
+    // NIFTY_FUT pair takes the month future (via pairRuntime, never a global switch).
     check(`${file} always buys the exact-ATM NIFTY option`, () => {
       assert.ok(!/NIFTY_FUTURES|instrumentMode|\bgetSymbol\(|\bgetLotQty\(/.test(src),
         `${file} must stay out of the instrument-switching code entirely`);
       const calls = src.match(/validateAndGetOptionSymbol\([^)]*\)/g) || [];
       assert.ok(calls.length > 0, `${file} must resolve its option through validateAndGetOptionSymbol`);
       for (const c of calls) assert.ok(/strikeOverride/.test(c), `${file}: ${c} does not pin the ATM strike`);
-      assert.ok(/instrument:\s*"NIFTY_OPTIONS"/.test(src), `${file} must stamp the instrument it traded`);
+      assert.ok(/instrument:\s*(rt\.home\s*\?\s*)?"NIFTY_OPTIONS"|rt\.home\s*\?\s*"NIFTY_OPTIONS"/.test(src), `${file} must stamp the instrument it traded`);
     });
   } else if (CASH_EQUITY_ONLY.has(file)) {
     check(`${file} trades cash equity only — never touches the NIFTY instrument code`, () => {

@@ -68,7 +68,7 @@ const MARKET_KEYS = Object.keys(markets.MARKET_DEFS);
 
 // Strategies whose paper route is a create(pair) builder — every offered pair of
 // these runs. Add a strategy's id here when its route is converted.
-const RUNS_AS_PAIR = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "pivotEmaSt", "stRsiPivBb", "prevOrbScalp", "itm20Scalp", "simple930"]);
+const RUNS_AS_PAIR = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "pivotEmaSt", "stRsiPivBb", "prevOrbScalp", "itm20Scalp", "simple930", "gapRunaway"]);
 
 // A non-home pair that keeps the identity of the copy strategy it replaces, so
 // that copy's .env keys, trades file, logs and page URL carry on unchanged.
