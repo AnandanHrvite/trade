@@ -1574,9 +1574,7 @@ function renderMarketPicker(env, homeSlugs) {
       info.date ? `next expiry ${info.date}` : null].filter(Boolean).join(" · ");
     const rows = list2.map(p => {
       const ownN = pairOwnCount(p, env);
-      const sub = p.home
-        ? `Its ${M.key === "NIFTY" ? "NIFTY" : _pairEsc(M.label)} settings`
-        : (ownN ? `<span class="mk-own">${ownN} changed</span> from ${_homeLabel(p)} · rest same as ${_homeLabel(p)}` : `Same as ${_homeLabel(p)} — nothing changed yet`);
+      const sub = !p.home && ownN ? `<span class="mk-own">${ownN} changed</span> from ${_homeLabel(p)}` : "";
       const checked = on(p) ? "checked" : "";
       const sw = p.home
         ? `<input type="checkbox" data-proxy-for="${p.enabledKey}" ${checked} onchange="proxyToggle(this)" aria-label="${_pairEsc(p.label)} on ${_pairEsc(M.label)}"/>`
@@ -1588,7 +1586,7 @@ function renderMarketPicker(env, homeSlugs) {
         <div class="setting-row mk-row${on(p) ? " mk-on" : ""}">
           <div class="setting-info">
             <div class="setting-label">${_pairEsc(p.label)}<span class="env-key-tag">${p.enabledKey}</span></div>
-            <div class="field-desc">${sub}</div>
+            ${sub ? `<div class="field-desc">${sub}</div>` : ""}
           </div>
           <div class="mk-ctrls">
             <label class="toggle-switch">${sw}<span class="toggle-slider"></span></label>
@@ -1601,14 +1599,14 @@ function renderMarketPicker(env, homeSlugs) {
       : [];
     const note = M.key === "NIFTY"
       ? `Every NIFTY strategy, switched on or off. The switch is the same one as in Menu Visibility.`
-      : `Switch a strategy on to add it to the sidebar under ${_pairEsc(M.label)}. Its settings start as <i>Same as NIFTY</i> — change only what this market needs. Nothing runs on ${_pairEsc(M.label)} yet.`;
+      : "";
     return `
     <div class="settings-section market-section" data-section="market-${M.key}" data-market="${M.key}">
       <div class="section-head">
         <div class="section-head-title">🌐 ${_pairEsc(M.label)} — strategies<span class="sh-count">${_pairEsc(meta)}</span></div>
       </div>
       <div class="section-card">
-        <div class="mk-note">${note}</div>
+        ${note ? `<div class="mk-note">${note}</div>` : ""}
         ${rows}
         ${missing.length ? `<div class="mk-note mk-missing">Not offered on ${_pairEsc(M.label)} — they need the 09:15 index open: ${_pairEsc(missing.join(", "))}.</div>` : ""}
       </div>
