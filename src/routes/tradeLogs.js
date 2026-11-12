@@ -1272,7 +1272,7 @@ ${buildSidebar('tradeLogs', false)}
     { key: 'ema_rsi_st',    label: 'EMA_RSI_ST',        cls: 'mode-ema_rsi_st' },
     { key: 'ema_rsi_st_v2', label: 'EMA_RSI_ST_V2',     cls: 'mode-ema_rsi_st_v2' },
     { key: 'st_rsi_piv_bb', label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
-    { key: 'sail_vwap_st', label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
+    { key: 'sail_vwap_st', label: 'VWAP_ST', cls: 'mode-sail_vwap_st' },
     { key: 'pivot_ema_st', label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
     { key: 'gap_runaway', label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
     { key: 'gap_runaway_stk', label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },

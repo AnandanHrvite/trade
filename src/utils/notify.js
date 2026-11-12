@@ -467,7 +467,7 @@ function modeLabel(mode) {
   if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
   if (m.startsWith("EMA_RSI_ST_V2-PAPER")) return "📄 EMA_RSI_ST_V2 PAPER" + m.slice("EMA_RSI_ST_V2-PAPER".length);
   if (m.startsWith("ST_RSI_PIV_BB-PAPER")) return "📄 ST_RSI_PIV_BB PAPER" + m.slice("ST_RSI_PIV_BB-PAPER".length);
-  if (m.startsWith("SAIL_VWAP_ST-PAPER")) return "📄 SAIL_VWAP_ST PAPER" + m.slice("SAIL_VWAP_ST-PAPER".length);
+  if (m.startsWith("SAIL_VWAP_ST-PAPER")) return "📄 VWAP_ST PAPER" + m.slice("SAIL_VWAP_ST-PAPER".length);
   if (m.startsWith("PIVOT_EMA_ST-PAPER")) return "📄 PIVOT_EMA_ST PAPER" + m.slice("PIVOT_EMA_ST-PAPER".length);
   if (m.startsWith("GAP_RUNAWAY_STK-PAPER")) return "📄 GAP_RUNAWAY STOCKS PAPER" + m.slice("GAP_RUNAWAY_STK-PAPER".length);
   if (m.startsWith("GAP_RUNAWAY-PAPER")) return "📄 GAP_runAway__Kirubakaran PAPER" + m.slice("GAP_RUNAWAY-PAPER".length);

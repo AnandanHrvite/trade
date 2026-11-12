@@ -1140,9 +1140,9 @@ function saveSailVwapStPosition(position, sessionMeta) {
       savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     };
     _persistAtomic(SAIL_VWAP_ST_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] SAIL_VWAP_ST position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+    console.log(`💾 [PERSIST] VWAP_ST position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
   } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save SAIL_VWAP_ST position: ${err.message}`);
+    console.warn(`⚠️ [PERSIST] Could not save VWAP_ST position: ${err.message}`);
   }
 }
 
@@ -1153,21 +1153,21 @@ function loadSailVwapStPosition() {
     if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale SAIL_VWAP_ST position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      console.log(`[PERSIST] Stale VWAP_ST position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
       _markStale(SAIL_VWAP_ST_POS_FILE, data);
       return null;
     }
-    if (data.position) console.log(`[PERSIST] SAIL_VWAP_ST position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    if (data.position) console.log(`[PERSIST] VWAP_ST position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
     return data;
   } catch (err) {
-    console.warn(`[PERSIST] Could not load SAIL_VWAP_ST position: ${err.message}`);
+    console.warn(`[PERSIST] Could not load VWAP_ST position: ${err.message}`);
     return null;
   }
 }
 
 function clearSailVwapStPosition() {
   _persistAtomic(SAIL_VWAP_ST_POS_FILE, null);
-  console.log("[PERSIST] SAIL_VWAP_ST position file cleared.");
+  console.log("[PERSIST] VWAP_ST position file cleared.");
 }
 
 // ── PIVOT_EMA_ST family (pivot zone + EMA20/50 cross + SuperTrend, Zerodha) ──

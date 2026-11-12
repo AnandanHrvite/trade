@@ -289,7 +289,7 @@ function _spotIndexOf(mode) {
 }
 /** Human name for the underlying, for logs that must not be ambiguous. */
 const _MODE_UNDERLYING_LABEL = {
-  "sail_vwap_st-paper": "SAIL_VWAP_ST (SAIL stock, monthly options)",
+  "sail_vwap_st-paper": "VWAP_ST (SAIL stock, monthly options)",
 };
 function _underlyingLabelOf(mode) {
   const _prt = _pairRt(mode);

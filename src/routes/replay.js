@@ -1838,7 +1838,7 @@ function _modeLabel(mode) {
        : mode === 'itm20-scalp-paper' ? 'ITM20 Scalp Paper'
        : mode === 'trend-day-scalp-paper' ? 'Trend Day Scalp Paper'
        : mode === 'rsi-pivot-st-paper' ? 'RSI Pivot ST Paper'
-       : mode === 'sail_vwap_st-paper' ? 'SAIL VWAP+ST Paper (SAIL stock)'
+       : mode === 'sail_vwap_st-paper' ? 'VWAP_ST Paper (SAIL stock)'
        : mode === 'simple930-paper' ? 'SIMPLE_9:30 Paper'
        : mode === 'early-bird-paper' ? 'EarlyBird Paper'
        : mode;
@@ -2858,7 +2858,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  if (m==='sail_vwap_st-paper') return 'SAIL VWAP+ST Paper (SAIL stock)';
+  if (m==='sail_vwap_st-paper') return 'VWAP_ST Paper (SAIL stock)';
   if (m==='itm20-scalp-paper') return 'ITM20 Scalp Paper';
   return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='ema_rsi_st_v2-paper'?'EMA_RSI_ST_V2 Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='ha-scalp-paper'?'HA Scalp Paper':m==='prev-orb-scalp-paper'?'Prev ORB Scalp Paper':m==='rsi-pivot-st-paper'?'RSI Pivot ST Paper':m==='simple930-paper'?'SIMPLE_9:30 Paper':m==='early-bird-paper'?'EarlyBird Paper':(m||'Replay');
 }

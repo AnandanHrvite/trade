@@ -222,6 +222,16 @@ const PAIRS = [
   { route: "earlyBirdPaper",     market: "SENSEX",    mode: "sensex_early_bird-paper",      enabledKey: "SENSEX_EARLYBIRD_MODE_ENABLED" },
   { route: "earlyBirdPaper",     market: "BANKNIFTY", mode: "bn_early_bird-paper",          enabledKey: "BN_EARLYBIRD_MODE_ENABLED" },
   { route: "earlyBirdPaper",     market: "NIFTY_FUT", mode: "fut_early_bird-paper",         enabledKey: "FUT_EARLYBIRD_MODE_ENABLED" },
+  // SAIL_VWAP_ST's home is SAIL (no golden: the harness only records NIFTY-family
+  // markets). Its paper switch ships OFF and SETTINGS does not carry SAIL's, so
+  // each pair turns on its OWN <PAIR>_PAPER_ENABLED. An index has no volume: these
+  // pairs run the equal-weighted session VWAP (strategies/sail_vwap_st forPrefix).
+  { route: "sailVwapStPaper",    market: "SENSEX",    mode: "sensex_sail_vwap_st-paper",    enabledKey: "SENSEX_SAIL_VWAP_ST_MODE_ENABLED",
+    settings: { SENSEX_SAIL_VWAP_ST_PAPER_ENABLED: "true" } },
+  { route: "sailVwapStPaper",    market: "BANKNIFTY", mode: "bn_sail_vwap_st-paper",        enabledKey: "BN_SAIL_VWAP_ST_MODE_ENABLED",
+    settings: { BN_SAIL_VWAP_ST_PAPER_ENABLED: "true" } },
+  { route: "sailVwapStPaper",    market: "NIFTY_FUT", mode: "fut_sail_vwap_st-paper",       enabledKey: "FUT_SAIL_VWAP_ST_MODE_ENABLED",
+    settings: { FUT_SAIL_VWAP_ST_PAPER_ENABLED: "true" } },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {
