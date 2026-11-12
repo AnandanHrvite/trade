@@ -22,11 +22,29 @@
  * the chart feed ships yesterday + today only.
  *
  * Uses LIVE data but SIMULATES orders locally.
+ *
+ * MARKETS. This file is a create(pair) builder (see utils/pairRuntime.js and
+ * routes/emaRsiStV2Paper.js, the pilot). The default export is the NIFTY
+ * instance: /itm20-scalp-paper, the same files, keys, logs and decisions.
+ * forMarket(key) builds the same engine for every other market pairs.js offers
+ * it on (SENSEX, BANKNIFTY, NIFTY futures, SAIL — never MCX: the levels are the
+ * 09:15 index open's range), each with its own route /<modeKey>-paper, trades
+ * file, logs, crash snapshot, socket slot and Fyers capital book, its closed
+ * bars read from THAT market's spot history. Every per-market fact (spot,
+ * strike grid, lot, option symbol, expiry, session, fills) comes from
+ * pairRuntime; the rules never branch on the market. Pair-only behaviour sits
+ * behind `!rt.home`: its own ON switch (<PAIR>_MODE_ENABLED, default off), its
+ * own ITM20_SCALP_* keys (<PAIR>_TARGET_PTS …, else NIFTY's), the market's
+ * expiry day (and <PAIR>_EXPIRY_DAY_ONLY), the spread limit and fill at the
+ * ask / bid of a fresh quote (<PAIR>_PAPER_FILL_AT_QUOTE, default on off
+ * NIFTY), that exchange's charges. NIFTY_FUT trades the month future at the
+ * index level: its +target / −stop are the same points measured on the
+ * future, direction-aware (a PE is a SHORT), with the common futures stop in
+ * place of the premium profit lock.
  */
 
 const express = require("express");
 const { trackPath, pathFields } = require("../utils/tradePath");
-const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 
@@ -53,42 +71,99 @@ const skipLogger = require("../utils/skipLogger");
 const { freshSpot, DEFAULT_MAX_AGE_MS: SPOT_MAX_AGE_MS } = require("../utils/freshSpot");
 const capitalPool = require("../utils/capitalPool");
 const optionChart = require("../utils/optionChart");
+const pairs        = require("../config/pairs");
+const pairRuntime  = require("../utils/pairRuntime");
+const tradeJournal = require("../utils/tradeJournal");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
-const CALLBACK_ID        = "itm20ScalpPaper";
-const MODE_KEY           = "itm20_scalp";        // tradeLogger / skipLogger / capitalPool key
-const TAG                = "[ITM20-SCALP-PAPER]";
-const NOTIFY_MODE        = "ITM20-SCALP-PAPER";
-const REC_MODE           = "itm20-scalp-paper";
-const OPTION_FEED_OWNER  = "itm20-scalp-paper";
 const MAX_CANDLES        = 700;                  // ~9 sessions of 5-min bars — only yesterday + today are read
 
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const PT_FILE  = path.join(DATA_DIR, "itm20_scalp_paper_trades.json");
+const RES_MIN = strat.RESOLUTION_MIN;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUILDER: one paper engine per (strategy, market) pair. create(pair) returns an
+// Express router holding ALL of that pair's state. See the MARKETS note above.
+// ═══════════════════════════════════════════════════════════════════════════════
+function create(pair) {
+const rt     = pairRuntime.forPair(pair);
+const router = express.Router();
+const MODE               = rt.modeKey;          // "itm20_scalp" on NIFTY: tradeLogger / skipLogger / capitalPool key
+const PREFIX             = rt.envPrefix;        // "ITM20_SCALP" on NIFTY
+const ROUTE              = rt.paperPath;        // "/itm20-scalp-paper" on NIFTY
+const CALLBACK_ID        = rt.home ? "itm20ScalpPaper" : rt.ownerId;
+const TAG                = rt.home ? "[ITM20-SCALP-PAPER]" : `[${rt.tag}-PAPER]`;
+const NOTIFY_MODE        = rt.home ? "ITM20-SCALP-PAPER" : rt.notifyMode;
+const REC_MODE           = rt.ownerId;          // "itm20-scalp-paper" on NIFTY
+const OPTION_FEED_OWNER  = rt.ownerId;
+const TITLE              = rt.home ? "ITM20 Scalp" : `${rt.market().label} · ITM20 Scalp`;
+// What the page / logs call the decision chart ("NIFTY" on NIFTY, as always).
+const SPOT_LABEL         = rt.home ? "NIFTY" : rt.market().label;
+// The spot the bars are fetched for and the tick feed is bound to.
+const SPOT = () => (rt.home ? NIFTY_INDEX_SYMBOL : rt.spotSymbol());
+// A non-home pair's own value of one of ITM20_SCALP's keys (else NIFTY's —
+// pairs.envGet); undefined on NIFTY, so `PV(k) || <the literal NIFTY read> || d`
+// is the old read there.
+const PV = (k) => (rt.home ? undefined : pairs.envGet(`${PREFIX}_${k}`));
+// Starting capital: NIFTY's Zerodha book as always; another market draws on the Fyers pool.
+const CAP_ENV = (rt.home ? rt.strategy.broker : pair.broker) === "fyers" ? "FYERS_INV_AMOUNT" : "ZERODHA_INV_AMOUNT";
+rt.registerCapital();
+const PT_FILE  = path.join(DATA_DIR, rt.tradesFile);
 
 // ── Config readers (Settings mutates process.env live — never cache) ──────────
-const RES_MIN = strat.RESOLUTION_MIN;
+/** The engine's config: NIFTY's ITM20_SCALP_* keys as always; a pair its own keys, else NIFTY's. */
+function _cfg() { return rt.home ? strat.getConfig() : strat.getConfig(PREFIX); }
+/** Engine opts: unchanged on NIFTY; another market adds its own cfg. */
+const ENG = (o) => (rt.home ? o : Object.assign({ cfg: _cfg() }, o));
 function _pollMs() {
-  const v = parseInt(process.env.ITM20_SCALP_POLL_MS || "2000", 10);
+  const v = parseInt(PV("POLL_MS") || process.env.ITM20_SCALP_POLL_MS || "2000", 10);
   return Number.isFinite(v) && v >= 500 && v <= 30000 ? v : 2000;
 }
 /** Calendar days of history to preload — enough to always reach the previous session. */
 function _warmupDays() {
-  const v = parseInt(process.env.ITM20_SCALP_WARMUP_DAYS || "7", 10);
+  const v = parseInt(PV("WARMUP_DAYS") || process.env.ITM20_SCALP_WARMUP_DAYS || "7", 10);
   return Number.isFinite(v) && v >= 2 && v <= 30 ? v : 7;
 }
 function _historyLagMs() {
-  const v = parseInt(process.env.ITM20_SCALP_HISTORY_LAG_MS || "5000", 10);
+  const v = parseInt(PV("HISTORY_LAG_MS") || process.env.ITM20_SCALP_HISTORY_LAG_MS || "5000", 10);
   return Number.isFinite(v) && v >= 0 && v <= 60000 ? v : 5000;
 }
-function lotQty() { return instrumentConfig.getLotQty(); }
-function _strikeStep() { return instrumentConfig.underlyingOf().strikeStep; }
+function lotQty() { return rt.home ? instrumentConfig.getLotQty() : rt.lotQty(); }
+function _strikeStep() { return rt.home ? instrumentConfig.underlyingOf().strikeStep : rt.strikeStep(); }
+
+// ── Instrument maths. NIFTY: option premium exactly as before. Another
+//    market: its exchange's charges (BSE for SENSEX), and NIFTY_FUT trades the
+//    month future at the index level — every "premium" level is then a futures
+//    price and a PE is a SHORT. ──────────────────────────────────────────────
+function _dir(side) { return side === "PE" ? -1 : 1; }
+function _r2(x) { return parseFloat(x.toFixed(2)); }
+/** Futures: the engine's premium level (entry ± points) as the future's own price. */
+function _futLevel(pos, lvl) { return lvl == null ? null : _r2(pos.entrySpot + _dir(pos.side) * (lvl - pos.entrySpot)); }
+/** Points the open trade is up at `px`: premium − entry (options), the future's move in its direction (futures). */
+function _liveMove(pos, px) { return pos.isFutures ? (px - pos.optionEntryLtp) * _dir(pos.side) : px - pos.optionEntryLtp; }
+function _capitalRequired(qty, price) {
+  if (rt.home || !rt.isFutures) return instrumentMode.capitalRequired(qty, price);
+  const pct = instrumentConfig.underlyingOf(rt.underlyingKey).marginPct;
+  return _r2((qty || 0) * (price || 0) * (pct / 100));
+}
+/** The live exit level the trade holds (journal only): the tighter of the premium stop and the common guard. */
+function _guardLevel(pos) {
+  if (pos.isFutures) return tradeGuards.futuresStopLevel(pos.side, pos.entrySpot, pos.mfeSpotPts || 0);
+  return tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peakPremium);
+}
+function _exitKind(code) {
+  if (code === "TARGET") return "target";
+  if (code === "PROFIT_LOCK") return "trail";
+  if (code === "MANUAL") return "manual";
+  if (code === "SQUARE_OFF" || code === "SESSION_STOP") return "eod";
+  return "sl";
+}
 
 function ensureDir() { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); }
 
 let _dataCache = null;
-function _initData() { return { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] }; }
+function _initData() { return { capital: parseFloat(process.env[CAP_ENV] || "100000"), totalPnl: 0, sessions: [] }; }
 function loadData() {
   if (_dataCache) return _dataCache;
   ensureDir();
@@ -99,7 +174,7 @@ function loadData() {
   }
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
-    console.error(`${TAG} itm20_scalp_paper_trades.json corrupt — resetting: ${e.message}`);
+    console.error(`${TAG} ${rt.tradesFile} corrupt — resetting: ${e.message}`);
     _dataCache = _initData();
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
@@ -149,6 +224,8 @@ function _freshState() {
     _lastSkipNote:  null,
     _incompleteLogged: false,
     _reentryBlockUntil: 0,
+    optionQuote:    null,   // another market: the held contract's last bid / ask (its exit fill)
+    _expiryDayBlocked: false, // another market: <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day
   };
 }
 
@@ -162,7 +239,7 @@ function log(msg) {
 
 function istNow() { return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }); }
 function _persist() {
-  try { require("../utils/positionPersist").saveItm20ScalpPosition(state.position, { sessionPnl: state.sessionPnl }); } catch (_) {}
+  try { rt.persist.save(state.position, { sessionPnl: state.sessionPnl }); } catch (_) {}
 }
 
 /**
@@ -178,11 +255,11 @@ function _todayTrades() {
 function _loadPriorTodayTrades() {
   try {
     const today = tradeLogger.istDateString(Date.now());
-    return (tradeLogger.readDailyTrades(MODE_KEY, today) || [])
+    return (tradeLogger.readDailyTrades(MODE, today) || [])
       .filter(t => t && !t.type && typeof t.points === "number" && t.tradeDate === today);
   } catch (_) { return []; }
 }
-function _riskGate() { return strat.dayRiskGate(_todayTrades(), strat.getConfig()); }
+function _riskGate() { return strat.dayRiskGate(_todayTrades(), _cfg()); }
 
 // ── Crash/restart recovery: rehydrate today's in-memory session from JSONL ─────
 function rehydrateSessionFromJsonl() {
@@ -190,7 +267,7 @@ function rehydrateSessionFromJsonl() {
     const data = loadData();
     const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades(MODE_KEY, today)
+    const all = tradeLogger.readDailyTrades(MODE, today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) for (const t of (s.trades || [])) seen.add(keyOf(t));
@@ -223,7 +300,7 @@ require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, 
 
 let _replayLoad = false;
 try { _replayLoad = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
-if (!_replayLoad) capitalPool.trackSession(MODE_KEY, () => (state._unsaved ? state.sessionPnl : 0));
+if (!_replayLoad) capitalPool.trackSession(MODE, () => (state._unsaved ? state.sessionPnl : 0));
 
 /** Realised P&L for the current week (Mon → today) from the per-day JSONL logs. */
 function weeklyPnl() {
@@ -237,7 +314,7 @@ function weeklyPnl() {
       const d = new Date(nowIst.getTime() - i * 86400000);
       const ds = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
       if (ds === todayStr && state.running) { total += state.sessionPnl; continue; }
-      const trades = tradeLogger.readDailyTrades(MODE_KEY, ds) || [];
+      const trades = tradeLogger.readDailyTrades(MODE, ds) || [];
       for (const t of trades) if (t && !t.type && typeof t.pnl === "number") total += t.pnl;
     }
     return parseFloat(total.toFixed(2));
@@ -266,21 +343,49 @@ function attributeQuotes(resp, symbols, optSym) {
   return out;
 }
 
+/** Another market: the held contract's bid/ask out of the poll's own response. */
+function _noteOptionQuote(resp, optSym, ltp) {
+  try {
+    const rows = (resp && Array.isArray(resp.d)) ? resp.d : [];
+    const row = rows.find(x => x && (x.n || x.symbol) === optSym) || (rows.length === 1 ? rows[0] : null);
+    const v = (row && row.v) || {};
+    if (state.position && state.position.symbol === optSym) {
+      state.optionQuote = { symbol: optSym, ltp, bid: Number(v.bid || v.bid_price || 0), ask: Number(v.ask || v.ask_price || 0), at: Date.now() };
+    }
+  } catch (_) {}
+}
+
 function startPolling() {
   stopPolling();
   _pollStopped = false;
   const poll = async () => {
     if (_pollStopped) return;
     try {
-      const optSym = state.position ? state.position.symbol : null;
+      // NIFTY_FUT: the traded price IS the index level — nothing to poll; mirror
+      // the spot in for the page and the chart (the exits read the tick itself).
+      if (state.position && state.position.isFutures) {
+        if (state.lastTickPrice > 0) {
+          state.optionLtp = state.lastTickPrice;
+          state.optionChart = optionChart.pushLtp(state.optionChart, state.position.symbol, state.lastTickPrice);
+          state.optionLtpUpdatedAt = Date.now();
+        }
+      }
+      const optSym = state.position && !state.position.isFutures ? state.position.symbol : null;
       if (optSym) {
         optionFeed.track(OPTION_FEED_OWNER, optSym, null);
-        const streamed = optionFeed.getFresh(optSym);
+        let streamed = optionFeed.getFresh(optSym);
+        // Another market filling at the quote also needs a fresh bid/ask for its
+        // exit, which the stream does not carry: one REST quote at most ~5 s old.
+        if (!rt.home && streamed && rt.fillAtQuote()) {
+          const _q = state.optionQuote;
+          if (!(_q && _q.symbol === optSym && Date.now() - _q.at <= 5000)) streamed = null;
+        }
         let ltp = streamed ? streamed.ltp : null;
         if (!streamed) {
           const symbols = [optSym];
           const r = await require("../services/marketData").getQuotes(symbols);
           ltp = attributeQuotes(r, symbols, optSym).optLtp;
+          if (!rt.home && ltp != null) _noteOptionQuote(r, optSym, ltp);
         }
         if (ltp != null && state.position && state.position.symbol === optSym) {
           state.optionLtp = ltp;
@@ -335,7 +440,7 @@ async function _maybeRefreshHistory() {
       state._histFailures = 0;
       state._histNextTryMs = null;
       _mergeBars(bars);
-    } else if (getISTMinutes() < strat.getConfig().sessionStartMin) {
+    } else if (getISTMinutes() < _cfg().sessionStartMin) {
       state._histNextTryMs = Date.now() + 30_000;
     } else {
       _noteHistoryFailure(null);
@@ -361,18 +466,18 @@ function _todayIst() { return new Date().toLocaleDateString("en-CA", { timeZone:
 async function _fetchSpotToday() {
   const { fetchCandles } = require("../services/marketData");
   const today = _todayIst();
-  return fetchCandles(NIFTY_INDEX_SYMBOL, String(RES_MIN), today, today);
+  return fetchCandles(SPOT(), String(RES_MIN), today, today);
 }
 async function _fetchWarmupBars() {
   const { fetchCandles } = require("../services/marketData");
   const from = new Date(Date.now() - _warmupDays() * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  return fetchCandles(NIFTY_INDEX_SYMBOL, String(RES_MIN), from, _todayIst());
+  return fetchCandles(SPOT(), String(RES_MIN), from, _todayIst());
 }
 
 /** Engine view + chart series for the newest bar — once per bar-set change. */
 function _recomputeView() {
   try {
-    const cfg = strat.getConfig();
+    const cfg = _cfg();
     state.lastSignal = strat.getSignal(state.candles, { cfg, silent: true, resumeAfterSec: state.lastExitSec });
     const S = strat.computeSeries(state.candles, cfg);
     state.series = {
@@ -415,71 +520,126 @@ function _mergeBars(bars) {
 async function simulateBuy(side, sig) {
   if (!side) return;
   const _sid = state._sessionId;
-  const _spot = await freshSpot({ tickPrice: state.lastTickPrice, tickAt: state.lastTickTime });
+  // NIFTY: NIFTY's spot as always. Another market: its own underlying's quote.
+  const _spot = await freshSpot(rt.home
+    ? { tickPrice: state.lastTickPrice, tickAt: state.lastTickTime }
+    : { tickPrice: state.lastTickPrice, tickAt: state.lastTickTime, underlying: rt.underlyingKey });
   if (_spot.source === "quote") log(`📡 ${TAG} Live feed stale (${_spot.ageMs == null ? "no tick yet" : Math.round(_spot.ageMs / 1000) + "s old"}) — using quoted spot ${_spot.spot}`);
   if (state._sessionId !== _sid) return;
   const spotPrice = _spot.spot;
   if (typeof spotPrice !== "number" || !(spotPrice > 0)) {
-    log(`⚠️ ${TAG} No NIFTY spot price yet — entry deferred`);
+    log(`⚠️ ${TAG} No ${SPOT_LABEL} spot price yet — entry deferred`);
     return;
   }
 
-  // Exactly one listed strike ITM from the spot at the fill moment.
-  const strike = strat.itmStrike(spotPrice, side, _strikeStep());
-  if (strike == null) { log(`❌ ${TAG} Could not compute the ITM strike from spot ${spotPrice}`); return; }
+  // NIFTY trades options only (its futures refusal sits in evaluateEntry).
+  // Another market: its own kind — NIFTY_FUT trades the month future.
+  const _isFut = rt.home ? instrumentMode.isFutures() : rt.isFutures;
+
+  // Exactly one listed strike ITM from the spot at the fill moment (options).
+  const strike = _isFut ? null : strat.itmStrike(spotPrice, side, _strikeStep());
+  if (!_isFut && strike == null) { log(`❌ ${TAG} Could not compute the ITM strike from spot ${spotPrice}`); return; }
 
   let optInfo;
   try {
-    optInfo = await instrumentConfig.validateAndGetOptionSymbol(spotPrice, side, "ITM20_SCALP", { strikeOverride: strike });
+    optInfo = rt.home
+      ? await instrumentConfig.validateAndGetOptionSymbol(spotPrice, side, "ITM20_SCALP", { strikeOverride: strike })
+      : (_isFut
+        ? await rt.resolveEntrySymbol(spotPrice, side)
+        : await instrumentConfig.validateAndGetOptionSymbol(spotPrice, side, "ITM20_SCALP", { strikeOverride: strike, underlying: rt.underlyingKey }));
   } catch (e) {
     log(`❌ ${TAG} Symbol resolve failed: ${e.message}`);
     return;
   }
   if (!optInfo || optInfo.invalid) {
+    if (_isFut) {
+      log(`❌ ${TAG} No valid futures contract — skip ${side} entry`);
+      skipLogger.appendSkipLog(MODE, { gate: "expiry", reason: "no valid futures contract", side, spot: spotPrice });
+      return;
+    }
     log(`❌ ${TAG} No valid weekly expiry for the ${strike} ${side} — skip entry`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: "no valid option expiry", side, spot: spotPrice, strike });
+    skipLogger.appendSkipLog(MODE, { gate: "expiry", reason: "no valid option expiry", side, spot: spotPrice, strike });
     return;
   }
 
   let optionEntryLtp = null;
-  try {
-    const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
-    const q = attributeQuotes(r, [optInfo.symbol], optInfo.symbol);
-    if (q.optLtp != null) {
-      optionEntryLtp = q.optLtp;
-      try { tickRecorder.recordOptionLtp(optInfo.symbol, q.optLtp, REC_MODE); } catch (_) {}
+  let _entryQuote = null;   // another market: the quote its spread limit and ask fill read
+  if (!_isFut) {
+    try {
+      const r = await require("../services/marketData").getQuotes([optInfo.symbol]);
+      const q = attributeQuotes(r, [optInfo.symbol], optInfo.symbol);
+      if (q.optLtp != null) {
+        optionEntryLtp = q.optLtp;
+        try { tickRecorder.recordOptionLtp(optInfo.symbol, q.optLtp, REC_MODE); } catch (_) {}
+        if (!rt.home) {
+          const row = (r.d || []).find(x => x && (x.n || x.symbol) === optInfo.symbol) || (r.d.length === 1 ? r.d[0] : null);
+          const v = (row && row.v) || {};
+          _entryQuote = { ltp: q.optLtp, bid: Number(v.bid || v.bid_price || 0), ask: Number(v.ask || v.ask_price || 0), at: Date.now() };
+        }
+      }
+    } catch (e) {
+      log(`⚠️ ${TAG} Option LTP fetch failed: ${e.message} — entry blocked`);
+      return;
     }
-  } catch (e) {
-    log(`⚠️ ${TAG} Option LTP fetch failed: ${e.message} — entry blocked`);
-    return;
-  }
-  if (!optionEntryLtp) {
-    log(`❌ ${TAG} Option LTP not available — entry skipped`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot: spotPrice });
-    return;
+    if (!optionEntryLtp) {
+      log(`❌ ${TAG} Option LTP not available — entry skipped`);
+      skipLogger.appendSkipLog(MODE, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot: spotPrice });
+      return;
+    }
+    // Another market: its bid-ask spread limit (<PAIR>_MAX_SPREAD_PTS) on this
+    // quote. A refusal is a failed fill, so the pending setup retries it until
+    // the next candle closes; the skip is logged once per bar.
+    if (!rt.home && _entryQuote) {
+      const _sp = tradeGuards.checkSpread(_entryQuote.bid, _entryQuote.ask, rt.maxSpreadPts());
+      if (!_sp.ok) {
+        const _bar = getBucketStart(Date.now(), RES_MIN);
+        if (state._spreadSkipBar !== _bar) {
+          state._spreadSkipBar = _bar;
+          log(`⏭️ ${TAG} SKIP ${side} entry — spread too wide (${_sp.reason}, limit ${rt.maxSpreadPts()}pt)`);
+          skipLogger.appendSkipLog(MODE, { gate: "spread", reason: _sp.reason, symbol: optInfo.symbol, side, spot: spotPrice, spread: _sp.spread, limit: rt.maxSpreadPts() });
+        }
+        return;
+      }
+    }
   }
 
   const _tickFresh = typeof state.lastTickPrice === "number" && state.lastTickPrice > 0
     && typeof state.lastTickTime === "number" && Date.now() - state.lastTickTime <= SPOT_MAX_AGE_MS;
   const fillSpot = (_tickFresh || _spot.source !== "quote") && state.lastTickPrice > 0 ? state.lastTickPrice : spotPrice;
+  // NIFTY_FUT: the future trades AT the index level — its "premium" is the fill spot.
+  if (_isFut) optionEntryLtp = fillSpot;
+  // Another market fills at the ASK of a fresh quote (<PAIR>_PAPER_FILL_AT_QUOTE,
+  // default on there); NIFTY fills at the LTP as it always did.
+  const _ltpAtEntry = optionEntryLtp;
+  let _askFill = null;
+  if (!rt.home && !_isFut && _entryQuote) {
+    const f = rt.entryFill(optionEntryLtp, _entryQuote, Date.now());
+    if (f.source === "ask") { _askFill = f.price; optionEntryLtp = f.price; }
+  }
   if (state.position || !state.running || state._sessionId !== _sid) return;
   // A limit may have been reached by a trade that closed while we awaited.
   if (!_riskGate().allowed) return;
 
   const qty = lotQty();
-  const _cap = capitalPool.gate(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
+  const _cap = capitalPool.gate(MODE, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
     if (!_cap.muted) {
       log(`❌ ${TAG} Entry REFUSED — ${_cap.reason}`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", reason: _cap.reason, spot: fillSpot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
+      skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _cap.reason, spot: fillSpot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
     }
     return;
   }
 
-  const cfg = sig.cfg || strat.getConfig();
+  const cfg = sig.cfg || _cfg();
   const gate = _riskGate();
-  const tgt = strat.targetLevel(optionEntryLtp, cfg);
+  let tgt = strat.targetLevel(optionEntryLtp, cfg);
   const stp = strat.stopLevel(optionEntryLtp, gate.dayPts, cfg);
+  // NIFTY_FUT: the same points on the future's own price, direction-aware (a
+  // PE is a SHORT: its target sits below the entry, its stop above).
+  if (_isFut) {
+    tgt = _futLevel({ side, entrySpot: fillSpot }, tgt);
+    stp.level = _futLevel({ side, entrySpot: fillSpot }, stp.level);
+  }
 
   const pos = {
     side,
@@ -491,7 +651,7 @@ async function simulateBuy(side, sig) {
     entrySpot:      fillSpot,
     entryPrice:     fillSpot,
     indexAtEntry:   fillSpot,
-    spotSymbol:     NIFTY_INDEX_SYMBOL,
+    spotSymbol:     SPOT(),
     optionEntryLtp,
     targetPrem:     tgt,
     stopPrem:       stp.level,
@@ -514,18 +674,46 @@ async function simulateBuy(side, sig) {
     mfeSpotPts: 0, mfePnl: 0, maeSpotPts: 0, maePnl: 0, secsToMFE: 0, secsToMAE: 0,
     entryReason:    sig.reason,
   };
+  // Another market: the position names its market and instrument, and how its
+  // entry was filled. NIFTY's position is exactly as above.
+  if (!rt.home) {
+    Object.assign(pos, {
+      isFutures: _isFut, market: rt.marketKey, instrument: rt.instrumentName(),
+      optionEntryFill: _isFut ? null : (_askFill ? "ask" : "ltp"),
+      entryQuote: _entryQuote ? { bid: _entryQuote.bid, ask: _entryQuote.ask, ltp: _entryQuote.ltp } : null,
+    });
+  }
 
   state.position = pos;
+  // Trade journal (observer only — utils/tradeJournal.js).
+  tradeJournal.onEntry(pos, {
+    reason: pos.entryReason, signal: `BUY_${side}`,
+    indicators: { orHigh: sig.orHigh, orLow: sig.orLow, vwap: sig.vwap, ema: sig.ema },
+    spot: fillSpot, optionLtp: _isFut ? null : optionEntryLtp,
+    bid: _entryQuote ? _entryQuote.bid : null, ask: _entryQuote ? _entryQuote.ask : null,
+    vix: pos.vixAtEntry,
+    expiry: optInfo.expiryDate || optInfo.expiry || null,
+    market: rt.marketKey, strategy: rt.strategy.key,
+    isFutures: !!_isFut, qty, sl: stp.level, target: tgt,
+    expectedPrice: _isFut ? sig.entrySpot : _ltpAtEntry,
+    candles: state.candles,
+    nowMs: Date.now(),
+  });
   state.tradesTaken++;
-  capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  capitalPool.block(MODE, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   _persist();
   state.optionLtp = optionEntryLtp;
   state.optionChart = optionChart.pushLtp(state.optionChart, optInfo.symbol, optionEntryLtp);
   state.optionLtpUpdatedAt = Date.now();
 
-  log(`🟢 ${TAG} BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${fillSpot} optLtp=₹${optionEntryLtp}`);
+  if (_isFut) {
+    log(`🟢 ${TAG} ${side === "CE" ? "LONG" : "SHORT"} FUT ${optInfo.symbol} qty=${qty} @ ${fillSpot}`);
+  } else {
+    log(`🟢 ${TAG} BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${fillSpot} optLtp=₹${optionEntryLtp}`);
+  }
+  if (_askFill) log(`📌 ${TAG} Entry filled at the ASK ₹${_askFill} (LTP ₹${_ltpAtEntry}, bid ₹${_entryQuote.bid}) — ${rt.fillAtQuoteKey}`);
   log(`   ├─ Setup  : ${sig.reason}`);
-  log(`   └─ Exits  : target ₹${tgt} (+${cfg.targetPts}) · stop ₹${stp.level} (${stp.kind === "DAILY_LOSS" ? "daily loss cap" : "−" + cfg.slPts}) · square-off ${strat._fmtMins(cfg.squareOffMin)}`);
+  log(`   └─ Exits  : target ₹${tgt} (+${cfg.targetPts}) · stop ₹${stp.level} (${stp.kind === "DAILY_LOSS" ? "daily loss cap" : "−" + cfg.slPts}) · square-off ${strat._fmtMins(cfg.squareOffMin)}${_isFut ? " — points on the future" : ""}`);
 
   notifyEntry({
     mode: NOTIFY_MODE,
@@ -534,6 +722,7 @@ async function simulateBuy(side, sig) {
     qty, stopLoss: stp.level, target: tgt,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
+    ...(rt.home ? {} : { isFutures: _isFut, instrument: rt.instrumentName() }),
   });
 
   try {
@@ -550,13 +739,46 @@ async function simulateBuy(side, sig) {
 function simulateSell(reason, code) {
   if (!state.position) return;
   const pos = state.position;
-  const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
+  let exitOptLtp = state.optionLtp || pos.optionEntryLtp;
   const exitSpot = state.lastTickPrice || pos.entrySpot;
   const qty = pos.qty;
-  const gross   = parseFloat(((exitOptLtp - pos.optionEntryLtp) * qty).toFixed(2));
-  const charges = getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
+  // NIFTY_FUT: the future exits AT the index level.
+  if (pos.isFutures) exitOptLtp = exitSpot;
+  // Another market SELLS AT THE BID of a fresh quote of the held contract when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (pairRuntime.exitFill); NIFTY unchanged.
+  const _ltpAtExit = exitOptLtp;
+  let _exitFill = null, _exitQ = null;
+  if (!rt.home && !pos.isFutures) {
+    _exitQ = state.optionQuote && state.optionQuote.symbol === pos.symbol ? state.optionQuote : null;
+    const f = rt.exitFill(exitOptLtp, _exitQ, Date.now());
+    _exitFill = f.source;
+    if (f.source === "bid") exitOptLtp = f.price;
+  }
+  // Points are what the trade made in its own price: premium (bought option),
+  // or the future's move in the trade's direction (a PE is a SHORT).
+  const _mv = pos.isFutures ? (exitOptLtp - pos.optionEntryLtp) * _dir(pos.side) : exitOptLtp - pos.optionEntryLtp;
+  const gross   = parseFloat((_mv * qty).toFixed(2));
+  const charges = rt.home
+    ? getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty })
+    : getCharges({ broker: pair.broker, isFutures: !!pos.isFutures, exchange: rt.market().exchange, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
   const pnl     = parseFloat((gross - charges).toFixed(2));
-  const points  = parseFloat((exitOptLtp - pos.optionEntryLtp).toFixed(2));
+  const points  = parseFloat(_mv.toFixed(2));
+
+  // Trade journal (observer only): the exit, before the trade object is built.
+  {
+    const _kind = _exitKind(code);
+    const _lvl = _kind === "target" ? pos.targetPrem : _kind === "sl" ? pos.stopPrem : _kind === "trail" ? _guardLevel(pos) : null;
+    tradeJournal.onExit(pos, {
+      reason, kind: _kind,
+      spot: exitSpot, optionLtp: pos.isFutures ? null : exitOptLtp,
+      bid: _exitQ ? _exitQ.bid : null, ask: _exitQ ? _exitQ.ask : null,
+      expectedPrice: _lvl != null ? _lvl : _ltpAtExit,
+      fillPrice: exitOptLtp,
+      favPts: pos.isFutures ? points : (exitSpot - pos.entrySpot) * _dir(pos.side),
+      pnlRs: gross,
+      nowMs: Date.now(),
+    });
+  }
 
   // Clear the position FIRST so a re-entrant tick can never double-sell it.
   state.position = null;
@@ -566,7 +788,7 @@ function simulateSell(reason, code) {
   let trade = null;
   try {
     state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
-    capitalPool.release(MODE_KEY, pnl);
+    capitalPool.release(MODE, pnl);
 
     trade = {
       tradeDate:      tradeLogger.istDateString(Date.now()),
@@ -624,9 +846,30 @@ function simulateSell(reason, code) {
       isSpot:         false,
       isFutures:      false,
       instrument:     "NIFTY_OPTIONS",
+      ...tradeJournal.fields(pos),
     };
+    // Another market: the record names its market, strategy and instrument
+    // (consolidation, post-exit tracking and the MCP read them) and how each
+    // leg filled; a future carries no option premium.
+    if (!rt.home) {
+      Object.assign(trade, {
+        market:          rt.marketKey,
+        strategyId:      rt.strategy.key,
+        isFutures:       !!pos.isFutures,
+        instrument:      rt.instrumentName(),
+        optionEntryLtp:  pos.isFutures ? null : pos.optionEntryLtp,
+        optionExitLtp:   pos.isFutures ? null : exitOptLtp,
+        bestOptionLtp:   pos.isFutures ? null : (pos.peakPremium || null),
+        optionType:      pos.isFutures ? null : pos.side,
+        optionEntryFill: pos.isFutures ? null : (pos.optionEntryFill || "ltp"),
+        optionExitFill:  pos.isFutures ? null : _exitFill,
+        entryQuote:      pos.entryQuote || null,
+        exitQuote:       _exitFill === "bid" && _exitQ ? { bid: _exitQ.bid, ask: _exitQ.ask, ltp: _exitQ.ltp } : null,
+      });
+      if (pos.isFutures) trade.pnlMode = `futures: entry ₹${pos.entrySpot} → exit ₹${exitSpot} (${_dir(pos.side) > 0 ? "LONG" : "SHORT"}, ${points >= 0 ? "+" : ""}${points} pts)`;
+    }
     state.sessionTrades.push(trade);
-    tradeLogger.appendTradeLog(MODE_KEY, trade);
+    tradeLogger.appendTradeLog(MODE, trade);
 
     log(`🔴 ${TAG} EXIT ${pos.side} ${pos.symbol} @ optLtp=₹${exitOptLtp} (${points >= 0 ? "+" : ""}${points} pts) spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
@@ -641,6 +884,7 @@ function simulateSell(reason, code) {
       entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
       peakPremium: trade.bestOptionLtp, peakPnl: trade.mfePnl,
       maxDrawdown: trade.maePnl, heldMs: trade.durationMs,
+      ...(rt.home ? {} : { isFutures: !!pos.isFutures, instrument: rt.instrumentName() }),
     });
   } finally {
     if (!_exitNotified) {
@@ -666,7 +910,8 @@ function simulateSell(reason, code) {
     });
   } catch (_) {}
 
-  try { require("../utils/positionPersist").clearItm20ScalpPosition(); } catch (_) {}
+  try { rt.persist.clear(); } catch (_) {}
+  state.optionQuote = null;
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   _recomputeView();
@@ -681,7 +926,7 @@ function _closeDay(reason, opts) {
   state.dayClosedReason = reason;
   log(`⏸️ ${TAG} ${reason} — no more entries today`);
   if (!(opts && opts.skipLogged)) {
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
+    skipLogger.appendSkipLog(MODE, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
   }
 }
 
@@ -691,20 +936,30 @@ function _closeDay(reason, opts) {
 function _checkExits(spotPrice) {
   const pos = state.position;
   if (!pos) return;
+  const _mfeBefore = pos.mfeSpotPts;
   if (typeof spotPrice === "number" && Number.isFinite(spotPrice) && spotPrice > 0) {
     const optNow = state.optionLtp || pos.optionEntryLtp;
     const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-    const curPnl = (optNow - pos.optionEntryLtp) * pos.qty;
+    // NIFTY_FUT: the future's move in the trade's direction × qty.
+    const curPnl = pos.isFutures ? favPts * pos.qty : (optNow - pos.optionEntryLtp) * pos.qty;
     if (favPts > pos.mfeSpotPts) { pos.mfeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl > pos.mfePnl) pos.mfePnl = parseFloat(curPnl.toFixed(2));
     if (favPts < pos.maeSpotPts) { pos.maeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
     trackPath(pos, favPts, Date.now());
     if (curPnl < pos.maePnl) pos.maePnl = parseFloat(curPnl.toFixed(2));
+    // Trade journal (observer only): this tick.
+    tradeJournal.onTick(pos, { favPts, pnlRs: curPnl, spot: spotPrice, ltp: pos.isFutures ? null : optNow, nowMs: Date.now() });
+  }
+
+  if (pos.isFutures) {
+    if (pos.mfeSpotPts !== _mfeBefore) _journalStop(pos, spotPrice);
+    _checkFuturesExits(pos, spotPrice);
+    return;
   }
 
   const ltp = state.optionLtp;
   if (typeof ltp !== "number" || !Number.isFinite(ltp) || !(ltp > 0)) return;
-  if (ltp > pos.peakPremium) pos.peakPremium = ltp;
+  if (ltp > pos.peakPremium) { pos.peakPremium = ltp; _journalStop(pos, spotPrice); }
 
   if (typeof pos.stopPrem === "number" && Number.isFinite(pos.stopPrem) && ltp <= pos.stopPrem) {
     const msg = pos.stopKind === "DAILY_LOSS"
@@ -727,10 +982,62 @@ function _checkExits(spotPrice) {
   }
 }
 
+/**
+ * The level the trade exits at right now: its own premium stop, or the common
+ * guard (profit lock / premium stop, futures: the futures stop) when that one
+ * is tighter. Journal only — the exits test each level themselves.
+ */
+function _effectiveStop(pos) {
+  const g = _guardLevel(pos);
+  if (g == null) return pos.stopPrem;
+  if (typeof pos.stopPrem !== "number") return g;
+  return pos.isFutures && _dir(pos.side) < 0 ? Math.min(g, pos.stopPrem) : Math.max(g, pos.stopPrem);
+}
+/** Trade journal (observer only): the exit level after the peak moved it. */
+function _journalStop(pos, spotPrice) {
+  const lvl = _effectiveStop(pos);
+  if (lvl == null) return;
+  const locked = pos.isFutures ? (lvl - pos.entrySpot) * _dir(pos.side) > 0 : lvl > pos.optionEntryLtp;
+  tradeJournal.onStopChange(pos, {
+    to: lvl, kind: locked ? "lock" : "trail",
+    reason: locked ? "profit lock floor trails the peak" : "common stop trails the peak",
+    spot: spotPrice, ltp: pos.isFutures ? null : state.optionLtp, nowMs: Date.now(),
+  });
+}
+
+/**
+ * NIFTY_FUT: the strategy's own target / stop, set at entry as futures prices
+ * (direction-aware), then the common futures stop in place of the premium
+ * profit lock (which is defined on option premium).
+ */
+function _checkFuturesExits(pos, spot) {
+  if (typeof spot !== "number" || !Number.isFinite(spot) || !(spot > 0)) return;
+  const d = _dir(pos.side);
+  if (typeof pos.stopPrem === "number" && Number.isFinite(pos.stopPrem) && (spot - pos.stopPrem) * d <= 0) {
+    const msg = pos.stopKind === "DAILY_LOSS"
+      ? `Daily loss cap stop — future ₹${spot} through ₹${pos.stopPrem}`
+      : `Stop-loss −${(Math.abs(pos.entrySpot - pos.stopPrem)).toFixed(0)} — future ₹${spot} through ₹${pos.stopPrem}`;
+    log(`🛑 ${TAG} ${msg}`);
+    simulateSell(msg, pos.stopKind === "DAILY_LOSS" ? "DAILY_LOSS" : "SL");
+    return;
+  }
+  if (typeof pos.targetPrem === "number" && Number.isFinite(pos.targetPrem) && (spot - pos.targetPrem) * d >= 0) {
+    const msg = `Target +${(Math.abs(pos.targetPrem - pos.entrySpot)).toFixed(0)} — future ₹${spot} through ₹${pos.targetPrem}`;
+    log(`🎯 ${TAG} ${msg}`);
+    simulateSell(msg, "TARGET");
+    return;
+  }
+  const fsMsg = tradeGuards.checkFuturesStop(pos.side, pos.entrySpot, spot, pos.mfeSpotPts);
+  if (fsMsg) {
+    log(`🔒 ${TAG} ${fsMsg}`);
+    simulateSell(fsMsg, "PROFIT_LOCK");
+  }
+}
+
 /** 15:15 square-off — the strategy's own time, independent of TRADE_STOP_TIME. */
 function _checkSquareOff() {
   if (!state.running) return;
-  const cfg = strat.getConfig();
+  const cfg = _cfg();
   if (getISTMinutes() < cfg.squareOffMin) return;
   if (state.position) simulateSell(`Square-off ${strat._fmtMins(cfg.squareOffMin)}`, "SQUARE_OFF");
   if (!state.dayClosed) _closeDay(`Past the ${strat._fmtMins(cfg.squareOffMin)} square-off`);
@@ -742,21 +1049,28 @@ const FRESH_SIGNAL_SEC = 60;
 
 /** Day-level refusals that need no signal. Returns a reason or null. */
 function _dayBlock() {
-  const cfg = strat.getConfig();
+  const cfg = _cfg();
   const g = _riskGate();
   if (!g.allowed) return g.reason;
-  if (state.expiryDay === true && !cfg.tradeExpiryDay) return "Weekly expiry day — skipped (enable Trade On Expiry Day in Settings to allow)";
-  if (instrumentMode.isFutures()) return "Instrument mode is FUTURES — ITM20 Scalp trades options only";
+  if (rt.home) {
+    if (state.expiryDay === true && !cfg.tradeExpiryDay) return "Weekly expiry day — skipped (enable Trade On Expiry Day in Settings to allow)";
+    if (instrumentMode.isFutures()) return "Instrument mode is FUTURES — ITM20 Scalp trades options only";
+    return null;
+  }
+  // Another market: <PAIR>_EXPIRY_DAY_ONLY trades ONLY that market's expiry
+  // day; otherwise its expiry day is skipped unless <PAIR>_TRADE_EXPIRY_DAY.
+  if (state._expiryDayBlocked) return `Not a ${rt.market().label} expiry day — ${pair.expiryDayOnlyKey} is on`;
+  if (state.expiryDay === true && !cfg.tradeExpiryDay && !rt.expiryDayOnly()) return `${rt.market().label} expiry day — skipped (${pairs.pairKey(pair, "ITM20_SCALP_TRADE_EXPIRY_DAY")} allows it)`;
   return null;
 }
 
 async function evaluateEntry(opts) {
   const o = opts || {};
   if (state.position || state._entryInFlight || state.dayClosed) return;
-  if (instrumentMode.isFutures()) {
+  if (rt.home && instrumentMode.isFutures()) {
     const why = "INSTRUMENT=NIFTY_FUTURES — ITM20 Scalp trades an option PREMIUM target/stop, which has no futures equivalent. Switch INSTRUMENT back to NIFTY_OPTIONS to run it.";
     log(`⛔ ${TAG} ${why}`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "instrument", reason: why });
+    skipLogger.appendSkipLog(MODE, { gate: "instrument", reason: why });
     _closeDay(why, { skipLogged: true });
     return;
   }
@@ -768,11 +1082,11 @@ async function evaluateEntry(opts) {
   }
 
   const series = o.series || state.candles;
-  const sig = strat.getSignal(series, { silent: true, resumeAfterSec: state.lastExitSec });
+  const sig = strat.getSignal(series, ENG({ silent: true, resumeAfterSec: state.lastExitSec }));
 
   if (sig.signal === "NONE" || !sig.side) {
     if (sig.phase === "closed") {
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "outside_window", reason: sig.skipReason, spot: state.lastTickPrice, barTime: sig.signalBarTime });
+      skipLogger.appendSkipLog(MODE, { gate: "outside_window", reason: sig.skipReason, spot: state.lastTickPrice, barTime: sig.signalBarTime });
       _closeDay(sig.skipReason, { skipLogged: true });
       return;
     }
@@ -786,7 +1100,7 @@ async function evaluateEntry(opts) {
       state._lastSkipNote = note;
       if (/died|expired|waiting for a retest|re-armed/.test(note)) log(`ℹ️ ${TAG} ${note}`);
       if (/died|expired/.test(note)) {
-        skipLogger.appendSkipLog(MODE_KEY, {
+        skipLogger.appendSkipLog(MODE, {
           gate: /died/.test(note) ? "back_inside" : "no_retest_confirm", reason: note,
           spot: state.lastTickPrice, orHigh: sig.orHigh, orLow: sig.orLow, barTime: sig.signalBarTime,
         });
@@ -800,7 +1114,7 @@ async function evaluateEntry(opts) {
   if (o.late) {
     const why = `Signal candle ${strat._fmtMins(strat._utcSecToIstMins(sig.signalBarTime))} arrived late (batched history) — not filled at a stale price`;
     log(`⚠️ ${TAG} ${why}`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "late_bar", reason: why, side: sig.side, spot: state.lastTickPrice, barTime: sig.signalBarTime });
+    skipLogger.appendSkipLog(MODE, { gate: "late_bar", reason: why, side: sig.side, spot: state.lastTickPrice, barTime: sig.signalBarTime });
     return;
   }
 
@@ -808,7 +1122,7 @@ async function evaluateEntry(opts) {
     if (state._reentryBlockLogged !== state._reentryBlockUntil) {
       state._reentryBlockLogged = state._reentryBlockUntil;
       log(`⏸️ ${TAG} Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${sig.side} rejected)`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "cooldown", reason: "wait-after-exit cooldown", side: sig.side, barTime: sig.signalBarTime });
+      skipLogger.appendSkipLog(MODE, { gate: "cooldown", reason: "wait-after-exit cooldown", side: sig.side, barTime: sig.signalBarTime });
     }
     return;
   }
@@ -925,7 +1239,8 @@ function _lateStartStopMins() {
 }
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
-  const raw = process.env.TRADE_STOP_TIME || "15:30";
+  // NIFTY: TRADE_STOP_TIME as always. Another market: its session end (NSE / BSE TRADE_STOP_TIME).
+  const raw = rt.home ? (process.env.TRADE_STOP_TIME || "15:30") : rt.stopTimeLabel();
   const stopMin = strat._parseHHMM(raw, 15 * 60 + 30);
   let minsLeft = stopMin - getISTMinutes();
   if (minsLeft <= 0) { minsLeft = _lateStartStopMins(); if (!minsLeft) return; }
@@ -934,48 +1249,71 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  if (state.running) return res.redirect("/itm20-scalp-paper/status");
+  if (state.running) return res.redirect(`${ROUTE}/status`);
 
-  if (String(process.env.ITM20_SCALP_MODE_ENABLED || "true").toLowerCase() !== "true") {
-    return res.status(403).send(_errorPage("ITM20 Scalp Disabled", "Enable ITM20 Scalp Mode in Settings first", "/settings", "Go to Settings"));
+  if (rt.home) {
+    if (String(process.env.ITM20_SCALP_MODE_ENABLED || "true").toLowerCase() !== "true") {
+      return res.status(403).send(_errorPage("ITM20 Scalp Disabled", "Enable ITM20 Scalp Mode in Settings first", "/settings", "Go to Settings"));
+    }
+    if (String(process.env.ITM20_SCALP_PAPER_ENABLED || "true").toLowerCase() !== "true") {
+      return res.status(403).send(_errorPage("ITM20 Scalp Paper Disabled", "Enable ITM20 Scalp Paper Trading in Settings first", "/settings", "Go to Settings"));
+    }
+  } else {
+    // Every non-home pair ships OFF: its own switch, then the strategy's paper
+    // switch (its own value, else NIFTY's — config/pairs.js).
+    if (!rt.enabled()) {
+      return res.status(403).send(_errorPage(`${TITLE} Disabled`, `Turn on ${pair.enabledKey} in Settings → ${rt.market().label} first`, `/settings#pair-${pair.slug}`, "Go to Settings"));
+    }
+    if (!rt.paperEnabled()) {
+      return res.status(403).send(_errorPage(`${TITLE} Paper Disabled`, `${pairs.pairKey(pair, rt.strategy.paperEnabled.key)} (or ITM20_SCALP_PAPER_ENABLED) is off`, `/settings#pair-${pair.slug}`, "Go to Settings"));
+    }
+    if (!SPOT()) return res.status(400).send(_errorPage("Cannot Start", `${TITLE}: no spot symbol for ${rt.market().label}`, `${ROUTE}/status`, "← Back"));
   }
-  if (String(process.env.ITM20_SCALP_PAPER_ENABLED || "true").toLowerCase() !== "true") {
-    return res.status(403).send(_errorPage("ITM20 Scalp Paper Disabled", "Enable ITM20 Scalp Paper Trading in Settings first", "/settings", "Go to Settings"));
-  }
-  const check = sharedSocketState.canStart("ITM20_SCALP_PAPER");
-  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, "/itm20-scalp-paper/status", "← Back"));
+  const check = rt.socketSlot.canStart();
+  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, `${ROUTE}/status`, "← Back"));
 
   const auth = await verifyFyersToken();
   if (!auth.ok) return res.status(401).send(_errorPage("Not Authenticated", auth.message, "/auth/login", "Login with Fyers"));
 
-  const holiday = await isTradingAllowed();
-  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/itm20-scalp-paper/status", "← Back"));
+  // This market's exchange calendar (NSE / BSE holidays).
+  const holiday = rt.home ? await isTradingAllowed() : await rt.isTradingAllowed();
+  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, `${ROUTE}/status`, "← Back"));
 
-  if (getISTMinutes() >= strat.getConfig().squareOffMin) {
-    return res.status(400).send(_errorPage("Session Closed", `Past ${strat._fmtMins(strat.getConfig().squareOffMin)} IST — ITM20 Scalp has squared off for the day`, "/itm20-scalp-paper/status", "← Back"));
+  if (getISTMinutes() >= _cfg().squareOffMin) {
+    return res.status(400).send(_errorPage("Session Closed", `Past ${strat._fmtMins(_cfg().squareOffMin)} IST — ${TITLE} has squared off for the day`, `${ROUTE}/status`, "← Back"));
   }
+  // NIFTY: its weekly expiry as always. Another market: THAT market's expiry
+  // (BANKNIFTY monthly, SENSEX weekly, NIFTY_FUT the month contract).
   let expiry = null;
-  try { expiry = await isExpiryDay(); } catch (_) { expiry = null; }
-  if (state.running) return res.redirect("/itm20-scalp-paper/status");
+  if (rt.home) { try { expiry = await isExpiryDay(); } catch (_) { expiry = null; } }
+  else { try { expiry = rt.isExpiryDay(); } catch (_) { expiry = null; } }
+  if (state.running) return res.redirect(`${ROUTE}/status`);
 
   state = _freshState();
   state.running = true;
   state._unsaved = true;
   state.sessionStart = new Date().toISOString();
-  state._sessionId = `itm20-scalp-paper:${Date.now()}`;
+  state._sessionId = `${rt.replayMode}:${Date.now()}`;
   state.expiryDay = expiry;
   state.priorTodayTrades = _loadPriorTodayTrades();
   for (const t of state.priorTodayTrades) {
     if (typeof t.exitUnixSec === "number" && (state.lastExitSec == null || t.exitUnixSec > state.lastExitSec)) state.lastExitSec = t.exitUnixSec;
   }
-  sharedSocketState.setItm20ScalpActive("ITM20_SCALP_PAPER");
+  rt.socketSlot.set();
 
-  const cfg = strat.getConfig();
+  const cfg = _cfg();
   log(`🟢 ${TAG} Session started — ${strat.NAME}`);
+  if (!rt.home) {
+    log(`🌐 ${TAG} ${rt.market().label} · ${SPOT()} · ${rt.instrumentName()} · lot ${lotQty()}${rt.isFutures ? " · target / stop are points on the future" : ""}`);
+    if (rt.expiryDayOnly()) {
+      if (expiry !== true) state._expiryDayBlocked = true;
+      log(`📅 ${TAG} Expiry-only mode (${rt.market().label}): ${expiry === true ? "✅ Today is expiry — trading allowed" : "❌ Not this market's expiry day — entries blocked"}`);
+    }
+  }
   log(`⚙️ ${TAG} Range : ${strat._fmtMins(cfg.sessionStartMin)}–${strat._fmtMins(cfg.orEndMin)} high/low · breakout close + VWAP + EMA${cfg.emaPeriod} · retest within ${cfg.retestCandles} candles (±${cfg.retestTolPts}pt) · confirm close`);
   log(`⚙️ ${TAG} Exits : +${cfg.targetPts} / −${cfg.slPts} premium points · square-off ${strat._fmtMins(cfg.squareOffMin)} · 1 strike ITM`);
   log(`⚙️ ${TAG} Limits: entries ${strat._fmtMins(cfg.entryStartMin)}–${strat._fmtMins(cfg.entryEndMin)} · max ${cfg.maxTrades} trades · stop after a win / 2 losses / −${cfg.dailyLossPts} pts · qty ${lotQty()}`);
-  if (expiry === true) log(`📅 ${TAG} Today is a weekly expiry day — ${cfg.tradeExpiryDay ? "trading allowed by Settings" : "no entries (monitor only)"}`);
+  if (expiry === true) log(`📅 ${TAG} Today is ${rt.home ? "a weekly" : `the ${rt.market().label}`} expiry day — ${cfg.tradeExpiryDay || (!rt.home && rt.expiryDayOnly()) ? "trading allowed by Settings" : "no entries (monitor only)"}`);
   if (expiry == null) log(`⚠️ ${TAG} Could not check whether today is expiry day — trading as a normal day`);
   if (state.priorTodayTrades.length) {
     const g = _riskGate();
@@ -993,23 +1331,31 @@ router.get("/start", async (req, res) => {
       settings: tickRecorder.snapshotSettings ? tickRecorder.snapshotSettings() : {},
       warmup: state.candles.map(c => ({ ...c })),
       meta: {
-        instrument: instrumentConfig.INSTRUMENT,
+        instrument: rt.home ? instrumentConfig.INSTRUMENT : rt.instrumentName(),
         resolutionMin: RES_MIN,
-        spotSymbol: NIFTY_INDEX_SYMBOL,
-        decisionSymbol: NIFTY_INDEX_SYMBOL,
+        spotSymbol: SPOT(),
+        decisionSymbol: SPOT(),
         sessionStartISO: state.sessionStart,
         recordsOptionLtps: true,
       },
     });
   } catch (_) {}
 
-  if (socketManager.isRunning()) {
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log(`📡 ${TAG} Piggybacking on the existing NIFTY 50 WebSocket`);
+  if (rt.home) {
+    if (socketManager.isRunning()) {
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log(`📡 ${TAG} Piggybacking on the existing NIFTY 50 WebSocket`);
+    } else {
+      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log(`📡 ${TAG} Started the NIFTY 50 WebSocket`);
+    }
   } else {
-    socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log(`📡 ${TAG} Started the NIFTY 50 WebSocket`);
+    // Bound to this market's spot: the shared socket adds it beside NIFTY.
+    const _wasRunning = socketManager.isRunning();
+    if (!_wasRunning) socketManager.start(SPOT(), () => {}, log);
+    socketManager.addCallback(CALLBACK_ID, onTick, log, SPOT());
+    log(`📡 ${TAG} ${_wasRunning ? "Piggybacking on the existing WebSocket" : "Started the WebSocket"} — ${SPOT()}`);
   }
 
   scheduleAutoStop();
@@ -1017,7 +1363,7 @@ router.get("/start", async (req, res) => {
   notifyStarted({
     mode: NOTIFY_MODE,
     text: [
-      `📄 ITM20 SCALP PAPER — STARTED`,
+      `📄 ${rt.home ? "ITM20 SCALP" : rt.title} PAPER — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
@@ -1028,7 +1374,7 @@ router.get("/start", async (req, res) => {
     ].join("\n"),
   });
 
-  res.redirect("/itm20-scalp-paper/status");
+  res.redirect(`${ROUTE}/status`);
 });
 
 function stopSession() {
@@ -1040,7 +1386,7 @@ function stopSession() {
   try { tickRecorder.recordSessionStop({ mode: REC_MODE, sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
 
   socketManager.removeCallback(CALLBACK_ID);
-  sharedSocketState.clearItm20Scalp();
+  rt.socketSlot.clear();
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -1050,10 +1396,10 @@ function stopSession() {
       const data = loadData();
       data.sessions.push({ date: state.sessionStart, strategy: strat.NAME, pnl: state.sessionPnl, trades: state.sessionTrades });
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
-      data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+      data.capital  = parseFloat((parseFloat(process.env[CAP_ENV] || "100000") + data.totalPnl).toFixed(2));
       saveData(data);
       state._unsaved = false;
-      capitalPool.sessionSaved(MODE_KEY);
+      capitalPool.sessionSaved(MODE);
       log(`💾 ${TAG} Session saved — ${state.sessionTrades.length} trade(s), PnL ₹${state.sessionPnl}`);
     } catch (e) {
       log(`⚠️ ${TAG} Save failed: ${e.message}`);
@@ -1072,8 +1418,8 @@ function stopSession() {
   });
 }
 
-router.get("/stop", (req, res) => { stopSession(); res.redirect("/itm20-scalp-paper/status"); });
-router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit", "MANUAL"); res.redirect("/itm20-scalp-paper/status"); });
+router.get("/stop", (req, res) => { stopSession(); res.redirect(`${ROUTE}/status`); });
+router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit", "MANUAL"); res.redirect(`${ROUTE}/status`); });
 
 // ── /status/chart-data — yesterday + today only (small payload) ──────────────
 router.get("/status/chart-data", (req, res) => {
@@ -1097,7 +1443,7 @@ router.get("/status/chart-data", (req, res) => {
     }
     const markers = [];
     for (const t of _todayTrades()) {
-      if (t.signalBarTime) markers.push({ time: t.signalBarTime, position: t.side === "CE" ? "belowBar" : "aboveBar", color: t.side === "CE" ? "#10b981" : "#ef4444", shape: t.side === "CE" ? "arrowUp" : "arrowDown", text: `${t.side} ₹${t.optionEntryLtp}` });
+      if (t.signalBarTime) markers.push({ time: t.signalBarTime, position: t.side === "CE" ? "belowBar" : "aboveBar", color: t.side === "CE" ? "#10b981" : "#ef4444", shape: t.side === "CE" ? "arrowUp" : "arrowDown", text: `${t.side} ₹${t.optionEntryLtp != null ? t.optionEntryLtp : t.entryPrice}` });
       if (t.exitBarTime)   markers.push({ time: t.exitBarTime, position: t.side === "CE" ? "aboveBar" : "belowBar", color: (t.points || 0) >= 0 ? "#10b981" : "#ef4444", shape: "circle", text: `${(t.points || 0) >= 0 ? "+" : ""}${t.points} pts` });
     }
     if (s.breakoutTime) markers.push({ time: s.breakoutTime, position: s.breakoutSide === "PE" ? "belowBar" : "aboveBar", color: "#f59e0b", shape: "square", text: "BO" });
@@ -1109,7 +1455,7 @@ router.get("/status/chart-data", (req, res) => {
       orHigh: s.orHigh != null ? s.orHigh : null,
       orLow:  s.orLow != null ? s.orLow : null,
       entryPrice: pos ? pos.entrySpot : null,
-      spotSymbol: NIFTY_INDEX_SYMBOL,
+      spotSymbol: SPOT(),
       resMin: RES_MIN,
     });
   } catch (e) {
@@ -1143,14 +1489,14 @@ router.get("/status/data", (req, res) => {
   const optAge = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
   const tickAge = state.lastTickTime ? Math.round((Date.now() - state.lastTickTime) / 1000) : null;
   const data = loadData();
-  const cfg = strat.getConfig();
+  const cfg = _cfg();
   const s = state.lastSignal || {};
   const gate = _riskGate();
 
   let livePnl = null, livePts = null;
   if (pos && state.optionLtp != null) {
-    livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * pos.qty).toFixed(2));
-    livePts = parseFloat((state.optionLtp - pos.optionEntryLtp).toFixed(2));
+    livePnl = parseFloat((_liveMove(pos, state.optionLtp) * pos.qty).toFixed(2));
+    livePts = parseFloat(_liveMove(pos, state.optionLtp).toFixed(2));
   }
   const cumPnl = []; let cum = 0;
   for (const t of state.sessionTrades) { cum += (t.pnl || 0); cumPnl.push({ t: t.exitTime || t.entryTime, pnl: parseFloat(cum.toFixed(2)) }); }
@@ -1171,7 +1517,7 @@ router.get("/status/data", (req, res) => {
     bestTrade: n ? Math.max(...state.sessionTrades.map(t => t.pnl || 0)) : null,
     worstTrade: n ? Math.min(...state.sessionTrades.map(t => t.pnl || 0)) : null,
     cumPnl, livePnl, livePts, weeklyPnl: weeklyPnl(),
-    spotSymbol: NIFTY_INDEX_SYMBOL, tickAgeSec: tickAge,
+    spotSymbol: SPOT(), tickAgeSec: tickAge,
     orHigh: s.orHigh != null ? s.orHigh : null,
     orLow:  s.orLow != null ? s.orLow : null,
     vwap: s.vwap != null ? s.vwap : null,
@@ -1182,8 +1528,8 @@ router.get("/status/data", (req, res) => {
     breakoutStatus: _breakoutStatus(s),
     retestStatus: _retestStatus(s),
     signal: light.text, signalColor: light.color,
-    itmStrikeCE: pos ? null : strat.itmStrike(spot, "CE", step),
-    itmStrikePE: pos ? null : strat.itmStrike(spot, "PE", step),
+    itmStrikeCE: (pos || rt.isFutures) ? null : strat.itmStrike(spot, "CE", step),
+    itmStrikePE: (pos || rt.isFutures) ? null : strat.itmStrike(spot, "PE", step),
     dayPts: gate.dayPts,
     riskStatus: state.dayClosed ? (state.dayClosedReason || "Closed") : gate.status === "ONE_LOSS" ? "One loss — one more setup allowed" : "OK",
     riskAllowed: !state.dayClosed && gate.allowed,
@@ -1198,7 +1544,7 @@ router.get("/status/data", (req, res) => {
       squareOff: strat._fmtMins(cfg.squareOffMin), dailyLossPts: cfg.dailyLossPts,
     },
     position: pos ? {
-      side: pos.side, isFutures: false, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
+      side: pos.side, isFutures: !!pos.isFutures, dir: pos.isFutures ? _dir(pos.side) : 1, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       targetPrem: pos.targetPrem, stopPrem: pos.stopPrem, stopKind: pos.stopKind,
       optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
       peakPremium: pos.peakPremium, entryTime: pos.entryTime, signalStrength: pos.signalStrength,
@@ -1212,10 +1558,10 @@ router.get("/status/data", (req, res) => {
 router.get("/status", (req, res) => {
   const data = loadData();
   const pos  = state.position;
-  const cfg  = strat.getConfig();
+  const cfg  = _cfg();
   const s    = state.lastSignal || {};
   const gate = _riskGate();
-  const startCap = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
+  const startCap = parseFloat(process.env[CAP_ENV] || "100000");
   const capital  = startCap + (data.totalPnl || 0);
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
   const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
@@ -1234,7 +1580,7 @@ router.get("/status", (req, res) => {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   ${faviconLink()}
-  <title>ITM20 Scalp — Paper Trade</title>
+  <title>${TITLE} — Paper Trade</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="/vendor/lightweight-charts.standalone.production.js"></script>
   <style>
@@ -1277,7 +1623,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('itm20ScalpPaper', false, state.running, {
+${buildSidebar(rt.sidebarKey, false, state.running, {
   showExitBtn:  !!pos,
   showStopBtn:  state.running,
   showStartBtn: !state.running,
@@ -1291,15 +1637,15 @@ ${buildSidebar('itm20ScalpPaper', false, state.running, {
 <div class="main-content">
   <div class="top-bar">
     <div>
-      <div class="top-bar-title">🎯 ITM20 Scalp — Paper Trade</div>
-      <div class="top-bar-meta">${strat.NAME} · NIFTY 50 · 5-min candles · 1 strike ITM · +${cfg.targetPts} / −${cfg.slPts} premium pts · ${state.running ? "Auto-refreshes every 3s" : "Stopped"}</div>
+      <div class="top-bar-title">🎯 ${TITLE} — Paper Trade</div>
+      <div class="top-bar-meta">${strat.NAME} · ${rt.home ? "NIFTY 50" : SPOT_LABEL} · 5-min candles · ${rt.isFutures ? "month future" : "1 strike ITM"} · +${cfg.targetPts} / −${cfg.slPts} premium pts · ${state.running ? "Auto-refreshes every 3s" : "Stopped"}</div>
     </div>
     <div class="top-bar-right">
       ${state.running
         ? '<span class="top-bar-badge paper-active"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>RUNNING</span>'
         : '<span class="top-bar-badge">● IDLE</span>'}
       ${state.expiryDay === true ? `<span class="top-bar-badge" style="color:#f59e0b;border-color:rgba(245,158,11,0.3);">📅 EXPIRY DAY${cfg.tradeExpiryDay ? "" : " · NO ENTRIES"}</span>` : ""}
-      <a href="/itm20-scalp-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;">📊 History</a>
+      <a href="${ROUTE}/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;">📊 History</a>
       <button onclick="izReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
     </div>
   </div>
@@ -1319,7 +1665,7 @@ ${buildSidebar('itm20ScalpPaper', false, state.running, {
       <span id="iz-trend" style="font-size:0.78rem;color:#c0d8b0;font-family:'IBM Plex Mono',monospace;">Trend: ${s.trend || "—"}</span>
     </div>
     <div class="stat-grid" style="margin:14px 0 0;">
-      <div class="sc"><div class="sc-label">NIFTY Spot</div><div class="sc-val" id="iz-spot">${state.lastTickPrice ? inrS(state.lastTickPrice) : "—"}</div></div>
+      <div class="sc"><div class="sc-label">${SPOT_LABEL} Spot</div><div class="sc-val" id="iz-spot">${state.lastTickPrice ? inrS(state.lastTickPrice) : "—"}</div></div>
       <div class="sc" style="border-top:1.5px solid #8a2020;"><div class="sc-label">Range High</div><div class="sc-val" id="iz-orh" style="color:#ef4444;">${s.orHigh != null ? inrS(s.orHigh) : "—"}</div><div class="sc-sub">${strat._fmtMins(cfg.sessionStartMin)}–${strat._fmtMins(cfg.orEndMin)}</div></div>
       <div class="sc" style="border-top:1.5px solid #5a9030;"><div class="sc-label">Range Low</div><div class="sc-val" id="iz-orl" style="color:#10b981;">${s.orLow != null ? inrS(s.orLow) : "—"}</div><div class="sc-sub">${strat._fmtMins(cfg.sessionStartMin)}–${strat._fmtMins(cfg.orEndMin)}</div></div>
       <div class="sc" style="border-top:1.5px solid #6a5090;"><div class="sc-label">VWAP</div><div class="sc-val" id="iz-vwap" style="color:#a78bfa;">${s.vwap != null ? inrS(s.vwap) : "—"}</div></div>
@@ -1357,7 +1703,7 @@ ${buildSidebar('itm20ScalpPaper', false, state.running, {
 
   ${process.env.CHART_ENABLED !== "false" ? `
   <div style="margin-bottom:24px;">
-    <div class="section-title">NIFTY 5-Min Chart — yesterday + today</div>
+    <div class="section-title">${SPOT_LABEL} 5-Min Chart — yesterday + today</div>
     <div style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:420px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
       <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;display:flex;gap:10px;flex-wrap:wrap;max-width:calc(100% - 90px);">
@@ -1403,12 +1749,12 @@ var _hadPos = ${pos ? "true" : "false"}, _running = ${state.running ? "true" : "
 function _esc(x){ return String(x == null ? '' : x).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function _inr(n){ return typeof n === 'number' ? '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'; }
 function _set(id, txt, color){ var el = document.getElementById(id); if (!el) return; el.textContent = txt; if (color) el.style.color = color; }
-function izStart(btn){ if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; } location.href = '/itm20-scalp-paper/start'; }
-function izStop(btn){ if (!confirm('Stop ITM20 Scalp paper trading? An open position is closed at the current premium.')) return; if (btn) btn.disabled = true; location.href = '/itm20-scalp-paper/stop'; }
-function izExit(btn){ if (!confirm('Exit the open ITM20 Scalp trade now?')) return; if (btn) btn.disabled = true; location.href = '/itm20-scalp-paper/exit'; }
+function izStart(btn){ if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; } location.href = '${ROUTE}/start'; }
+function izStop(btn){ if (!confirm('Stop ITM20 Scalp paper trading? An open position is closed at the current premium.')) return; if (btn) btn.disabled = true; location.href = '${ROUTE}/stop'; }
+function izExit(btn){ if (!confirm('Exit the open ITM20 Scalp trade now?')) return; if (btn) btn.disabled = true; location.href = '${ROUTE}/exit'; }
 async function izReset(btn){
   if (!confirm('Reset ITM20 Scalp paper history and capital?')) return;
-  try { var r = await fetch('/itm20-scalp-paper/reset'); var d = await r.json(); alert(d.success ? d.message : ('❌ ' + d.error)); if (d.success) location.reload(); } catch (e) { alert('Reset failed'); }
+  try { var r = await fetch('${ROUTE}/reset'); var d = await r.json(); alert(d.success ? d.message : ('❌ ' + d.error)); if (d.success) location.reload(); } catch (e) { alert('Reset failed'); }
 }
 function ptRender(){
   var side = document.getElementById('ptSide').value, res = document.getElementById('ptResult').value;
@@ -1432,7 +1778,7 @@ function logRender(){
 }
 async function izRefresh(){
   try {
-    var r = await fetch('/itm20-scalp-paper/status/data', { cache: 'no-store' });
+    var r = await fetch('${ROUTE}/status/data', { cache: 'no-store' });
     var d = await r.json();
     if (!!d.position !== _hadPos || d.running !== _running) { location.reload(); return; }
     var light = document.getElementById('iz-light');
@@ -1455,12 +1801,12 @@ async function izRefresh(){
     if (d.currentBar) ['open','high','low','close'].forEach(function(k){ _set('iz-bar-' + k, _inr(d.currentBar[k])); });
     var p = d.position;
     if (p && p.currentOptLtp != null) {
-      var mv = p.currentOptLtp - p.optionEntryLtp, col = mv >= 0 ? '#10b981' : '#ef4444';
+      var _d = p.dir || 1, mv = (p.currentOptLtp - p.optionEntryLtp) * _d, col = mv >= 0 ? '#10b981' : '#ef4444';
       _set('iz-opt-cur', _inr(p.currentOptLtp), col);
       _set('iz-opt-move', (mv >= 0 ? '▲ +' : '▼ ') + Math.abs(mv).toFixed(2) + ' pts', col);
       _set('iz-opt-pnl', (d.livePnl >= 0 ? '+' : '') + _inr(d.livePnl), col);
-      _set('iz-to-target', (p.targetPrem - p.currentOptLtp).toFixed(2) + ' pts to go');
-      _set('iz-to-stop', (p.currentOptLtp - p.stopPrem).toFixed(2) + ' pts away');
+      _set('iz-to-target', ((p.targetPrem - p.currentOptLtp) * _d).toFixed(2) + ' pts to go');
+      _set('iz-to-stop', ((p.currentOptLtp - p.stopPrem) * _d).toFixed(2) + ' pts away');
     }
     if (Array.isArray(d.log)) { _logs = d.log.slice().reverse(); logRender(); }
   } catch (e) {}
@@ -1493,7 +1839,7 @@ setInterval(izRefresh, 3000);
   }
   async function fetchChart(){
     try {
-      var r = await fetch('/itm20-scalp-paper/status/chart-data', { cache:'no-store' });
+      var r = await fetch('${ROUTE}/status/chart-data', { cache:'no-store' });
       var d = await r.json();
       var c = d.candles || [];
       if (c.length) {
@@ -1514,7 +1860,7 @@ setInterval(izRefresh, 3000);
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
-${optionChart.optionChartScript({ dataUrl: '/itm20-scalp-paper/status/chart-data', id: 'iz-opt-chart' })}
+${optionChart.optionChartScript({ dataUrl: '${ROUTE}/status/chart-data', id: 'iz-opt-chart' })}
 </body></html>`;
   res.send(html);
 });
@@ -1530,9 +1876,9 @@ function _positionCardHtml(pos, optLtp) {
   }
   const inrS = (n) => typeof n === "number" ? `₹${n.toFixed(2)}` : "—";
   const cur = typeof optLtp === "number" ? optLtp : null;
-  const mv = cur != null ? cur - pos.optionEntryLtp : null;
+  const mv = cur != null ? _liveMove(pos, cur) : null;
   const col = mv == null ? "#c8d8f0" : mv >= 0 ? "#10b981" : "#ef4444";
-  const livePnl = cur != null ? (cur - pos.optionEntryLtp) * pos.qty : null;
+  const livePnl = cur != null ? _liveMove(pos, cur) * pos.qty : null;
   const sideClr = pos.side === "CE" ? "#10b981" : "#ef4444";
   const box = (label, id, val, sub, color, border) => `
     <div style="text-align:center;padding:12px;background:#071a3e;border:1px solid ${border || "#1e3a5f"};border-radius:10px;">
@@ -1553,7 +1899,7 @@ function _positionCardHtml(pos, optLtp) {
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:2.2rem;font-weight:900;color:${sideClr};">${pos.side}</span>
         <div><div style="font-size:0.72rem;color:${sideClr};">${pos.side === "CE" ? "CALL · Bullish" : "PUT · Bearish"}</div>
-        <span style="font-size:0.65rem;font-weight:700;background:#10b98122;color:#10b981;border:1px solid #10b98144;padding:2px 7px;border-radius:4px;">1 ITM</span></div>
+        <span style="font-size:0.65rem;font-weight:700;background:#10b98122;color:#10b981;border:1px solid #10b98144;padding:2px 7px;border-radius:4px;">${pos.isFutures ? "FUT" : "1 ITM"}</span></div>
       </div>
       <div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div><div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.optionStrike != null ? Number(pos.optionStrike).toLocaleString("en-IN") : "—"}</div></div>
       <div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div><div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.optionExpiryDate || pos.optionExpiry || "—"}</div></div>
@@ -1561,12 +1907,12 @@ function _positionCardHtml(pos, optLtp) {
       <div style="flex:1;min-width:180px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div><div style="font-size:0.82rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div></div>
     </div>
     <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
-      <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">📊 Option Premium (${pos.side} price)</div>
+      <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">📊 ${pos.isFutures ? `Future (${pos.side === "CE" ? "LONG" : "SHORT"})` : `Option Premium (${pos.side} price)`}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;">
         ${box("Entry Price", "iz-opt-entry", inrS(pos.optionEntryLtp), { text: `spot ${pos.entrySpot}` }, "#60a5fa")}
         ${box("Current LTP", "iz-opt-cur", cur != null ? inrS(cur) : "⏳", { id: "iz-opt-move", text: mv != null ? `${mv >= 0 ? "▲ +" : "▼ "}${Math.abs(mv).toFixed(2)} pts` : "polling…" }, col, col)}
-        ${box("Target", "iz-opt-target", inrS(pos.targetPrem), { id: "iz-to-target", text: cur != null ? `${(pos.targetPrem - cur).toFixed(2)} pts to go` : "" }, "#10b981", "#065f46")}
-        ${box("Stop-loss", "iz-opt-stop", inrS(pos.stopPrem), { id: "iz-to-stop", text: cur != null ? `${(cur - pos.stopPrem).toFixed(2)} pts away${pos.stopKind === "DAILY_LOSS" ? " · day cap" : ""}` : (pos.stopKind === "DAILY_LOSS" ? "day cap" : "") }, "#ef4444", "#7f1d1d")}
+        ${box("Target", "iz-opt-target", inrS(pos.targetPrem), { id: "iz-to-target", text: cur != null ? `${((pos.targetPrem - cur) * (pos.isFutures ? _dir(pos.side) : 1)).toFixed(2)} pts to go` : "" }, "#10b981", "#065f46")}
+        ${box("Stop-loss", "iz-opt-stop", inrS(pos.stopPrem), { id: "iz-to-stop", text: cur != null ? `${((cur - pos.stopPrem) * (pos.isFutures ? _dir(pos.side) : 1)).toFixed(2)} pts away${pos.stopKind === "DAILY_LOSS" ? " · day cap" : ""}` : (pos.stopKind === "DAILY_LOSS" ? "day cap" : "") }, "#ef4444", "#7f1d1d")}
         ${box("Running P&L", "iz-opt-pnl", livePnl != null ? `${livePnl >= 0 ? "+" : ""}₹${livePnl.toFixed(2)}` : "—", { text: `${pos.qty} qty · before charges` }, col)}
       </div>
     </div>
@@ -1578,15 +1924,15 @@ function _positionCardHtml(pos, optLtp) {
 router.get("/history", (req, res) => {
   const data = loadData();
   res.send(renderHistoryPage({
-    routePrefix: "/itm20-scalp-paper",
-    sidebarKey: "itm20ScalpHistory",
-    pageTitle: "🎯 ITM20 Scalp Paper Trade History",
-    pageDocTitle: "ITM20 Scalp Paper — History",
-    modalLabel: "ITM20 Scalp Paper",
+    routePrefix: ROUTE,
+    sidebarKey: rt.historySidebarKey,
+    pageTitle: `🎯 ${TITLE} Paper Trade History`,
+    pageDocTitle: `${TITLE} Paper — History`,
+    modalLabel: `${TITLE} Paper`,
     liveActive: false,
     sessions: data.sessions || [],
     totalPnl: data.totalPnl,
-    startCap: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"),
+    startCap: parseFloat(process.env[CAP_ENV] || "100000"),
     emptyLabel: "Start ITM20 Scalp paper trading to record your first session.",
   }));
 });
@@ -1594,8 +1940,8 @@ router.get("/history", (req, res) => {
 const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates(MODE_KEY);
-  const trades = tradeLogger.listDailyDates(MODE_KEY);
+  const skips  = skipLogger.listDates(MODE);
+  const trades = tradeLogger.listDailyDates(MODE);
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) { const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 }; row.tradesSize = t.size; byDate.set(t.date, row); }
@@ -1606,15 +1952,15 @@ router.get("/download/daily-files", (req, res) => {
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="itm20_scalp_paper_skips_all_${today}.txt"`);
-  const dates = skipLogger.listDates(MODE_KEY).map(d => d.date).sort();
+  res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates(MODE).map(d => d.date).sort();
   let body = "";
-  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE_KEY, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
+  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
   res.send(body);
 });
 
 function _dayFile(kind, date) {
-  return kind === "skips" ? skipLogger.filePathFor(MODE_KEY, date) : tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  return kind === "skips" ? skipLogger.filePathFor(MODE, date) : tradeLogger.dailyFilePathFor(MODE, date);
 }
 for (const kind of ["skips", "trades"]) {
   router.get(`/download/${kind}/:date`, (req, res) => {
@@ -1622,7 +1968,7 @@ for (const kind of ["skips", "trades"]) {
     if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
     const p = _dayFile(kind, date);
     if (!fs.existsSync(p)) return res.status(404).send("not found");
-    res.download(p, `itm20_scalp_paper_${kind}_${date}.txt`);
+    res.download(p, `${MODE}_paper_${kind}_${date}.txt`);
   });
   router.get(`/view/${kind}/:date`, (req, res) => {
     const date = req.params.date;
@@ -1642,7 +1988,7 @@ router.delete("/session/:index", (req, res) => {
   if (isNaN(idx) || idx < 0 || idx >= (data.sessions || []).length) return res.status(400).json({ success: false, error: "Invalid session index." });
   data.sessions.splice(idx, 1);
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
-  data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env[CAP_ENV] || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
   return res.json({ success: true, message: "Session deleted successfully." });
 });
@@ -1651,7 +1997,7 @@ router.post("/restore-session/:date", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop ITM20 Scalp paper trading before restoring." });
   const date = String(req.params.date || "").trim();
   if (!_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
-  const allTrades = tradeLogger.readDailyTrades(MODE_KEY, date).filter(t => t && !t.type);
+  const allTrades = tradeLogger.readDailyTrades(MODE, date).filter(t => t && !t.type);
   if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   const data = loadData();
   const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
@@ -1663,20 +2009,20 @@ router.post("/restore-session/:date", (req, res) => {
   data.sessions.push({ date, strategy: strat.NAME, pnl: sessionPnl, trades: missing, restoredFromJsonl: true });
   data.sessions.sort((a, b) => istDayFromAny(a.date).localeCompare(istDayFromAny(b.date)));
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
-  data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env[CAP_ENV] || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
   if (date === tradeLogger.istDateString(Date.now())) state._unsaved = false;
-  capitalPool.sessionSaved(MODE_KEY);
+  capitalPool.sessionSaved(MODE);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
 router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop ITM20 Scalp paper trading before resetting." });
-  const fresh = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
+  const fresh = parseFloat(process.env[CAP_ENV] || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
-  require("../utils/paperReset").clearTodayFiles(MODE_KEY);
+  require("../utils/paperReset").clearTodayFiles(MODE);
   state._unsaved = false;
-  capitalPool.sessionSaved(MODE_KEY);
+  capitalPool.sessionSaved(MODE);
   return res.json({ success: true, message: `ITM20 Scalp paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
@@ -1684,17 +2030,17 @@ router.get("/download/trades.jsonl", (req, res) => {
   try {
     const data = loadData();
     const records = [];
-    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE_KEY, strategy: s.strategy }, t));
+    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE, strategy: s.strategy }, t));
     const today = new Date().toISOString().slice(0, 10);
     const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
     if (ai) {
-      const md = aiExport.buildMarkdown(records, { title: "ITM20 Scalp paper trades (full log)", source: "itm20-scalp-paper" });
+      const md = aiExport.buildMarkdown(records, { title: "ITM20 Scalp paper trades (full log)", source: REC_MODE });
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="itm20_scalp_paper_trades_AI_${today}.md"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_AI_${today}.md"`);
       return res.send(md);
     }
     res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Content-Disposition", `attachment; filename="itm20_scalp_paper_trades_${today}.jsonl"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_${today}.jsonl"`);
     res.send(records.map(r => JSON.stringify(r)).join("\n"));
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1710,10 +2056,10 @@ a{color:#3b82f6;text-decoration:none;border:0.5px solid #0e1e36;padding:8px 14px
 </head><body><h2>${title}</h2><p>${message}</p><a href="${backHref}">${backLabel}</a></body></html>`;
 }
 
-module.exports = router;
-module.exports.stopSession = stopSession;
-module.exports.attributeQuotes = attributeQuotes;
-module.exports._test = {
+router.stopSession = stopSession;
+router.pairRuntime = rt;
+router.attributeQuotes = attributeQuotes;
+router._test = {
   getState: () => state,
   setState: (s) => { state = s; },
   freshState: _freshState,
@@ -1724,3 +2070,21 @@ module.exports._test = {
   evaluateEntry,
   simulateSell,
 };
+return router;
+}   // ── end create(pair) ──
+
+// One instance per pair, built on first use — the NIFTY one at load.
+const _instances = new Map();
+function forPairInstance(p) {
+  if (!p) return null;
+  if (!_instances.has(p.id)) _instances.set(p.id, create(p));
+  return _instances.get(p.id);
+}
+/** The router of this strategy on `marketKey` ("BANKNIFTY", "SENSEX", …), or null when not offered. */
+function forMarket(marketKey) { return forPairInstance(pairs.get("itm20Scalp", marketKey)); }
+
+const home = forMarket("NIFTY");
+home.create    = create;
+home.forMarket = forMarket;
+home.forPair   = forPairInstance;
+module.exports = home;

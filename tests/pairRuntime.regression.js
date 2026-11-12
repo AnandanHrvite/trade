@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, stRsiPivBb: MK, prevOrbScalp: NO_MCX, itm20Scalp: NO_MCX };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -1192,6 +1192,121 @@ check("PREV ORB SCALP route builder: NIFTY is the default export; one cached rou
         assert.strictEqual(a.spotSymbol, "BSE:SENSEX-INDEX", "the SENSEX instance reads the SENSEX index");
         assert.strictEqual(b.spotSymbol, "NSE:NIFTY50-INDEX");
         assert.strictEqual(a.running, false);
+        srv.close();
+        resolve();
+      } catch (e) { srv.close(); reject(e); }
+    });
+  });
+});
+
+section("ITM20 SCALP runs as a pair (routes/itm20ScalpPaper.js)");
+
+const izOf = (mk) => pairRuntime.forStrategy("itm20Scalp", mk);
+check("NIFTY is the registry's ITM20 SCALP: path, file, slot, sidebar, notify tag", () => {
+  const rt = izOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey],
+    [true, "itm20_scalp", "ITM20_SCALP", "/itm20-scalp-paper", "itm20-scalp-paper", "itm20-scalp-paper", "itm20_scalp_paper_trades.json", "ITM20_SCALP_PAPER", "itm20ScalpPaper", "itm20ScalpHistory"]);
+});
+check("ITM20 SCALP other markets: own path, file, slot, prefix and instrument; never MCX", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "SAIL"].map(mk => { const r = izOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_ITM20_SCALP", "/sensex_itm20_scalp-paper", "sensex_itm20_scalp_paper_trades.json", "SENSEX_ITM20_SCALP_PAPER", "SENSEX_ITM20_SCALP-PAPER", "SENSEX_OPTIONS"],
+    ["BANKNIFTY", "BN_ITM20_SCALP", "/bn_itm20_scalp-paper", "bn_itm20_scalp_paper_trades.json", "BN_ITM20_SCALP_PAPER", "BN_ITM20_SCALP-PAPER", "BANKNIFTY_OPTIONS"],
+    ["NIFTY_FUT", "FUT_ITM20_SCALP", "/fut_itm20_scalp-paper", "fut_itm20_scalp_paper_trades.json", "FUT_ITM20_SCALP_PAPER", "FUT_ITM20_SCALP-PAPER", "NIFTY_FUTURES"],
+    ["SAIL", "SAIL_ITM20_SCALP", "/sail_itm20_scalp-paper", "sail_itm20_scalp_paper_trades.json", "SAIL_ITM20_SCALP_PAPER", "SAIL_ITM20_SCALP-PAPER", "SAIL_OPTIONS"],
+  ]);
+  assert.strictEqual(izOf("CRUDE"), null, "needs the 09:15 index open — not offered on MCX");
+  assert.strictEqual(pairs.byReplayMode("bn_itm20_scalp-paper").strategyId, "itm20Scalp");
+  assert.strictEqual(pairs.byReplayMode("itm20-scalp-paper"), null, "the home mode is the registry's");
+});
+check("ITM20 SCALP engine config: NIFTY reads ITM20_SCALP_* exactly; a pair its own key, else NIFTY's", () => {
+  const eng = require("../src/strategies/itm20_scalp");
+  withEnv({ ITM20_SCALP_TARGET_PTS: "25", ITM20_SCALP_ENTRY_END: "12:00", SENSEX_ITM20_SCALP_TARGET_PTS: "60", SENSEX_ITM20_SCALP_RETEST_TOL_PTS: "16", BN_ITM20_SCALP_TARGET_PTS: undefined }, () => {
+    const n = eng.getConfig(), s = eng.getConfig("SENSEX_ITM20_SCALP"), b = eng.getConfig("BN_ITM20_SCALP");
+    assert.deepStrictEqual([n.targetPts, n.retestTolPts, n.entryEndMin], [25, 5, 720]);
+    assert.deepStrictEqual([s.targetPts, s.retestTolPts, s.entryEndMin], [60, 16, 720], "own target / tolerance, inherited window");
+    assert.deepStrictEqual([b.targetPts, b.retestTolPts], [25, 5], "inherits NIFTY");
+    assert.deepStrictEqual(eng.getConfig("ITM20_SCALP"), n, "the ITM20_SCALP prefix is NIFTY");
+  });
+  withEnv({ BN_ITM20_SCALP_SL_PTS: "abc", ITM20_SCALP_SL_PTS: undefined }, () => assert.strictEqual(eng.getConfig("BN_ITM20_SCALP").slPts, 10, "bad own value falls to the default"));
+});
+check("ITM20 SCALP crash snapshot, logs and tags per pair; capital on the Fyers pool", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveItm20ScalpPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger"), tags = require("../src/utils/logTags");
+  assert.ok(tl.modes().includes("sensex_itm20_scalp") && sl.modes().includes("fut_itm20_scalp"));
+  assert.deepStrictEqual(tags.tagsFor("bn_itm20_scalp", {}), { market: "BANKNIFTY", strategy: "ITM20_SCALP" });
+  assert.strictEqual(pairs.get("itm20Scalp", "SENSEX").broker, "fyers");
+  assert.strictEqual(pairs.get("itm20Scalp", "NIFTY").broker, "zerodha", "NIFTY keeps its Zerodha book");
+  izOf("SENSEX").persist.save({ side: "CE", symbol: "BSE:SENSEX26N1981000CE", entryPrice: 81050 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("sensex_itm20_scalp").position.symbol, "BSE:SENSEX26N1981000CE");
+    pp.clearPairPositions();
+  });
+});
+check("ITM20 SCALP NIFTY_FUT: target / stop are points on the future, a PE is a SHORT", () => {
+  const fut = require("../src/routes/itm20ScalpPaper").forMarket("NIFTY_FUT");
+  const mk = (side, extra) => {
+    const s = fut._test.freshState();
+    s.running = true;
+    s.position = Object.assign({
+      side, isFutures: true, symbol: "NSE:NIFTY26NOVFUT", qty: 65, entrySpot: 24000, entryPrice: 24000, indexAtEntry: 24000,
+      optionEntryLtp: 24000, peakPremium: 24000, stopKind: "SL", entryTime: "x", entryTimeMs: Date.now(), entryBarTime: 0,
+      mfeSpotPts: 0, mfePnl: 0, maeSpotPts: 0, maePnl: 0, secsToMFE: 0, secsToMAE: 0,
+    }, extra);
+    s.lastTickPrice = 24000;
+    fut._test.setState(s);
+    return s;
+  };
+  withEnv({ PREMIUM_SL_ENABLED: "false", PROFIT_LOCK_ENABLED: "false" }, () => {
+    let s = mk("PE", { targetPrem: 23980, stopPrem: 24010 });
+    s.lastTickPrice = 23990; fut._test.checkExits(23990);
+    assert.ok(fut._test.getState().position, "a short 10 pts in profit is between its levels");
+    s.lastTickPrice = 23979; fut._test.checkExits(23979);
+    let t = fut._test.getState().sessionTrades[0];
+    assert.deepStrictEqual([t.exitCode, t.points, t.isFutures, t.instrument, t.optionEntryLtp, t.market], ["TARGET", 21, true, "NIFTY_FUTURES", null, "NIFTY_FUT"]);
+    assert.strictEqual(t.grossPnl, 21 * 65, "a short gains as the future falls");
+    s = mk("CE", { targetPrem: 24020, stopPrem: 23990 });
+    s.lastTickPrice = 23989; fut._test.checkExits(23989);
+    t = fut._test.getState().sessionTrades[0];
+    assert.deepStrictEqual([t.exitCode, t.points], ["SL", -11]);
+  });
+});
+check("ITM20 SCALP route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/itm20ScalpPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/itm20-scalp-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(typeof route.attributeQuotes, "function", "the quote attribution stays exported");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.forMarket("CRUDE"), null, "not offered on MCX");
+  const bn = route.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== route && route.forMarket("BANKNIFTY") === bn, "one instance per market");
+  assert.strictEqual(bn.pairRuntime.paperPath, "/bn_itm20_scalp-paper");
+  assert.notStrictEqual(bn._test.getState(), route._test.getState(), "each instance holds its own state");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(bn.pairRuntime.paperPath, bn);
+  app.use(route.pairRuntime.paperPath, route);
+  const get = (port, p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${p}`, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => resolve({ code: res.statusCode, body }));
+    }).on("error", reject);
+  });
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, async () => {
+      const port = srv.address().port;
+      try {
+        const r = await get(port, "/bn_itm20_scalp-paper/start");
+        assert.strictEqual(r.code, 403);
+        assert.ok(r.body.includes("BN_ITM20_SCALP_MODE_ENABLED"), "names the pair's switch");
+        assert.ok(!bn.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+        const a = JSON.parse((await get(port, "/bn_itm20_scalp-paper/status/data")).body);
+        const b = JSON.parse((await get(port, "/itm20-scalp-paper/status/data")).body);
+        assert.strictEqual(a.spotSymbol, "NSE:NIFTYBANK-INDEX", "the BANKNIFTY instance reads the BANKNIFTY index");
+        assert.strictEqual(b.spotSymbol, "NSE:NIFTY50-INDEX");
         srv.close();
         resolve();
       } catch (e) { srv.close(); reject(e); }

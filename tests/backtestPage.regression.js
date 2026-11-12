@@ -87,7 +87,7 @@ function check(name, fn) { _queue.push({ name, fn }); }
 
 // ── HTTP harness: the old pages + the new page on one throwaway server ──────
 const app = express();
-const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp", "rsiPivotSt"];
+const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp", "rsiPivotSt", "itm20Scalp"];
 for (const id of OLD) {
   const s = registry.byId(id);
   app.use(s.backtest.path, require(registry.srcPath(s.backtest.module)));
@@ -266,7 +266,11 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   const rps = page.marketOptions("rsiPivotSt");
   assert.deepStrictEqual(rps.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of rps) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `rsiPivotSt ${m.key}`);
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp"]);
+  const iz = page.marketOptions("itm20Scalp");
+  assert.deepStrictEqual(iz.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of iz) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `itm20Scalp ${m.key}`);
+  assert.ok(!iz.some((m) => m.key === "CRUDE"), "ITM20 SCALP needs the index open — no MCX");
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -301,6 +305,7 @@ const PARITY = [
   { id: "pa",         qs: `from=${FROM}&to=${TO}&resolution=5` },
   { id: "trendDayScalp", qs: `from=${FROM}&to=${TO}` },
   { id: "rsiPivotSt", qs: `from=${FROM}&to=${TO}` },
+  { id: "itm20Scalp", qs: `from=${FROM}&to=${TO}` },
 ];
 const parityNotes = [];
 for (const P of PARITY) {
@@ -1140,6 +1145,59 @@ check("PREV ORB SCALP pair settings: a SENSEX-own key reaches the engine (as its
     for (const t of neu.result.trades) assert.ok(t.entry.split(", ")[1].slice(0, 5) <= "10:00", `SENSEX PREV ORB SCALP entered at ${t.entry}`);
     assert.strictEqual(process.env.PREV_ORB_SCALP_ENTRY_END, undefined, "the pair value leaked into the real env");
   } finally { delete process.env.SENSEX_PREV_ORB_SCALP_ENTRY_END; }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4l. ITM20 SCALP is market-aware");
+
+const IZ_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`ITM20 SCALP ${mk}: fetches its own candles, prices with its lot + exchange charges, records the market`, async () => {
+    const mark = fetchLog.length;
+    const neu = await runNew({ strategy: "itm20Scalp", market: mk, settings: "current", from: FROM, to: TO });
+    IZ_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const asked = fetchLog.slice(mark).map((f) => f.symbol);
+    assert.ok(asked.length && asked.every((s) => s === ctx.spotSymbol), `fetched ${asked.join(",")} for ${mk}`);
+    assert.strictEqual(neu.result.meta.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    for (const t of neu.result.trades) {
+      const charges = getCharges({ broker: "fyers", isFutures: ctx.isFutures, exchange: ctx.exchange, entryPremium: t.eOpt, exitPremium: t.xOpt, qty: ctx.lotQty });
+      const want = (t.xOpt - t.eOpt) * ctx.lotQty - charges;
+      assert.ok(Math.abs(t.pnl - want) <= ctx.lotQty * 0.005 + 0.02, `${mk} trade ${t.entry}: pnl ${t.pnl} ≠ (${t.xOpt}−${t.eOpt})×${ctx.lotQty}−${charges}`);
+      if (ctx.isFutures) {
+        assert.ok(Math.abs(t.eOpt - t.ePrice) < 50, `${mk}: futures entry ${t.eOpt} is not the index level ${t.ePrice}`);
+        assert.strictEqual(t.strike, null, "a future has no strike");
+        const dir = t.side === "PE" ? -1 : 1;
+        assert.ok((t.target - t.ePrice) * dir > 0 && (t.sl - t.ePrice) * dir < 0, `${mk} ${t.side}: target ${t.target} / stop ${t.sl} are not on the trade's side of ${t.ePrice}`);
+      } else {
+        assert.strictEqual(t.strike % ctx.strikeStep, 0, `${mk}: strike ${t.strike} is off the ${ctx.strikeStep}-pt grid`);
+      }
+    }
+    assert.strictEqual(!!neu.result.stats.isFutures, ctx.isFutures);
+    assert.strictEqual(neu.result.stats.optionSim, !ctx.isFutures);
+    assert.ok(!legacySaves.slice(-1).includes("ITM20_SCALP_BACKTEST"), "a non-NIFTY run overwrote NIFTY's legacy slot");
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+  });
+}
+check("ITM20 SCALP: the market runs scanned their own scaled series", () => {
+  const S = IZ_RUNS.SENSEX, B = IZ_RUNS.BANKNIFTY, F = IZ_RUNS.NIFTY_FUT;
+  assert.ok(S && B && F, "market runs missing");
+  for (const r of [S, B, F]) assert.ok(r.result.meta.days > 0, "no sessions scanned");
+  assert.ok(S.result.trades.every((t) => t.ePrice > 50000), "SENSEX trades should be on the SENSEX (scaled) series");
+  assert.ok(F.result.trades.every((t) => t.eOpt > 1000), "futures entries should be index levels, not option premiums");
+  say(`       ITM20 SCALP trades: SENSEX ${S.result.trades.length} · BANKNIFTY ${B.result.trades.length} · NIFTY_FUT ${F.result.trades.length}`);
+});
+check("ITM20 SCALP pair settings: a SENSEX-own key reaches the engine (as its ITM20_SCALP_* key) for that run only", async () => {
+  process.env.SENSEX_ITM20_SCALP_ENTRY_END = "10:00";
+  try {
+    const { overrides } = page.buildOverrides("itm20Scalp", "SENSEX", null);
+    assert.strictEqual(overrides.ITM20_SCALP_ENTRY_END, "10:00");
+    const neu = await runNew({ strategy: "itm20Scalp", market: "SENSEX", settings: "current", from: FROM, to: TO });
+    assert.ok(neu.record.overriddenKeys.includes("ITM20_SCALP_ENTRY_END"));
+    for (const t of neu.result.trades) assert.ok(t.entry.split(", ")[1].slice(0, 5) <= "10:05", `SENSEX ITM20 SCALP entered at ${t.entry}`);
+    assert.strictEqual(process.env.ITM20_SCALP_ENTRY_END, undefined, "the pair value leaked into the real env");
+  } finally { delete process.env.SENSEX_ITM20_SCALP_ENTRY_END; }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

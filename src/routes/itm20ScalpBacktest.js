@@ -22,6 +22,18 @@
  * spot path, seeded at BACKTEST_SEED_PREMIUM, with BACKTEST_SLIPPAGE_PTS each
  * way and full charges (brokerage, STT, exchange, GST, stamp duty) per trade —
  * the same model every other backtest here uses. Treat ₹ as DIRECTIONAL.
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles, lot, strike grid, exchange charges (BSE for
+ * SENSEX) come from services/backtestMarket.js and its expiry day from its
+ * paper pair's own calendar (pairRuntime.isExpiryDay); the market's pair
+ * settings are mapped onto the ITM20_SCALP_* keys the engine reads, for that
+ * run only (utils/scopedEnv.js). NIFTY_FUT is priced as the future at the
+ * index level (δ 1, no θ): the +target / −stop are points on the future in the
+ * trade's direction, and the common futures stop replaces the premium profit
+ * lock, as on its paper pair. With market NIFTY nothing changes. SAIL stays
+ * "coming soon" (not one of backtestMarket's markets yet); MCX is not offered.
  */
 
 const express = require("express");
@@ -38,6 +50,17 @@ const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
 const backtestCosts = require("../config/backtestCosts");
 const nseHolidays = require("../utils/nseHolidays");
+const backtestMarket = require("../services/backtestMarket");
+
+// Futures stop on the long-equivalent futures "premium" (entry, price and peak
+// all in index points in the trade's favour): tradeGuards.futuresStopLevel with
+// best move = peak − entry.
+function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak) {
+  const lvl = _futStopLvl(entry, peak);
+  if (lvl == null || px > lvl) return null;
+  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+}
 
 const ACCENT = "#22d3ee";
 const ENDPOINT = "/itm20-scalp-backtest";
@@ -59,6 +82,8 @@ function escHtml(x) {
   return String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function _r2(x) { return Math.round(x * 100) / 100; }
+/** A futures position's favour-side level (entry ± points) as the future's own price. */
+function _futPx(pos, lvl) { return lvl == null ? null : _r2(pos.entrySpot + (pos.side === "PE" ? -1 : 1) * (lvl - pos.entrySpot)); }
 
 function _warmupDays() {
   const v = parseInt(process.env.ITM20_SCALP_WARMUP_DAYS, 10);
@@ -78,7 +103,9 @@ function warmupRange(from, to) {
 /**
  * @param {Array}  intraday  5-min NIFTY spot candles, ascending, INCLUDING the warm-up runway
  * @param {string} rangeFrom "YYYY-MM-DD" IST — the first day a trade may open
- * @param {object} [opts]    { cfg, lock, isExpiryDate: async (dateStr) => bool } — test hooks
+ * @param {object} [opts]    { cfg, lock, isExpiryDate: async (dateStr) => bool } — test hooks;
+ *        opts.mkt: a backtestMarket.context() (lot, grid, exchange, futures).
+ *        Omitted = NIFTY, exactly as before markets existed.
  */
 async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
   const o = opts || {};
@@ -90,13 +117,23 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
   if (!Array.isArray(intraday) || !intraday.length) return empty;
 
   const cfg = o.cfg || strat.getConfig();
-  const isExpiryDate = o.isExpiryDate || nseHolidays.isExpiryDate;
-  const DELTA        = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-  const THETA_DAY    = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = instrumentConfig.getLotQty();
+  const M    = o.mkt || backtestMarket.context("NIFTY");
+  const home = M.key === "NIFTY";
+  // Another market's expiry day is its paper pair's (BANKNIFTY monthly, SENSEX
+  // weekly, NIFTY_FUT the month contract); <PAIR>_EXPIRY_DAY_ONLY (as its paper
+  // pair reads it) trades only those days.
+  const _pairRt = home ? null : require("../utils/pairRuntime").forStrategy("itm20Scalp", M.key);
+  const isExpiryDate = o.isExpiryDate || (home ? nseHolidays.isExpiryDate
+    : async (dayStr) => _pairRt.isExpiryDay(Date.parse(`${dayStr}T09:15:00+05:30`)));
+  const EXPIRY_ONLY  = !home && _pairRt.expiryDayOnly();
+  // NIFTY trades options only; NIFTY_FUT prices the future at the index (δ 1, no θ).
+  const IS_FUT       = !home && M.isFutures === true;
+  const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
+  const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+  const LOT_SIZE     = home ? instrumentConfig.getLotQty() : M.lotQty;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
-  const STEP         = instrumentConfig.underlyingOf().strikeStep;
+  const STEP         = home ? instrumentConfig.underlyingOf().strikeStep : M.strikeStep;
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
   const lock = o.lock || {
     enabled: tradeGuards.PROFIT_LOCK_ENABLED,
@@ -133,9 +170,14 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
 
     let expiry = false;
     try { expiry = !!(await isExpiryDate(dayStr)); } catch (_) { expiry = false; }
-    if (expiry && !cfg.tradeExpiryDay) {
+    if (EXPIRY_ONLY && !expiry) {
+      funnel.noTradeDays++;
+      skipped.push({ date: istDateOf(dayTs), reason: `not a ${M.label} expiry day — expiry-day-only` });
+      continue;
+    }
+    if (expiry && !cfg.tradeExpiryDay && !EXPIRY_ONLY) {
       funnel.expirySkipped++; funnel.noTradeDays++;
-      skipped.push({ date: istDateOf(dayTs), reason: "weekly expiry day — skipped" });
+      skipped.push({ date: istDateOf(dayTs), reason: home ? "weekly expiry day — skipped" : `${M.label} expiry day — skipped` });
       continue;
     }
 
@@ -166,7 +208,12 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
       const exitPrem = _r2(Math.max(0.05, rawPrem - 2 * SLIPPAGE_PTS));
       const points = _r2(exitPrem - pos.optionEntryLtp);
       const gross = _r2(points * LOT_SIZE);
-      const charges = getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+      // NIFTY: Zerodha option charges as always. Another market: its Fyers book,
+      // exchange and instrument (a future on its long-equivalent index levels,
+      // as the other market-aware backtests price it).
+      const charges = home
+        ? getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE })
+        : getCharges({ broker: "fyers", isFutures: IS_FUT, exchange: M.exchange, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
       const pnl = _r2(gross - charges);
       exitReasons[code] = (exitReasons[code] || 0) + 1;
       const exitSec = exitTime + (atBarClose ? RES * 60 : 0);
@@ -175,7 +222,8 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
         entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitSec),
         entryTs: pos.entryTime, exitTs: exitSec,
         ePrice: pos.entrySpot, xPrice: _r2(spotFor(rawPrem, exitTime)),
-        sl: pos.stopPrem, target: pos.targetPrem,
+        // NIFTY_FUT: the levels as the future's own prices (a PE's stop sits above).
+        sl: IS_FUT ? _futPx(pos, pos.stopPrem) : pos.stopPrem, target: IS_FUT ? _futPx(pos, pos.targetPrem) : pos.targetPrem,
         strike: pos.strike,
         orHigh: pos.orHigh, orLow: pos.orLow, vwap: pos.vwap, ema: pos.ema,
         breakout: pos.breakoutTime ? istHHMMSS(pos.breakoutTime).slice(0, 5) : null,
@@ -201,7 +249,8 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
       const entry = pos.optionEntryLtp;
       const pOpen = premAt(c.open, c.time);
       // Common guards' level (profit lock floor / premium SL) — null when both are off.
-      const commonLvl = tradeGuards.exitLevelLtp(entry, pos.peakPrem, lockOpts);
+      // NIFTY_FUT: the common futures stop (the premium lock is defined on option premium).
+      const commonLvl = IS_FUT ? _futStopLvl(entry, pos.peakPrem) : tradeGuards.exitLevelLtp(entry, pos.peakPrem, lockOpts);
       const stopLvl = commonLvl != null && commonLvl > pos.stopPrem ? commonLvl : pos.stopPrem;
       const stopCode = commonLvl != null && commonLvl > pos.stopPrem ? "PROFIT_LOCK" : pos.stopKind;
       const stopTxt = stopCode === "PROFIT_LOCK" ? `Common profit lock / premium stop ₹${_r2(stopLvl)}`
@@ -219,7 +268,7 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
       if (pFav > pos.peakPrem) pos.peakPrem = pFav;
 
       const pClose = premAt(c.close, c.time);
-      const msg = tradeGuards.checkProfitLock(entry, pClose, pos.peakPrem, lockOpts);
+      const msg = IS_FUT ? _futStopMsg(entry, pClose, pos.peakPrem) : tradeGuards.checkProfitLock(entry, pClose, pos.peakPrem, lockOpts);
       if (msg) { close(pClose, c.time, `${msg} (given back inside the bar — filled at the close)`, "PROFIT_LOCK", true); return; }
 
       const closeMin = strat._utcSecToIstMins(c.time) + RES;
@@ -237,14 +286,17 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
         pending = null;
         if (typeof c.open === "number" && Number.isFinite(c.open) && startMin < cfg.squareOffMin) {
           const gate = strat.dayRiskGate(dayTrades, cfg);
-          const stp = strat.stopLevel(SEED_PREMIUM, gate.dayPts, cfg);
+          // NIFTY_FUT: the entry "premium" is the future at the index level, so
+          // the levels are its points in the trade's favour.
+          const seed = IS_FUT ? _r2(c.open) : SEED_PREMIUM;
+          const stp = strat.stopLevel(seed, gate.dayPts, cfg);
           pos = {
             side: sig.side, entryTime: c.time, entrySpot: _r2(c.open),
-            optionEntryLtp: SEED_PREMIUM,
-            targetPrem: strat.targetLevel(SEED_PREMIUM, cfg),
+            optionEntryLtp: seed,
+            targetPrem: strat.targetLevel(seed, cfg),
             stopPrem: stp.level, stopKind: stp.kind,
-            strike: strat.itmStrike(c.open, sig.side, STEP),
-            peakPrem: SEED_PREMIUM,
+            strike: IS_FUT ? null : strat.itmStrike(c.open, sig.side, STEP),
+            peakPrem: seed,
             orHigh: sig.orHigh, orLow: sig.orLow, vwap: sig.vwap, ema: sig.ema,
             breakoutTime: sig.breakoutTime, retestTime: sig.retestTime,
             signalBarTime: sig.signalBarTime, entryReason: sig.reason,
@@ -389,6 +441,9 @@ function _tableHtml(title, rows) {
 function _resultsView(from, to, trades, stats, meta, jobId) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = strat.getConfig();
+  // `meta.market` is the run's market key (absent on a NIFTY run).
+  const M   = backtestMarket.context(meta.market || "NIFTY");
+  const home = M.key === "NIFTY";
   const f = meta.funnel || {};
   const xr = meta.exitReasons || {};
   const exitMix = Object.keys(xr).length ? Object.entries(xr).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(" · ") : "—";
@@ -432,7 +487,7 @@ function _resultsView(from, to, trades, stats, meta, jobId) {
       { label: "Exit mix", value: exitMix },
       { label: "Expectancy /trade", value: `₹${stats.expectancy}` },
     ],
-    notes: `${csvLink}<b>Chart:</b> NIFTY 50 INDEX spot (<code>${escHtml(SPOT_SYMBOL)}</code>) 5-min. <b>Range:</b> ${strat._fmtMins(cfg.sessionStartMin)}–${strat._fmtMins(cfg.orEndMin)} high/low. <b>Entry:</b> close beyond the range with VWAP + EMA${cfg.emaPeriod} agreeing → retest within ${cfg.retestCandles} candles (±${escHtml(cfg.retestTolPts)}pt) without closing back inside → confirmation close; filled at the NEXT bar's open until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> premium +${escHtml(cfg.targetPts)} / −${escHtml(cfg.slPts)}, square-off ${strat._fmtMins(cfg.squareOffMin)}; a bar touching both counts as the stop. <b>Day:</b> max ${cfg.maxTrades} trades, stop after a win / 2 losses / −${escHtml(cfg.dailyLossPts)} pts; expiry day ${cfg.tradeExpiryDay ? "traded" : "skipped"}. <b>Premium is SIMULATED</b> (δ ${escHtml(process.env.BACKTEST_DELTA || "0.55")} + θ, seeded at ₹${escHtml(backtestCosts.seedPremium())}, ${escHtml(backtestCosts.slippagePts())}pt slippage each way, full charges) — there is no historical option-chain data, so ₹ are directional, not exact. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) before ${escHtml(from)}. <b>Never traded on paper or live; nothing here is validated.</b>${tables}`,
+    notes: `${csvLink}${home ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${escHtml(M.exchange)} charges${M.isFutures ? "; FUTURES — the +target / −stop are points on the future in the trade direction (a PE is a SHORT), δ 1, no θ, the common futures stop replaces the profit lock" : ""}. `}<b>Chart:</b> ${home ? "NIFTY 50" : escHtml(M.label)} INDEX spot (<code>${escHtml(home ? SPOT_SYMBOL : M.spotSymbol)}</code>) 5-min. <b>Range:</b> ${strat._fmtMins(cfg.sessionStartMin)}–${strat._fmtMins(cfg.orEndMin)} high/low. <b>Entry:</b> close beyond the range with VWAP + EMA${cfg.emaPeriod} agreeing → retest within ${cfg.retestCandles} candles (±${escHtml(cfg.retestTolPts)}pt) without closing back inside → confirmation close; filled at the NEXT bar's open until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> premium +${escHtml(cfg.targetPts)} / −${escHtml(cfg.slPts)}, square-off ${strat._fmtMins(cfg.squareOffMin)}; a bar touching both counts as the stop. <b>Day:</b> max ${cfg.maxTrades} trades, stop after a win / 2 losses / −${escHtml(cfg.dailyLossPts)} pts; expiry day ${cfg.tradeExpiryDay ? "traded" : "skipped"}. <b>Premium is SIMULATED</b> (δ ${escHtml(process.env.BACKTEST_DELTA || "0.55")} + θ, seeded at ₹${escHtml(backtestCosts.seedPremium())}, ${escHtml(backtestCosts.slippagePts())}pt slippage each way, full charges) — there is no historical option-chain data, so ₹ are directional, not exact. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) before ${escHtml(from)}. <b>Never traded on paper or live; nothing here is validated.</b>${tables}`,
   };
 }
 
@@ -447,36 +502,47 @@ function _renderResults(res, from, to, trades, stats, meta, jobId) {
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  // The candles the run reads: NIFTY 50 as always, else the market's own spot
+  // (NIFTY_FUT signals off the NIFTY index, priced as the future).
+  const SPOT = home ? SPOT_SYMBOL : M.spotSymbol;
   try {
     const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
-    backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} 5-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
+    backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT} 5-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
     let intraday;
     try {
-      intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(RES), fetchFrom, fetchTo, false,
-        (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
+      intraday = await fetchCandlesCachedBT(SPOT, String(RES), fetchFrom, fetchTo, false,
+        (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
     } catch (err) {
       const msg = fyersErrText(err);
-      backtestJobs.failJob(id, `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. "Could not authenticate the user" means the Fyers session needs re-login.`);
+      backtestJobs.failJob(id, `Fyers refused the ${SPOT} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. "Could not authenticate the user" means the Fyers session needs re-login.`);
       return;
     }
     intraday = Array.isArray(intraday) ? intraday : [];
     if (!intraday.length) {
-      backtestJobs.failJob(id, `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error.`);
+      backtestJobs.failJob(id, `Fyers returned no historical candles for ${SPOT} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error.`);
       return;
     }
     backtestJobs.updateProgress(id, { phase: `Running ITM20 Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 75 });
-    const result = await runItm20ScalpBacktest(intraday, from);
+    const result = home ? await runItm20ScalpBacktest(intraday, from) : await runItm20ScalpBacktest(intraday, from, { mkt: M });
     const stats = computeBacktestStats(result.trades);
-    stats.optionSim = true;
+    stats.optionSim = home ? true : !M.isFutures;
     stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
     stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(RES) } }); }
-    catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
+    if (!home && M.isFutures) stats.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (home) {
+      try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(RES) } }); }
+      catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
+    }
     const fn = result.funnel;
-    console.log(`${LOG} ${from}→${to}: ${fn.days} days | expiry skipped ${fn.expirySkipped} | signals ${fn.signals} → entries ${fn.entries} | exits ${JSON.stringify(result.exitReasons)}`);
+    console.log(`${LOG} ${from}→${to}${home ? "" : ` on ${M.key}`}: ${fn.days} days | expiry skipped ${fn.expirySkipped} | signals ${fn.signals} → entries ${fn.entries} | exits ${JSON.stringify(result.exitReasons)}`);
     backtestJobs.completeJob(id, {
       trades: result.trades, stats, from, to,
-      meta: { days: result.days, skipped: result.skipped, funnel: result.funnel, exitReasons: result.exitReasons, dayStops: result.dayStops, warmupDays, fetchFrom, candles: intraday.length },
+      meta: Object.assign({ days: result.days, skipped: result.skipped, funnel: result.funnel, exitReasons: result.exitReasons, dayStops: result.dayStops, warmupDays, fetchFrom, candles: intraday.length },
+        home ? {} : { market: M.key }),
     });
   } catch (err) {
     console.error(`${LOG} job error:`, err);
@@ -522,9 +588,9 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to, market: p.market }),
   view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, funnel: {}, exitReasons: {}, warmupDays: _warmupDays() }, p.jobId),
 };
 module.exports.runItm20ScalpBacktest = runItm20ScalpBacktest;
