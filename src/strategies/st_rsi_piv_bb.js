@@ -60,9 +60,10 @@
  *   forPrefix(prefix)                    -> this same API reading `${prefix}_*` keys
  *
  * ── ENV PREFIX ──────────────────────────────────────────────────────────────
- *   The strategy's own keys are read under ST_RSI_PIV_BB_ by default. The NIFTY
- *   FUTURES twin (FUT_ST_RSI_PIV_BB, /fut_st_rsi_piv_bb-paper) runs these exact
- *   rules under its own FUT_ST_RSI_PIV_BB_ keys via forPrefix("FUT_ST_RSI_PIV_BB").
+ *   The strategy's own keys are read under ST_RSI_PIV_BB_ by default. Another
+ *   market's pair (FUT_ST_RSI_PIV_BB, BN_ST_RSI_PIV_BB, SENSEX_ST_RSI_PIV_BB …)
+ *   runs these exact rules via forPrefix("<PAIR PREFIX>"), reading its own key
+ *   when set, else NIFTY's ST_RSI_PIV_BB_* value (config/pairs.js envGet).
  *   Omitting the prefix keeps every existing caller on ST_RSI_PIV_BB_.
  */
 
@@ -104,15 +105,25 @@ function _parseHHMM(raw, def) {
 function _fmtMins(mins) {
   return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 }
-function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+// Env read for one key. The NIFTY prefix (ST_RSI_PIV_BB) reads process.env
+// exactly as it always did; another market's pair (BN_ST_RSI_PIV_BB,
+// FUT_ST_RSI_PIV_BB ...) reads with pair inheritance: its own key when set,
+// else NIFTY's (config/pairs.js envGet).
+let _pairsMod = null;
+function _rawEnv(key, pairRead) {
+  if (!pairRead) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(key);
+}
+function _numEnv(key, def, min, max, pairRead) {
+  const v = parseFloat(_rawEnv(key, pairRead));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+function _intEnv(key, def, min, max, pairRead) {
+  const v = parseInt(_rawEnv(key, pairRead), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
@@ -132,7 +143,8 @@ function _prefixOf(prefix) {
  */
 function getConfig(prefix) {
   const P = _prefixOf(prefix);
-  const rawTf = String(process.env[P + "_ENTRY_TF"] || "BOTH").trim().toUpperCase();
+  const pr = P !== PREFIX;     // a market pair: read through pairs.envGet
+  const rawTf = String(_rawEnv(P + "_ENTRY_TF", pr) || "BOTH").trim().toUpperCase();
   const entryTf = ENTRY_TFS.includes(rawTf) ? rawTf : "BOTH";
   return {
     PREFIX:       P,
@@ -142,16 +154,16 @@ function getConfig(prefix) {
     // BOTH only: the second chart that must agree. null = no second chart.
     CONFIRM_RES:  entryTf === "BOTH" ? 5 : null,
 
-    RSI_PERIOD:   _intEnv(P + "_RSI_PERIOD", 14, 2, 100),
-    RSI_CE_MIN:   _numEnv(P + "_RSI_CE_MIN", 70, 0, 100),
-    RSI_PE_MAX:   _numEnv(P + "_RSI_PE_MAX", 30, 0, 100),
-    ST_PERIOD:    _intEnv(P + "_ST_PERIOD", 10, 2, 100),
-    ST_MULT:      _numEnv(P + "_ST_MULT", 2, 0.1, 10),
-    BB_PERIOD:    _intEnv(P + "_BB_PERIOD", 20, 2, 200),
-    BB_STDDEV:    _numEnv(P + "_BB_STDDEV", 2, 0.1, 10),
+    RSI_PERIOD:   _intEnv(P + "_RSI_PERIOD", 14, 2, 100, pr),
+    RSI_CE_MIN:   _numEnv(P + "_RSI_CE_MIN", 70, 0, 100, pr),
+    RSI_PE_MAX:   _numEnv(P + "_RSI_PE_MAX", 30, 0, 100, pr),
+    ST_PERIOD:    _intEnv(P + "_ST_PERIOD", 10, 2, 100, pr),
+    ST_MULT:      _numEnv(P + "_ST_MULT", 2, 0.1, 10, pr),
+    BB_PERIOD:    _intEnv(P + "_BB_PERIOD", 20, 2, 200, pr),
+    BB_STDDEV:    _numEnv(P + "_BB_STDDEV", 2, 0.1, 10, pr),
 
-    ENTRY_START:  _parseHHMM(process.env[P + "_ENTRY_START"], 9 * 60 + 30),
-    ENTRY_END:    _parseHHMM(process.env[P + "_ENTRY_END"], 15 * 60),
+    ENTRY_START:  _parseHHMM(_rawEnv(P + "_ENTRY_START", pr), 9 * 60 + 30),
+    ENTRY_END:    _parseHHMM(_rawEnv(P + "_ENTRY_END", pr), 15 * 60),
   };
 }
 
@@ -165,7 +177,10 @@ function warmupBars(cfg) {
   cfg = cfg || getConfig();
   return Math.max(cfg.BB_PERIOD, cfg.ST_PERIOD + 1, cfg.RSI_PERIOD + 1) + 5;
 }
-function warmupDays(prefix) { return _intEnv(_prefixOf(prefix) + "_WARMUP_DAYS", 3, 1, 15); }
+function warmupDays(prefix) {
+  const P = _prefixOf(prefix);
+  return _intEnv(P + "_WARMUP_DAYS", 3, 1, 15, P !== PREFIX);
+}
 
 /** Entry window on the signal candle's CLOSE time (= the moment the entry fills). */
 function isInTradingWindow(barTimeSec, cfg) {
