@@ -96,7 +96,7 @@ const DATA_DIR = path.join(_HOME, "trading-data");
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
 const router = express.Router();
-const MODE_KEY    = rt.modeKey;      // "ha_scalp" on NIFTY: tradeLogger / skipLogger / capitalPool key
+const MODE    = rt.modeKey;      // "ha_scalp" on NIFTY: tradeLogger / skipLogger / capitalPool key
 const PREFIX      = rt.envPrefix;    // "HA_SCALP" on NIFTY
 const ROUTE       = rt.paperPath;    // "/ha-scalp-paper" on NIFTY
 const OWNER       = rt.ownerId;      // "ha-scalp-paper" on NIFTY: recorder tag, session id
@@ -311,7 +311,7 @@ function rehydrateSessionFromJsonl() {
     const data = loadData();
     const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades(MODE_KEY, today)
+    const all = tradeLogger.readDailyTrades(MODE, today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) for (const t of (s.trades || [])) seen.add(keyOf(t));
@@ -346,7 +346,7 @@ require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, 
 // A replay re-requires this module — it must not replace the live instance's getter.
 let _replayLoad = false;
 try { _replayLoad = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
-if (!_replayLoad) capitalPool.trackSession(MODE_KEY, () => (state._unsaved ? state.sessionPnl : 0));
+if (!_replayLoad) capitalPool.trackSession(MODE, () => (state._unsaved ? state.sessionPnl : 0));
 
 /**
  * Realised P&L for the current ISO week (Mon → today) from the per-day JSONL
@@ -365,7 +365,7 @@ function weeklyPnl() {
       const d = new Date(nowIst.getTime() - i * 86400000);
       const ds = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
       if (ds === todayStr && state.running) { total += state.sessionPnl; continue; }
-      const trades = tradeLogger.readDailyTrades(MODE_KEY, ds) || [];
+      const trades = tradeLogger.readDailyTrades(MODE, ds) || [];
       for (const t of trades) if (t && !t.type && typeof t.pnl === "number") total += t.pnl;
     }
     return parseFloat(total.toFixed(2));
@@ -670,7 +670,7 @@ async function simulateBuy(side, sig) {
   }
   if (!optInfo || optInfo.invalid) {
     log(`❌ ${TAG} No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: _isFut ? "no valid futures contract" : "no valid option expiry", side, spot: indexSpot });
+    skipLogger.appendSkipLog(MODE, { gate: "expiry", reason: _isFut ? "no valid futures contract" : "no valid option expiry", side, spot: indexSpot });
     return;
   }
 
@@ -697,7 +697,7 @@ async function simulateBuy(side, sig) {
     }
     if (!optionEntryLtp) {
       log(`❌ ${TAG} Option LTP not available — entry skipped`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot: indexSpot });
+      skipLogger.appendSkipLog(MODE, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot: indexSpot });
       return;
     }
     // Another market: its bid-ask spread limit (<PAIR>_MAX_SPREAD_PTS) on this
@@ -710,7 +710,7 @@ async function simulateBuy(side, sig) {
         if (state._spreadSkipBar !== _bar) {
           state._spreadSkipBar = _bar;
           log(`⏭️ ${TAG} SKIP ${side} entry — spread too wide (${_sp.reason}, limit ${rt.maxSpreadPts()}pt)`);
-          skipLogger.appendSkipLog(MODE_KEY, { gate: "spread", reason: _sp.reason, symbol: optInfo.symbol, side, spot: indexSpot, spread: _sp.spread, limit: rt.maxSpreadPts() });
+          skipLogger.appendSkipLog(MODE, { gate: "spread", reason: _sp.reason, symbol: optInfo.symbol, side, spot: indexSpot, spread: _sp.spread, limit: rt.maxSpreadPts() });
         }
         return;
       }
@@ -735,11 +735,11 @@ async function simulateBuy(side, sig) {
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    Sits AFTER the last strategy abort path so a refusal is never logged for
   //    a signal that would have been dropped anyway.
-  const _cap = capitalPool.gate(MODE_KEY, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
+  const _cap = capitalPool.gate(MODE, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
     if (!_cap.muted) {
       log(`❌ ${TAG} Entry REFUSED — ${_cap.reason}`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", reason: _cap.reason, spot: spotPrice, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
+      skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _cap.reason, spot: spotPrice, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
     }
     return;
   }
@@ -812,7 +812,7 @@ async function simulateBuy(side, sig) {
     candles: state.candles,
     nowMs: Date.now(),
   });
-  capitalPool.block(MODE_KEY, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  capitalPool.block(MODE, _capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { rt.persist.save(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   // Seed the premium series with the fill itself, so the chart opens at the
@@ -969,7 +969,7 @@ function simulateSell(reason) {
     });
   }
   state.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog(MODE_KEY, trade);
+  tradeLogger.appendTradeLog(MODE, trade);
 
   log(`🔴 ${TAG} EXIT ${pos.side} ${pos.symbol} @ optLtp=₹${exitOptLtp} spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
@@ -996,7 +996,7 @@ function simulateSell(reason) {
 
   state.position = null;
   state.optionQuote = null;
-  capitalPool.release(MODE_KEY, pnl);
+  capitalPool.release(MODE, pnl);
   try { rt.persist.clear(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
@@ -1008,7 +1008,7 @@ function _closeDay(reason) {
   state.dayClosed = true;
   state.dayClosedReason = reason;
   log(`⏸️ ${TAG} ${reason} — no more entries today`);
-  skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
+  skipLogger.appendSkipLog(MODE, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
 }
 
 // ── Exits ────────────────────────────────────────────────────────────────────
@@ -1116,7 +1116,7 @@ async function evaluateEntry() {
     // good-looking candle was passed over. Warm-up and plain window rejections
     // are skipped: at 25 bars a day they would bury the file.
     if (!sig.warmup && sig.trend) {
-      skipLogger.appendSkipLog(MODE_KEY, {
+      skipLogger.appendSkipLog(MODE, {
         gate: _skipGate(sig),
         reason: sig.skipReason || sig.reason,
         spot: state.lastTickPrice,
@@ -1432,7 +1432,7 @@ function stopSession() {
       data.capital  = parseFloat((parseFloat(process.env[CAP_ENV] || "100000") + data.totalPnl).toFixed(2));
       saveData(data);
       state._unsaved = false;   // now inside totalPnl — the pool must not add it twice
-      capitalPool.sessionSaved(MODE_KEY);
+      capitalPool.sessionSaved(MODE);
       log(`💾 ${TAG} Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
     } catch (e) {
       log(`⚠️ ${TAG} Save failed: ${e.message}`);
@@ -1802,8 +1802,8 @@ router.get("/history", (req, res) => {
 const _HA_SCALP_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates(MODE_KEY);
-  const trades = tradeLogger.listDailyDates(MODE_KEY);
+  const skips  = skipLogger.listDates(MODE);
+  const trades = tradeLogger.listDailyDates(MODE);
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) { const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 }; row.tradesSize = t.size; byDate.set(t.date, row); }
@@ -1814,33 +1814,33 @@ router.get("/download/daily-files", (req, res) => {
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${MODE_KEY}_paper_skips_all_${today}.txt"`);
-  const dates = skipLogger.listDates(MODE_KEY).map(d => d.date).sort();
+  res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates(MODE).map(d => d.date).sort();
   let body = "";
-  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE_KEY, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
+  for (const d of dates) { try { const p = skipLogger.filePathFor(MODE, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
   res.send(body);
 });
 
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_HA_SCALP_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor(MODE_KEY, date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `${MODE_KEY}_paper_skips_${date}.txt`);
+  res.download(p, `${MODE}_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_HA_SCALP_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `${MODE_KEY}_paper_trades_${date}.txt`);
+  res.download(p, `${MODE}_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_HA_SCALP_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor(MODE_KEY, date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1850,7 +1850,7 @@ router.get("/view/skips/:date", (req, res) => {
 router.get("/view/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_HA_SCALP_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1873,7 +1873,7 @@ router.post("/restore-session/:date", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading before restoring.` });
   const date = String(req.params.date || "").trim();
   if (!_HA_SCALP_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
-  const allTrades = tradeLogger.readDailyTrades(MODE_KEY, date);
+  const allTrades = tradeLogger.readDailyTrades(MODE, date);
   if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   const data = loadData();
   const seen = new Set();
@@ -1888,7 +1888,7 @@ router.post("/restore-session/:date", (req, res) => {
   saveData(data);
   // Today's restored trades are the ones a restart rehydrated as unsaved — now in totalPnl.
   if (date === tradeLogger.istDateString(Date.now())) state._unsaved = false;
-  capitalPool.sessionSaved(MODE_KEY);   // drop the pool's file-P&L memo now
+  capitalPool.sessionSaved(MODE);   // drop the pool's file-P&L memo now
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
@@ -1896,9 +1896,9 @@ router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: `Stop ${TITLE} paper trading before resetting.` });
   const fresh = parseFloat(process.env[CAP_ENV] || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
-  require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
+  require("../utils/paperReset").clearTodayFiles(MODE); // else restart rehydrates today's session
   state._unsaved = false;   // the rehydrated unsaved trades were just wiped with the history
-  capitalPool.sessionSaved(MODE_KEY);
+  capitalPool.sessionSaved(MODE);
   return res.json({ success: true, message: `${TITLE} paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
@@ -1920,17 +1920,17 @@ router.get("/download/trades.jsonl", (req, res) => {
   try {
     const data = loadData();
     const records = [];
-    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE_KEY, strategy: s.strategy }, t));
+    for (const s of (data.sessions || [])) for (const t of (s.trades || [])) records.push(Object.assign({ date: s.date, mode: MODE, strategy: s.strategy }, t));
     const today = new Date().toISOString().slice(0, 10);
     const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
     if (ai) {
       const md = aiExport.buildMarkdown(records, { title: `${TITLE} paper trades (full log)`, source: OWNER });
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="${MODE_KEY}_paper_trades_AI_${today}.md"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_AI_${today}.md"`);
       return res.send(md);
     }
     res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Content-Disposition", `attachment; filename="${MODE_KEY}_paper_trades_${today}.jsonl"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_${today}.jsonl"`);
     res.send(records.map(r => JSON.stringify(r)).join("\n"));
   } catch (e) {
     res.status(500).json({ error: e.message });
