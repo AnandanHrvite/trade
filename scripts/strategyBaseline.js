@@ -217,6 +217,11 @@ const PAIRS = [
   { route: "gapRunawayPaper",    market: "SENSEX",    mode: "sensex_gap_runaway-paper",     enabledKey: "SENSEX_GAP_RUNAWAY_MODE_ENABLED" },
   { route: "gapRunawayPaper",    market: "BANKNIFTY", mode: "bn_gap_runaway-paper",         enabledKey: "BN_GAP_RUNAWAY_MODE_ENABLED" },
   { route: "gapRunawayPaper",    market: "NIFTY_FUT", mode: "fut_gap_runaway-paper",        enabledKey: "FUT_GAP_RUNAWAY_MODE_ENABLED" },
+  // EARLYBIRD on another market runs only its index option leg (the engine
+  // forces it), so these pairs trade the same leg the NIFTY golden does.
+  { route: "earlyBirdPaper",     market: "SENSEX",    mode: "sensex_early_bird-paper",      enabledKey: "SENSEX_EARLYBIRD_MODE_ENABLED" },
+  { route: "earlyBirdPaper",     market: "BANKNIFTY", mode: "bn_early_bird-paper",          enabledKey: "BN_EARLYBIRD_MODE_ENABLED" },
+  { route: "earlyBirdPaper",     market: "NIFTY_FUT", mode: "fut_early_bird-paper",         enabledKey: "FUT_EARLYBIRD_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {

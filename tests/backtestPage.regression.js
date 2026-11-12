@@ -274,7 +274,7 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   const s930 = page.marketOptions("simple930");
   assert.deepStrictEqual(s930.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "SENSEX"], "SIMPLE 9:30 is premium-only: no futures backtest");
   for (const m of s930) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `simple930 ${m.key}`);
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp", "simple930"]);
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp", "simple930", "earlyBird"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -1262,6 +1262,68 @@ check("the old SIMPLE 9:30 page is untouched by markets: NIFTY run reads NIFTY's
   assert.strictEqual(asked[0], "NSE:NIFTY50-INDEX");
   assert.ok(asked.slice(1).every((s) => s.startsWith("NSE:NIFTY") && !s.startsWith("NSE:NIFTYBANK")));
   assert.strictEqual(oldRes.meta.market, undefined, "a NIFTY result must not grow a market field");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4n. EARLYBIRD is market-aware");
+
+// Driven through the pure day loop (runEarlyBirdBacktest): its history fetch is
+// disk-cached under the real ~/trading-data, which a test must not write.
+const ebBt = require("../src/routes/earlyBirdBacktest");
+function ebData(mk) {
+  const ctx = bm.context(mk);
+  const byDay = ebBt.groupIntradayByDay(synthCandles(ctx.spotSymbol, "15", FROM, TO));
+  return { niftyByDay: byDay, stocks: [], dayKeys: [...byDay.keys()].sort((a, b) => a - b) };
+}
+check("EARLYBIRD: NIFTY, BANKNIFTY, SENSEX and NIFTY futures are enabled; SAIL stays coming soon; no MCX", () => {
+  const eb = page.marketOptions("earlyBird");
+  assert.deepStrictEqual(eb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of eb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `earlyBird ${m.key}`);
+  assert.ok(!eb.some((m) => m.key === "CRUDE"), "EARLYBIRD needs the 09:15 index open — no MCX");
+});
+check("EARLYBIRD NIFTY: a NIFTY market (or none) is the old day loop, byte for byte", async () => {
+  const d = ebData("NIFTY");
+  const had = process.env.EARLYBIRD_TRADE_MODE;
+  process.env.EARLYBIRD_TRADE_MODE = "option";   // stocks: [] — the option leg is what trades here
+  try {
+    const a = await ebBt.runEarlyBirdBacktest(d);
+    const b = await ebBt.runEarlyBirdBacktest(Object.assign({}, d, { market: "NIFTY" }));
+    assert.ok(a.trades.length > 0, "no trade — this parity proves nothing");
+    assert.ok(a.trades.every((t) => /^NIFTY (CE|PE)$/.test(t.symbol)));
+    assert.strictEqual(JSON.stringify(b), JSON.stringify(a));
+  } finally { if (had === undefined) delete process.env.EARLYBIRD_TRADE_MODE; else process.env.EARLYBIRD_TRADE_MODE = had; }
+});
+const EB_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`EARLYBIRD ${mk}: the option leg only (even in stock mode), its own lot, its exchange's charges, its own label`, async () => {
+    const ctx = bm.context(mk);
+    const had = process.env.EARLYBIRD_TRADE_MODE;
+    process.env.EARLYBIRD_TRADE_MODE = "stock";
+    let r;
+    try { r = await ebBt.runEarlyBirdBacktest(Object.assign(ebData(mk), { market: mk })); }
+    finally { if (had === undefined) delete process.env.EARLYBIRD_TRADE_MODE; else process.env.EARLYBIRD_TRADE_MODE = had; }
+    EB_RUNS[mk] = r;
+    for (const t of r.trades) {
+      assert.ok(t.isOption && t.symbol.startsWith(`${ctx.shortLabel} `), `${mk} trade ${t.symbol}`);
+      assert.strictEqual(t.qty, ctx.lotQty, `${mk}: one lot of ${ctx.lotQty}`);
+      const netPts = t.grossPnl / t.qty;
+      const charges = ctx.isFutures
+        ? getCharges({ broker: "fyers", isFutures: true, exchange: ctx.exchange, entryPremium: t.ePrice, exitPremium: t.xPrice, qty: t.qty })
+        : getCharges({ broker: "fyers", isFutures: false, exchange: ctx.exchange, entryPremium: 200, exitPremium: Math.max(0.05, Math.round((200 + netPts) * 100) / 100), qty: t.qty });
+      assert.strictEqual(t.charges, Math.round(charges * 100) / 100, `${mk} charges ${t.entry}`);
+      if (ctx.isFutures) assert.ok(/^futures/.test(t.pnlMode), "a futures market trades at the index level, δ 1");
+    }
+    assert.ok(r.dayRows.length > 0, "no sessions walked");
+    assert.strictEqual(r.funnel.scanned, 0, "no stock is scanned on another market");
+  });
+}
+check("EARLYBIRD: the market runs traded (the pricing checks above proved something); the results notes name the market", () => {
+  say(`       EARLYBIRD trades: SENSEX ${EB_RUNS.SENSEX.trades.length} · BANKNIFTY ${EB_RUNS.BANKNIFTY.trades.length} · NIFTY_FUT ${EB_RUNS.NIFTY_FUT.trades.length}`);
+  assert.ok(EB_RUNS.SENSEX.trades.length + EB_RUNS.BANKNIFTY.trades.length + EB_RUNS.NIFTY_FUT.trades.length > 0, "no EARLYBIRD market run traded");
+  const v = ebBt.backtestPage.view({ from: FROM, to: TO, stats: {}, result: { trades: [], funnel: {} }, meta: { market: "SENSEX", optionQty: 20 } }, {});
+  assert.ok(/MARKET: /.test(v.notes) && v.extraStats[0].label === "Market");
+  const n = ebBt.backtestPage.view({ from: FROM, to: TO, stats: {}, result: { trades: [], funnel: {} }, meta: {} }, {});
+  assert.ok(/Cash equity/.test(n.notes) && n.extraStats[0].label === "Universe", "a NIFTY run's view is unchanged");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

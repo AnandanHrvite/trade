@@ -120,6 +120,7 @@ const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestMarket = require("../services/backtestMarket");
 
 const ACCENT     = "#22d3ee";
 const ENDPOINT   = "/early-bird-backtest";
@@ -244,10 +245,15 @@ function optionSimCfg() {
   // FUTURES MODE — index points are rupees 1:1: δ=1, no theta. The premium sim
   // still runs so the code path is shared, it just becomes an identity.
   const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  if (isFut) return { on: true, isFutures: true, delta: 1.0, thetaPerDay: 0 };
+  return _optionModel();
+}
+
+/** The delta / theta premium model (BACKTEST_OPTION_SIM / _DELTA / _THETA_DAY). */
+function _optionModel() {
   const on    = process.env.BACKTEST_OPTION_SIM !== "false";   // on by default
   const delta = parseFloat(process.env.BACKTEST_DELTA    || "0.55");
   const theta = parseFloat(process.env.BACKTEST_THETA_DAY || "10");
-  if (isFut) return { on: true, isFutures: true, delta: 1.0, thetaPerDay: 0 };
   return {
     on,
     isFutures: false,
@@ -261,6 +267,43 @@ function optionQty(cfg) {
   const lots = (cfg && cfg.optionLots) || earlyBird.getConfig().optionLots;
   const base = instrumentConfig.getLotQty();
   return Math.max(1, lots * base);
+}
+
+// ── MARKETS ─────────────────────────────────────────────────────────────────
+// The unified /backtest page also runs this backtest on BANKNIFTY, SENSEX and
+// NIFTY futures (backtestPage.markets below). There, exactly as on that
+// market's paper pair, ONLY the index option leg runs (the stock leg is NIFTY-50
+// cash equity): the opening candle is that market's own index, the lot is its
+// own, a futures market trades the month future at the index level (δ 1, no
+// theta), and charges are that exchange's on the Fyers schedule. The market's
+// pair settings arrive mapped onto the EARLYBIRD_* keys (services/backtestPage).
+// A NIFTY run never touches any of this.
+
+/** A backtestMarket context for another market, or null for NIFTY / none. */
+function _pairMarket(m) {
+  if (!m) return null;
+  const M = typeof m === "string" ? backtestMarket.context(m) : m;
+  return M && M.key !== "NIFTY" ? M : null;
+}
+
+/** The engine config for a run: NIFTY's getConfig(), else the option leg only on M's index. */
+function _btCfg(M) {
+  const cfg = earlyBird.getConfig();
+  if (!M) return cfg;
+  cfg.tradeMode  = "option";
+  cfg.indexLabel = M.shortLabel;
+  return cfg;
+}
+
+/**
+ * The option-leg price model on another market: optionSimCfg's delta / theta
+ * model for options (NIFTY's own instrument setting never turns them into
+ * futures), δ 1 / no theta for a futures market; plus its exchange and label.
+ */
+function _pairOptionSimCfg(M) {
+  const tag = { exchange: M.exchange, label: M.shortLabel };
+  if (M.isFutures) return Object.assign({ on: true, isFutures: !!M.isFutures, delta: 1.0, thetaPerDay: 0 }, tag);
+  return Object.assign(_optionModel(), tag);
 }
 
 /**
@@ -288,13 +331,17 @@ function _bookOptionTrade(pos, exitFill, exitType, exitReason, exitTime, heldBar
     // have no premium history, so an ATM estimate is moved by the modelled amount.
     const estEntry = OPT.isFutures ? pos.entryFill : 200;
     const estExit  = OPT.isFutures ? exitFill      : Math.max(0.05, _r2(estEntry + netPremiumPts));
-    charges = _r2(getCharges({ isFutures: !!OPT.isFutures, entryPremium: estEntry, exitPremium: estExit, qty, broker: "fyers" }));
+    charges = OPT.exchange
+      ? _r2(getCharges({ isFutures: !!OPT.isFutures, exchange: OPT.exchange, entryPremium: estEntry, exitPremium: estExit, qty, broker: "fyers" }))
+      : _r2(getCharges({ isFutures: !!OPT.isFutures, entryPremium: estEntry, exitPremium: estExit, qty, broker: "fyers" }));
     pnlMode = OPT.isFutures
       ? `futures (spot ${spotPts}pt, 1:1) × ${qty}`
       : `opt_sim (spot ${spotPts}pt × δ${OPT.delta} = ${_r2(premiumMovePts)}pt − θ${thetaPts}pt) × ${qty}`;
   } else {
     gross   = _r2(spotPts * qty);
-    charges = _r2(getCharges({ isFutures: false, entryPremium: 200, exitPremium: 200, qty, broker: "fyers" }));
+    charges = OPT.exchange
+      ? _r2(getCharges({ isFutures: false, exchange: OPT.exchange, entryPremium: 200, exitPremium: 200, qty, broker: "fyers" }))
+      : _r2(getCharges({ isFutures: false, entryPremium: 200, exitPremium: 200, qty, broker: "fyers" }));
     pnlMode = `raw spot points × ${qty} (BACKTEST_OPTION_SIM=false)`;
   }
   const net = _r2(gross - charges);
@@ -303,7 +350,7 @@ function _bookOptionTrade(pos, exitFill, exitType, exitReason, exitTime, heldBar
     `${_r2(exitFill)} → ${exitType} | ${exitReason} | ${pnlMode} | gross ₹${gross} − charges ₹${charges} = ₹${net}`);
 
   return {
-    symbol: `NIFTY ${os.optionSide}`,
+    symbol: `${OPT.label || "NIFTY"} ${os.optionSide}`,
     isOption: true,
     side: pos.side,
     entry: stampStr(pos.entryTime),
@@ -816,7 +863,10 @@ function _reentryDropSet(legs, cfg, cooldownSecs, ctxFor) {
 //   data.dayKeys     number[] ascending — the days to simulate
 // ─────────────────────────────────────────────────────────────────────────────
 async function runEarlyBirdBacktest(data, onProgress) {
-  const cfg  = earlyBird.getConfig();
+  // data.market: another market's backtestMarket context (or key) — the option
+  // leg only, on that market's index. Absent / NIFTY = exactly as before.
+  const MKT  = _pairMarket(data && data.market);
+  const cfg  = MKT ? _btCfg(MKT) : earlyBird.getConfig();
   const SLIP = slippagePts();
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(cfg.resolutionMins) / 1000;
 
@@ -824,8 +874,8 @@ async function runEarlyBirdBacktest(data, onProgress) {
   // The entry level is a NIFTY SPOT level on both legs, so the option leg's
   // entry needs no premium history — its P&L and profit lock use the same
   // delta/theta model the other four strategies use. See optionSimCfg.
-  const OPT = optionSimCfg();
-  const optQty = optionQty(cfg);
+  const OPT = MKT ? _pairOptionSimCfg(MKT) : optionSimCfg();
+  const optQty = MKT ? Math.max(1, cfg.optionLots * MKT.lotQty) : optionQty(cfg);
   const LOCK = _lockOpts();
   // Per-leg walk context: the option leg locks on its modelled premium, a stock
   // leg on its share price.
@@ -839,7 +889,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
     return { SLIP, lock: LOCK, lockFor, opt };
   };
   if (earlyBird.tradesOption(cfg)) {
-    console.log(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" — NIFTY option leg is simulated: ` +
+    console.log(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" — ${MKT ? MKT.shortLabel : "NIFTY"} ${MKT && MKT.isFutures ? "futures" : "option"} leg is simulated: ` +
       (OPT.on
         ? `delta=${OPT.delta}, theta=₹${OPT.thetaPerDay}/day, qty=${optQty}. All levels are SPOT levels; ` +
           `only the P&L conversion (and the profit lock on it) is modelled.`
@@ -1201,22 +1251,26 @@ function _dailyLookbackDays() {
   return Number.isFinite(v) && v >= 1 ? v : 10;
 }
 
-async function assembleData(from, to, symbols, cfg, report) {
+async function assembleData(from, to, symbols, cfg, report, market) {
   const res = String(cfg.resolutionMins);
+  // Another market: its own index decides the day (no stocks are fetched for it).
+  const MKT = _pairMarket(market);
+  const IDX_SYMBOL = MKT ? MKT.spotSymbol : NIFTY_SYMBOL;
+  const IDX = MKT ? MKT.shortLabel : "NIFTY";
   const dailyFrom = shiftDateStr(from, -_dailyLookbackDays());
 
   // ── NIFTY first, on its own. If the index has no candles nothing else can be
   //    decided, and failing here gives a far clearer message than 220 symbols
   //    all reporting "no data".
-  report(`Fetching NIFTY ${res}-min candles (${from} → ${to})…`, 6);
-  const niftyRes = await getSeries(NIFTY_SYMBOL, res, from, to);
+  report(`Fetching ${IDX} ${res}-min candles (${from} → ${to})…`, 6);
+  const niftyRes = await getSeries(IDX_SYMBOL, res, from, to);
   const niftyCandles = niftyRes.candles;
-  console.log(`${LOG} NIFTY: ${niftyCandles.length.toLocaleString()} ${res}-min candles` +
+  console.log(`${LOG} ${IDX}: ${niftyCandles.length.toLocaleString()} ${res}-min candles` +
     `${niftyRes.cached ? " (disk cache)" : ""}`);
 
   if (!niftyCandles.length) {
     const err = new Error(
-      `0 candles — Fyers token likely expired. ${NIFTY_SYMBOL} returned no historical candles for ` +
+      `0 candles — Fyers token likely expired. ${IDX_SYMBOL} returned no historical candles for ` +
       `${from} → ${to}. In this repo an expired Fyers session returns no_data (zero candles), NOT an ` +
       `auth error, so an empty result here is a login problem far more often than a data problem. ` +
       `Log in to Fyers again, then retry.`
@@ -2603,9 +2657,12 @@ function _preflight(from, to, universeKey) {
  */
 async function _runJob(id, p) {
   const { from, to, universeKey, symbols } = p;
+  // p.market: another market (the option leg only, no stocks) — see MARKETS.
+  const MKT = _pairMarket(p.market);
   try {
-    const cfg = earlyBird.getConfig();
+    const cfg = MKT ? _btCfg(MKT) : earlyBird.getConfig();
     const pruned = pruneCache(cacheRetainDays());
+    if (MKT) console.log(`${LOG} job ${id}: ${MKT.label} — the ${MKT.isFutures ? "futures" : "index option"} leg only, off ${MKT.spotSymbol}'s opening candle, lot ${MKT.lotQty}, ${MKT.exchange} charges`);
     console.log(`${LOG} job ${id}: ${from} → ${to} | universe ${universeKey} (${symbols.length} symbols) | ` +
       `${cfg.resolutionMins}-min | qty ${cfg.qty} | max ${cfg.maxConcurrent} concurrent | ` +
       `slippage ₹${slippagePts()}/side` + (pruned ? ` | pruned ${pruned} stale cache file(s)` : ""));
@@ -2618,7 +2675,7 @@ async function _runJob(id, p) {
 
     let data;
     try {
-      data = await assembleData(from, to, symbols, cfg, report);
+      data = MKT ? await assembleData(from, to, symbols, cfg, report, MKT) : await assembleData(from, to, symbols, cfg, report);
     } catch (err) {
       const msg = err && err.zeroCandles ? err.message : fyersErrText(err);
       console.warn(`${LOG} job ${id}: fetch refused — ${String(msg).slice(0, 300)}`);
@@ -2632,7 +2689,7 @@ async function _runJob(id, p) {
         `returned but none fell in the requested range — check the dates, or widen the range.`);
       return;
     }
-    if (!data.stocks.length) {
+    if (!MKT && !data.stocks.length) {
       backtestJobs.failJob(id,
         `0 candles — Fyers token likely expired. Not one of the ${symbols.length} ${universeKey} symbols ` +
         `returned intraday history for ${from} → ${to}. An expired Fyers session returns no_data (zero ` +
@@ -2644,6 +2701,7 @@ async function _runJob(id, p) {
     }
 
     report(`Simulating ${data.dayKeys.length} session(s) over ${data.stocks.length} symbol(s)…`, 72);
+    if (MKT) data.market = MKT;
     const result = await runEarlyBirdBacktest(data, (done, total) => {
       report(`Simulating day ${done}/${total}…`, 72 + Math.round((done / total) * 25));
     });
@@ -2663,12 +2721,16 @@ async function _runJob(id, p) {
       `₹${stats.totalCharges}), PF ${stats.profitFactor === Infinity ? "∞" : stats.profitFactor}, ` +
       `max DD ₹${stats.maxDrawdown}`);
 
-    try {
-      saveResult(RESULT_KEY, {
-        summary: stats,
-        params: { from, to, universe: universeKey, resolution: String(cfg.resolutionMins), qty: cfg.qty },
-      });
-    } catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (!MKT) {
+      try {
+        saveResult(RESULT_KEY, {
+          summary: stats,
+          params: { from, to, universe: universeKey, resolution: String(cfg.resolutionMins), qty: cfg.qty },
+        });
+      } catch (e) { console.warn(`${LOG} saveResult failed: ${e.message}`); }
+    }
 
     backtestJobs.completeJob(id, {
       from, to, universeKey, stats, result,
@@ -2681,6 +2743,7 @@ async function _runJob(id, p) {
         cachedCount: data.cachedCount,
         niftyCandles: data.niftyCandles,
         slippage: slippagePts(),
+        ...(MKT ? { market: MKT.key, optionQty: Math.max(1, cfg.optionLots * MKT.lotQty) } : {}),
       },
     });
     console.log(`${LOG} job ${id} complete.`);
@@ -2761,9 +2824,14 @@ module.exports = router;
 // universe is the configured one (EARLYBIRD_UNIVERSE); the memory ceiling and
 // the empty-universe refusal apply exactly as on this page.
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  // Another market runs the option leg only (MARKETS above); SAIL stays coming soon.
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
   run: async (id, p) => {
+    if (_pairMarket(p.market)) {
+      await _runJob(id, { from: p.from, to: p.to, universeKey: null, symbols: [], market: p.market });
+      return;
+    }
     const universeKey = earlyBird.getConfig().universe;
     const pf = _preflight(p.from, p.to, universeKey);
     if (pf.error) { backtestJobs.failJob(id, pf.error); return; }
@@ -2775,18 +2843,25 @@ module.exports.backtestPage = {
     const st = r.stats || {};
     const f = (r.result && r.result.funnel) || {};
     const m = r.meta || {};
+    const MKT = _pairMarket(m.market);
     const view = engineResultView({
       result: { summary: {} }, rows: trades, mode: "EARLYBIRD", accent: ACCENT, strategyName: "EARLYBIRD",
       endpoint: ENDPOINT, activePage: "earlyBirdBacktest", from: r.from || p.from, to: r.to || p.to,
       extraTradeColumns: [{ key: "symbol", label: "Symbol" }, { key: "qty", label: "Qty" }, { key: "exitType", label: "Exit" }, { key: "charges", label: "Charges" }, { key: "held", label: "Held" }],
     });
     view.extraStats = [
-      { label: "Universe", value: escHtml(r.universeKey || ""), sub: `${m.symbolsWithData || 0}/${m.symbolsRequested || 0} symbols with data` },
+      MKT
+        ? { label: "Market", value: escHtml(MKT.label), sub: `${MKT.isFutures ? "futures" : "option"} leg only · qty ${m.optionQty || "—"}` }
+        : { label: "Universe", value: escHtml(r.universeKey || ""), sub: `${m.symbolsWithData || 0}/${m.symbolsRequested || 0} symbols with data` },
       { label: "Charges paid", value: `₹${st.totalCharges || 0}` },
       { label: "Sessions", value: f.daysSeen || 0, sub: `${f.tradeableDays || 0} tradeable` },
       { label: "Confirmed → taken", value: `${f.confirmed || 0} → ${f.taken || 0}`, sub: `${f.untriggered || 0} never triggered` },
     ];
-    view.notes = "<b>Cash equity</b> on F&amp;O stocks (intraday shares, not options) — real 5-min stock candles, real equity charges. " +
+    view.notes = MKT
+      ? `<b>MARKET: ${escHtml(MKT.label)}</b> — the ${MKT.isFutures ? "month future, traded at the index level (δ 1, no theta)" : "index option leg only, P&amp;L from the delta / theta premium model (BACKTEST_DELTA / BACKTEST_THETA_DAY)"}, ` +
+        `off ${escHtml(MKT.spotSymbol)}'s own opening candle; no stock is scanned (the stock leg is NIFTY-50 cash equity). ` +
+        `Lot ${escHtml(MKT.lotQty)}, ${escHtml(MKT.exchange)} charges on the Fyers schedule. Every rule comes from this market's EARLYBIRD pair settings.`
+      : "<b>Cash equity</b> on F&amp;O stocks (intraday shares, not options) — real 5-min stock candles, real equity charges. " +
       "The universe and every rule come from the EARLYBIRD settings; the full per-day audit is on the EarlyBird backtest page.";
     view.summary.optionSim = false;
     return view;
