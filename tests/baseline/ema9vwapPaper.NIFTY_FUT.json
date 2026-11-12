@@ -1,0 +1,679 @@
+{
+  "baselineVersion": 1,
+  "strategy": "ema9vwapPaper.NIFTY_FUT",
+  "mode": "fut_ema9vwap-paper",
+  "totalTrades": 12,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -1151,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26SEPFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "07/09/2026, 12:25:00",
+          "exitTime": "07/09/2026, 15:30:00",
+          "entrySpot": 25419.75,
+          "exitSpot": 25422.1,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Manual stop",
+          "pnl": -1151
+        }
+      ],
+      "skips": {
+        "total": 37,
+        "dropped": 0,
+        "noSignalCandles": 37,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": "",
+          "expiry": "",
+          "entry": "07/09/2026, 12:25:00",
+          "exit": "07/09/2026, 15:30:00",
+          "eSpot": 25419.75,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 25422.1,
+          "xOpt": null,
+          "pnl": -1151,
+          "reason": "Manual stop",
+          "symbol": "NSE:NIFTY26SEPFUT",
+          "entryBarTime": 1788764100,
+          "exitBarTime": 1788774900,
+          "durationMs": 10800000
+        }
+      ]
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 1649.14,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "28/09/2026, 12:05:00",
+          "exitTime": "28/09/2026, 15:30:00",
+          "entrySpot": 24118.65,
+          "exitSpot": 24158.65,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Manual stop",
+          "pnl": 1649.14
+        }
+      ],
+      "skips": {
+        "total": 33,
+        "dropped": 0,
+        "noSignalCandles": 33,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": "",
+          "expiry": "",
+          "entry": "28/09/2026, 12:05:00",
+          "exit": "28/09/2026, 15:30:00",
+          "eSpot": 24118.65,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24158.65,
+          "xOpt": null,
+          "pnl": 1649.14,
+          "reason": "Manual stop",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1790577300,
+          "exitBarTime": 1790589300,
+          "durationMs": 12000000
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 74,
+        "dropped": 0,
+        "noSignalCandles": 74,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": -2808.88,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "05/10/2026, 11:40:00",
+          "exitTime": "05/10/2026, 12:09:46",
+          "entrySpot": 24234.6,
+          "exitSpot": 24213.7,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈-19pt from entry, best 27pt) — futures 24213.7 hit the stop 24215.8 (entry 24234.6)",
+          "pnl": -2311.63
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "05/10/2026, 13:15:00",
+          "exitTime": "05/10/2026, 14:07:08",
+          "entrySpot": 24272.8,
+          "exitSpot": 24279.85,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈7pt from entry, best 59pt) — futures 24279.85 hit the stop 24280.04 (entry 24272.8)",
+          "pnl": -497.25
+        }
+      ],
+      "skips": {
+        "total": 57,
+        "dropped": 0,
+        "noSignalCandles": 57,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": "",
+          "expiry": "",
+          "entry": "05/10/2026, 11:40:00",
+          "exit": "05/10/2026, 12:09:46",
+          "eSpot": 24234.6,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24213.7,
+          "xOpt": null,
+          "pnl": -2311.63,
+          "reason": "Stop-loss trail 20% (stop ≈-19pt from entry, best 27pt) — futures 24213.7 hit the stop 24215.8 (entry 24234.6)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791180600,
+          "exitBarTime": 1791182100,
+          "durationMs": 1500000
+        },
+        {
+          "side": "CE",
+          "strike": "",
+          "expiry": "",
+          "entry": "05/10/2026, 13:15:00",
+          "exit": "05/10/2026, 14:07:08",
+          "eSpot": 24272.8,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24279.85,
+          "xOpt": null,
+          "pnl": -497.25,
+          "reason": "Stop-loss trail 20% (stop ≈7pt from entry, best 59pt) — futures 24279.85 hit the stop 24280.04 (entry 24272.8)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791186300,
+          "exitBarTime": 1791189300,
+          "durationMs": 3000000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 934.6,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "06/10/2026, 10:55:00",
+          "exitTime": "06/10/2026, 12:03:24",
+          "entrySpot": 24169.25,
+          "exitSpot": 24140.25,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈29pt from entry, best 86pt) — futures 24140.25 hit the stop 24140.21 (entry 24169.25)",
+          "pnl": 934.6
+        }
+      ],
+      "skips": {
+        "total": 60,
+        "dropped": 0,
+        "noSignalCandles": 59,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "entry_window",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": "",
+          "expiry": "",
+          "entry": "06/10/2026, 10:55:00",
+          "exit": "06/10/2026, 12:03:24",
+          "eSpot": 24169.25,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24140.25,
+          "xOpt": null,
+          "pnl": 934.6,
+          "reason": "Stop-loss trail 20% (stop ≈29pt from entry, best 86pt) — futures 24140.25 hit the stop 24140.21 (entry 24169.25)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791264300,
+          "exitBarTime": 1791268200,
+          "durationMs": 3900000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 4202.38,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "07/10/2026, 11:55:00",
+          "exitTime": "07/10/2026, 14:18:06",
+          "entrySpot": 24260.85,
+          "exitSpot": 24181.55,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈81pt from entry, best 151pt) — futures 24181.55 hit the stop 24180.33 (entry 24260.85)",
+          "pnl": 4202.38
+        }
+      ],
+      "skips": {
+        "total": 45,
+        "dropped": 0,
+        "noSignalCandles": 45,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": "",
+          "expiry": "",
+          "entry": "07/10/2026, 11:55:00",
+          "exit": "07/10/2026, 14:18:06",
+          "eSpot": 24260.85,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24181.55,
+          "xOpt": null,
+          "pnl": 4202.38,
+          "reason": "Stop-loss trail 20% (stop ≈81pt from entry, best 151pt) — futures 24181.55 hit the stop 24180.33 (entry 24260.85)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791354300,
+          "exitBarTime": 1791362700,
+          "durationMs": 8400000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 74,
+        "dropped": 0,
+        "noSignalCandles": 73,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "entry_window",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 334.9,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "09/10/2026, 13:45:00",
+          "exitTime": "09/10/2026, 15:30:00",
+          "entrySpot": 24343.9,
+          "exitSpot": 24363.8,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Manual stop",
+          "pnl": 334.9
+        }
+      ],
+      "skips": {
+        "total": 53,
+        "dropped": 0,
+        "noSignalCandles": 53,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": "",
+          "expiry": "",
+          "entry": "09/10/2026, 13:45:00",
+          "exit": "09/10/2026, 15:30:00",
+          "eSpot": 24343.9,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24363.8,
+          "xOpt": null,
+          "pnl": 334.9,
+          "reason": "Manual stop",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791533700,
+          "exitBarTime": 1791539700,
+          "durationMs": 6000000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -1554.58,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "12/10/2026, 11:45:00",
+          "exitTime": "12/10/2026, 13:03:50",
+          "entrySpot": 23952.2,
+          "exitSpot": 23961.6,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈-9pt from entry, best 38pt) — futures 23961.6 hit the stop 23961.56 (entry 23952.2)",
+          "pnl": -1554.58
+        }
+      ],
+      "skips": {
+        "total": 58,
+        "dropped": 0,
+        "noSignalCandles": 55,
+        "blockedSignals": 3,
+        "byGate": [
+          {
+            "gate": "entry_window",
+            "count": 3
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": "",
+          "expiry": "",
+          "entry": "12/10/2026, 11:45:00",
+          "exit": "12/10/2026, 13:03:50",
+          "eSpot": 23952.2,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 23961.6,
+          "xOpt": null,
+          "pnl": -1554.58,
+          "reason": "Stop-loss trail 20% (stop ≈-9pt from entry, best 38pt) — futures 23961.6 hit the stop 23961.56 (entry 23952.2)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791785700,
+          "exitBarTime": 1791790200,
+          "durationMs": 4500000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": 6811.07,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "13/10/2026, 11:45:00",
+          "exitTime": "13/10/2026, 12:02:40",
+          "entrySpot": 24062.35,
+          "exitSpot": 24026.65,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈-36pt from entry, best 6pt) — futures 24026.65 hit the stop 24026.75 (entry 24062.35)",
+          "pnl": -3266.68
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "13/10/2026, 13:30:00",
+          "exitTime": "13/10/2026, 15:30:00",
+          "entrySpot": 24051.5,
+          "exitSpot": 24221.2,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Manual stop",
+          "pnl": 10077.75
+        }
+      ],
+      "skips": {
+        "total": 46,
+        "dropped": 0,
+        "noSignalCandles": 46,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": "",
+          "expiry": "",
+          "entry": "13/10/2026, 11:45:00",
+          "exit": "13/10/2026, 12:02:40",
+          "eSpot": 24062.35,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24026.65,
+          "xOpt": null,
+          "pnl": -3266.68,
+          "reason": "Stop-loss trail 20% (stop ≈-36pt from entry, best 6pt) — futures 24026.65 hit the stop 24026.75 (entry 24062.35)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791872100,
+          "exitBarTime": 1791873000,
+          "durationMs": 900000
+        },
+        {
+          "side": "CE",
+          "strike": "",
+          "expiry": "",
+          "entry": "13/10/2026, 13:30:00",
+          "exit": "13/10/2026, 15:30:00",
+          "eSpot": 24051.5,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24221.2,
+          "xOpt": null,
+          "pnl": 10077.75,
+          "reason": "Manual stop",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791878400,
+          "exitBarTime": 1791885300,
+          "durationMs": 6900000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -3570.61,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "14/10/2026, 13:15:00",
+          "exitTime": "14/10/2026, 13:28:40",
+          "entrySpot": 24125.45,
+          "exitSpot": 24165.75,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss -20% (≈40pt spot against entry) — futures 24165.75 hit the stop 24165.45 (entry 24125.45)",
+          "pnl": -3570.61
+        }
+      ],
+      "skips": {
+        "total": 71,
+        "dropped": 0,
+        "noSignalCandles": 71,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "strike": "",
+          "expiry": "",
+          "entry": "14/10/2026, 13:15:00",
+          "exit": "14/10/2026, 13:28:40",
+          "eSpot": 24125.45,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24165.75,
+          "xOpt": null,
+          "pnl": -3570.61,
+          "reason": "Stop-loss -20% (≈40pt spot against entry) — futures 24165.75 hit the stop 24165.45 (entry 24125.45)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1791963900,
+          "exitBarTime": 1791964500,
+          "durationMs": 600000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 2671.22,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": null,
+          "entryTime": "15/10/2026, 12:10:00",
+          "exitTime": "15/10/2026, 13:10:42",
+          "entrySpot": 24322.5,
+          "exitSpot": 24378.35,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈57pt from entry, best 121pt) — futures 24378.35 hit the stop 24379.58 (entry 24322.5)",
+          "pnl": 2671.22
+        }
+      ],
+      "skips": {
+        "total": 61,
+        "dropped": 0,
+        "noSignalCandles": 60,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "entry_window",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "strike": "",
+          "expiry": "",
+          "entry": "15/10/2026, 12:10:00",
+          "exit": "15/10/2026, 13:10:42",
+          "eSpot": 24322.5,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24378.35,
+          "xOpt": null,
+          "pnl": 2671.22,
+          "reason": "Stop-loss trail 20% (stop ≈57pt from entry, best 121pt) — futures 24378.35 hit the stop 24379.58 (entry 24322.5)",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "entryBarTime": 1792046400,
+          "exitBarTime": 1792050000,
+          "durationMs": 3600000
+        }
+      ]
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 74,
+        "dropped": 0,
+        "noSignalCandles": 74,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    }
+  ]
+}

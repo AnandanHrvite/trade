@@ -46,7 +46,7 @@
 
 const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
-const { getCharges } = require("../utils/charges");
+const { getCharges: _getCharges } = require("../utils/charges");
 const strategy = require("../strategies/ema9_vwap");
 const vixFilter = require("./vixFilter");
 
@@ -69,6 +69,11 @@ function _toIST(s) {
  *                               { isFutures: true, prefix: "FUT_EMA9VWAP" } to force the
  *                               futures arm and read its own FUT_EMA9VWAP_* keys (VIX mode =
  *                               the prefix lower-cased). Omitted → the original behaviour.
+ *                               Another market's run (the /backtest page) adds
+ *                               { lotQty, exchange } — its lot and its exchange's charges —
+ *                               and { expiryOnly, isExpiryDay(dateStr) } — the pair's trade-days
+ *                               switch and that market's expiry calendar, in place of the
+ *                               shared TRADE_EXPIRY_DAY_ONLY + NIFTY expiry.
  * @returns {{summary:Object, trades:Array}}
  */
 async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 0, vixCandles = [], opts = {}) {
@@ -78,7 +83,10 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // Strategy rules + VIX mode for the env prefix (default: EMA9VWAP_ keys, mode "ema9vwap").
   const _strat   = opts.prefix ? strategy.forPrefix(opts.prefix) : strategy;
   const _vixMode = opts.prefix ? String(opts.prefix).toLowerCase() : "ema9vwap";
-  const LOT_SIZE = opts.isFutures === true ? getLotQty("NIFTY", "NIFTY_FUTURES") : getLotQty();
+  const LOT_SIZE = opts.lotQty > 0 ? opts.lotQty
+    : (opts.isFutures === true ? getLotQty("NIFTY", "NIFTY_FUTURES") : getLotQty());
+  // Another market's exchange (BSE for SENSEX) on every charges call; NIFTY passes none.
+  const getCharges = (o) => _getCharges(opts.exchange ? Object.assign({}, o, { exchange: opts.exchange }) : o);
 
   const isFutures      = typeof opts.isFutures === "boolean" ? opts.isFutures : instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const OPTION_SIM     = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
@@ -110,7 +118,10 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // ── H4-f: expiry-day-only filter (TRADE_EXPIRY_DAY_ONLY), matching paper's
   //    _expiryDayBlocked. Resolved ONCE per distinct IST date in the range rather
   //    than per candle. Off by default → empty set → no effect.
-  const expiryOnly = (process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
+  // Another market's run hands in its own switch + calendar (opts.isExpiryDay).
+  const _pairExpiry = typeof opts.isExpiryDay === "function";
+  const expiryOnly = _pairExpiry ? opts.expiryOnly === true
+    : (process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
   const expiryDates = new Set();
   let expiryLookupFailed = false;
   // `total` is declared HERE, above its first use. It used to be declared ~25 lines
@@ -127,7 +138,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       _seen.add(d);
     }
     for (const d of _seen) {
-      try { if (await isExpiryDate(d)) expiryDates.add(d); }
+      try { if (_pairExpiry ? opts.isExpiryDay(d) : await isExpiryDate(d)) expiryDates.add(d); }
       catch (_) { expiryLookupFailed = true; }
     }
     if (expiryLookupFailed) {
@@ -399,6 +410,8 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       vixMaxEntry:     vixFilter.VIX_ENABLED ? vixFilter.VIX_MAX_ENTRY : null,
       vixStrongOnly:   false,
       rejectBreakdown: [],
+      // Another market's futures run (NIFTY_FUT) books ₹ (index pts × lot − charges).
+      ...(opts.lotQty > 0 && isFutures ? { isFutures: true, pnlUnit: "₹" } : {}),
     },
     trades,
   };

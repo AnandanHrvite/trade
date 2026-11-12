@@ -45,9 +45,11 @@
  *
  * ── Env prefix ───────────────────────────────────────────────────────────────
  * Every strategy-own key is read as `${PREFIX}_*`. The default exports read the
- * original EMA9VWAP_* keys exactly as before. `forPrefix("FUT_EMA9VWAP")` returns
- * the identical API reading FUT_EMA9VWAP_* instead — the NIFTY FUTURES twin
- * (FUT_EMA9_VWAP) shares this one implementation with its own settings.
+ * original EMA9VWAP_* keys exactly as before. Another market's pair passes its
+ * own prefix (`getSignal(candles, { prefix: "BN_EMA9VWAP" })`, or
+ * `forPrefix("SENSEX_EMA9VWAP")`) and reads <PAIR>_EMA9VWAP_* — an unset pair
+ * key inherits NIFTY's EMA9VWAP_* value (config/pairs.js envGet). FUT_EMA9VWAP
+ * is the NIFTY FUTURES pair.
  *
  * Contract: getSignal(candles, opts) → {
  *   signal: "BUY_CE" | "BUY_PE" | "NONE", side, reason, stopLoss(=null),
@@ -83,9 +85,15 @@ const NAMES    = { EMA9VWAP: NAME,    FUT_EMA9VWAP: "FUT_EMA9_VWAP" };
 function underlyingFor(prefix) { return PREFIXES[prefix || DEFAULT_PREFIX] || "NIFTY"; }
 // The default prefix keeps the ORIGINAL literal EMA9VWAP_* env reads, unchanged:
 // that path must stay byte-for-byte what it was, and docs/ENV.md is generated
-// from those literal reads. Any other prefix reads `${prefix}_${key}`.
+// from those literal reads. Any other prefix reads `${prefix}_${key}` with
+// (strategy, market) pair inheritance (config/pairs.js envGet): a market pair's
+// unset key (BN_EMA9VWAP_BAND_MULT) reads NIFTY's EMA9VWAP_BAND_MULT.
 function _isDefault(P) { return !P || P === DEFAULT_PREFIX; }
-function _env(P, key) { return process.env[P + "_" + key]; }
+let _pairsMod = null;
+function _env(P, key) {
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(P + "_" + key);
+}
 
 function _emaPeriod(P) {
   if (_isDefault(P)) return Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD || "9", 10) || 9);

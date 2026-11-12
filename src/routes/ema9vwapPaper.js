@@ -15,31 +15,14 @@
 
 const express = require("express");
 const { trackPath, pathFields } = require("../utils/tradePath");
-const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const _ema9vwapStrategy = require("../strategies/ema9_vwap"); const ACTIVE = "EMA9_VWAP";
+const _ema9vwapStrategy = require("../strategies/ema9_vwap");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 
-// EMA9+VWAP runs as a SECONDARY socket consumer (addCallback) so it never steals
-// EMA_RSI_ST's primary tick feed. This id keys its fan-out callback.
-const CALLBACK_ID = "ema9vwap-paper";
-
-// Confirmation candle OFF by default — the EMA9-vs-VWAP-band cross IS itself a
-// closed-candle event, so we enter on THAT candle's close (no extra next-candle
-// confirmation). Tunable via EMA9VWAP_CONFIRM_CANDLE_ENABLED.
-function _confirmEnabled() {
-  return (process.env.EMA9VWAP_CONFIRM_CANDLE_ENABLED || "false").toLowerCase() === "true";
-}
-
-// Intra-candle entry OFF by default — entries are evaluated only on 5-min candle
-// CLOSE (matches "wait for timeframe close"). Tunable via EMA9VWAP_INTRACANDLE_ENTRY.
-function _intraCandleEntryEnabled() {
-  return (process.env.EMA9VWAP_INTRACANDLE_ENTRY || "false").toLowerCase() === "true";
-}
 const tickRecorder  = require("../utils/tickRecorder");
 const optionFeed    = require("../utils/optionFeed");
 const { verifyFyersToken } = require("../services/marketData");
@@ -62,6 +45,83 @@ const optionChart  = require("../utils/optionChart");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA } = require("technicalindicators");
+const pairs         = require("../config/pairs");
+const pairRuntime   = require("../utils/pairRuntime");
+const tradeJournal  = require("../utils/tradeJournal");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUILDER — one paper engine per (strategy, market) pair.
+// create(pair) returns an Express router holding ALL of that pair's state; the
+// module's default export is the NIFTY instance (/ema9vwap-paper, the same files,
+// keys and logs as before). Every per-market fact — spot, option symbol
+// build/parse, strike grid, lot, expiry, futures, session hours, fills, slots,
+// files — comes from utils/pairRuntime.js; the rules below never branch on the
+// market. A pair's own keys (<PAIR>_EMA9VWAP_*) inherit NIFTY's EMA9VWAP_* when unset.
+// ═══════════════════════════════════════════════════════════════════════════════
+function create(pair) {
+const rt     = pairRuntime.forPair(pair);
+const router = express.Router();
+const ACTIVE = rt.home ? "EMA9_VWAP" : rt.tag;   // session / recorder strategy name
+const MODE   = rt.modeKey;                // "ema9vwap" on NIFTY — logger / capital / skip key
+const PREFIX = rt.envPrefix;              // "EMA9VWAP" on NIFTY — this pair's env prefix
+const ROUTE  = rt.paperPath;              // "/ema9vwap-paper" on NIFTY
+const OWNER  = rt.ownerId;                // "ema9vwap-paper" on NIFTY — socket callback, option-feed owner, recorder tag
+const TAG    = `[${rt.tag}-PAPER]`;       // "[EMA9VWAP-PAPER]" on NIFTY
+const NOTIFY_MODE = rt.notifyMode;        // "EMA9VWAP-PAPER" on NIFTY
+const TITLE  = rt.title;                  // "EMA9+VWAP" on NIFTY, "NIFTY BANK · EMA9+VWAP" …
+const SPOT_LABEL = rt.spotLabel;          // "NIFTY" on NIFTY
+// The console tag the NIFTY route always printed its restart recovery under.
+const RH_TAG = rt.home ? "[EMA9+VWAP-PAPER]" : TAG;
+// The engine: the module itself on NIFTY (every call exactly as it always was),
+// else the same rules bound to this pair's prefix (<PAIR>_EMA9VWAP_* keys).
+const _eng = rt.home ? _ema9vwapStrategy : _ema9vwapStrategy.forPrefix(PREFIX);
+const _env = (k) => pairs.envGet(k);
+// Display-only reads of the band multiplier / VWAP anchor (banner, chart). NIFTY
+// keeps its literal reads — docs/ENV.md takes these keys' defaults from them.
+const _bandMultRaw   = () => (rt.home ? (process.env.EMA9VWAP_BAND_MULT || "1") : (_env(`${PREFIX}_BAND_MULT`) || "1"));
+const _vwapAnchorRaw = () => (rt.home ? (process.env.EMA9VWAP_VWAP_SESSION_START || "09:15") : (_env(`${PREFIX}_VWAP_SESSION_START`) || "09:15"));
+// Paper capital pool of this pair's broker (NIFTY: Zerodha; other markets: Fyers).
+const CAP_ENV = (rt.home ? rt.strategy.broker : pair.broker) === "fyers" ? "FYERS_INV_AMOUNT" : "ZERODHA_INV_AMOUNT";
+// Spot symbol the candles are built from — resolved at /start (MCX: the series' future).
+let _spotSym = null;
+const SPOT = () => _spotSym || rt.spotSymbol();
+// Option contract for a signal. NIFTY makes its own call DIRECTLY (not through
+// pairRuntime's async wrapper): the candle-close prefetch races the entry for the
+// symbol cache, so even one extra microtask hop would change which strike a NIFTY
+// entry takes. Another market resolves its own exchange / grid / expiry.
+const _resolveSym = (spot, side) => (rt.home ? validateAndGetOptionSymbol(spot, side, "ema9vwap") : rt.resolveEntrySymbol(spot, side));
+// Charges: another market adds its exchange (BSE for SENSEX, MCX); NIFTY's call is unchanged.
+const _charges = (o) => getCharges(rt.home ? o : Object.assign({}, o, { exchange: rt.isMcx ? "MCX" : rt.U().exchange }));
+// VIX gate: another market reads its own <PAIR>_VIX_ENABLED / _VIX_MAX_ENTRY /
+// _VIX_STRONG_ONLY (Settings → that market), else NIFTY's EMA9VWAP_VIX_* (and,
+// unset there too, the global key — vixFilter's tri-state). vixFilter reads the
+// EMA9VWAP_* names, so the pair's values are handed to it through scopedEnv — the
+// same mapping the /backtest page applies. NIFTY's calls are unchanged.
+const _VIX_KEYS = ["VIX_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY"];
+const _vixScoped = (fn) => {
+  if (rt.home) return fn();
+  const o = {};
+  for (const k of _VIX_KEYS) { const v = _env(`${PREFIX}_${k}`); o[`EMA9VWAP_${k}`] = v === undefined ? null : v; }
+  return require("../utils/scopedEnv").run(o, fn);
+};
+rt.registerCapital();
+
+// EMA9+VWAP runs as a SECONDARY socket consumer (addCallback) so it never steals
+// EMA_RSI_ST's primary tick feed. This id keys its fan-out callback.
+const CALLBACK_ID = OWNER;
+
+// Confirmation candle OFF by default — the EMA9-vs-VWAP-band cross IS itself a
+// closed-candle event, so we enter on THAT candle's close (no extra next-candle
+// confirmation). Tunable via EMA9VWAP_CONFIRM_CANDLE_ENABLED (a pair: its own key, else NIFTY's).
+function _confirmEnabled() {
+  return (_env(`${PREFIX}_CONFIRM_CANDLE_ENABLED`) || "false").toLowerCase() === "true";
+}
+
+// Intra-candle entry OFF by default — entries are evaluated only on 5-min candle
+// CLOSE (matches "wait for timeframe close"). Tunable via EMA9VWAP_INTRACANDLE_ENTRY.
+function _intraCandleEntryEnabled() {
+  return (_env(`${PREFIX}_INTRACANDLE_ENTRY`) || "false").toLowerCase() === "true";
+}
 
 // ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
 // Declared with `let` so _refreshConfig() can update them. Without this, the
@@ -80,12 +140,15 @@ function _refreshConfig() {
   TRADE_RES                              = (Number.isFinite(_res) && _res > 0) ? _res : 5;
   // Entry window — re-read here (was a module-load const) so the Settings UI's
   // "Session restart" badge is truthful: stop + start now really does apply it.
-  _START_MINS                            = parseMins("EMA9VWAP_ENTRY_START", "10:30");
-  _ENTRY_STOP_MINS                       = parseMins("EMA9VWAP_ENTRY_END", "14:30");
+  // A market pair reads its own <PAIR>_ENTRY_START / _END, else NIFTY's.
+  _START_MINS                            = parseMins(`${PREFIX}_ENTRY_START`, "10:30");
+  _ENTRY_STOP_MINS                       = parseMins(`${PREFIX}_ENTRY_END`, "14:30");
   // Engine auto-stop time — the common TRADE_STOP_TIME; the session teardown closes any open position here.
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
+  // MCX runs its own session (09:00–23:30): TRADE_STOP_TIME is an NSE hour.
+  if (rt.isMcx) _STOP_MINS = rt.stopMins();
 }
 _refreshConfig();
 let _cachedClosedCandleSL = null; // cached getSignal stopLoss from last FULLY CLOSED candle — always null for EMA9+VWAP (no stop loss); used in every tick
@@ -102,7 +165,7 @@ let _cachedClosedCandleSL = null; // cached getSignal stopLoss from last FULLY C
 // Old path was ./data/ inside project — wiped on every deploy.
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const PT_FILE  = path.join(DATA_DIR, "ema9vwap_paper_trades.json");
+const PT_FILE  = path.join(DATA_DIR, rt.tradesFile);
 // No legacy migration for EMA9+VWAP — this is a new strategy with its own store.
 
 function ensureDir() {
@@ -118,7 +181,7 @@ function loadPaperData() {
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
     const initial = {
-      capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"),
+      capital: parseFloat(process.env[CAP_ENV] || "100000"),
       totalPnl: 0,
       sessions: [],
     };
@@ -130,7 +193,7 @@ function loadPaperData() {
     _paperDataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8"));
   } catch (e) {
     console.error("[paperTrade] paper_trades.json corrupt — resetting:", e.message);
-    _paperDataCache = { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
+    _paperDataCache = { capital: parseFloat(process.env[CAP_ENV] || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_paperDataCache, null, 2));
   }
   return _paperDataCache;
@@ -224,7 +287,7 @@ function rehydrateSessionFromJsonl() {
     //    session a restart would wipe). Day files interleave settings_snapshot/meta
     //    lines with trades — keep only real trade records.
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades("ema9vwap", today)
+    const all = tradeLogger.readDailyTrades(MODE, today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) {
@@ -259,18 +322,18 @@ function rehydrateSessionFromJsonl() {
     ptState._sessionWins   = trades.filter(t => Number(t.pnl) > 0).length;
     ptState._sessionLosses = trades.filter(t => Number(t.pnl) < 0).length;
     if (!ptState.sessionStart) ptState.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ [EMA9+VWAP-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${ptState.sessionPnl})`);
+    console.log(`♻️ ${RH_TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${ptState.sessionPnl})`);
   } catch (err) {
-    console.warn(`[EMA9+VWAP-PAPER] session rehydrate failed: ${err.message}`);
+    console.warn(`${RH_TAG} session rehydrate failed: ${err.message}`);
   }
 }
 rehydrateSessionFromJsonl();
 // Capital pool: realized P&L = file totalPnl + this session's closed trades not yet
 // saved there (rehydrated above after a restart). Sim sessions never reach the file.
-capitalPool.trackSession("ema9vwap", () =>
+capitalPool.trackSession(MODE, () =>
   (ptState._simMode || ptState._simSession || ptState._pnlSaved) ? 0 : (Number(ptState.sessionPnl) || 0));
 // A previous day's session may only stay on screen while the market is shut.
-require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => ptState, "[EMA9VWAP-PAPER]");
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => ptState, TAG);
 
 // ── Simulation clock ────────────────────────────────────────────────────────
 let _simClockMs = 0;
@@ -341,7 +404,7 @@ function get5MinBucket(unixMs) { return getMinBucket(unixMs); }
 //   TRADE_STOP_TIME=15:30
 
 function parseMins(envKey, defaultVal) {
-  const raw = process.env[envKey] || defaultVal;
+  const raw = _env(envKey) || defaultVal;   // pairs.envGet: a NIFTY key reads exactly process.env
   const [h, m] = raw.split(":").map(Number);
   return h * 60 + (isNaN(m) ? 0 : m);
 }
@@ -364,7 +427,7 @@ function getISTMinutes() {
 // NSE regular session open (09:15 IST) — the floor for BUILDING candles (so VWAP
 // and EMA9 warm up from the session anchor), fixed regardless of the entry window.
 // Pre-open auction prints a wild wide-range bar; skipping it keeps VWAP/EMA clean.
-const _MKT_OPEN_MINS = 9 * 60 + 15;
+const _MKT_OPEN_MINS = rt.sessionOpenMin();   // 09:15 NSE/BSE; MCX opens 09:00
 
 /**
  * THE entry-window gate. Delegates to the shared strategy helper so Paper
@@ -381,7 +444,7 @@ const _MKT_OPEN_MINS = 9 * 60 + 15;
 function isEntryWindowOpenForBar(barTimeSec) {
   if (ptState._simMode) return true; // synthetic scenario tester ignores the clock
   if (!Number.isFinite(barTimeSec)) return false;
-  return _ema9vwapStrategy.isEntryWindowOpen(barTimeSec, TRADE_RES);
+  return _eng.isEntryWindowOpen(barTimeSec, TRADE_RES);
 }
 
 /**
@@ -451,7 +514,7 @@ function scheduleAutoStop(stopFn) {
 
 function getCapitalFromEnv() {
   // EMA_RSI_ST trades through Zerodha — its paper capital is the shared Zerodha investment pool.
-  return parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
+  return parseFloat(process.env[CAP_ENV] || "100000");
 }
 
 
@@ -462,17 +525,16 @@ function getCapitalFromEnv() {
 
 const fyers = require('../config/fyers');
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require('../utils/notify');
-const NIFTY_INDEX_SYMBOL = 'NSE:NIFTY50-INDEX';
 
 // ── Pre-fetch option symbols in background after each candle close ──────────
 async function prefetchOptionSymbols(spot) {
-  if (instrumentConfig.INSTRUMENT === 'NIFTY_FUTURES') return;
+  if (rt.instrumentName() === 'NIFTY_FUTURES') return;
   try {
     const [ce, pe] = await Promise.all([
-      validateAndGetOptionSymbol(spot, 'CE', 'ema9vwap'),
-      validateAndGetOptionSymbol(spot, 'PE', 'ema9vwap'),
+      _resolveSym(spot, 'CE'),
+      _resolveSym(spot, 'PE'),
     ]);
-    
+
     // Only cache valid symbols (reject invalid ones to force live lookup at entry)
     if (ce.invalid) {
       log(`⚠️ [PAPER] CE symbol invalid (${ce.symbol}) — all expiry fallbacks exhausted, will retry live at entry`);
@@ -498,18 +560,18 @@ async function prefetchOptionSymbols(spot) {
   }
 }
 
-// Return cached symbol if spot hasn't moved > 25 pts, otherwise null
+// Return cached symbol if spot hasn't moved > half a strike (25 pts on NIFTY), otherwise null
 function getCachedSymbol(side, currentSpot) {
   const cached = side === 'CE' ? ptState._cachedCE : ptState._cachedPE;
   if (!cached || cached.invalid) return null;
-  if (Math.abs(cached.spot - currentSpot) > 25) return null;
+  if (Math.abs(cached.spot - currentSpot) > rt.cacheTolerance()) return null;
   return cached;
 }
 
 let _optionPollTimer = null;
 let _optionPollBusy  = false; // guard: prevents overlapping getQuotes calls if network is slow
 let _rateLimitSkipCycles = 0; // skip N poll cycles after a rate-limit hit
-const OPTION_FEED_OWNER = "ema9vwap-paper";
+const OPTION_FEED_OWNER = OWNER;
 // Rebound per position in startOptionPolling so the closure captures the symbol
 // actually held; null while flat.
 let _onStreamedOptionLtp = null;
@@ -552,7 +614,13 @@ async function fetchOptionLtp(symbol) {
           _rateLimitSkipCycles = 0;
         }
         const _ltp = parseFloat(ltp);
-        try { tickRecorder.recordOptionLtp(symbol, _ltp, "ema9vwap-paper"); } catch (_) {}
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, OWNER); } catch (_) {}
+        // Non-NIFTY markets fill at the quote (pairRuntime.fillAtQuote): keep the
+        // latest bid/ask of the held contract. NIFTY never reads it.
+        if (!rt.home) {
+          const _b = Number(v.bid || v.bid_price || 0), _a = Number(v.ask || v.ask_price || 0);
+          if (_b > 0 && _a > 0 && ptState.optionSymbol === symbol) ptState.optionQuote = { symbol, bid: _b, ask: _a, ltp: _ltp, at: Date.now() };
+        }
         return _ltp;
       }
       log(`[DEBUG] All LTP fields null/zero for ${symbol} | v=${JSON.stringify(v).slice(0, 200)}`);
@@ -599,7 +667,7 @@ function _publishOptionLtp(symbol, ltp) {
     ptState.position.optionEntryLtp = ltp;
     ptState.position.optionEntryLtpTime = istNow();
     // Real premium known — replace the estimate blocked at entry.
-    capitalPool.updateBlock("ema9vwap", (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
+    capitalPool.updateBlock(MODE, (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
     log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry})`);
   }
 }
@@ -617,7 +685,16 @@ async function _optionPollTick(symbol, gen) {
     // track() below is what renews the lease keeping it subscribed.
     optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamedOptionLtp);
     const streamed = optionFeed.getFresh(symbol);
-    const ltp = streamed ? streamed.ltp : await fetchOptionLtp(symbol);
+    // A fill-at-quote pair also needs a fresh bid/ask for its exit, which the
+    // stream does not carry — so it keeps one REST quote at most ~5 s old.
+    const _q = ptState.optionQuote;
+    const _needQuote = !rt.home && rt.fillAtQuote() && !(_q && _q.symbol === symbol && Date.now() - _q.at <= 5000);
+    let ltp;
+    if (streamed && !_needQuote) ltp = streamed.ltp;
+    else {
+      ltp = await fetchOptionLtp(symbol);
+      if (!ltp && streamed) ltp = streamed.ltp;
+    }
     if (gen !== _optionPollGen) return; // position changed while in flight
     if (!ltp) return;
     _publishOptionLtp(symbol, ltp);
@@ -689,7 +766,13 @@ function stopOptionPolling() {
 
 // ── Simulated order (NO real API call) ──────────────────────────────────────
 
+// Other markets parse with pairRuntime (their exchange, stem and expiry cadence);
+// NIFTY keeps the parser below, unchanged.
 function parseOptionDetails(symbol) {
+  return rt.home ? _parseNiftyOptionDetails(symbol) : rt.parseOptionSymbol(symbol);
+}
+
+function _parseNiftyOptionDetails(symbol) {
   // Fyers weekly option symbol formats:
   //
   // Format A (numeric/special month code): NSE:NIFTY{YY}{M}{DD}{Strike}{CE|PE}
@@ -790,11 +873,11 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   //    The real premium is stamped by the first option poll (~1s from now), so
   //    the gate uses the assumed premium and the block is trued up there.
   const _estCost = qty * capitalPool.estimatedPremium();
-  const _cap = capitalPool.gate("ema9vwap", _estCost, { side, symbol, qty }, { sim: (ptState._simMode || ptState._simSession) });
+  const _cap = capitalPool.gate(MODE, _estCost, { side, symbol, qty }, { sim: (ptState._simMode || ptState._simSession) });
   if (!_cap.ok) {
     if (!_cap.muted) {
       log(`❌ [PAPER] Entry REFUSED — ${_cap.reason}`);
-      skipLogger.appendSkipLog("ema9vwap", { gate: "capital", reason: _cap.reason, spot: price, side, symbol, qty, cost: _cap.cost, available: _cap.available });
+      skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _cap.reason, spot: price, side, symbol, qty, cost: _cap.cost, available: _cap.available });
     }
     ptState._entryPending = false;
     return;
@@ -824,8 +907,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   const _entryHourIST    = Math.floor(_entryIstMin / 60);
   const _entryMinuteIST  = _entryIstMin % 60;
   const _vixAtEntry      = getCachedVix();
-  const _oiAtEntry       = oiFilter.getCachedOi();
-  const _oiRegime        = oiFilter.getCachedRegime();
+  // The OI series is NIFTY futures OI — another market records none.
+  const _oiAtEntry       = rt.oiApplies ? oiFilter.getCachedOi() : null;
+  const _oiRegime        = rt.oiApplies ? oiFilter.getCachedRegime() : null;
   const _signalStrength  = entryMeta.signalStrength || null;
 
   ptState.position = {
@@ -871,20 +955,68 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     vwapUpperAtEntry:  entryMeta.vwapUpperAtEntry != null ? entryMeta.vwapUpperAtEntry : null,
     vwapLowerAtEntry:  entryMeta.vwapLowerAtEntry != null ? entryMeta.vwapLowerAtEntry : null,
   };
+  // Other markets: the position names its market and instrument, and — when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (the default there) — is BOUGHT AT THE ASK
+  // of the quote the spread guard just fetched, instead of at the first LTP.
+  // NIFTY's position is exactly as above.
+  let _askFill = null;
+  ptState.optionQuote = null;
+  if (!rt.home) {
+    Object.assign(ptState.position, { market: rt.marketKey, instrument: rt.instrumentName(), isFutures: rt.isFutures });
+    const _eq = entryMeta.entryQuote;
+    if (!rt.isFutures && _eq) {
+      const f = rt.entryFill(null, _eq, Date.now());
+      if (f.source === "ask") {
+        _askFill = f.price;
+        ptState.position.optionEntryLtp     = f.price;
+        ptState.position.optionEntryFill    = "ask";
+        ptState.position.optionEntryLtpTime = istNow();
+        ptState.position.entryQuote         = { bid: _eq.bid, ask: _eq.ask, ltp: _eq.ltp };
+      }
+    }
+  }
+  // Trade journal (observer only — nothing reads pos.journal back).
+  tradeJournal.onEntry(ptState.position, {
+    reason, signal: side === "CE" ? "BUY_CE" : "BUY_PE",
+    indicators: {
+      ema9: ptState.position.ema9AtEntry, vwap: ptState.position.vwapAtEntry,
+      vwapUpper: ptState.position.vwapUpperAtEntry, vwapLower: ptState.position.vwapLowerAtEntry,
+      strength: _signalStrength,
+    },
+    spot: _entrySpot, optionLtp: ptState.position.optionEntryLtp,
+    bid: entryMeta.entryQuote ? entryMeta.entryQuote.bid : null,
+    ask: entryMeta.entryQuote ? entryMeta.entryQuote.ask : null,
+    vix: _vixAtEntry, expiry: optDetails ? optDetails.expiry : null,
+    market: rt.marketKey, strategy: rt.strategy.key,
+    isFutures: rt.instrumentName() === "NIFTY_FUTURES", qty, sl: stopLoss || null,
+    // The price the signal wanted, in the fill's own units: the quote's LTP for an
+    // ask fill, else the spot level (the premium is not known until the first poll).
+    expectedPrice: _askFill ? entryMeta.entryQuote.ltp : (ptState.position.optionEntryLtp ? null : price),
+    candles: ptState.candles, nowMs: simNow(),
+  });
+  _journalStopLvl = null;
   // Crash-recovery snapshot — real sessions only. A synthetic scenario position
   // written here makes the next boot Telegram "🚨 Persisted EMA9+VWAP position
   // found (crash recovery)!" for a trade that never existed.
+  // NIFTY keeps its own named snapshot; another market writes its pair's file.
   if (!ptState._simMode && !ptState._simSession) {
-    try { require("../utils/positionPersist").saveEma9VwapPosition(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+    try {
+      if (rt.home) require("../utils/positionPersist").saveEma9VwapPosition(ptState.position, { sessionPnl: ptState.sessionPnl });
+      else rt.persist.save(ptState.position, { sessionPnl: ptState.sessionPnl });
+    } catch (_) {}
   }
 
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
   ptState.optionSymbol = symbol;
-  capitalPool.block("ema9vwap", _estCost, { side, symbol, qty, premium: null }, { sim: (ptState._simMode || ptState._simSession) });
+  capitalPool.block(MODE, _estCost, { side, symbol, qty, premium: null }, { sim: (ptState._simMode || ptState._simSession) });
+  if (_askFill) {
+    capitalPool.updateBlock(MODE, qty * _askFill, { sim: (ptState._simMode || ptState._simSession) });
+    log(`📌 [PAPER] Entry filled at the ASK ₹${_askFill} (bid ₹${entryMeta.entryQuote.bid}) — ${rt.fillAtQuoteKey}`);
+  }
   if (ptState._simMode) {
     log(`📊 [PAPER] Simulation mode — skipping option LTP polling`);
-  } else if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
+  } else if (rt.instrumentName() !== "NIFTY_FUTURES") {
     log(`📊 [PAPER] Starting option LTP polling (REST/3s): ${symbol}`);
     startOptionPolling(symbol);
   } else {
@@ -901,18 +1033,51 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // ── Telegram notification (skip in simulation mode) ───────────────────────
   if (!ptState._simMode) {
     notifyEntry({
-      mode:           'EMA9VWAP-PAPER',
+      mode:           NOTIFY_MODE,
       side,
       symbol,
       strike:         ptState.position.optionStrike,
       expiry:         ptState.position.optionExpiry,
       spotAtEntry:    price,
-      optionEntryLtp: ptState.optionLtp || null,
+      optionEntryLtp: ptState.optionLtp || _askFill || null,
       stopLoss:       stopLoss || null,
       qty,
       reason,
+      ...(rt.home ? {} : { isFutures: rt.isFutures, instrument: rt.instrumentName() }),
     });
   }
+}
+
+// ── Trade journal: the effective exit level (observer only) ─────────────────
+// EMA9+VWAP keeps no stop field: its exits are the global profit lock / premium
+// stop (options) and the futures stop (index level), recomputed per tick. The
+// journal gets that level whenever it moves; nothing reads it back into a decision.
+let _journalStopLvl = null;
+function _journalStop(pos, spot, isFut) {
+  try {
+    let lvl = null, kind, why;
+    if (isFut) {
+      lvl = tradeGuards.futuresStopLevel(pos.side, pos.entryPrice, pos.mfeSpotPts);
+      kind = _journalStopLvl == null ? "initial" : "trail";
+      why = "futures stop (premium stop in index points)";
+    } else if (pos.optionEntryLtp) {
+      lvl = tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.bestOptionLtp);
+      kind = "lock";
+      why = "profit lock / premium stop level";
+    }
+    if (lvl == null || lvl === _journalStopLvl) return;
+    const from = _journalStopLvl;
+    _journalStopLvl = lvl;
+    tradeJournal.onStopChange(pos, { from, to: lvl, kind, reason: why, spot, ltp: ptState.optionLtp, nowMs: simNow() });
+  } catch (_) {}
+}
+// The journal's exit kind for an EMA9+VWAP exit reason.
+function _journalExitKind(reason) {
+  const r = String(reason || "");
+  if (/^Manual/i.test(r)) return "manual";
+  if (/Profit lock/i.test(r)) return "trail";
+  if (/Stop-loss|stop loss|hit the stop/i.test(r)) return "sl";
+  return "eod";   // EOD square-off / auto-stop / shutdown / simulation end
 }
 
 function simulateSell(exitPrice, reason, spotAtExit) {
@@ -922,13 +1087,22 @@ function simulateSell(exitPrice, reason, spotAtExit) {
           optionEntryLtp, optionCurrentLtp,
           signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = ptState.position;
 
-  const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
+  const INSTR = rt.instrumentName(); // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
   // ── PnL Calculation ─────────────────────────────────────────────────────────
   let rawPnl;
   let pnlMode;
-  const exitOptionLtp = ptState.optionLtp || optionCurrentLtp;
+  let exitOptionLtp = ptState.optionLtp || optionCurrentLtp;
+  // Other markets: SOLD AT THE BID of a fresh quote of the held contract when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (pairRuntime.exitFill); NIFTY unchanged.
+  let _exitFill = null;
+  if (!rt.home && !isFutures) {
+    const _q = ptState.optionQuote && ptState.optionQuote.symbol === symbol ? ptState.optionQuote : null;
+    const f = rt.exitFill(exitOptionLtp, _q, Date.now());
+    _exitFill = f.source;
+    if (f.source === "bid") exitOptionLtp = f.price;
+  }
 
   if (isFutures) {
     // Futures: PnL = price difference × qty. CE=LONG (+1), PE=SHORT (-1)
@@ -951,7 +1125,10 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   // Charges: STT + exchange + GST + stamp duty + brokerage (configurable via Settings)
-  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  // Another market's futures leg (NIFTY_FUT) is charged on its traded price — the
+  // index level it was priced at. NIFTY's call is exactly as it always was.
+  const _futPx = isFutures && !rt.home;
+  const charges = _charges({ isFutures, exitPremium: _futPx ? exitPrice : exitOptionLtp, entryPremium: _futPx ? entryPrice : optionEntryLtp, qty });
   const netPnl  = parseFloat((rawPnl - charges).toFixed(2));
 
   // Derived metadata for the trade record — computed here so the JSONL log captures the full picture.
@@ -964,7 +1141,30 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // Indicator snapshot AT EXIT — recompute silently so the JSONL log carries the
   // full indicator picture at exit, not just at entry.
   let _exitInd = {};
-  try { _exitInd = _ema9vwapStrategy.getSignal(ptState.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+  try { _exitInd = _eng.getSignal(ptState.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+
+  // Trade journal: exit fill (observer only), before the trade object is built.
+  {
+    const _p = ptState.position;
+    const _xq = _exitFill === "bid" && ptState.optionQuote ? ptState.optionQuote : null;
+    let _aim = null;
+    try {
+      _aim = isFutures ? tradeGuards.futuresStopLevel(side, entryPrice, _p.mfeSpotPts)
+        : (optionEntryLtp ? tradeGuards.exitLevelLtp(optionEntryLtp, _p.bestOptionLtp) : null);
+    } catch (_) {}
+    const _kind = _journalExitKind(reason);
+    tradeJournal.onExit(_p, {
+      reason, kind: _kind,
+      indicators: { ema9: _exitInd.ema9, vwap: _exitInd.vwap, vwapUpper: _exitInd.vwapUpper, vwapLower: _exitInd.vwapLower, stdev: _exitInd.stdev },
+      spot: spotAtExit || exitPrice, optionLtp: isFutures ? null : (exitOptionLtp || null),
+      bid: _xq ? _xq.bid : null, ask: _xq ? _xq.ask : null,
+      // The level the exit aimed at (a stop / lock exit); a manual or session exit takes what it gets.
+      expectedPrice: (_kind === "sl" || _kind === "trail") ? _aim : null,
+      fillPrice: isFutures ? exitPrice : (exitOptionLtp || null),
+      favPts: _pnlPoints, pnlRs: netPnl, candlesHeld: _p.candlesHeld || 0,
+      nowMs: simNow(),
+    });
+  }
 
   const trade = {
     side,
@@ -1025,6 +1225,21 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     isManual:         _isManualEntry,
     instrument:       INSTR,
   };
+  // Other markets: the record names its market, strategy and spot (consolidation,
+  // post-exit tracking and the MCP read them) and how each leg was filled.
+  if (!rt.home) {
+    Object.assign(trade, {
+      market:          rt.marketKey,
+      strategyId:      rt.strategy.key,
+      spotSymbol:      SPOT(),
+      optionEntryFill: isFutures ? null : (ptState.position.optionEntryFill || "ltp"),
+      optionExitFill:  isFutures ? null : _exitFill,
+      entryQuote:      ptState.position.entryQuote || null,
+      exitQuote:       (_exitFill === "bid" && ptState.optionQuote) ? { bid: ptState.optionQuote.bid, ask: ptState.optionQuote.ask, ltp: ptState.optionQuote.ltp } : null,
+    });
+  }
+  // Trade journal (observer — the golden harness ignores this one key).
+  try { Object.assign(trade, tradeJournal.fields(ptState.position)); } catch (_) {}
 
   ptState.sessionTrades.push(trade);
   // Simulation isolation: a /simulate run must never reach the canonical audit log.
@@ -1032,7 +1247,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // all read as real paper history, and a synthetic trade there is indistinguishable
   // from a live one (it carries today's date and a real option symbol).
   if (!ptState._simMode && !ptState._simSession) {
-    tradeLogger.appendTradeLog("ema9vwap", trade); // crash-safe per-trade JSONL
+    tradeLogger.appendTradeLog(MODE, trade); // crash-safe per-trade JSONL
   }
   ptState.sessionPnl = parseFloat((ptState.sessionPnl + netPnl).toFixed(2));
   // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
@@ -1064,7 +1279,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // ── Telegram notification (skip in simulation mode) ───────────────────────
   if (!ptState._simMode) {
     notifyExit({
-      mode:           'EMA9VWAP-PAPER',
+      mode:           NOTIFY_MODE,
       side,
       symbol,
       strike:         trade.optionStrike,
@@ -1083,20 +1298,26 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       peakPremium:    trade.bestOptionLtp,
       heldMs:         trade.durationMs,
       candlesHeld:    trade.candlesHeld,
+      ...(rt.home ? {} : { isFutures, instrument: INSTR }),
     });
   }
 
   ptState.position = null;
-  capitalPool.release("ema9vwap", netPnl, { sim: (ptState._simMode || ptState._simSession) });
+  ptState.optionQuote = null;
+  _journalStopLvl = null;
+  capitalPool.release(MODE, netPnl, { sim: (ptState._simMode || ptState._simSession) });
   if (!ptState._simMode && !ptState._simSession) {
-    try { require("../utils/positionPersist").clearEma9VwapPosition(); } catch (_) {}
+    try {
+      if (rt.home) require("../utils/positionPersist").clearEma9VwapPosition();
+      else rt.persist.clear();
+    } catch (_) {}
   }
 
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
 
   // Notify active strategy (optional callbacks for strategy-level state tracking)
-  const activeStrat = _ema9vwapStrategy;
+  const activeStrat = _eng;
   if (typeof activeStrat.onTradeClosed === "function") activeStrat.onTradeClosed();
 }
 
@@ -1116,7 +1337,7 @@ async function onCandleClose(candle) {
   ptState.prevCandleMid  = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
   if (ptState.candles.length > 200) ptState.candles.shift();
 
-  const strategy = _ema9vwapStrategy;
+  const strategy = _eng;
   const { signal, reason, stopLoss, signalStrength, ...indicators } = strategy.getSignal(ptState.candles);
 
   // Cache the closed-candle stopLoss for every intra-candle tick (null for EMA9+VWAP) — avoids recomputing strategy on every tick
@@ -1152,15 +1373,15 @@ async function onCandleClose(candle) {
   if (!ptState._simMode) fetchLiveVix().catch(() => {});
   // OI buildup: sample futures OI each candle close (no-op unless an OI filter is
   // enabled; live only) so the series stays filled even on no-signal candles.
-  if (!ptState._simMode) await oiFilter.recordOiSample(candle.close);
-  const _vixDisplay = (vixFilter.getVixEnabled("ema9vwap") && !ptState._simMode) ? getCachedVix() : null;
+  if (!ptState._simMode) await (rt.oiApplies ? oiFilter.recordOiSample(candle.close) : null);   // NIFTY-futures OI — NIFTY only
+  const _vixDisplay = (_vixScoped(() => vixFilter.getVixEnabled("ema9vwap")) && !ptState._simMode) ? getCachedVix() : null;
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
   log(`   ${indicators.ema9!=null?`EMA9=${indicators.ema9} `:""}VWAP=${indicators.vwap!=null?indicators.vwap:"?"} band=[${indicators.vwapLower!=null?indicators.vwapLower:"?"}, ${indicators.vwapUpper!=null?indicators.vwapUpper:"?"}] σ=${indicators.stdev!=null?indicators.stdev:"?"}`);
-  log(`   Signal: ${signal} | VIX: ${!vixFilter.getVixEnabled("ema9vwap") ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
+  log(`   Signal: ${signal} | VIX: ${!_vixScoped(() => vixFilter.getVixEnabled("ema9vwap")) ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
   if (signal === "NONE" && !ptState.position) {
-    skipLogger.appendSkipLog("ema9vwap", {
+    skipLogger.appendSkipLog(MODE, {
       gate: "strategy",
       reason: reason || null,
       spot: candle.close,
@@ -1176,7 +1397,7 @@ async function onCandleClose(candle) {
   if (!ptState._simMode && !ptState.position && signal !== null) {
     const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
     notifySignal({
-      mode: "EMA9VWAP-PAPER",
+      mode: NOTIFY_MODE,
       signal,
       reason: reason ? reason.slice(0, 200) : "—",
       strength: signalStrength,
@@ -1192,7 +1413,7 @@ async function onCandleClose(candle) {
     const _optEntry = _p.optionEntryLtp ? `₹${_p.optionEntryLtp}` : "—";
     const _optNow   = ptState.optionLtp  ? `₹${ptState.optionLtp}`  : "—";
     const _optPnl   = (_p.optionEntryLtp && ptState.optionLtp)
-      ? ` (Δ₹${(ptState.optionLtp - _p.optionEntryLtp).toFixed(2)} × ${_p.qty || getLotQty()})`
+      ? ` (Δ₹${(ptState.optionLtp - _p.optionEntryLtp).toFixed(2)} × ${_p.qty || rt.lotQty()})`
       : "";
     log(`   Open ${_p.side} @ ₹${_p.spotAtEntry} | best=₹${_p.bestPrice||"—"} | est.PnL≈${_est}pt`);
     log(`   Option: entry=${_optEntry} now=${_optNow}${_optPnl}`);
@@ -1224,7 +1445,7 @@ async function onCandleClose(candle) {
       // Release this strategy's socket callback + mode; stop the shared socket
       // only if no other strategy is still using it.
       socketManager.removeCallback(CALLBACK_ID);
-      sharedSocketState.clearEma9Vwap();
+      rt.socketSlot.clear();
       if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
         socketManager.stop();
       }
@@ -1244,7 +1465,7 @@ async function onCandleClose(candle) {
   // `_skipSignal` is the shared writer so every row carries the same band context.
   const _skipSignal = (gate, reason, side) => {
     log(`🚫 [PAPER] Signal NOT taken — ${reason} | ${signal} @ ₹${candle.close}`);
-    skipLogger.appendSkipLog("ema9vwap", {
+    skipLogger.appendSkipLog(MODE, {
       gate, reason,
       spot: candle.close,
       signal, side,
@@ -1285,10 +1506,10 @@ async function onCandleClose(candle) {
     log(`📋 [PAPER] Signal — candle-close entry @ ₹${candle.close} | ${reason}`);
     let _oiTag = ""; // appended to the entry reason so the trade records its OI context
     // ── VIX filter: block entry in high-volatility regimes ──────────────────
-    const _vixCheck = await checkLiveVix("STRONG", { mode: "ema9vwap" });
+    const _vixCheck = await _vixScoped(() => checkLiveVix("STRONG", { mode: "ema9vwap" }));
     if (!_vixCheck.allowed) {
       log(`🌡️ [PAPER] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
-      skipLogger.appendSkipLog("ema9vwap", {
+      skipLogger.appendSkipLog(MODE, {
         gate: "vix",
         reason: _vixCheck.reason || null,
         spot: candle.close,
@@ -1298,12 +1519,12 @@ async function onCandleClose(candle) {
       return;
     }
     // ── OI + price buildup gate (live only) — block entries fighting a buildup ─
-    if (!ptState._simMode && oiFilter.getOiEnabled("ema9vwap")) {
+    if (!ptState._simMode && (rt.oiApplies && oiFilter.getOiEnabled(MODE))) {
       const _oiSide = signal === "BUY_CE" ? "CE" : "PE";
-      const _oi = await oiFilter.checkLiveOi(_oiSide, candle.close, { mode: "ema9vwap" });
+      const _oi = await oiFilter.checkLiveOi(_oiSide, candle.close, { mode: MODE });
       if (!_oi.allowed) {
         log(`📊 [PAPER] OI BLOCK — ${_oi.reason} | Signal: ${signal}`);
-        skipLogger.appendSkipLog("ema9vwap", {
+        skipLogger.appendSkipLog(MODE, {
           gate: "oi", reason: _oi.reason || null, spot: candle.close, signal,
           side: _oiSide, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
           path: "candle-close",
@@ -1316,7 +1537,7 @@ async function onCandleClose(candle) {
     const _sideForSkip = signal === "BUY_CE" ? "CE" : "PE";
     { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [PAPER] ${_pf.reason} — candle-close entry blocked (${signal})`); _skipSignal("portfolio_cap", _pf.reason || "portfolio-wide daily loss cap hit", _sideForSkip); return; } }
     const side = signal === "BUY_CE" ? "CE" : "PE";
-    const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
+    const INSTR = rt.instrumentName(); // top-level constant
 
     // Set _entryPending BEFORE the async call so that ticks arriving while symbol lookup
     // is in-flight do not fire a second entry.
@@ -1326,7 +1547,10 @@ async function onCandleClose(candle) {
 
     let symbolPromise;
     if (INSTR === "NIFTY_FUTURES") {
-      symbolPromise = getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }));
+      // NIFTY in futures mode keeps its own call; the NIFTY_FUT market resolves the month future.
+      symbolPromise = rt.home
+        ? getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }))
+        : rt.resolveEntrySymbol(candle.close, side);
     } else {
       const cachedCs = getCachedSymbol(side, candle.close);
       if (cachedCs) {
@@ -1334,7 +1558,7 @@ async function onCandleClose(candle) {
         symbolPromise = Promise.resolve(cachedCs);
       } else {
         log(`🔍 [PAPER] Cache miss — live symbol lookup`);
-        symbolPromise = validateAndGetOptionSymbol(candle.close, side, 'ema9vwap');
+        symbolPromise = _resolveSym(candle.close, side);
       }
     }
 
@@ -1344,7 +1568,7 @@ async function onCandleClose(candle) {
         log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${candle.close} | ${reason}`);
         log(`📌 Futures symbol: ${symbol}`);
       } else {
-        const strikeType = Math.abs(strike - Math.round(candle.close / 50) * 50) === 0 ? "ATM" : "ITM";
+        const strikeType = Math.abs(strike - rt.atmOf(candle.close)) === 0 ? "ATM" : "ITM";
         log(`🎯 [PAPER] ENTRY ${side} @ ₹${candle.close} | ${reason}`);
         log(`📌 ${strikeType} Option: ${symbol} (Spot: ${candle.close} → Strike: ${strike} | Expiry: ${expiry})`);
       }
@@ -1355,13 +1579,17 @@ async function onCandleClose(candle) {
         return;
       }
 
+      let _entryQuote = null;   // the quote another market fills its entry at (pairRuntime.entryFill)
+
       // ── Bid-ask spread guard (options only, live mode only) ──
+      // Another market's limit is its own <PAIR>_MAX_SPREAD_PTS (NIFTY: the guard's default).
       if (!ptState._simMode && INSTR !== "NIFTY_FUTURES") {
         const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
-        const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+        const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask, rt.maxSpreadPts());
+        if (_q && !rt.home) _entryQuote = { ltp: _q.ltp, bid: _q.bid, ask: _q.ask, at: Date.now() };
         if (!_sp.ok) {
           log(`⏭️ [PAPER] SKIP entry — spread too wide (${_sp.reason})`);
-          skipLogger.appendSkipLog("ema9vwap", {
+          skipLogger.appendSkipLog(MODE, {
             gate: "spread",
             reason: _sp.reason || null,
             spot: candle.close,
@@ -1381,12 +1609,13 @@ async function onCandleClose(candle) {
       // would strand an orphan position and its capital block.
       if (ptState.position || !ptState.running || _entryGen !== _sid) { ptState._entryPending = false; clearTimeout(_ptEntryTimer); return; }
 
-      simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
+      simulateBuy(symbol, side, rt.lotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
         signalStrength: signalStrength || "STRONG",
         ema9AtEntry:      indicators.ema9      != null ? indicators.ema9      : null,
         vwapAtEntry:      indicators.vwap      != null ? indicators.vwap      : null,
         vwapUpperAtEntry: indicators.vwapUpper != null ? indicators.vwapUpper : null,
         vwapLowerAtEntry: indicators.vwapLower != null ? indicators.vwapLower : null,
+        entryQuote:       _entryQuote,
       });
       ptState._entryPending = false;
       clearTimeout(_ptEntryTimer);
@@ -1452,7 +1681,7 @@ function onTick(tick) {
 
   const ltp = tick.ltp;
   const bar = ptState.currentBar;
-  const strategy = _ema9vwapStrategy; // must be declared here for intra-tick entry + exits below
+  const strategy = _eng; // must be declared here for intra-tick entry + exits below
 
   // ── Intra-candle entry: fires on both 5-min AND 15-min resolution ──────────
   // For 15-min: we MUST check intra-candle because a 15-min window is too wide to wait
@@ -1547,13 +1776,13 @@ function onTick(tick) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       // Skip VIX filter in simulation mode
       const _vixIntraVal = ptState._simMode ? null : getCachedVix();
-      const _vixIntraBlocked = !ptState._simMode && vixFilter.getVixEnabled("ema9vwap")
-        && _vixIntraVal != null && _vixIntraVal > vixFilter.getVixMaxEntry("ema9vwap");
+      const _vixIntraBlocked = !ptState._simMode && _vixScoped(() => vixFilter.getVixEnabled("ema9vwap"))
+        && _vixIntraVal != null && _vixIntraVal > _vixScoped(() => vixFilter.getVixMaxEntry("ema9vwap"));
       if (_vixIntraBlocked) {
         if (!ptState._vixBlockLoggedCandle || ptState._vixBlockLoggedCandle !== currentBarTime) {
           ptState._vixBlockLoggedCandle = currentBarTime;
           log(`🌡️ [PAPER] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal}`);
-          skipLogger.appendSkipLog("ema9vwap", {
+          skipLogger.appendSkipLog(MODE, {
             gate: "vix",
             reason: `VIX ${_vixIntraVal.toFixed(1)} too high`,
             spot: ltp,
@@ -1568,14 +1797,14 @@ function onTick(tick) {
       //    handler; relies on the per-candle background recordOiSample to keep fresh. ──
       let _oiTag = "";
       let _oiIntraBlocked = false;
-      if (!ptState._simMode && oiFilter.getOiEnabled("ema9vwap")) {
-        const _oiIntra = oiFilter.checkCachedOi(side, { mode: "ema9vwap" });
+      if (!ptState._simMode && (rt.oiApplies && oiFilter.getOiEnabled(MODE))) {
+        const _oiIntra = oiFilter.checkCachedOi(side, { mode: MODE });
         if (!_oiIntra.allowed) {
           _oiIntraBlocked = true;
           if (!ptState._oiBlockLoggedCandle || ptState._oiBlockLoggedCandle !== currentBarTime) {
             ptState._oiBlockLoggedCandle = currentBarTime;
             log(`📊 [PAPER] OI BLOCK (intra) — ${_oiIntra.reason} | Signal: ${signal}`);
-            skipLogger.appendSkipLog("ema9vwap", {
+            skipLogger.appendSkipLog(MODE, {
               gate: "oi", reason: _oiIntra.reason || null, spot: ltp, side,
               oi: _oiIntra.oi ?? null, deltaOi: _oiIntra.deltaOi ?? null, regime: _oiIntra.regime ?? null,
               signal, path: "intra-candle",
@@ -1588,10 +1817,10 @@ function onTick(tick) {
       // Capital pre-check — a refused entry must not pay for a symbol lookup and a
       // Fyers quote on every tick of the bar. Same gate simulateBuy runs; muted
       // repeats stay refused without re-logging.
-      const _capIntra = capitalPool.gate("ema9vwap", getLotQty() * capitalPool.estimatedPremium(), { side, qty: getLotQty() }, { sim: (ptState._simMode || ptState._simSession) });
+      const _capIntra = capitalPool.gate(MODE, rt.lotQty() * capitalPool.estimatedPremium(), { side, qty: rt.lotQty() }, { sim: (ptState._simMode || ptState._simSession) });
       if (!_capIntra.ok && !_capIntra.muted) {
         log(`❌ [PAPER] Intra-candle entry REFUSED — ${_capIntra.reason}`);
-        skipLogger.appendSkipLog("ema9vwap", { gate: "capital", reason: _capIntra.reason, spot: ltp, side, signal, path: "intra-candle", cost: _capIntra.cost, available: _capIntra.available });
+        skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _capIntra.reason, spot: ltp, side, signal, path: "intra-candle", cost: _capIntra.cost, available: _capIntra.available });
       }
       if (!_oiIntraBlocked && _capIntra.ok) {
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
@@ -1599,15 +1828,19 @@ function onTick(tick) {
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
       const _sid = _entryGen;
       log(`⚡ [PAPER] Intra-candle ${TRADE_RES >= 15 ? "STRONG " : ""}entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
-      const INSTR = instrumentConfig.INSTRUMENT; // top-level constant — no inline require needed
+      const INSTR = rt.instrumentName(); // top-level constant — no inline require needed
 
       let symbolPromise;
       if (ptState._simMode) {
         // In simulation mode, use a dummy option symbol (no broker API needed)
-        const strike = Math.round(ltp / 50) * 50;
-        symbolPromise = Promise.resolve({ symbol: `NSE:NIFTY-SIM-${strike}${side}`, expiry: "SIM", strike, invalid: false });
+        const strike = rt.atmOf(ltp);
+        const _simStem = rt.home ? "NSE:NIFTY" : (rt.isMcx ? `MCX:${rt.market().contract}` : `${rt.U().exchange}:${rt.U().optPrefix}`);
+        symbolPromise = Promise.resolve({ symbol: `${_simStem}-SIM-${strike}${side}`, expiry: "SIM", strike, invalid: false });
       } else if (INSTR === "NIFTY_FUTURES") {
-        symbolPromise = getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }));
+        // NIFTY in futures mode keeps its own call; the NIFTY_FUT market resolves the month future.
+        symbolPromise = rt.home
+          ? getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }))
+          : rt.resolveEntrySymbol(ltp, side);
       } else {
         const cached = getCachedSymbol(side, ltp);
         if (cached) {
@@ -1615,7 +1848,7 @@ function onTick(tick) {
           symbolPromise = Promise.resolve(cached);
         } else {
           log(`🔍 [PAPER] Cache miss — live symbol lookup (spot moved or first trade of session)`);
-          symbolPromise = validateAndGetOptionSymbol(ltp, side, 'ema9vwap');
+          symbolPromise = _resolveSym(ltp, side);
         }
       }
 
@@ -1625,7 +1858,7 @@ function onTick(tick) {
           log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${ltp} | ${reason}`);
           log(`📌 Futures symbol: ${symbol}`);
         } else {
-          const strikeType = Math.abs(strike - Math.round(ltp / 50) * 50) === 0 ? "ATM" : "ITM";
+          const strikeType = Math.abs(strike - rt.atmOf(ltp)) === 0 ? "ATM" : "ITM";
           log(`🎯 [PAPER] ENTRY ${side} @ ₹${ltp} | ${reason}`);
           log(`📌 ${strikeType} Option: ${symbol} (Spot: ${ltp} → Strike: ${strike} | Expiry: ${expiry})`);
         }
@@ -1636,13 +1869,16 @@ function onTick(tick) {
           return;
         }
 
+        let _entryQuote = null;   // the quote another market fills its entry at (pairRuntime.entryFill)
+
         // ── Bid-ask spread guard (options only, live mode only) ──
         if (!ptState._simMode && INSTR !== "NIFTY_FUTURES") {
           const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
-          const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+          const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask, rt.maxSpreadPts());
+          if (_q && !rt.home) _entryQuote = { ltp: _q.ltp, bid: _q.bid, ask: _q.ask, at: Date.now() };
           if (!_sp.ok) {
             log(`⏭️ [PAPER] SKIP intra-candle entry — spread too wide (${_sp.reason})`);
-            skipLogger.appendSkipLog("ema9vwap", {
+            skipLogger.appendSkipLog(MODE, {
               gate: "spread",
               reason: _sp.reason || null,
               spot: ltp,
@@ -1661,12 +1897,13 @@ function onTick(tick) {
         // /stop (or a stop + restart) may have run while we awaited — see _entryGen.
         if (ptState.position || !ptState.running || _entryGen !== _sid) { ptState._entryPending = false; clearTimeout(_ptIntraTimer); return; }
 
-        simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
+        simulateBuy(symbol, side, rt.lotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
           signalStrength: signalStrength || "STRONG",
           ema9AtEntry:      indicators.ema9      != null ? indicators.ema9      : null,
           vwapAtEntry:      indicators.vwap      != null ? indicators.vwap      : null,
           vwapUpperAtEntry: indicators.vwapUpper != null ? indicators.vwapUpper : null,
           vwapLowerAtEntry: indicators.vwapLower != null ? indicators.vwapLower : null,
+          entryQuote:       _entryQuote,
         }); // isIntraCandle=true
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);
@@ -1698,6 +1935,14 @@ function onTick(tick) {
     else                      { if (!_exPos.bestPrice || ltp < _exPos.bestPrice) _exPos.bestPrice = ltp; }
     // Peak option premium (long CE/PE both profit on premium rise) — the profit lock reads it.
     if (ptState.optionLtp && ptState.optionLtp > (_exPos.bestOptionLtp || 0)) _exPos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));
+    // Trade journal (observer): same favPts as the MFE/MAE above, a gross running
+    // P&L (premium move × qty; futures: points × qty), then the exit level.
+    const _jFut = rt.instrumentName() === "NIFTY_FUTURES";
+    const _jQty = _exPos.qty || 0;
+    const _jPnl = _jFut ? _favPts * _jQty
+      : (_exPos.optionEntryLtp && ptState.optionLtp ? (ptState.optionLtp - _exPos.optionEntryLtp) * _jQty : null);
+    tradeJournal.onTick(_exPos, { favPts: _favPts, pnlRs: _jPnl, spot: ltp, ltp: ptState.optionLtp, nowMs: simNow() });
+    _journalStop(_exPos, ltp, _jFut);
   }
 
   // ── Global profit lock (shared across every strategy — see tradeGuards) ──
@@ -1715,7 +1960,7 @@ function onTick(tick) {
   }
   // Futures: no option premium, so the same stop runs on the index move
   // (tradeGuards.checkFuturesStop). Entry/exit are index levels (see simulateSell).
-  if (ptState.position && instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" && ltp > 0) {
+  if (ptState.position && rt.instrumentName() === "NIFTY_FUTURES" && ltp > 0) {
     const _fsPos = ptState.position;
     const _fsMsg = tradeGuards.checkFuturesStop(_fsPos.side, _fsPos.entryPrice, ltp, _fsPos.mfeSpotPts);
     if (_fsMsg) {
@@ -1741,7 +1986,7 @@ function saveSession() {
     // stopSession(). Every other date in this file already uses the IST locale form.
     date:        new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     strategy:    ACTIVE,
-    instrument:  instrumentConfig.INSTRUMENT,
+    instrument:  rt.instrumentName(),
     startTime:   ptState.sessionStart,
     endTime:     istNow(),
     trades:      ptState.sessionTrades,
@@ -1773,7 +2018,7 @@ function saveSession() {
 
   savePaperData(data);
   ptState._pnlSaved = true;   // same step the file's totalPnl gained it
-  capitalPool.sessionSaved("ema9vwap");
+  capitalPool.sessionSaved(MODE);
   log(`💾 Session saved. Running capital: ₹${data.capital} | Total PnL: ₹${data.totalPnl}`);
 
   // ── Daily Report + Telegram EOD ──────────────────────────────────────────────
@@ -1782,12 +2027,19 @@ function saveSession() {
   return session;
 }
 
+// TG_EMA9VWAP_DAYREPORT gates every market's report; a non-home pair also needs
+// its own <PAIR>_MODE_ENABLED on (a pair has no Telegram keys of its own).
+function _canSendDayReport() {
+  if (!rt.home && !rt.enabled()) return false;
+  return canSend("TG_EMA9VWAP_DAYREPORT");
+}
+
 function generatePaperDailyReport(trades, sessionPnl) {
   try {
     if (!trades || trades.length === 0) {
-      if (canSend("TG_EMA9VWAP_DAYREPORT")) {
+      if (_canSendDayReport()) {
         sendTelegram([
-          `📄 EMA9+VWAP PAPER — DAY REPORT`,
+          `📄 ${TITLE} PAPER — DAY REPORT`,
           `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })}`,
           ``,
           `No trades taken today.`,
@@ -1845,9 +2097,9 @@ function generatePaperDailyReport(trades, sessionPnl) {
       .map(([label, g]) => `  ${label}: ${g.count}x WR${((g.wins/g.count)*100).toFixed(0)}% ₹${g.pnl.toFixed(0)}`)
       .join("\n");
 
-    if (canSend("TG_EMA9VWAP_DAYREPORT")) {
+    if (_canSendDayReport()) {
       sendTelegram([
-        `📄 EMA9+VWAP PAPER — DAY REPORT`,
+        `📄 ${TITLE} PAPER — DAY REPORT`,
         `📅 ${dateStr}`,
         ``,
         `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
@@ -1893,16 +2145,25 @@ router.get("/start", async (req, res) => {
     return res.status(400).json({ success: false, error: "Paper trading already running." });
   }
 
-  if (sharedSocketState.isEma9VwapActive()) {
+  // Every non-home pair ships OFF: its own switch (<PAIR>_MODE_ENABLED) must be on.
+  // NIFTY's start is unchanged.
+  if (!rt.home && !rt.enabled()) {
+    return res.status(403).json({ success: false, error: `${TITLE} is switched off. Turn on ${pair.enabledKey} in Settings → ${rt.market().label} first.` });
+  }
+
+  if (rt.socketSlot.isActive()) {
     return res.status(400).json({
       success: false,
-      error: "Cannot start paper trading — another EMA9VWAP session is already active.",
+      error: rt.home
+        ? "Cannot start paper trading — another EMA9VWAP session is already active."
+        : `Cannot start paper trading — another ${TITLE} session is already active.`,
     });
   }
 
 
   // ── NEW: Trading session validation (holidays + time check) ────────────────
-  const tradingCheck = await isTradingAllowed();
+  // This market's exchange calendar (NSE / BSE holidays; MCX weekends).
+  const tradingCheck = rt.home ? await isTradingAllowed() : await rt.isTradingAllowed();
   if (!tradingCheck.allowed) {
     return res.status(400).json({
       success: false,
@@ -1922,11 +2183,19 @@ router.get("/start", async (req, res) => {
     });
   }
 
-  const strategy    = _ema9vwapStrategy;
+  const strategy    = _eng;
   // Reset strategy module-level state if it has a reset hook
   if (typeof strategy.reset === "function") strategy.reset();
   const accessToken = `${process.env.APP_ID}:${process.env.ACCESS_TOKEN}`;
-  const subscribeSymbol = "NSE:NIFTY50-INDEX";
+  let subscribeSymbol = SPOT();             // "NSE:NIFTY50-INDEX" on NIFTY
+  if (rt.isMcx) {
+    // MCX has no index: the candles are the series' future, read from the
+    // Fyers MCX symbol master (downloaded at most once a day).
+    try { subscribeSymbol = await rt.resolveSpotSymbol(); }
+    catch (e) { return res.status(400).json({ success: false, error: `${TITLE}: no ${rt.market().label} future resolved — ${e.message}` }); }
+  }
+  if (!subscribeSymbol) return res.status(400).json({ success: false, error: `${TITLE}: no spot symbol for ${rt.market().label}` });
+  _spotSym = subscribeSymbol;
   const data        = loadPaperData();
   // IST date — toISOString() gives UTC which is 5:30 behind IST and returns wrong date before 5:30 AM UTC
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // "YYYY-MM-DD" in IST
@@ -1943,7 +2212,7 @@ router.get("/start", async (req, res) => {
   _entryGen++;
   // Safety net: a block stranded by a previous session (position never exited)
   // would otherwise shrink the shared pool for the rest of the process.
-  capitalPool.clear("ema9vwap");
+  capitalPool.clear(MODE);
   ptState._simSession   = false;   // a real session — persistence is live again
   // The boot reconcile in app.js deliberately RETAINS this snapshot when the broker
   // book came back empty (empty is indistinguishable from a swallowed API error), so
@@ -1951,14 +2220,16 @@ router.get("/start", async (req, res) => {
   // the file — but doing it silently threw away that pending check. Say so loudly.
   try {
     const _pp = require("../utils/positionPersist");
-    const _stale = _pp.loadEma9VwapPosition();
+    // NIFTY: its own named snapshot; another market: its pair's snapshot.
+    const _stale = rt.home ? _pp.loadEma9VwapPosition() : _pp.loadPairPosition(MODE);
     if (_stale && _stale.position) {
       const _p = _stale.position;
       const _msg = `⚠️ [PAPER] Discarding a crash-recovery snapshot at session start: ${_p.side} ${_p.symbol} entry ₹${_p.entryPrice} qty ${_p.qty}, saved ${_stale.savedAt}. If the boot check could not read the broker book, VERIFY at the broker — this was the last record of it.`;
       log(_msg);
       try { if (!ptState._simMode) sendTelegram(_msg); } catch (_) {}
     }
-    _pp.clearEma9VwapPosition();
+    if (rt.home) _pp.clearEma9VwapPosition();
+    else rt.persist.clear();
   } catch (_) {}
   ptState.sessionTrades = [];
   ptState._staleSession = false;
@@ -1991,50 +2262,63 @@ router.get("/start", async (req, res) => {
   _tradesMapCache = []; _tradesMapCount = 0; // clear cached trades for poll
   stopOptionPolling();
 
-  // Expiry day check
-  if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-    const { isExpiryDay } = require("../services/marketData");
-    const isExpiry = await isExpiryDay();
+  // Expiry day check. NIFTY keeps the shared TRADE_EXPIRY_DAY_ONLY switch;
+  // another market reads its own <PAIR>_EXPIRY_DAY_ONLY (else NIFTY's
+  // EMA9VWAP_EXPIRY_DAY_ONLY) against THAT market's expiry calendar.
+  if (rt.home) {
+    if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      const { isExpiryDay } = require("../services/marketData");
+      const isExpiry = await isExpiryDay();
+      if (!isExpiry) ptState._expiryDayBlocked = true;
+      log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+    }
+  } else if (rt.expiryDayOnly()) {
+    const isExpiry = rt.isExpiryDay();
     if (!isExpiry) ptState._expiryDayBlocked = true;
-    log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+    log(`📅 [PAPER] Expiry-only mode (${rt.market().label}): ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not this market's expiry day — entries blocked"}`);
   }
 
   log(`\n════════════════════════════════════════════════════════════════════`);
   log(`🟡 [PAPER] Paper trading started`);
   log(`   Resolution : ${getTradeResolution()}-min candles (TRADE_RESOLUTION in .env)`);
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
-  log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
+  log(`   Instrument : ${rt.instrumentName()}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
   {
-    const _emaP  = Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD || "9", 10) || 9);
-    const _mult  = isNaN(parseFloat(process.env.EMA9VWAP_BAND_MULT)) ? 1 : parseFloat(process.env.EMA9VWAP_BAND_MULT);
-    const _entryTiming = (process.env.EMA9VWAP_INTRACANDLE_ENTRY||"false").toLowerCase()==="true" ? "intra-candle" : "on candle close";
-    log(`   Entry       : CE = EMA${_emaP} crosses ABOVE VWAP+${_mult}σ (top band) | PE = EMA${_emaP} crosses BELOW VWAP−${_mult}σ (bottom band) (${_entryTiming}; VWAP anchored ${process.env.EMA9VWAP_VWAP_SESSION_START||"09:15"})`);
+    // A pair's own keys, else NIFTY's (pairs.envGet) — the values its engine reads.
+    const _emaP  = Math.max(2, parseInt(_env(`${PREFIX}_EMA_PERIOD`) || "9", 10) || 9);
+    const _mult  = isNaN(parseFloat(_bandMultRaw())) ? 1 : parseFloat(_bandMultRaw());
+    const _entryTiming = _intraCandleEntryEnabled() ? "intra-candle" : "on candle close";
+    log(`   Entry       : CE = EMA${_emaP} crosses ABOVE VWAP+${_mult}σ (top band) | PE = EMA${_emaP} crosses BELOW VWAP−${_mult}σ (bottom band) (${_entryTiming}; VWAP anchored ${_vwapAnchorRaw()})`);
   }
   {
     const _stopLbl = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
     log(`   Exit        : global profit lock ${tradeGuards.PROFIT_LOCK_ENABLED ? "(on)" : "(OFF — no automatic exit)"} | session close ${_stopLbl}`);
   }
   // Print the RESOLVED per-strategy values actually in force (_refreshConfig has run).
-  log(`   Entry guards: VIX ${vixFilter.getVixEnabled("ema9vwap") ? ("≤" + vixFilter.getVixMaxEntry("ema9vwap")) : "off"} | OI ${oiFilter.getOiEnabled("ema9vwap") ? "on" : "off"}`);
+  log(`   Entry guards: VIX ${_vixScoped(() => vixFilter.getVixEnabled("ema9vwap")) ? ("≤" + _vixScoped(() => vixFilter.getVixMaxEntry("ema9vwap"))) : "off"} | OI ${(rt.oiApplies && oiFilter.getOiEnabled(MODE)) ? "on" : "off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
   // Telegram: session started + checklist (same as live trade)
   const _ptChecks = { fyers: { ok: false, msg: "" }, symbol: { ok: false, msg: "" } };
   try {
     const { getLiveSpot, validateAndGetOptionSymbol } = require("../services/marketData");
+    // MCX has no index quote for getLiveSpot — its checklist reads the future.
+    const _spotP = rt.isMcx
+      ? require("../services/marketData").getQuotes([subscribeSymbol]).then(r => (r && r.d && r.d[0] && r.d[0].v && r.d[0].v.lp) || 0)
+      : (rt.home ? getLiveSpot() : getLiveSpot(rt.underlyingKey));
     const [spotResult] = await Promise.allSettled([
-      getLiveSpot().then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
+      _spotP.then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
     ]);
     if (spotResult.status === "fulfilled") {
       const spot = spotResult.value;
-      const atm  = Math.round(spot / 50) * 50;
-      _ptChecks.fyers = { ok: true, msg: `NIFTY ₹${spot} | ATM ${atm}` };
+      const atm  = rt.atmOf(spot);
+      _ptChecks.fyers = { ok: true, msg: rt.isFutures ? `${SPOT_LABEL} ₹${spot}` : `${SPOT_LABEL} ₹${spot} | ATM ${atm}` };
       try {
-        const [ce, pe] = await Promise.all([
+        const [ce, pe] = await Promise.all(rt.home ? [
           validateAndGetOptionSymbol(spot, "CE", 'ema9vwap'),
           validateAndGetOptionSymbol(spot, "PE", 'ema9vwap'),
-        ]);
+        ] : [rt.resolveEntrySymbol(spot, "CE"), rt.resolveEntrySymbol(spot, "PE")]);
         if (!ce.invalid && ce.symbol) {
           _ptChecks.symbol = { ok: true, msg: `${ce.symbol.split(":")[1]} / ${pe.symbol.split(":")[1]}` };
         } else {
@@ -2048,15 +2332,15 @@ router.get("/start", async (req, res) => {
 
   const _ptAllOk = _ptChecks.fyers.ok && _ptChecks.symbol.ok;
   notifyStarted({
-    mode: "EMA9VWAP-PAPER",
+    mode: NOTIFY_MODE,
     text: [
-      `${_ptAllOk ? "✅" : "⚠️"} EMA9+VWAP PAPER — STARTED`,
+      `${_ptAllOk ? "✅" : "⚠️"} ${TITLE} PAPER — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
       ``,
       `Strategy  : ${ACTIVE}`,
-      `Instrument: ${instrumentConfig.INSTRUMENT}`,
+      `Instrument: ${rt.instrumentName()}`,
       `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
       `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
       ``,
@@ -2113,16 +2397,16 @@ router.get("/start", async (req, res) => {
   }
 
   // Tick-recorder session-start snapshot
-  ptState._sessionId = `ema9vwap-paper:${Date.now()}`;
+  ptState._sessionId = `${rt.replayMode}:${Date.now()}`;
   try {
     tickRecorder.recordSessionStart({
-      mode: "ema9vwap-paper",
+      mode: rt.replayMode,
       sessionId: ptState._sessionId,
       settings: tickRecorder.snapshotSettings(),
       warmup:   ptState.candles.map(c => ({ ...c })),
       vix:      getCachedVix(),
       meta: {
-        instrument:       instrumentConfig.INSTRUMENT,
+        instrument:       rt.instrumentName(),
         resolutionMin:    getTradeResolution(),
         spotSymbol:       subscribeSymbol,
         sessionStartISO:  ptState.sessionStart,
@@ -2148,22 +2432,24 @@ router.get("/start", async (req, res) => {
   const _stopLabelAtStart = String(Math.floor(_stopMinsAtStart/60)).padStart(2,"0") + ":" + String(_stopMinsAtStart%60).padStart(2,"0");
   scheduleAutoStop((msg) => {
     log(msg);
-    if (ptState.position && ptState.lastTickPrice) {
-      simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
+    // Another market also squares off on the last bar's close when no tick is on hand.
+    const _asPx = ptState.lastTickPrice || (!rt.home && ptState.currentBar ? ptState.currentBar.close : null);
+    if (ptState.position && _asPx) {
+      simulateSell(_asPx, "Auto-stop " + _stopLabelAtStart, _asPx);
     }
     // No tick price → the square-off above was skipped; free the capital block.
-    if (ptState.position) capitalPool.clear("ema9vwap");
+    if (ptState.position) capitalPool.clear(MODE);
     ptState.running = false;
     stopOptionPolling();
     try {
       tickRecorder.recordSessionStop({
-        mode: "ema9vwap-paper",
+        mode: rt.replayMode,
         sessionId: ptState._sessionId || null,
         reason: "auto_stop_eod",
       });
     } catch (_) {}
     socketManager.removeCallback(CALLBACK_ID);
-    sharedSocketState.clearEma9Vwap();
+    rt.socketSlot.clear();
     if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
       socketManager.stop();
     }
@@ -2175,22 +2461,25 @@ router.get("/start", async (req, res) => {
   // Start the socket manager — single socket, spot-only to begin
   // Secondary socket consumer — register a fan-out callback so we never overwrite
   // EMA_RSI_ST's primary onTick. Start the socket only if nobody else has.
+  // NIFTY registers unbound (socketManager's default NIFTY 50 feed, as it always
+  // did); another market binds its callback to its own spot / future symbol.
+  const _cbSym = rt.home ? undefined : subscribeSymbol;
   if (socketManager.isRunning()) {
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
+    socketManager.addCallback(CALLBACK_ID, onTick, log, _cbSym);
   } else {
     socketManager.start(subscribeSymbol, () => {}, log); // dummy primary callback
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
+    socketManager.addCallback(CALLBACK_ID, onTick, log, _cbSym);
   }
-  sharedSocketState.setEma9VwapActive("EMA9VWAP_PAPER");
+  rt.socketSlot.set();
 
   return res.json({
     success:     true,
     message:     "Paper trading started! No real orders will be placed.",
     strategy:    { key: ACTIVE, name: strategy.NAME },
-    instrument:  instrumentConfig.INSTRUMENT,
-    lotQty:      getLotQty(),
+    instrument:  rt.instrumentName(),
+    lotQty:      rt.lotQty(),
     capital:     data.capital,
-    monitorAt:   "GET /ema9vwap-paper/status",
+    monitorAt:   `GET ${ROUTE}/status`,
   });
 });
 
@@ -2208,7 +2497,7 @@ router.get("/stop", async (req, res) => {
     simulateSell(ptState.currentBar.close, "Manual stop", ptState.currentBar.close);
   }
   // No bar yet → the square-off above was skipped; free the capital block.
-  if (ptState.position) capitalPool.clear("ema9vwap");
+  if (ptState.position) capitalPool.clear(MODE);
 
   stopOptionPolling();
   // Stop tick simulator if in sim mode, otherwise stop socket
@@ -2220,7 +2509,7 @@ router.get("/stop", async (req, res) => {
     socketManager.removeCallback(CALLBACK_ID);
   }
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-  sharedSocketState.clearEma9Vwap();
+  rt.socketSlot.clear();
   if (!ptState._simMode && !sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
   }
@@ -2228,7 +2517,7 @@ router.get("/stop", async (req, res) => {
 
   try {
     tickRecorder.recordSessionStop({
-      mode: "ema9vwap-paper",
+      mode: rt.replayMode,
       sessionId: ptState._sessionId || null,
       reason: "user_stop",
     });
@@ -2242,7 +2531,7 @@ router.get("/stop", async (req, res) => {
     success:  true,
     message:  "Paper trading stopped. Session saved.",
     session,
-    viewHistory: "GET /ema9vwap-paper/history",
+    viewHistory: `GET ${ROUTE}/history`,
   });
 });
 
@@ -2265,7 +2554,7 @@ router.get("/exit", (req, res) => {
 
   const exitSpot   = ptState.currentBar ? ptState.currentBar.close : (ptState.lastTickPrice || 0);
   const exitOption = ptState.optionLtp || null;
-  log(`🖐️ [PAPER] MANUAL EXIT triggered by user | NIFTY spot: ₹${exitSpot} | Option LTP: ${exitOption ? "₹" + exitOption : "N/A"}`);
+  log(`🖐️ [PAPER] MANUAL EXIT triggered by user | ${SPOT_LABEL} spot: ₹${exitSpot} | Option LTP: ${exitOption ? "₹" + exitOption : "N/A"}`);
 
   // ── Block re-entry for 1 full candle after manual exit ──────────────────────
   ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
@@ -2304,8 +2593,9 @@ router.post("/manualEntry", async (req, res) => {
   // Get option symbol
   const _sid = _entryGen;
   try {
-    const { validateAndGetOptionSymbol } = require("../config/instrument");
-    const optResult = await validateAndGetOptionSymbol(spot, side, 'ema9vwap');
+    // NIFTY: instrument.validateAndGetOptionSymbol exactly; another market resolves
+    // its own contract (options, or the month future on NIFTY_FUT).
+    const optResult = await _resolveSym(spot, side);
     // /stop (or a stop + restart) may have run during the lookup — see _entryGen.
     if (ptState.position || !ptState.running || _entryGen !== _sid) {
       return res.status(409).json({ success: false, error: "Session stopped or position opened during symbol lookup — entry dropped" });
@@ -2321,7 +2611,7 @@ router.post("/manualEntry", async (req, res) => {
       return res.status(409).json({ success: false, error: why });
     }
     const symbol = optResult.symbol;
-    const qty = getLotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
+    const qty = rt.lotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
 
     log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | Symbol: ${symbol}`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user`, null, spot, true);
@@ -2366,7 +2656,7 @@ function buildSessionTradeRows(trades, inr) {
     const entryNifty  = t.spotAtEntry  || t.entryPrice;
     const entryOption = t.optionEntryLtp;
     const entryCell   =
-      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
+      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">" + SPOT_LABEL + "</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(entryNifty) + "</div>" +
       "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
       "<div style=\"font-weight:700;color:#60a5fa;\">" + (entryOption ? inr(entryOption) : "—") + "</div>" +
@@ -2380,7 +2670,7 @@ function buildSessionTradeRows(trades, inr) {
       : null;
     const ptColor    = optPtsDiff === null ? "#8ba1c2" : optPtsDiff >= 0 ? "#10b981" : "#ef4444";
     const exitCell   =
-      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
+      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">" + SPOT_LABEL + "</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(exitNifty) + "</div>" +
       "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
       "<div style=\"font-weight:700;color:#60a5fa;\">" + (exitOption ? inr(exitOption) : "—") + "</div>" +
@@ -2441,7 +2731,7 @@ router.get("/status/chart-data", async (req, res) => {
     // candles for the trades' day so the chart draws them with their markers.
     let srcCandles = ptState.candles;
     if (!ptState.running && srcCandles.length === 0 && (ptState.sessionTrades || []).length > 0) {
-      srcCandles = await chartBackfill.candlesForRestoredTrades("NSE:NIFTY50-INDEX", TRADE_RES, ptState.sessionTrades);
+      srcCandles = await chartBackfill.candlesForRestoredTrades(SPOT(), TRADE_RES, ptState.sessionTrades);
     }
     // Closed candles + the currently forming bar
     const candles = srcCandles.map(c => ({
@@ -2465,7 +2755,7 @@ router.get("/status/chart-data", async (req, res) => {
 
     // EMA9 overlay (close) — the strategy's only EMA input (crosses the VWAP ±σ band).
     // Period is EMA9VWAP_EMA_PERIOD (default 9) — the same key the strategy module reads.
-    const EMA_FASTEST = Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD || "9", 10) || 9);
+    const EMA_FASTEST = Math.max(2, parseInt(_env(`${PREFIX}_EMA_PERIOD`) || "9", 10) || 9);
     let ema9Series = [];
     const _emaLine = (period) => {
       const out = [];
@@ -2483,7 +2773,7 @@ router.get("/status/chart-data", async (req, res) => {
     // VWAP + σ bands (session-anchored, HLC3) — the strategy's defining indicator.
     let vwapLine = [], vwapUpper = [], vwapLower = [];
     try {
-      const _series = _ema9vwapStrategy.vwapSeries(candles);
+      const _series = _eng.vwapSeries(candles);
       for (let i = 0; i < _series.length; i++) {
         const s = _series[i];
         if (!s) continue;
@@ -2537,7 +2827,7 @@ router.get("/status/chart-data", async (req, res) => {
       armedSide:    ptState._armedSignal ? ptState._armedSignal.side : null,
       ema9: ema9Series,
       vwap: vwapLine, vwapUpper, vwapLower,
-      vwapBandMult: parseFloat(process.env.EMA9VWAP_BAND_MULT || "1"),
+      vwapBandMult: parseFloat(_bandMultRaw()),
       emaFastest: EMA_FASTEST });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2554,18 +2844,18 @@ router.get("/status/data", (req, res) => {
     const data     = loadPaperData();
 
     // Unrealised PnL (mirrors /status logic, minus charges)
-    const _isFutPt = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    const _isFutPt = rt.instrumentName() === "NIFTY_FUTURES";
     let unrealisedPnl = 0;
     let pnlSource     = "spot proxy";
     if (ptState.position && ptState.currentBar) {
       const { side, entryPrice, qty, optionEntryLtp, optionCurrentLtp } = ptState.position;
       const currentOptionLtp = ptState.optionLtp || optionCurrentLtp;
       if (optionEntryLtp && currentOptionLtp && optionEntryLtp > 0) {
-        const _c = getCharges({ isFutures: _isFutPt, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
+        const _c = _charges({ isFutures: _isFutPt, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
         unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty - _c).toFixed(2));
         pnlSource     = "option premium";
       } else if (ptState.currentBar) {
-        const _c = getCharges({ isFutures: _isFutPt, exitPremium: ptState.currentBar.close, entryPremium: entryPrice, qty });
+        const _c = _charges({ isFutures: _isFutPt, exitPremium: ptState.currentBar.close, entryPremium: entryPrice, qty });
         unrealisedPnl = parseFloat(((ptState.currentBar.close - entryPrice) * (side === "CE" ? 1 : -1) * qty - _c).toFixed(2));
       }
     }
@@ -2573,7 +2863,7 @@ router.get("/status/data", (req, res) => {
     const pos           = ptState.position;
     const optEntryLtp   = pos ? (pos.optionEntryLtp || null)                       : null;
     const optCurrentLtp = pos ? (ptState.optionLtp || pos.optionCurrentLtp || null) : null;
-    const _chgPtD = (optEntryLtp && optCurrentLtp) ? getCharges({ isFutures: _isFutPt, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+    const _chgPtD = (optEntryLtp && optCurrentLtp) ? _charges({ isFutures: _isFutPt, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
     const optPremiumPnl = (optEntryLtp && optCurrentLtp)
       ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgPtD).toFixed(2)) : null;
     const optPremiumMove = (optEntryLtp && optCurrentLtp)
@@ -2648,23 +2938,23 @@ router.get("/status/data", (req, res) => {
 
 router.get("/status", (req, res) => {
   try {
-  const strategy = _ema9vwapStrategy;
+  const strategy = _eng;
   const data     = loadPaperData();
 
   // Unrealised PnL if position is open — use OPTION LTP if available, else spot proxy (minus charges)
-  const _isFutPtPg = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const _isFutPtPg = rt.instrumentName() === "NIFTY_FUTURES";
   let unrealisedPnl = 0;
   let pnlSource = "spot proxy";
   if (ptState.position && ptState.currentBar) {
     const { side, entryPrice, qty, optionEntryLtp, optionCurrentLtp } = ptState.position;
     const currentOptionLtp = ptState.optionLtp || optionCurrentLtp;
     if (optionEntryLtp && currentOptionLtp && optionEntryLtp > 0) {
-      const _c = getCharges({ isFutures: _isFutPtPg, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
+      const _c = _charges({ isFutures: _isFutPtPg, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
       unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty - _c).toFixed(2));
       pnlSource = `option premium`;
     } else {
       const ltp = ptState.currentBar.close;
-      const _c = getCharges({ isFutures: _isFutPtPg, exitPremium: ltp, entryPremium: entryPrice, qty });
+      const _c = _charges({ isFutures: _isFutPtPg, exitPremium: ltp, entryPremium: entryPrice, qty });
       unrealisedPnl = parseFloat(((ltp - entryPrice) * (side === "CE" ? 1 : -1) * qty - _c).toFixed(2));
       pnlSource = "spot proxy";
     }
@@ -2672,9 +2962,9 @@ router.get("/status", (req, res) => {
 
   // VIX details for top-bar display
   const _vix          = getCachedVix();
-  const _vixEnabled   = vixFilter.getVixEnabled("ema9vwap");
-  const _vixMaxEntry  = vixFilter.getVixMaxEntry("ema9vwap");
-  const _vixStrongOnly = vixFilter.getVixStrongOnly("ema9vwap");
+  const _vixEnabled   = _vixScoped(() => vixFilter.getVixEnabled("ema9vwap"));
+  const _vixMaxEntry  = _vixScoped(() => vixFilter.getVixMaxEntry("ema9vwap"));
+  const _vixStrongOnly = _vixScoped(() => vixFilter.getVixStrongOnly("ema9vwap"));
 
   const inr = (n) => typeof n === "number"
     ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2693,7 +2983,7 @@ router.get("/status", (req, res) => {
     : 0;
 
   // ATM/ITM badge
-  const atmStrike = pos ? Math.round(pos.entryPrice / 50) * 50 : null;
+  const atmStrike = pos ? rt.atmOf(pos.entryPrice) : null;
   const strikeLabel = pos && pos.optionStrike
     ? (pos.optionStrike === atmStrike ? "ATM" : pos.optionStrike < atmStrike ? (pos.side === "CE" ? "ITM" : "OTM") : (pos.side === "PE" ? "ITM" : "OTM"))
     : "—";
@@ -2702,7 +2992,7 @@ router.get("/status", (req, res) => {
   // Option premium P&L calculation for display
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (ptState.optionLtp || pos.optionCurrentLtp || null) : null;
-  const _chgPtPg2 = (optEntryLtp && optCurrentLtp) ? getCharges({ isFutures: _isFutPtPg, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+  const _chgPtPg2 = (optEntryLtp && optCurrentLtp) ? _charges({ isFutures: _isFutPtPg, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
     ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgPtPg2).toFixed(2))
     : null;
@@ -2765,7 +3055,7 @@ router.get("/status", (req, res) => {
 
       <!-- ★ OPTION PREMIUM SECTION — most important block ★ -->
       <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
-        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? `📊 Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `📊 Option Premium (${pos.optionType} Price)`}</div>
+        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${rt.instrumentName() === "NIFTY_FUTURES" ? `📊 Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `📊 Option Premium (${pos.optionType} Price)`}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
 
           <!-- Entry Premium -->
@@ -2777,7 +3067,7 @@ router.get("/status", (req, res) => {
             <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">
               ${optEntryLtp
                 ? `captured at ${fmtT(pos.optionEntryLtpTime || pos.entryTime)}`
-                : `⏳ first REST poll in ~3s<br><span style='color:#c8d8f0;'>NIFTY entry: ${inr(pos.entryPrice)}</span>`}
+                : `⏳ first REST poll in ~3s<br><span style='color:#c8d8f0;'>${SPOT_LABEL} entry: ${inr(pos.entryPrice)}</span>`}
             </div>
           </div>
 
@@ -2815,12 +3105,12 @@ router.get("/status", (req, res) => {
       <!-- Secondary grid: NIFTY spot + best price -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${SPOT_LABEL} Spot @ Entry</div>
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
           <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">candle close</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${SPOT_LABEL} LTP</div>
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
@@ -2856,7 +3146,7 @@ router.get("/status", (req, res) => {
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <!-- AJAX polling replaces meta-refresh — see startAjaxRefresh() below -->
   <link rel="icon" type="image/png" href="data:image/png;base64,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"/>
-  <title>EMA9+VWAP — Paper Trade</title>
+  <title>${TITLE} — Paper Trade</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="/vendor/lightweight-charts.standalone.production.js"></script>
   <style>
@@ -2913,7 +3203,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('ema9vwapPaper', false, ptState.running, {
+${buildSidebar(rt.sidebarKey, false, ptState.running, {
   showExitBtn:  !!ptState.position,
   showStopBtn:  ptState.running,
   showStartBtn: !ptState.running,
@@ -2935,7 +3225,7 @@ ${buildSidebar('ema9vwapPaper', false, ptState.running, {
         ? '<span class="top-bar-badge paper-active"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>RUNNING</span>'
         : '<span class="top-bar-badge">● IDLE</span>'}
       ${_vixEnabled ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix > _vixMaxEntry ? '#ef4444' : _vix > _vixStrongOnly ? '#eab308' : '#10b981'};">🌡️ VIX ${_vix != null ? _vix.toFixed(1) : 'n/a'}${_vix != null ? (_vix > _vixMaxEntry ? ' · BLOCKED' : _vix > _vixStrongOnly ? ' · STRONG ONLY' : ' · NORMAL') : ''}</span>` : ''}
-      <a href="/ema9vwap-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
+      <a href="${ROUTE}/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
       <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
     </div>
   </div>
@@ -3022,7 +3312,7 @@ ${buildSidebar('ema9vwapPaper', false, ptState.running, {
 
   ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div style="margin-bottom:24px;">
-    <div class="section-title">NIFTY ${getTradeResolution()}-Min Chart</div>
+    <div class="section-title">${SPOT_LABEL} ${getTradeResolution()}-Min Chart</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
       <div id="chart-legend" style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
@@ -3054,7 +3344,7 @@ ${buildSidebar('ema9vwapPaper', false, ptState.running, {
       </select>
       <span id="ptCount" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);"></span>
       <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
-      <a class="copy-btn" href="/ema9vwap-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
+      <a class="copy-btn" href="${ROUTE}/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
     </div>
     <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
@@ -3226,9 +3516,9 @@ ${buildSidebar('ema9vwapPaper', false, ptState.running, {
       + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#60a5fa;margin-bottom:8px;font-weight:700;">🟢 Entry</div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
       + cell('Entry Time', t.entry || '—', '#c8d8f0')
-      + cell('NIFTY Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
+      + cell('${SPOT_LABEL} Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
       + cell('Option LTP @ Entry', fmt(t.eOpt), '#60a5fa', 'Option premium paid')
-      + cell('Initial Stop Loss', fmt(t.eSl), '#f59e0b', 'NIFTY spot SL level')
+      + cell('Initial Stop Loss', fmt(t.eSl), '#f59e0b', '${SPOT_LABEL} spot SL level')
       + cell('SL Distance', (t.eSl && t.eSpot) ? Math.abs(t.eSpot - t.eSl).toFixed(2) + ' pts' : '—', '#f59e0b', 'pts from entry to SL')
       + cell('Entry Signal', t.entryReason || '—', '#a0b8d0')
       + '</div></div>';
@@ -3238,9 +3528,9 @@ ${buildSidebar('ema9vwapPaper', false, ptState.running, {
       + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#f87171;margin-bottom:8px;font-weight:700;">🔴 Exit</div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
       + cell('Exit Time', t.exit || '—', '#c8d8f0')
-      + cell('NIFTY Spot @ Exit', fmt(t.xSpot), '#fff', 'Index price at exit')
+      + cell('${SPOT_LABEL} Spot @ Exit', fmt(t.xSpot), '#fff', 'Index price at exit')
       + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
-      + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '—', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry−Exit (PE profits on fall)' : 'Exit−Entry (CE profits on rise)')
+      + cell('${SPOT_LABEL} Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '—', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry−Exit (PE profits on fall)' : 'Exit−Entry (CE profits on rise)')
       + cell('Option Δ (pts)', optDiff != null ? (optDiff >= 0 ? '▲ +' : '▼ ') + optDiff + ' pts' : '—', dc, 'Exit prem − Entry prem')
       + (function(){
           if (t.peakOpt == null) return cell('Peak Premium', '—', '#c8d8f0', 'Highest premium in trade');
@@ -3369,7 +3659,7 @@ logFilter();
 <script>
 ${modalJS()}
 </script>
-<script src="/ema9vwap-paper/client.js"></script>
+<script src="${ROUTE}/client.js"></script>
 <script>
 // ── NIFTY Chart (Lightweight Charts by TradingView) ─────────────────────────
 (function() {
@@ -3427,7 +3717,7 @@ ${modalJS()}
 
   async function fetchChart() {
     try {
-      const res = await fetch('/ema9vwap-paper/status/chart-data', { cache: 'no-store' });
+      const res = await fetch('${ROUTE}/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
 
@@ -3542,7 +3832,7 @@ ${modalJS()}
   });
 })();
 </script>
-${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', id: 'e9v-opt-chart' })}
+${optionChart.optionChartScript({ dataUrl: ROUTE + '/status/chart-data', id: 'e9v-opt-chart' })}
 <script>
 // ── AJAX live refresh — replaces meta http-equiv="refresh" ──────────────────
 // Polls /ema9vwap-paper/status/data every 2 s when trading is active.
@@ -3575,7 +3865,7 @@ ${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', 
 
   async function fetchAndUpdate() {
     try {
-      const res = await fetch('/ema9vwap-paper/status/data', { cache: 'no-store' });
+      const res = await fetch('${ROUTE}/status/data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
 
@@ -3791,17 +4081,17 @@ router.get("/history", (req, res) => {
   const liveActive = false;
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
-    routePrefix: "/ema9vwap-paper",
-    sidebarKey: "ema9vwapHistory",
-    pageTitle: "〽️ EMA9+VWAP Paper Trade History",
-    pageDocTitle: "EMA9+VWAP Paper — History",
-    modalLabel: "EMA9+VWAP Paper",
+    routePrefix: ROUTE,
+    sidebarKey: rt.historySidebarKey,
+    pageTitle: `〽️ ${TITLE} Paper Trade History`,
+    pageDocTitle: `${TITLE} Paper — History`,
+    modalLabel: `${TITLE} Paper`,
     liveActive,
     sessions: data.sessions || [],
     capital: data.capital,
     totalPnl: data.totalPnl,
     startCap: getCapitalFromEnv(),
-    emptyLabel: "Start EMA9+VWAP paper trading to record your first session.",
+    emptyLabel: `Start ${TITLE} paper trading to record your first session.`,
   }));
 });
 
@@ -3810,15 +4100,15 @@ router.get("/history", (req, res) => {
  * Stream the crash-safe per-trade JSONL log as a file download.
  */
 router.get("/download/trades.jsonl", (req, res) => {
-  const logPath = tradeLogger.filePathFor("ema9vwap");
+  const logPath = tradeLogger.filePathFor(MODE);
   const today   = new Date().toISOString().slice(0, 10);
-  const dlName  = `ema9vwap_paper_trades_log_${today}.txt`;
+  const dlName  = `${MODE}_paper_trades_log_${today}.txt`;
   const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
   if (ai) {
     let text = ""; try { text = fs.readFileSync(logPath, "utf8"); } catch (_) {}
-    const md = aiExport.jsonlToMarkdown(text, { title: "EMA9+VWAP paper trades (full log)", source: "ema9vwap-paper" });
+    const md = aiExport.jsonlToMarkdown(text, { title: `${TITLE} paper trades (full log)`, source: rt.replayMode });
     res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="ema9vwap_paper_trades_AI_${today}.md"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_AI_${today}.md"`);
     return res.send(md);
   }
   if (!fs.existsSync(logPath)) {
@@ -3833,8 +4123,8 @@ router.get("/download/trades.jsonl", (req, res) => {
 const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates("ema9vwap");
-  const trades = tradeLogger.listDailyDates("ema9vwap");
+  const skips  = skipLogger.listDates(MODE);
+  const trades = tradeLogger.listDailyDates(MODE);
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) {
@@ -3848,14 +4138,14 @@ router.get("/download/daily-files", (req, res) => {
 
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
-  const dlName = `ema9vwap_paper_skips_all_${today}.txt`;
+  const dlName = `${MODE}_paper_skips_all_${today}.txt`;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
-  const dates = skipLogger.listDates("ema9vwap").map(d => d.date).sort();
+  const dates = skipLogger.listDates(MODE).map(d => d.date).sort();
   let body = "";
   for (const d of dates) {
     try {
-      const p = skipLogger.filePathFor("ema9vwap", d);
+      const p = skipLogger.filePathFor(MODE, d);
       if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8");
     } catch (_) {}
   }
@@ -3865,23 +4155,23 @@ router.get("/download/skips-all", (req, res) => {
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("ema9vwap", date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `ema9vwap_paper_skips_${date}.txt`);
+  res.download(p, `${MODE}_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("ema9vwap", date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `ema9vwap_paper_trades_${date}.txt`);
+  res.download(p, `${MODE}_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("ema9vwap", date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -3891,7 +4181,7 @@ router.get("/view/skips/:date", (req, res) => {
 router.get("/view/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("ema9vwap", date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -3912,7 +4202,7 @@ router.get("/reset", (req, res) => {
 
   const freshCapital = getCapitalFromEnv();
   savePaperData({ capital: freshCapital, totalPnl: 0, sessions: [] });
-  require("../utils/paperReset").clearTodayFiles("ema9vwap"); // else restart rehydrates today's session
+  require("../utils/paperReset").clearTodayFiles(MODE); // else restart rehydrates today's session
 
   log(`🔄 Paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
 
@@ -3950,7 +4240,7 @@ router.delete("/session/:index", (req, res) => {
   data.capital = getCapitalFromEnv() + data.totalPnl;
   savePaperData(data);
 
-  log(`🗑️ Deleted EMA9+VWAP paper session ${idx + 1} (${removed?.date || "unknown date"}, PnL: ${removedPnl})`);
+  log(`🗑️ Deleted ${TITLE} paper session ${idx + 1} (${removed?.date || "unknown date"}, PnL: ${removedPnl})`);
 
   return res.json({
     success: true,
@@ -3970,7 +4260,7 @@ router.post("/restore-session/:date", (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
   }
-  const allTrades = tradeLogger.readDailyTrades("ema9vwap", date);
+  const allTrades = tradeLogger.readDailyTrades(MODE, date);
   if (!allTrades.length) {
     return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   }
@@ -3995,7 +4285,7 @@ router.post("/restore-session/:date", (req, res) => {
   const session = {
     date,
     strategy:    missing[0]?.strategy || "STRATEGY_1",
-    instrument:  missing[0]?.instrument || "NIFTY_OPTIONS",
+    instrument:  missing[0]?.instrument || (rt.home ? "NIFTY_OPTIONS" : rt.instrumentName()),
     startTime:   missing[0]?.entryTime || date,
     endTime:     missing[missing.length - 1]?.exitTime || date,
     trades:      missing,
@@ -4016,8 +4306,8 @@ router.post("/restore-session/:date", (req, res) => {
   savePaperData(data);
   // Restoring today pulls the rehydrated (unsaved) session's trades into the file.
   if (date === tradeLogger.istDateString(Date.now())) ptState._pnlSaved = true;
-  capitalPool.sessionSaved("ema9vwap");
-  log(`♻️ Restored EMA9+VWAP paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
+  capitalPool.sessionSaved(MODE);
+  log(`♻️ Restored ${TITLE} paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
@@ -4026,12 +4316,11 @@ router.post("/restore-session/:date", (req, res) => {
  * Returns current state info to help diagnose why Start/Reset isn't working
  */
 router.get("/debug", (req, res) => {
-  const _ema9vwapStrategy = require("../strategies/ema9_vwap"); const ACTIVE = "EMA9_VWAP";
   res.json({
     running:          ptState.running,
     hasAccessToken:   !!process.env.ACCESS_TOKEN,
     hasAppId:         !!process.env.APP_ID,
-    liveTradeActive:  sharedSocketState.isEma9VwapActive(),
+    liveTradeActive:  rt.socketSlot.isActive(),
     activeStrategy:   ACTIVE,
     tradeResolution:  getTradeResolution(),
     candlesLoaded:    ptState.candles.length,
@@ -4055,7 +4344,7 @@ router.get("/client.js", (req, res) => {
   res.send(`async function handleStart(btn) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema9vwap-paper/start');
+    const res = await secretFetch('${ROUTE}/start');
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     let data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (non-JSON response)' }; }
@@ -4074,7 +4363,7 @@ router.get("/client.js", (req, res) => {
 async function handleStop(btn) {
   if (btn) { btn.textContent = '⏳ Stopping...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema9vwap-paper/stop');
+    const res = await secretFetch('${ROUTE}/stop');
     if (!res) { if (btn) { btn.textContent = '⏹ Stop'; btn.disabled = false; } return; }
     showToast('⏹ Paper trading stopped.', '#ef4444');
     setTimeout(() => location.reload(), 1000);
@@ -4088,13 +4377,13 @@ async function ptHandleReset(btn) {
     icon: '⚠️', title: 'Reset Paper Trade',
     message: 'Reset ALL paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.',
     confirmText: 'Reset All', confirmClass: 'modal-btn-danger',
-    subject: 'ALL EMA9+VWAP paper sessions & capital',
+    subject: 'ALL ${TITLE} paper sessions & capital',
     secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema9vwap-paper/reset');
+    const res = await secretFetch('${ROUTE}/reset');
     if (!res) { if (btn) { btn.textContent = '🔄 Reset'; btn.disabled = false; } return; }
     let data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
@@ -4113,7 +4402,7 @@ async function ptHandleReset(btn) {
 function ptExportCSV() {
   var PT = typeof PT_ALL !== 'undefined' ? PT_ALL : [];
   if (!PT.length) { showToast('⚠️ No trades to export', '#f59e0b'); return; }
-  var header = ['Side','Symbol','Entry Time','Exit Time','Entry NIFTY','Entry Option','Exit NIFTY','Exit Option','PnL','Exit Reason'];
+  var header = ['Side','Symbol','Entry Time','Exit Time','Entry ${SPOT_LABEL}','Entry Option','Exit ${SPOT_LABEL}','Exit Option','PnL','Exit Reason'];
   var rows = PT.map(function(t){
     return [
       t.side||'', t.symbol||'',
@@ -4136,7 +4425,7 @@ function ptExportCSV() {
 async function ptHandleExit(btn) {
   if (btn) { btn.textContent = '⏳ Exiting...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/ema9vwap-paper/exit');
+    const res = await secretFetch('${ROUTE}/exit');
     if (!res) { if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; } return; }
     const data = await res.json();
     if (!data.success) {
@@ -4167,7 +4456,7 @@ async function manualEntry(side) {
   });
   if (!ok) return;
   try {
-    const res = await secretFetch('/ema9vwap-paper/manualEntry', {
+    const res = await secretFetch('${ROUTE}/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -4196,7 +4485,7 @@ async function manualEntry(side) {
 // ── Simulation mode routes ─────────────────────────────────────────────────
 
 router.get("/simulate", (req, res) => {
-  if (ptState.running) return res.redirect("/ema9vwap-paper/status");
+  if (ptState.running) return res.redirect(`${ROUTE}/status`);
 
   const scenarios = tickSimulator.getScenarios();
   const cards = Object.entries(scenarios).map(([key, s]) => `
@@ -4209,11 +4498,11 @@ router.get("/simulate", (req, res) => {
     </div>
   `).join("");
 
-  const strategy = _ema9vwapStrategy;
+  const strategy = _eng;
 
   res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>EMA9+VWAP — Simulate</title>
+<title>${TITLE} — Simulate</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 ${sidebarCSS()}
@@ -4232,11 +4521,11 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min
 </style>
 </head><body>
 <div class="app-shell">
-${buildSidebar('ema9vwapPaper', false)}
+${buildSidebar(rt.sidebarKey, false)}
 <div class="main-content">
   <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Paper Trade</h1>
   <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:4px;">Run <strong>${strategy.NAME}</strong> against fake ticks — no broker login needed. Works after market hours.</p>
-  <p style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">Resolution: <strong>${TRADE_RES}-min</strong> candles | Instrument: ${instrumentConfig.INSTRUMENT}</p>
+  <p style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">Resolution: <strong>${TRADE_RES}-min</strong> candles | Instrument: ${rt.instrumentName()}</p>
 
   <!-- ── Tab switcher ─────────────────────────────────────────────── -->
   <div style="display:flex;gap:0;margin-top:24px;border-bottom:2px solid #1a2236;">
@@ -4250,7 +4539,7 @@ ${buildSidebar('ema9vwapPaper', false)}
     <div class="sim-grid" id="scenarioGrid">${cards}</div>
     <div class="config-row">
       <div>
-        <div class="config-label">Base Price (NIFTY)</div>
+        <div class="config-label">Base Price (${SPOT_LABEL})</div>
         <input type="number" id="basePrice" value="24500" class="config-input"/>
       </div>
       <div>
@@ -4313,7 +4602,7 @@ function startSim(key) {
 function submitSim() {
   const btn = document.getElementById('startBtn');
   btn.disabled = true; btn.textContent = 'Starting...';
-  _post('/ema9vwap-paper/simulate/start', {
+  _post('${ROUTE}/simulate/start', {
     mode: 'scenario', scenario: selectedScenario,
     basePrice: parseFloat(document.getElementById('basePrice').value) || 24500,
     speed: parseInt(document.getElementById('speed').value) || 10,
@@ -4325,7 +4614,7 @@ function submitReplay() {
   const date = document.getElementById('replayDate').value;
   if (!date) { document.getElementById('status').textContent = 'Pick a date first'; return; }
   btn.disabled = true; btn.textContent = 'Fetching candles...';
-  _post('/ema9vwap-paper/simulate/start', {
+  _post('${ROUTE}/simulate/start', {
     mode: 'historical', date: date,
     speed: parseInt(document.getElementById('replaySpeed').value) || 10,
   }, btn, 'Replay Selected Date');
@@ -4333,7 +4622,7 @@ function submitReplay() {
 function _post(url, body, btn, resetLabel) {
   fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     .then(r=>r.json()).then(d=>{
-      if(d.success){ window.location.href='/ema9vwap-paper/status'; }
+      if(d.success){ window.location.href='${ROUTE}/status'; }
       else { document.getElementById('status').textContent='Error: '+(d.error||'Unknown'); btn.disabled=false; btn.textContent=resetLabel; }
     }).catch(e=>{ document.getElementById('status').textContent='Error: '+e.message; btn.disabled=false; btn.textContent=resetLabel; });
 }
@@ -4346,7 +4635,7 @@ router.post("/simulate/start", async (req, res) => {
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
-  const strategy = _ema9vwapStrategy;
+  const strategy = _eng;
   if (typeof strategy.reset === "function") strategy.reset();
 
   // Common state reset
@@ -4450,11 +4739,11 @@ router.post("/simulate/start", async (req, res) => {
       const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
       // Clear cache to avoid stale partial data from a previous live session
-      clearCache("NSE:NIFTY50-INDEX", String(TRADE_RES));
+      clearCache(SPOT(), String(TRADE_RES));
 
       log(`📥 [SIM] Fetching ${TRADE_RES}-min candles from ${fromStr} to ${date}...`);
       const allCandles = await fetchCandlesCached(
-        "NSE:NIFTY50-INDEX", String(TRADE_RES), fromStr, date, fetchCandles
+        SPOT(), String(TRADE_RES), fromStr, date, fetchCandles
       );
 
       if (!allCandles || allCandles.length < 35) {
@@ -4465,9 +4754,9 @@ router.post("/simulate/start", async (req, res) => {
       // Fetch 1-min candles for high-fidelity tick replay
       let tickCandles1m = [];
       try {
-        clearCache("NSE:NIFTY50-INDEX", "1");
+        clearCache(SPOT(), "1");
         const allTick = await fetchCandlesCached(
-          "NSE:NIFTY50-INDEX", "1", date, date, fetchCandles
+          SPOT(), "1", date, date, fetchCandles
         );
         if (allTick && allTick.length > 0) {
           tickCandles1m = allTick.filter(c => {
@@ -4570,10 +4859,10 @@ function stopSession(reason = "Shutdown square-off") {
   // The square-off above is conditional on currentBar and can throw, so a
   // position may survive it. Free its capital reservation either way — a leaked
   // block would keep shrinking the broker pool for the rest of the process.
-  capitalPool.clear("ema9vwap");
+  capitalPool.clear(MODE);
   try { stopOptionPolling(); } catch (_) {}
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-  sharedSocketState.clearEma9Vwap();
+  rt.socketSlot.clear();
   if (!ptState._simMode && !sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
   }
@@ -4582,5 +4871,22 @@ function stopSession(reason = "Shutdown square-off") {
   try { saveSession(); } catch (_) {}
 }
 router.stopSession = stopSession;
+router.pairRuntime = rt;
+return router;
+}   // ── end create(pair) ──
 
-module.exports = router;
+// One instance per pair, built on first use — the NIFTY one at load.
+const _instances = new Map();
+function forPairInstance(p) {
+  if (!p) return null;
+  if (!_instances.has(p.id)) _instances.set(p.id, create(p));
+  return _instances.get(p.id);
+}
+/** The router of this strategy on `marketKey` ("BANKNIFTY", "SENSEX", …), or null when not offered. */
+function forMarket(marketKey) { return forPairInstance(pairs.get("ema9vwap", marketKey)); }
+
+const nifty = forMarket("NIFTY");
+nifty.create    = create;
+nifty.forMarket = forMarket;
+nifty.forPair   = forPairInstance;
+module.exports  = nifty;

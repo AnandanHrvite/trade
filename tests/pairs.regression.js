@@ -179,6 +179,21 @@ check("the BN_ / FUT_ spellings the engines' forPrefix twins already read are un
     assert.strictEqual(pairs.get(id, "NIFTY_FUT").envPrefix, `FUT_${reg.byId(id).envPrefix}`);
   }
 });
+check("EMA9+VWAP runs as a pair on every offered market; its pair keys inherit NIFTY's", () => {
+  assert.ok(pairs.RUNS_AS_PAIR.has("ema9vwap"));
+  const offered = pairs.all().filter(p => p.strategyId === "ema9vwap");
+  assert.ok(offered.length > 4 && offered.every(p => p.runs), "every EMA9+VWAP pair runs (home included)");
+  assert.ok(offered.some(p => p.marketKey === "CRUDE"), "EMA9+VWAP does not need the index open — MCX is offered");
+  const bn = pairs.get("ema9vwap", "BANKNIFTY");
+  assert.deepStrictEqual([bn.envPrefix, bn.modeKey, bn.paperPath, bn.socketMode, bn.tag, bn.broker],
+    ["BN_EMA9VWAP", "bn_ema9vwap", "/bn_ema9vwap-paper", "BN_EMA9VWAP_PAPER", "BN_EMA9VWAP", "fyers"]);
+  const home = pairs.get("ema9vwap", "NIFTY");
+  assert.deepStrictEqual([home.envPrefix, home.paperPath, home.socketMode, home.broker], ["EMA9VWAP", "/ema9vwap-paper", "EMA9VWAP_PAPER", "zerodha"]);
+  assert.strictEqual(pairs.envGet("BN_EMA9VWAP_BAND_MULT", { EMA9VWAP_BAND_MULT: "1.5" }), "1.5", "unset pair key → NIFTY's");
+  assert.strictEqual(pairs.envGet("BN_EMA9VWAP_BAND_MULT", { EMA9VWAP_BAND_MULT: "1.5", BN_EMA9VWAP_BAND_MULT: "2" }), "2");
+  assert.strictEqual(pairs.envGet("SENSEX_EMA9VWAP_BAND_MULT", { BN_EMA9VWAP_BAND_MULT: "2" }), undefined, "no leak across pairs");
+  assert.strictEqual(pairs.byReplayMode("fut_ema9vwap-paper").marketKey, "NIFTY_FUT");
+});
 check("every non-NIFTY pair defaults OFF", () => {
   for (const p of pairs.all().filter(p => !p.home)) {
     assert.strictEqual(p.enabledDefault, "false", p.id);

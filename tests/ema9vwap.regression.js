@@ -290,6 +290,33 @@ async function runBT(env = {}) {
     }
   });
 
+  // ── 7. Market pairs — one engine, every market (config/pairs.js) ───────────
+  console.log("\nMarket pairs");
+  check("a pair with no own keys computes NIFTY's signal on the same candles (inherits EMA9VWAP_*)", () => {
+    const P = S.forPrefix("BN_EMA9VWAP");
+    for (let n = 40; n <= Math.min(600, ZERO_VOL.length); n += 7) {
+      const w = ZERO_VOL.slice(Math.max(0, n - 200), n);
+      assert.deepStrictEqual(P.getSignal(w, { silent: true }), S.getSignal(w, { silent: true }), `bar ${n}`);
+    }
+  });
+  check("a pair's own key changes only that pair (BN_EMA9VWAP_BAND_MULT)", () => {
+    const w = ZERO_VOL.slice(0, 200);
+    const before = S.computeVwapBands(w);
+    process.env.BN_EMA9VWAP_BAND_MULT = "2";
+    try {
+      const bn = S.forPrefix("BN_EMA9VWAP").computeVwapBands(w);
+      assert.deepStrictEqual(S.computeVwapBands(w), before, "NIFTY's band moved with a pair key");
+      assert.deepStrictEqual(S.forPrefix("SENSEX_EMA9VWAP").computeVwapBands(w), before, "another pair's band moved");
+      assert.ok(bn.vwap === before.vwap && (bn.upper - bn.vwap) > (before.upper - before.vwap) * 1.9, "the pair's own ×2 band did not apply");
+    } finally { delete process.env.BN_EMA9VWAP_BAND_MULT; }
+  });
+  check("the paper route is one create(pair) builder whose default export is the NIFTY instance", () => {
+    const code = SRC("src/routes/ema9vwapPaper.js");
+    assert.ok(/function create\(pair\)/.test(code), "no create(pair) builder");
+    assert.ok(/const nifty = forMarket\("NIFTY"\);[\s\S]*module\.exports\s*=\s*nifty;/.test(code), "the default export must be the NIFTY instance");
+    assert.ok(/forPairInstance\(pairs\.get\("ema9vwap", marketKey\)\)/.test(code));
+  });
+
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
   process.exit(fail === 0 ? 0 : 1);
 })().catch(err => { console.error("SUITE ERROR:", err); process.exit(1); });

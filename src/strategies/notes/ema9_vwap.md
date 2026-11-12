@@ -4,6 +4,10 @@ Engine: `src/strategies/ema9_vwap.js` · Routes: `ema9vwap*.js` · Env prefix: `
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-11 — Backtest on BANKNIFTY / SENSEX / NIFTY_FUT via the /backtest page: `backtestMarket.context(market)` gives spot candles, lot and exchange charges (BSE for SENSEX); NIFTY_FUT books ₹ on the index (pts × lot − futures charges); `<PAIR>_EXPIRY_DAY_ONLY` uses that market's expiry (`rt.isExpiryDay`). Engine takes optional `{ lotQty, exchange, expiryOnly, isExpiryDay }`; NIFTY runs pass none (byte-identical). MCX / SAIL stay "coming soon".
+
+- 2026-11-11 — `ema9vwapPaper.js` is a `create(pair)` builder (utils/pairRuntime.js) and `ema9vwap` is in `pairs.RUNS_AS_PAIR`: the default export is the NIFTY instance (same path, files, keys, logs — golden byte-identical); every other market's pair (`/bn_…`, `/fut_…`, `/sensex_…`, MCX, SAIL) runs from the same file, ships OFF, fills at ask/bid (`<PAIR>_PAPER_FILL_AT_QUOTE`), has its own spread limit / expiry-day switch / VIX keys, and reads `<PAIR>_EMA9VWAP_*` with NIFTY inheritance (`pairs.envGet`). OI gate stays NIFTY-only.
+
 - 2026-09-19 — Global breakeven stop (tradeGuards.checkBreakevenStop, arm +5%) wired into the per-tick exit, and the long-stale comment at the option-poll corrected: it claimed a breakeven protected this engine when none existed here, which is how the 50% mid guard came to be removed leaving the position with NO stop at all.
 
 - 2026-09-19 — Global profit lock wired into ema9vwapPaper per-tick exit (before the option stop). Shared rule in `tradeGuards.checkProfitLock`, `PROFIT_LOCK_*`, arm +8% / floor +5%; no per-strategy keys.

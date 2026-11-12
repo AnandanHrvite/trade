@@ -248,7 +248,11 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   const pa = page.marketOptions("pa");
   assert.deepStrictEqual(pa.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of pa) if (!m.enabled) assert.strictEqual(m.note, "coming soon");
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb"]);
+  const e9 = page.marketOptions("ema9vwap");
+  assert.deepStrictEqual(e9.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of e9) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `ema9vwap ${m.key}`);
+  assert.ok(e9.some((m) => m.key === "CRUDE" && !m.enabled) && e9.some((m) => m.key === "SAIL" && !m.enabled), "EMA9+VWAP MCX / stock backtests are coming soon");
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -780,6 +784,91 @@ check("ORB expiry-day-only: an options market trades its own rule expiry; NIFTY_
     assert.ok(days.length > 0, "an expiry-day-only NIFTY_FUT run found no expiry day");
     assert.ok(days.every((d) => d === days0[0]), `traded off paper's expiry day: ${days.join(",")}`);
   } finally { rt.isExpiryDay = real; delete process.env.FUT_ORB_EXPIRY_DAY_ONLY; }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4f. EMA9+VWAP is market-aware");
+
+// EMA9+VWAP's VIX gate is ON by default (global key) and the synthetic VIX series
+// is the index level itself, so every entry would be VIX-blocked and the checks
+// below would price nothing. The shared key is switched off for this section only.
+let _e9VixWas;
+check("EMA9+VWAP section: global VIX filter off for these runs", () => {
+  _e9VixWas = process.env.VIX_FILTER_ENABLED;
+  process.env.VIX_FILTER_ENABLED = "false";
+});
+const E9_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`EMA9+VWAP on ${mk}: its own candles, lot + exchange charges (futures: ₹ on the index), market recorded`, async () => {
+    const mark = fetchLog.length, saves = legacySaves.length;
+    const neu = await runNew({ strategy: "ema9vwap", market: mk, settings: "current", from: FROM, to: TO, resolution: "5" });
+    E9_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const asked = fetchLog.slice(mark).map((f) => f.symbol).filter((s) => !/VIX/.test(s));
+    assert.ok(asked.length && asked.every((s) => s === ctx.spotSymbol), `fetched ${asked.join(",")} for ${mk}`);
+    assert.strictEqual(neu.result.meta.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    assert.strictEqual(legacySaves.length, saves, `a ${mk} run overwrote NIFTY's legacy EMA9_VWAP slot`);
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+    assert.strictEqual(neu.result.summary.lotSize, ctx.lotQty, `${mk}: priced with the wrong lot`);
+    const CPD = Math.max(1, Math.round(390 / 5)), DELTA = 0.55, THETA = 10;
+    for (const t of neu.result.trades) {
+      let want;
+      if (ctx.isFutures) {
+        assert.ok(/^futures /.test(t.pnlMode), t.pnlMode);
+        const chg = getCharges({ isFutures: true, exchange: ctx.exchange, exitPremium: t.exitPrice, entryPremium: t.entryPrice, qty: ctx.lotQty });
+        want = t.spotPnlPts * ctx.lotQty - chg;
+      } else {
+        const theta = Math.round((THETA / CPD) * (t.candlesHeld || 1) * 100) / 100;
+        const net = t.spotPnlPts * DELTA - theta;
+        const chg = getCharges({ isFutures: false, exchange: ctx.exchange, exitPremium: Math.max(1, 200 + net), entryPremium: 200, qty: ctx.lotQty });
+        want = net * ctx.lotQty - chg;
+      }
+      assert.ok(Math.abs(t.pnl - want) <= 0.02, `${mk} trade ${t.entryTime}: pnl ${t.pnl} ≠ ${want.toFixed(2)}`);
+    }
+    assert.strictEqual(!!neu.result.summary.isFutures, ctx.isFutures);
+  });
+}
+
+check("EMA9+VWAP market runs traded on their own (scaled) series", () => {
+  const n = Object.values(E9_RUNS).reduce((k, r) => k + r.result.trades.length, 0);
+  say(`       ${Object.entries(E9_RUNS).map(([k, r]) => `${k}: ${r.result.trades.length} trade(s)`).join(" · ")}`);
+  assert.ok(Object.values(E9_RUNS).every((r) => r.result.trades.length > 0), "an EMA9+VWAP market run produced no trade — its pricing check proved nothing");
+  assert.ok(n > 0, "no EMA9+VWAP market run produced a trade — the market checks above proved nothing");
+  assert.ok((E9_RUNS.SENSEX ? E9_RUNS.SENSEX.result.trades : []).every((t) => t.entryPrice > 50000), "SENSEX trades should be on the SENSEX (scaled) series");
+  const S = E9_RUNS.SENSEX.result.trades, B = E9_RUNS.BANKNIFTY.result.trades;
+  if (S.length) assert.strictEqual(getCharges({ isFutures: false, exchange: "BSE", exitPremium: 210, entryPremium: 200, qty: 20 }) !== getCharges({ isFutures: false, exitPremium: 210, entryPremium: 200, qty: 20 }), true, "BSE charges must differ from NSE");
+  assert.ok(B.every((t) => t.entryPrice > 30000), "BANKNIFTY trades should be on the BANKNIFTY (scaled) series");
+});
+
+for (const mk of ["SENSEX", "NIFTY_FUT"]) {
+  check(`EMA9+VWAP on ${mk} with <PAIR>_EXPIRY_DAY_ONLY trades only that market's expiry days (the paper /start rule)`, async () => {
+    const rt = require("../src/utils/pairRuntime").forStrategy("ema9vwap", mk);
+    const key = `${rt.envPrefix}_EXPIRY_DAY_ONLY`;
+    const neu = await runNew({ strategy: "ema9vwap", market: mk, settings: "custom", from: FROM, to: TO, resolution: "5", [`s.${key}`]: "true" });
+    assert.deepStrictEqual(neu.record.overriddenKeys, ["EMA9VWAP_EXPIRY_DAY_ONLY"]);
+    assert.strictEqual(process.env.EMA9VWAP_EXPIRY_DAY_ONLY, undefined, "custom value leaked into process.env");
+    const all = E9_RUNS[mk].result.trades;
+    const exp = all.filter((t) => rt.isExpiryDay(t.entryTs * 1000));
+    assert.ok(neu.result.trades.every((t) => rt.isExpiryDay(t.entryTs * 1000)), `${mk}: an expiry-only run entered off ${mk}'s expiry day`);
+    assert.ok(neu.result.trades.length < all.length || all.length === exp.length, `${mk}: expiry-only dropped nothing`);
+    assert.ok(exp.length === 0 || neu.result.trades.length > 0, `${mk}: expiry-only blocked every expiry day too`);
+  });
+}
+
+check("the old EMA9+VWAP page is untouched by markets: NIFTY run reads NIFTY's candles and saves its slot", async () => {
+  const mark = fetchLog.length, saves = legacySaves.length;
+  const oldRes = await runOld("ema9vwap", `from=${FROM}&to=${TO}&resolution=5`);
+  assert.ok(fetchLog.slice(mark).filter((f) => !/VIX/.test(f.symbol)).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
+  assert.strictEqual(oldRes.meta, undefined, "a NIFTY result must not grow a market field");
+  assert.strictEqual(oldRes.summary.isFutures, undefined, "a NIFTY result must not grow an isFutures flag");
+  assert.ok(legacySaves.slice(saves).includes("EMA9_VWAP"));
+  assert.ok(oldRes.trades.length > 0, "the NIFTY run produced no trade — the comparison proves nothing");
+});
+
+check("EMA9+VWAP section: global VIX filter restored", () => {
+  if (_e9VixWas === undefined) delete process.env.VIX_FILTER_ENABLED;
+  else process.env.VIX_FILTER_ENABLED = _e9VixWas;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
