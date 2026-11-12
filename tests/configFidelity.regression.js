@@ -238,7 +238,8 @@ check("manual-entry routes refuse an unresolvable symbol, like the automatic pat
     const src = decomment(read(f));
     // ema9vwapPaper is a create(pair) builder: its manual entry resolves through
     // _resolveSym (NIFTY: validateAndGetOptionSymbol(spot, side, "ema9vwap")).
-    const i = src.search(/optResult = await (validateAndGetOptionSymbol|_resolveSym)\(spot, side/);
+    // emaRsiStPaper (also a builder): `rt.home ? await validateAndGetOptionSymbol(...) : …`.
+    const i = src.search(/optResult = (?:rt\.home \? )?await (validateAndGetOptionSymbol|_resolveSym)\(spot, side/);
     assert.ok(i >= 0, `${f}: manual-entry symbol lookup not found`);
     const block = src.slice(i, i + 700);
     assert.ok(/optResult\.invalid/.test(block),
