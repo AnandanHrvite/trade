@@ -374,7 +374,10 @@ function renderDashboard() {
     /* ── PAGE WRAPPER ── */
     .page { padding:14px max(20px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); display:flex; flex-direction:column; gap:8px; }
     .page > .dh-hero, .page > .dh-filter { margin-bottom:0; }
-    .page > .dh-links { margin:0; }
+    .dash-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .dash-toolbar > .dh-filter { margin:0; padding:0; min-width:0; flex:0 1 auto; }
+    .dash-toolbar > .dh-links { margin:0 0 0 auto; }
+    @media (max-width:640px) { .dash-toolbar { flex-direction:column; align-items:stretch; } .dash-toolbar > .dh-links { margin:0; } }
     .page > .dh-h { margin:10px 0 0; }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
@@ -881,8 +884,11 @@ ${buildSidebar('dashboard', false)}
   ${optionExpiryAlertHtml}
   ${manualSyncAlertHtml}
 
-  <!-- ③ QUICK LINKS -->
+  <!-- ③ MARKET FILTER (left) + QUICK LINKS (right) — one row, not two. -->
+  <div class="dash-toolbar">
+  ${dashboardUI.filterHTML(_dashMarkets)}
   ${dashboardUI.quickLinksHTML({ demo: demoMode.isDemo() })}
+  </div>
 
   <!-- ④ BROKERS & EXPIRY — compact single-line rows (hidden while a trade runs).
        The option-expiry quick-edit shares this grid row so it costs no extra
@@ -937,7 +943,6 @@ ${buildSidebar('dashboard', false)}
 
   <!-- ① TODAY'S P&L — big total, one chip per market (tap = filter to it). -->
   ${dashboardUI.heroHTML(_dashMarkets, { sub: 'Loading…' })}
-  ${dashboardUI.filterHTML(_dashMarkets)}
 
   ${analyticsPanelOn ? `
   <!-- ② TODAY SO FAR (market open) / LAST SESSION (closed) — every strategy,

@@ -159,9 +159,9 @@ check("Dashboard: today panel, broker strip and Start All are still there", () =
   assert.ok(dashHtml.includes('id="dashAnalytics"') && dashHtml.includes('id="da-body"'));
   assert.ok(dashHtml.includes('id="btn-all-start"') && dashHtml.includes("startAll(this)"));
   assert.ok(dashHtml.includes('class="brokers"') && dashHtml.includes("saveDashExpiry("));
-  // order: links → brokers → hero → filter → today panel → charts
+  // order: filter + links → brokers → hero → today panel → charts
   const at = (s) => { const i = dashHtml.indexOf(s); assert.ok(i > 0, s); return i; };
-  const seq = ['class="dh-links"', 'class="brokers"', 'class="dh-hero"', 'id="dh-filter"', 'id="dashAnalytics"', 'id="dashCumCard"', 'class="mm-mkt"'].map(at);
+  const seq = ['id="dh-filter"', 'class="dh-links"', 'class="brokers"', 'class="dh-hero"', 'id="dashAnalytics"', 'id="dashCumCard"', 'class="mm-mkt"'].map(at);
   assert.deepStrictEqual(seq, seq.slice().sort((a, b) => a - b), "sections out of order");
 });
 

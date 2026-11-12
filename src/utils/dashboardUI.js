@@ -35,18 +35,18 @@ function dashCSS() {
   .dh-num { font-variant-numeric:tabular-nums; white-space:nowrap; }
 
   /* ── Today's P&L hero ── */
-  .dh-hero { background:var(--dh-card); border:1px solid var(--dh-border); border-radius:12px; padding:14px 16px; margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; }
+  .dh-hero { background:var(--dh-card); border:1px solid var(--dh-border); border-radius:12px; padding:10px 16px; margin-bottom:12px; display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; }
   .dh-hero-main { display:flex; flex-direction:column; gap:2px; min-width:0; }
   .dh-hero-cap { font-size:0.7rem; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; color:var(--dh-muted); }
   .dh-hero-total { font-size:2.1rem; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; color:var(--dh-zero); }
   .dh-hero-sub { font-size:0.74rem; color:var(--dh-dim); }
-  .dh-chips { display:flex; flex-wrap:wrap; gap:8px; flex:1 1 280px; justify-content:flex-end; }
-  .dh-chip { display:inline-flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:1px; min-height:44px; min-width:92px; padding:5px 12px; border-radius:10px; border:1px solid var(--dh-border); background:var(--dh-inset); color:var(--dh-text); font:inherit; cursor:pointer; text-align:left; }
+  .dh-chips { display:flex; flex-wrap:wrap; gap:8px; flex:1 1 280px; }
+  .dh-chip { display:inline-flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:1px; flex:1 1 120px; min-height:44px; min-width:92px; padding:5px 12px; border-radius:10px; border:1px solid var(--dh-border); background:var(--dh-inset); color:var(--dh-text); font:inherit; cursor:pointer; text-align:left; }
   .dh-chip:hover { border-color:var(--dh-focus); }
   .dh-chip:focus-visible, .dh-fbtn:focus-visible, .dh-link:focus-visible { outline:2px solid var(--dh-focus); outline-offset:2px; }
   .dh-chip.active { border-color:var(--dh-focus); box-shadow:inset 0 0 0 1px var(--dh-focus); }
   .dh-chip-k { font-size:0.62rem; font-weight:700; letter-spacing:0.6px; color:var(--dh-muted); }
-  .dh-chip-v { font-size:0.92rem; font-weight:700; font-variant-numeric:tabular-nums; color:var(--dh-zero); }
+  .dh-chip-v { font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums; color:var(--dh-zero); }
 
   /* ── Market filter — one scrollable row; it never widens the page ── */
   .dh-filter { display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; margin:0 0 14px; padding-bottom:2px; }
