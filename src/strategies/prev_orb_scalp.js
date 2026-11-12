@@ -60,7 +60,7 @@
  * Zero paper and zero live trades as of 2026-09-27.
  *
  * Contract:
- *   getConfig()                         -> live env read (never cached)
+ *   getConfig(prefix?)                  -> live env read (never cached); prefix = a pair's own keys
  *   dayLevels(candles, opts)            -> { prevDay, or } for the last bar's day
  *   getSignal(candles, opts)            -> { signal, side, entrySpot, candleSize, ... }
  */
@@ -103,8 +103,21 @@ function _fmtMins(mins) {
 /** Finite-number guard. Number(null)===0 and Number("")===0 both invent a price. */
 function _num(x) { return typeof x === "number" && Number.isFinite(x); }
 
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+// Env read for one key. The home pair (no prefix / "PREV_ORB_SCALP") reads
+// process.env exactly as it always did; another market's pair
+// (SENSEX_PREV_ORB_SCALP, BN_PREV_ORB_SCALP ...) reads its own key with pair
+// inheritance: its value when set, else NIFTY's PREV_ORB_SCALP_* value
+// (config/pairs.js envGet). `key` is always the NIFTY key, so the literal names
+// stay greppable.
+let _pairsMod = null;
+function _rawEnv(key, prefix) {
+  if (!prefix || prefix === NAME) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(`${prefix}${key.slice(NAME.length)}`);
+}
+
+function _intEnv(key, def, min, max, prefix) {
+  const v = parseInt(_rawEnv(key, prefix), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
@@ -126,18 +139,23 @@ const MARKET_CLOSE_MIN = 15 * 60 + 30;
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ *
+ * `prefix`: a (strategy, market) pair's env prefix ("SENSEX_PREV_ORB_SCALP",
+ * "BN_PREV_ORB_SCALP" ...), whose keys are read with pair inheritance. Omitted
+ * (or "PREV_ORB_SCALP") = the NIFTY keys, read exactly as before.
  */
-function getConfig() {
-  const sessionStartMin = _parseHHMM(process.env.PREV_ORB_SCALP_SESSION_START, 9 * 60 + 15);
-  const orMins = _intEnv("PREV_ORB_SCALP_OR_MINS", 15, 3, 120);
+function getConfig(prefix) {
+  const P = prefix && prefix !== NAME ? prefix : null;   // a pair: read through pairs.envGet
+  const sessionStartMin = _parseHHMM(P ? _rawEnv("PREV_ORB_SCALP_SESSION_START", P) : process.env.PREV_ORB_SCALP_SESSION_START, 9 * 60 + 15);
+  const orMins = _intEnv("PREV_ORB_SCALP_OR_MINS", 15, 3, 120, P);
   return {
     // The ENTRY chart. The 15-min analysis candle is aggregated from it.
-    resolutionMins:   _intEnv("PREV_ORB_SCALP_RESOLUTION", 3, 1, 15),
+    resolutionMins:   _intEnv("PREV_ORB_SCALP_RESOLUTION", 3, 1, 15, P),
     orMins,
     sessionStartMin,
     // Entries can only start once the analysis candle has closed.
     entryStartMin:    sessionStartMin + orMins,
-    entryEndMin:      _parseHHMM(process.env.PREV_ORB_SCALP_ENTRY_END, 14 * 60 + 30),
+    entryEndMin:      _parseHHMM(P ? _rawEnv("PREV_ORB_SCALP_ENTRY_END", P) : process.env.PREV_ORB_SCALP_ENTRY_END, 14 * 60 + 30),
   };
 }
 
