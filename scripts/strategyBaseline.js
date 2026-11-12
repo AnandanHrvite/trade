@@ -190,6 +190,13 @@ const PAIRS = [
   { route: "pivotEmaStPaper",    market: "SENSEX",    mode: "sensex_pivot_ema_st-paper",    enabledKey: "SENSEX_PIVOT_EMA_ST_MODE_ENABLED" },
   { route: "pivotEmaStPaper",    market: "BANKNIFTY", mode: "bn_pivot_ema_st-paper",        enabledKey: "BN_PIVOT_EMA_ST_MODE_ENABLED" },
   { route: "pivotEmaStPaper",    market: "NIFTY_FUT", mode: "fut_pivot_ema_st-paper",       enabledKey: "FUT_PIVOT_EMA_ST_MODE_ENABLED" },
+  // ITM20_SCALP_RETEST_TOL_PTS (5) is NIFTY index points; SENSEX / BANKNIFTY
+  // set it scaled to their index through their OWN keys (as HA SCALP does above).
+  { route: "itm20ScalpPaper", market: "SENSEX",    mode: "sensex_itm20_scalp-paper", enabledKey: "SENSEX_ITM20_SCALP_MODE_ENABLED",
+    settings: { SENSEX_ITM20_SCALP_RETEST_TOL_PTS: "16" } },
+  { route: "itm20ScalpPaper", market: "BANKNIFTY", mode: "bn_itm20_scalp-paper",     enabledKey: "BN_ITM20_SCALP_MODE_ENABLED",
+    settings: { BN_ITM20_SCALP_RETEST_TOL_PTS: "12" } },
+  { route: "itm20ScalpPaper", market: "NIFTY_FUT", mode: "fut_itm20_scalp-paper",    enabledKey: "FUT_ITM20_SCALP_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {
