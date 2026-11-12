@@ -87,7 +87,8 @@ function check(name, fn) { _queue.push({ name, fn }); }
 
 // ── HTTP harness: the old pages + the new page on one throwaway server ──────
 const app = express();
-const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp", "rsiPivotSt", "itm20Scalp"];
+const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp", "rsiPivotSt", "itm20Scalp", "simple930"];
+
 for (const id of OLD) {
   const s = registry.byId(id);
   app.use(s.backtest.path, require(registry.srcPath(s.backtest.module)));
@@ -270,7 +271,10 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   assert.deepStrictEqual(iz.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of iz) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `itm20Scalp ${m.key}`);
   assert.ok(!iz.some((m) => m.key === "CRUDE"), "ITM20 SCALP needs the index open — no MCX");
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp"]);
+  const s930 = page.marketOptions("simple930");
+  assert.deepStrictEqual(s930.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "SENSEX"], "SIMPLE 9:30 is premium-only: no futures backtest");
+  for (const m of s930) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `simple930 ${m.key}`);
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp", "simple930"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -306,6 +310,7 @@ const PARITY = [
   { id: "trendDayScalp", qs: `from=${FROM}&to=${TO}` },
   { id: "rsiPivotSt", qs: `from=${FROM}&to=${TO}` },
   { id: "itm20Scalp", qs: `from=${FROM}&to=${TO}` },
+  { id: "simple930",  qs: `from=${FROM}&to=${TO}` },
 ];
 const parityNotes = [];
 for (const P of PARITY) {
@@ -1198,6 +1203,65 @@ check("ITM20 SCALP pair settings: a SENSEX-own key reaches the engine (as its IT
     for (const t of neu.result.trades) assert.ok(t.entry.split(", ")[1].slice(0, 5) <= "10:05", `SENSEX ITM20 SCALP entered at ${t.entry}`);
     assert.strictEqual(process.env.ITM20_SCALP_ENTRY_END, undefined, "the pair value leaked into the real env");
   } finally { delete process.env.SENSEX_ITM20_SCALP_ENTRY_END; }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4m. SIMPLE 9:30 is market-aware");
+
+const S930_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY"]) {
+  check(`SIMPLE 9:30 ${mk}: its own index + option contracts on its grid, its lot + exchange charges, records the market`, async () => {
+    const mark = fetchLog.length;
+    const neu = await runNew({ strategy: "simple930", market: mk, settings: "current", from: FROM, to: TO });
+    S930_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const U = require("../src/config/instrument").underlyingOf(ctx.underlying);
+    const asked = fetchLog.slice(mark).map((f) => f.symbol);
+    assert.strictEqual(asked[0], ctx.spotSymbol, `the ATM must come from ${mk}'s own index`);
+    const opts = asked.slice(1);
+    assert.ok(opts.length && opts.every((s) => s.startsWith(`${U.exchange}:${U.optPrefix}`)), `fetched ${opts.slice(0, 3).join(",")} for ${mk}`);
+    if (!U.weekly) assert.ok(opts.every((s) => /^NSE:BANKNIFTY\d{2}[A-Z]{3}\d+(CE|PE)$/.test(s)), "BANKNIFTY is monthly-only — every contract is a monthly code");
+    assert.strictEqual(neu.result.meta.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    assert.strictEqual(neu.result.meta.qty, ctx.lotQty);
+    for (const t of neu.result.trades) {
+      const charges = getCharges({ broker: "fyers", isFutures: false, exchange: ctx.exchange, entryPremium: t.ePrice, exitPremium: t.xPrice, qty: ctx.lotQty });
+      assert.strictEqual(t.pnl, parseFloat(((t.xPrice - t.ePrice) * ctx.lotQty - charges).toFixed(2)), `${mk} trade ${t.entry}`);
+      assert.strictEqual(t.strike % ctx.strikeStep, 0, `${mk}: strike ${t.strike} is off the ${ctx.strikeStep}-pt grid`);
+      assert.strictEqual(t.broker, "fyers");
+    }
+    assert.strictEqual(neu.result.stats.optionSim, false, "real option candles, not a delta model");
+    assert.ok(!legacySaves.slice(-1).includes("SIMPLE930_BACKTEST"), "a non-NIFTY run overwrote NIFTY's legacy slot");
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+  });
+}
+check("SIMPLE 9:30: the market runs traded (the pricing checks above proved something), NIFTY futures stay coming soon", () => {
+  const S = S930_RUNS.SENSEX, B = S930_RUNS.BANKNIFTY;
+  assert.ok(S && B, "market runs missing");
+  for (const r of [S, B]) assert.ok(r.result.meta.days > 0, "no sessions scanned");
+  say(`       SIMPLE 9:30 trades: SENSEX ${S.result.trades.length} · BANKNIFTY ${B.result.trades.length}`);
+  assert.ok(S.result.trades.length + B.result.trades.length > 0, "no SIMPLE 9:30 market run traded");
+  const fut = page.marketOptions("simple930").find((m) => m.key === "NIFTY_FUT");
+  assert.ok(fut && !fut.enabled && fut.note === "coming soon", "every SIMPLE 9:30 level is a premium — no futures backtest");
+});
+check("SIMPLE 9:30 pair settings: a SENSEX-own key reaches the engine (as its SIMPLE930_* key) for that run only", async () => {
+  process.env.SENSEX_SIMPLE930_TRIGGER_PREMIUM = "4900";
+  try {
+    const { overrides } = page.buildOverrides("simple930", "SENSEX", null);
+    assert.strictEqual(overrides.SIMPLE930_TRIGGER_PREMIUM, "4900");
+    const neu = await runNew({ strategy: "simple930", market: "SENSEX", settings: "current", from: FROM, to: TO });
+    assert.ok(neu.record.overriddenKeys.includes("SIMPLE930_TRIGGER_PREMIUM"));
+    assert.ok(neu.result.trades.length && neu.result.trades.every((t) => /above ₹4900/.test(t.entryReason)), "the SENSEX trigger did not reach the engine");
+    assert.strictEqual(process.env.SIMPLE930_TRIGGER_PREMIUM, undefined, "the pair value leaked into the real env");
+  } finally { delete process.env.SENSEX_SIMPLE930_TRIGGER_PREMIUM; }
+});
+check("the old SIMPLE 9:30 page is untouched by markets: NIFTY run reads NIFTY's index + NIFTY contracts, no market field", async () => {
+  const mark = fetchLog.length;
+  const oldRes = await runOld("simple930", `from=${FROM}&to=${TO}`);
+  const asked = fetchLog.slice(mark).map((f) => f.symbol);
+  assert.strictEqual(asked[0], "NSE:NIFTY50-INDEX");
+  assert.ok(asked.slice(1).every((s) => s.startsWith("NSE:NIFTY") && !s.startsWith("NSE:NIFTYBANK")));
+  assert.strictEqual(oldRes.meta.market, undefined, "a NIFTY result must not grow a market field");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
