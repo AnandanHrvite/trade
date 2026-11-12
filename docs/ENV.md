@@ -800,7 +800,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `TDS_ATR_PERIOD` | number | `14` | ATR that scales the conviction body. |
 | `TDS_BODY_ATR_MULT` | number | `0.4` | The reclaim candle's body must be at least this × ATR — the conviction gate. |
 | `TDS_EMA_PERIOD` | number | `20` | The pullback zone is whichever of VWAP / this EMA sits nearer to price. |
-| `TDS_ENTRY_END` | time | — | No new entries after this time (IST). |
+| `TDS_ENTRY_END` | time | `14:00` | No new entries after this time (IST). |
 | `TDS_EXTENSION_MULT` | number | `0.20` | Spot must sit this many × the first-hour range away from VWAP. MEASURED over 39 sessions: median 0.18, p90 0.39 — so 0.35 passed only 13% of days and starved the strategy. 0.20 is just above the median. |
 | `TDS_GATE_TIME` | time | `10:15` | The one moment the day is judged trendable (IST). Decided once, then frozen. |
 | `TDS_ITM_STEPS` | number | `1` | Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6. |
@@ -809,7 +809,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `TDS_PAPER_ENABLED` | toggle | `true` | Allow new Trend Day Scalp paper sessions. |
 | `TDS_PULLBACK_WINDOW` | number | `3` | How many recent bars can supply the pullback touch. A wick counts. |
 | `TDS_RESOLUTION` | select | `5` | Signal + exit candle timeframe. |
-| `TDS_SESSION_START` | time | — | Where the first-hour range and the VWAP both start (IST). |
+| `TDS_SESSION_START` | time | `09:15` | Where the first-hour range and the VWAP both start (IST). |
 | `TDS_VWAP_STREAK_BARS` | number | `6` | How many of the last closes must all sit on the same side of VWAP. |
 
 ## TREND PULLBACK STRATEGY — Fyers

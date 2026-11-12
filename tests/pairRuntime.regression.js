@@ -30,7 +30,7 @@ const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), "pair-runtime-"));
 process.env.HOME = SANDBOX;
 process.chdir(SANDBOX);
 for (const k of Object.keys(process.env)) {
-  if (/(_MODE_ENABLED|_EXPIRY_DAY_ONLY|_PAPER_FILL_AT_QUOTE|_MAX_SPREAD_PTS|_OPTION_EXPIRY_OVERRIDE|_OPTION_EXPIRY_TYPE)$|^(MAX_BID_ASK_SPREAD_PTS|LOT_MULTIPLIER|EMA_RSI_ST_V2_)/.test(k)) delete process.env[k];
+  if (/(_MODE_ENABLED|_EXPIRY_DAY_ONLY|_PAPER_FILL_AT_QUOTE|_MAX_SPREAD_PTS|_OPTION_EXPIRY_OVERRIDE|_OPTION_EXPIRY_TYPE)$|^(MAX_BID_ASK_SPREAD_PTS|LOT_MULTIPLIER|EMA_RSI_ST_V2_|TDS_)/.test(k)) delete process.env[k];
 }
 
 let pass = 0, fail = 0;
@@ -81,7 +81,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -680,6 +680,89 @@ check("pair keys Settings shows reach the paper engine: ITM steps, VIX max entry
   });
   const isrc = fs.readFileSync(path.join(__dirname, "../src/config/instrument.js"), "utf8");
   assert.ok(/opts\.itmSteps != null && opts\.itmSteps !== "" \? String\(opts\.itmSteps\) : process\.env\[`\$\{_itmMode\}_ITM_STEPS`\]/.test(isrc));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("TREND DAY SCALP on every market");
+
+const tdsOf = (mk) => pairRuntime.forStrategy("trendDayScalp", mk);
+check("NIFTY is the registry's TDS: path, file, slot, sidebar, notify tag", () => {
+  const rt = tdsOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey],
+    [true, "trend_day_scalp", "TDS", "/trend-day-scalp-paper", "trend-day-scalp-paper", "trend-day-scalp-paper", "trend_day_scalp_paper_trades.json", "TREND_DAY_SCALP_PAPER", "trendDayScalpPaper", "trendDayScalpHistory"]);
+});
+check("other markets: own path, file, slot, prefix and instrument", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "CRUDE"].map(mk => { const r = tdsOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_TDS", "/sensex_trend_day_scalp-paper", "sensex_trend_day_scalp_paper_trades.json", "SENSEX_TDS_PAPER", "SENSEX_TDS-PAPER", "SENSEX_OPTIONS"],
+    ["BANKNIFTY", "BN_TDS", "/bn_trend_day_scalp-paper", "bn_trend_day_scalp_paper_trades.json", "BN_TDS_PAPER", "BN_TDS-PAPER", "BANKNIFTY_OPTIONS"],
+    ["NIFTY_FUT", "FUT_TDS", "/fut_trend_day_scalp-paper", "fut_trend_day_scalp_paper_trades.json", "FUT_TDS_PAPER", "FUT_TDS-PAPER", "NIFTY_FUTURES"],
+    ["CRUDE", "CRUDE_TDS", "/crude_trend_day_scalp-paper", "crude_trend_day_scalp_paper_trades.json", "CRUDE_TDS_PAPER", "CRUDE_TDS-PAPER", "MCX_OPTIONS"],
+  ]);
+  assert.strictEqual(pairs.byReplayMode("sensex_trend_day_scalp-paper").strategyId, "trendDayScalp");
+  assert.strictEqual(pairs.byReplayMode("trend-day-scalp-paper"), null, "the home mode is the registry's");
+});
+check("engine config: NIFTY reads TDS_* exactly; a pair its own key, else NIFTY's", () => {
+  const eng = require("../src/strategies/trend_day_scalp");
+  withEnv({ TDS_MAX_SL_PTS: "50", TDS_GATE_TIME: "10:30", SENSEX_TDS_MAX_SL_PTS: "130", BN_TDS_MAX_SL_PTS: undefined }, () => {
+    const n = eng.getConfig(), s = eng.getConfig("SENSEX_TDS"), b = eng.getConfig("BN_TDS");
+    assert.deepStrictEqual([n.maxSlPts, n.gateMin], [50, 630]);
+    assert.deepStrictEqual([s.maxSlPts, s.gateMin], [130, 630], "own cap, inherited gate time");
+    assert.deepStrictEqual([b.maxSlPts, b.gateMin], [50, 630], "inherits NIFTY");
+    assert.deepStrictEqual(eng.getConfig("TDS"), n, "the TDS prefix is NIFTY");
+  });
+  withEnv({ SENSEX_TDS_EMA_PERIOD: "abc" }, () => assert.strictEqual(eng.getConfig("SENSEX_TDS").emaPeriod, 20, "bad own value falls to the default"));
+});
+check("<PAIR>_EXPIRY_DAY_ONLY / paper switch / fill at quote follow the TDS keys", () => {
+  assert.strictEqual(tdsOf("SENSEX").expiryDayOnly(), false);
+  withEnv({ TDS_EXPIRY_DAY_ONLY: "true" }, () => assert.strictEqual(tdsOf("SENSEX").expiryDayOnly(), true));
+  assert.strictEqual(tdsOf("BANKNIFTY").paperEnabled(), true, "TDS_PAPER_ENABLED defaults on");
+  withEnv({ BN_TDS_PAPER_ENABLED: "false" }, () => assert.strictEqual(tdsOf("BANKNIFTY").paperEnabled(), false));
+  assert.deepStrictEqual([tdsOf("SENSEX").fillAtQuote(), tdsOf("SENSEX").fillAtQuoteKey, tdsOf("NIFTY").fillAtQuote()], [true, "SENSEX_TDS_PAPER_FILL_AT_QUOTE", false]);
+});
+check("crash snapshot, logs and tags per TDS pair", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveTrendDayScalpPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger"), tags = require("../src/utils/logTags");
+  assert.ok(tl.modes().includes("sensex_trend_day_scalp") && sl.modes().includes("fut_trend_day_scalp"));
+  assert.deepStrictEqual(tags.tagsFor("bn_trend_day_scalp", {}), { market: "BANKNIFTY", strategy: "TDS" });
+  assert.deepStrictEqual(tags.tagsFor("trend_day_scalp", {}), { market: "NIFTY", strategy: "TDS" });
+  tdsOf("BANKNIFTY").persist.save({ side: "PE", symbol: "NSE:BANKNIFTY26NOV57900PE", entryPrice: 57800 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("bn_trend_day_scalp").position.symbol, "NSE:BANKNIFTY26NOV57900PE");
+    pp.clearPairPositions();
+  });
+});
+check("route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/trendDayScalpPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/trend-day-scalp-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  const sx = route.forMarket("SENSEX");
+  assert.ok(sx && sx !== route && route.forMarket("SENSEX") === sx, "one instance per market");
+  assert.strictEqual(sx.pairRuntime.paperPath, "/sensex_trend_day_scalp-paper");
+  assert.strictEqual(typeof sx.stopSession, "function");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(sx.pairRuntime.paperPath, sx);
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, () => {
+      http.get(`http://127.0.0.1:${srv.address().port}/sensex_trend_day_scalp-paper/start`, (res) => {
+        let body = "";
+        res.on("data", (c) => { body += c; });
+        res.on("end", () => {
+          srv.close();
+          try {
+            assert.strictEqual(res.statusCode, 403);
+            assert.ok(body.includes("SENSEX_TDS_MODE_ENABLED"), "names the pair's switch");
+            assert.ok(!sx.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+            resolve();
+          } catch (e) { reject(e); }
+        });
+      }).on("error", (e) => { srv.close(); reject(e); });
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

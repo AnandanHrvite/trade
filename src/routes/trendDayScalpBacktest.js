@@ -23,6 +23,16 @@
  * DIRECTIONAL, not exact. A spread/slippage haircut of BACKTEST_SLIPPAGE_PTS is
  * applied EACH way — without it a backtest of option BUYING always flatters.
  * Futures mode: paper skips the premium lock, so trades run to the day's end.
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles, lot, exchange charges (BSE for SENSEX) and, for
+ * NIFTY_FUT, futures pricing come from services/backtestMarket.js; the market's
+ * pair settings (config/pairs.js: own key, else NIFTY's, else the default) are
+ * mapped onto the TDS_* keys the engine reads, for that run only
+ * (utils/scopedEnv.js). With market NIFTY nothing changes. MCX and SAIL stay
+ * "coming soon": backtestMarket has no MCX spot series or rule expiry, and SAIL
+ * is not one of its backtest markets yet.
  */
 
 const express = require("express");
@@ -34,7 +44,6 @@ const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
-const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
@@ -46,8 +55,8 @@ function _futStopMsg(entry, px, peak) {
   return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
+const backtestMarket = require("../services/backtestMarket");
 
-const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#a855f7";
 const ENDPOINT = "/trend-day-scalp-backtest";
 const RESULT_KEY = "TREND_DAY_SCALP_BACKTEST";
@@ -70,17 +79,21 @@ function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSe
 /**
  * @param {Array} intraday TDS_RESOLUTION-minute spot candles across the range,
  *        INCLUDING enough warm-up before `from` for EMA/ATR to seed.
+ * @param {object} [mkt] a backtestMarket.context(): the market's lot, exchange
+ *        and futures flag. Omitted = NIFTY options, exactly as before markets existed.
  */
-async function runTrendDayScalpBacktest(intraday) {
+async function runTrendDayScalpBacktest(intraday, mkt) {
   if (!intraday || !intraday.length) return { trades: [], days: 0, skipped: [], gateStats: { decided: 0, tradeable: 0 } };
 
   const cfg = tdsStrategy.getConfig();
-  // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
-  // "premium" the sim carries IS the spot level (see instrumentMode.js).
-  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const M = mkt || backtestMarket.context("NIFTY");
+  // FUTURES MODE (the NIFTY_FUT market only) — index points are rupees 1:1: no
+  // delta, no theta, and the "premium" the sim carries IS the spot level.
+  const IS_FUT       = M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = instrumentConfig.getLotQty();
+  const LOT_SIZE     = M.lotQty;
+  const EXCHANGE     = M.exchange;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
@@ -146,7 +159,7 @@ async function runTrendDayScalpBacktest(intraday) {
       const spotMove = pos.side === "CE" ? (exitSpot - pos.entrySpot) : (pos.entrySpot - exitSpot);
       const raw = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
       const exitPrem = Math.max(0.05, raw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-      const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+      const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, exchange: EXCHANGE, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
       return {
         pnl: parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2)),
         exitPrem: parseFloat(exitPrem.toFixed(2)),
@@ -277,9 +290,19 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
+function _escHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/**
+ * The results-page options for one finished run: this page and the unified
+ * /backtest page render the same view. `meta.market` is the run's market key
+ * (absent on a NIFTY run).
+ */
 function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = tdsStrategy.getConfig();
+  const M   = backtestMarket.context(meta.market || "NIFTY");
   const gs = meta.gateStats || { decided: 0, tradeable: 0 };
   return {
     mode: "TREND_DAY_SCALP",
@@ -303,7 +326,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Day gate PASSED", value: `${gs.tradeable} / ${gs.decided} (${gs.decided ? ((gs.tradeable / gs.decided) * 100).toFixed(0) : 0}%)` },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
+    notes: `${M.key !== "NIFTY" ? `<b>MARKET: ${_escHtml(M.label)}</b> — ${_escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${_escHtml(M.exchange)} charges. ` : ""}${M.isFutures === true ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium profit lock (it has no meaning without a premium), so trades run to the day's end; a PE is a SHORT. " : ""}<b>Day gate (${process.env.TDS_GATE_TIME || "10:15"}, decided once then frozen):</b> first-hour range ≥ ${cfg.minRangePct}% of spot, the last ${cfg.vwapStreakBars} closes all one side of VWAP, and spot extended ≥ ${cfg.extensionMult}× the range from VWAP. Fail any one → NO TRADE that day; the side is then LOCKED (above VWAP = CE only). <b>Entry:</b> a pullback whose ${cfg.pullbackWindow}-bar extreme reaches the nearer of VWAP / EMA${cfg.emaPeriod}, reclaimed by a bar CLOSING back through it with body ≥ ${cfg.bodyAtrMult}× ATR${cfg.atrPeriod}. Setups deeper than ${cfg.maxSlPts}pt are SKIPPED. <b>Exit:</b> the global profit lock on the simulated premium is the only exit; anything still open closes at the day's last bar. <b>Intra-bar ordering:</b> open → adverse extreme → favourable extreme → close; a bar that opened through the lock floor fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy stands aside on most days by design, so a short range will show very few trades. It has NEVER traded live or on paper — nothing here is validated.</b>`,
   };
 }
 
@@ -318,16 +341,18 @@ function _renderResults(res, from, to, trades, stats, meta) {
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
   try {
-    console.log(`🔍 TREND_DAY_SCALP Backtest job ${id}: ${from} → ${to}`);
-    backtestJobs.updateProgress(id, { phase: "Fetching intraday candles…", pct: 0 });
+    console.log(`🔍 TREND_DAY_SCALP Backtest job ${id}: ${from} → ${to}${home ? "" : ` on ${M.key}`}`);
+    backtestJobs.updateProgress(id, { phase: home ? "Fetching intraday candles…" : `Fetching ${M.shortLabel} intraday candles…`, pct: 0 });
     // Warm-up runway BEFORE `from` so EMA20/ATR14 are seeded on day one of the
     // range — exactly as Paper's preloadHistory does. ~10 calendar days is
     // ~7 sessions ≈ 525 five-minute bars, far past the ~150-bar convergence.
     const warmDays = 10;
     const warmFrom = new Date(new Date(from + "T00:00:00+05:30").getTime() - warmDays * 86400000)
       .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const intraday = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, String(_resMin()), warmFrom, to, false, (p) => backtestJobs.updateProgress(id, p));
+    const intraday = await fetchCandlesCachedBT(M.spotSymbol, String(_resMin()), warmFrom, to, false, (p) => backtestJobs.updateProgress(id, p));
     if (!Array.isArray(intraday) || intraday.length < 50) {
       const n = Array.isArray(intraday) ? intraday.length : 0;
       backtestJobs.failJob(id, n === 0
@@ -340,18 +365,25 @@ async function _runJob(id, p) {
     // Drop the warm-up days from the RESULT window while leaving them in the
     // series the engine reads (indicators stay warm, trades stay in range).
     const fromTs = Math.floor(new Date(from + "T00:00:00+05:30").getTime() / 1000);
-    const all = await runTrendDayScalpBacktest(intraday);
+    const all = await runTrendDayScalpBacktest(intraday, M);
     const trades = all.trades.filter(t => t.entryTs >= fromTs);
     const days = all.days;
     const stats = computeBacktestStats(trades);
-    stats.optionSim = true;
+    stats.optionSim = !M.isFutures;
     stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
     stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    if (M.isFutures) stats.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
 
-    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
-    catch (e) { console.warn("[trend-day-scalp-backtest] saveResult failed:", e.message); }
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (home) {
+      try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
+      catch (e) { console.warn("[trend-day-scalp-backtest] saveResult failed:", e.message); }
+    }
 
-    backtestJobs.completeJob(id, { trades, stats, from, to, meta: { days, skipped: all.skipped, gateStats: all.gateStats } });
+    const meta = { days, skipped: all.skipped, gateStats: all.gateStats };
+    if (!home) meta.market = M.key;
+    backtestJobs.completeJob(id, { trades, stats, from, to, meta });
     console.log(`✅ TREND_DAY_SCALP Backtest job ${id} complete — ${trades.length} trades over ${days} sessions (gate passed ${all.gateStats.tradeable}/${all.gateStats.decided})`);
   } catch (err) {
     console.error("[trend-day-scalp-backtest] job error:", err);
@@ -405,9 +437,9 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to, market: p.market }),
   view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, skipped: [], gateStats: { decided: 0, tradeable: 0 } }),
 };
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).

@@ -167,6 +167,13 @@ const PAIRS = [
   { route: "trendPbPaper",    market: "SENSEX",    mode: "sensex_trend_pb-paper",      enabledKey: "SENSEX_TREND_PB_MODE_ENABLED" },
   { route: "trendPbPaper",    market: "BANKNIFTY", mode: "bn_trend_pb-paper",          enabledKey: "BN_TREND_PB_MODE_ENABLED" },
   { route: "trendPbPaper",    market: "NIFTY_FUT", mode: "fut_trend_pb-paper",         enabledKey: "FUT_TREND_PB_MODE_ENABLED" },
+  // TDS_MAX_SL_PTS is in index points, sized for NIFTY (40). A pair inherits it
+  // unless it sets its own, so these two set the cap scaled to their index
+  // (SENSEX ~3.3x, BANKNIFTY ~2.4x NIFTY) through their OWN keys: that is what
+  // lets the synthetic sessions trade there, and it exercises a pair-own key.
+  { route: "trendDayScalpPaper", market: "SENSEX",    mode: "sensex_trend_day_scalp-paper", enabledKey: "SENSEX_TDS_MODE_ENABLED", settings: { SENSEX_TDS_MAX_SL_PTS: "130" } },
+  { route: "trendDayScalpPaper", market: "BANKNIFTY", mode: "bn_trend_day_scalp-paper",     enabledKey: "BN_TDS_MODE_ENABLED",     settings: { BN_TDS_MAX_SL_PTS: "95" } },
+  { route: "trendDayScalpPaper", market: "NIFTY_FUT", mode: "fut_trend_day_scalp-paper",    enabledKey: "FUT_TDS_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {
