@@ -1,0 +1,878 @@
+{
+  "baselineVersion": 1,
+  "strategy": "prevOrbScalpPaper.SENSEX",
+  "mode": "sensex_prev_orb_scalp-paper",
+  "totalTrades": 5,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 1009.01,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX2691082800PE",
+          "strike": 82800,
+          "qty": 20,
+          "entryTime": "7/9/2026, 10:03:06",
+          "exitTime": "7/9/2026, 10:09:44",
+          "entrySpot": 82672.25,
+          "exitSpot": 82578.95,
+          "entryLtp": 559.65,
+          "exitLtp": 613.85,
+          "reason": "Profit lock trail 85% — premium Rs614.35 fell to the trailed floor Rs615.58 (keeps 85% of the gain to peak Rs625.45, entry Rs559.65)",
+          "pnl": 1009.01
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX2691082800PE",
+          "qty": 20,
+          "entryPrice": 82672.25,
+          "exitPrice": 82578.95,
+          "spotAtEntry": 82672.25,
+          "spotAtExit": 82578.95,
+          "indexAtEntry": 82672.25,
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionEntryLtp": 559.65,
+          "optionExitLtp": 613.85,
+          "bestOptionLtp": 625.45,
+          "entryTime": "7/9/2026, 10:03:06",
+          "exitTime": "7/9/2026, 10:09:44",
+          "entryBarTime": 1788755580,
+          "exitBarTime": 1788755940,
+          "pnl": 1009.01,
+          "pnlMode": "option premium: entry ₹559.65 → exit ₹613.85 (levels measured on SENSEX spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs614.35 fell to the trailed floor Rs615.58 (keeps 85% of the gain to peak Rs625.45, entry Rs559.65)",
+          "entryReason": "PREV ORB PE: 09:15 candle closed 82710.3 below yesterday's LOW 83380.95 → PE day · 10:00 3-min candle closed 82672.7 below 82677.35 (candle size 30.4pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 82800,
+          "optionExpiry": "26910",
+          "optionType": "PE",
+          "optionEntrySymbol": "BSE:SENSEX2691082800PE",
+          "signalStrength": "STRONG",
+          "candleSize": 30.4,
+          "breakLevel": 82677.35,
+          "prevHigh": 83955.55,
+          "prevLow": 83380.95,
+          "prevDate": "2026-09-04",
+          "orHigh": 82960.1,
+          "orLow": 82677.35,
+          "orClose": 82710.3,
+          "signalRawHigh": 82695.9,
+          "signalRawLow": 82665.5,
+          "signalBarTime": 1788755400,
+          "mfeSpotPts": 114.15,
+          "mfePnl": 1316,
+          "maeSpotPts": -3.95,
+          "maePnl": -24,
+          "secsToMFE": 326,
+          "secsToMAE": 10,
+          "firstMoveDir": "DOWN",
+          "secsToFirstMove": 10,
+          "pathPts": [
+            1.3,
+            1.15,
+            24.5,
+            34.75,
+            48.8,
+            67.05,
+            69.05,
+            88.4,
+            99.3,
+            109.2,
+            109.35,
+            101.3,
+            93.8
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 398000,
+          "charges": 74.99,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "PREV_ORB_SCALP",
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 558.65,
+            "ask": 559.65,
+            "ltp": 559.15
+          },
+          "exitQuote": {
+            "bid": 613.85,
+            "ask": 614.85,
+            "ltp": 614.35
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 706.64,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0177600CE",
+          "strike": 77600,
+          "qty": 20,
+          "entryTime": "28/9/2026, 10:06:06",
+          "exitTime": "28/9/2026, 10:19:44",
+          "entrySpot": 77712.15,
+          "exitSpot": 77790.7,
+          "entryLtp": 515.3,
+          "exitLtp": 554.25,
+          "reason": "Profit lock trail 85% — premium Rs554.75 fell to the trailed floor Rs554.82 (keeps 85% of the gain to peak Rs561.8, entry Rs515.3)",
+          "pnl": 706.64
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0177600CE",
+          "qty": 20,
+          "entryPrice": 77712.15,
+          "exitPrice": 77790.7,
+          "spotAtEntry": 77712.15,
+          "spotAtExit": 77790.7,
+          "indexAtEntry": 77712.15,
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionEntryLtp": 515.3,
+          "optionExitLtp": 554.25,
+          "bestOptionLtp": 561.8,
+          "entryTime": "28/9/2026, 10:06:06",
+          "exitTime": "28/9/2026, 10:19:44",
+          "entryBarTime": 1790570160,
+          "exitBarTime": 1790570880,
+          "pnl": 706.64,
+          "pnlMode": "option premium: entry ₹515.3 → exit ₹554.25 (levels measured on SENSEX spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs554.75 fell to the trailed floor Rs554.82 (keeps 85% of the gain to peak Rs561.8, entry Rs515.3)",
+          "entryReason": "PREV ORB CE: 09:15 candle closed 77644.75 above yesterday's HIGH 77046.95 → CE day · 10:03 3-min candle closed 77713.3 above 77704.55 (candle size 68.65pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 77600,
+          "optionExpiry": "26O01",
+          "optionType": "CE",
+          "optionEntrySymbol": "BSE:SENSEX26O0177600CE",
+          "signalStrength": "STRONG",
+          "candleSize": 68.65,
+          "breakLevel": 77704.55,
+          "prevHigh": 77046.95,
+          "prevLow": 76456.25,
+          "prevDate": "2026-09-25",
+          "orHigh": 77704.55,
+          "orLow": 77452.15,
+          "orClose": 77644.75,
+          "signalRawHigh": 77714.7,
+          "signalRawLow": 77646.05,
+          "signalBarTime": 1790569980,
+          "mfeSpotPts": 90.85,
+          "mfePnl": 930,
+          "maeSpotPts": 0,
+          "maePnl": 0,
+          "secsToMFE": 794,
+          "secsToMAE": 0,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 2,
+          "pathPts": [
+            8.45,
+            10.35,
+            20.3,
+            16.85,
+            20.3,
+            28.9,
+            20.2,
+            28.65,
+            44.15,
+            44.65,
+            51.4,
+            46.95,
+            47.75,
+            46.8,
+            51.1,
+            45.45,
+            49.85,
+            52.85,
+            50.9,
+            58.3,
+            58.7,
+            64.85,
+            66.8,
+            77.6,
+            86.6,
+            86.7,
+            84.7
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 818000,
+          "charges": 72.36,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "PREV_ORB_SCALP",
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 514.3,
+            "ask": 515.3,
+            "ltp": 514.8
+          },
+          "exitQuote": {
+            "bid": 554.25,
+            "ask": 555.25,
+            "ltp": 554.75
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 845.14,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0877900CE",
+          "strike": 77900,
+          "qty": 20,
+          "entryTime": "5/10/2026, 11:51:06",
+          "exitTime": "5/10/2026, 12:05:54",
+          "entrySpot": 77956.85,
+          "exitSpot": 78040,
+          "entryLtp": 390,
+          "exitLtp": 435.6,
+          "reason": "Profit lock trail 85% — premium Rs436.1 fell to the trailed floor Rs437.18 (keeps 85% of the gain to peak Rs445.5, entry Rs390)",
+          "pnl": 845.14
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O0877900CE",
+          "qty": 20,
+          "entryPrice": 77956.85,
+          "exitPrice": 78040,
+          "spotAtEntry": 77956.85,
+          "spotAtExit": 78040,
+          "indexAtEntry": 77956.85,
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionEntryLtp": 390,
+          "optionExitLtp": 435.6,
+          "bestOptionLtp": 445.5,
+          "entryTime": "5/10/2026, 11:51:06",
+          "exitTime": "5/10/2026, 12:05:54",
+          "entryBarTime": 1791181260,
+          "exitBarTime": 1791181980,
+          "pnl": 845.14,
+          "pnlMode": "option premium: entry ₹390 → exit ₹435.6 (levels measured on SENSEX spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs436.1 fell to the trailed floor Rs437.18 (keeps 85% of the gain to peak Rs445.5, entry Rs390)",
+          "entryReason": "PREV ORB CE: 09:15 candle closed 77867.6 above yesterday's HIGH 77820.1 → CE day · 11:48 3-min candle closed 77959.3 above 77881.6 (candle size 115.55pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 77900,
+          "optionExpiry": "26O08",
+          "optionType": "CE",
+          "optionEntrySymbol": "BSE:SENSEX26O0877900CE",
+          "signalStrength": "STRONG",
+          "candleSize": 115.55,
+          "breakLevel": 77881.6,
+          "prevHigh": 77820.1,
+          "prevLow": 77188.45,
+          "prevDate": "2026-10-01",
+          "orHigh": 77881.6,
+          "orLow": 77673,
+          "orClose": 77867.6,
+          "signalRawHigh": 77962.55,
+          "signalRawLow": 77847,
+          "signalBarTime": 1791181080,
+          "mfeSpotPts": 99.75,
+          "mfePnl": 1110,
+          "maeSpotPts": -11.85,
+          "maePnl": -92,
+          "secsToMFE": 878,
+          "secsToMAE": 206,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 4,
+          "pathPts": [
+            -1.4,
+            4.7,
+            3.25,
+            10.1,
+            11.4,
+            -2.65,
+            -9.05,
+            4.9,
+            5.3,
+            7.15,
+            21,
+            -0.8,
+            11.8,
+            6.25,
+            -6.55,
+            21.55,
+            17.2,
+            6.5,
+            -2.15,
+            16.9,
+            36.65,
+            34.55,
+            38.65,
+            23.9,
+            57.4,
+            74.15,
+            85.3,
+            84.5,
+            92.65
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 888000,
+          "charges": 66.86,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "PREV_ORB_SCALP",
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 389,
+            "ask": 390,
+            "ltp": 389.5
+          },
+          "exitQuote": {
+            "bid": 435.6,
+            "ask": 436.6,
+            "ltp": 436.1
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 844.99,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578500CE",
+          "strike": 78500,
+          "qty": 20,
+          "entryTime": "9/10/2026, 10:09:06",
+          "exitTime": "9/10/2026, 10:27:38",
+          "entrySpot": 78554.65,
+          "exitSpot": 78648.75,
+          "entryLtp": 567.25,
+          "exitLtp": 613.25,
+          "reason": "Profit lock trail 85% — premium Rs613.75 fell to the trailed floor Rs615.45 (keeps 85% of the gain to peak Rs623.95, entry Rs567.25)",
+          "pnl": 844.99
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "BSE:SENSEX26O1578500CE",
+          "qty": 20,
+          "entryPrice": 78554.65,
+          "exitPrice": 78648.75,
+          "spotAtEntry": 78554.65,
+          "spotAtExit": 78648.75,
+          "indexAtEntry": 78554.65,
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionEntryLtp": 567.25,
+          "optionExitLtp": 613.25,
+          "bestOptionLtp": 623.95,
+          "entryTime": "9/10/2026, 10:09:06",
+          "exitTime": "9/10/2026, 10:27:38",
+          "entryBarTime": 1791520740,
+          "exitBarTime": 1791521820,
+          "pnl": 844.99,
+          "pnlMode": "option premium: entry ₹567.25 → exit ₹613.25 (levels measured on SENSEX spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs613.75 fell to the trailed floor Rs615.45 (keeps 85% of the gain to peak Rs623.95, entry Rs567.25)",
+          "entryReason": "PREV ORB CE: 09:15 candle closed 78483.25 above yesterday's HIGH 78060.8 → CE day · 10:06 3-min candle closed 78549.2 above 78539.3 (candle size 33.25pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 78500,
+          "optionExpiry": "26O15",
+          "optionType": "CE",
+          "optionEntrySymbol": "BSE:SENSEX26O1578500CE",
+          "signalStrength": "STRONG",
+          "candleSize": 33.25,
+          "breakLevel": 78539.3,
+          "prevHigh": 78060.8,
+          "prevLow": 77200.4,
+          "prevDate": "2026-10-08",
+          "orHigh": 78539.3,
+          "orLow": 78311.9,
+          "orClose": 78483.25,
+          "signalRawHigh": 78559.15,
+          "signalRawLow": 78525.9,
+          "signalBarTime": 1791520560,
+          "mfeSpotPts": 110.5,
+          "mfePnl": 1134,
+          "maeSpotPts": -7.1,
+          "maePnl": -43,
+          "secsToMFE": 1062,
+          "secsToMAE": 92,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 4,
+          "pathPts": [
+            7.3,
+            14.55,
+            -1.9,
+            8.05,
+            11.8,
+            7.55,
+            4.4,
+            16.35,
+            19.45,
+            22.35,
+            22.05,
+            39.65,
+            53.15,
+            55.25,
+            54.65,
+            57.55,
+            56.75,
+            63.9,
+            61.2,
+            45.4,
+            44,
+            42.75,
+            56.3,
+            56.5,
+            62.9,
+            55.95,
+            58.25,
+            65,
+            60.4,
+            61.7
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 1112000,
+          "charges": 75.01,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "PREV_ORB_SCALP",
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 566.25,
+            "ask": 567.25,
+            "ltp": 566.75
+          },
+          "exitQuote": {
+            "bid": 613.25,
+            "ask": 614.25,
+            "ltp": 613.75
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 794.41,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1577900PE",
+          "strike": 77900,
+          "qty": 20,
+          "entryTime": "12/10/2026, 10:09:06",
+          "exitTime": "12/10/2026, 10:21:34",
+          "entrySpot": 77782.75,
+          "exitSpot": 77704.05,
+          "entryLtp": 560.15,
+          "exitLtp": 603.6,
+          "reason": "Profit lock trail 85% — premium Rs604.1 fell to the trailed floor Rs607.32 (keeps 85% of the gain to peak Rs615.65, entry Rs560.15)",
+          "pnl": 794.41
+        }
+      ],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "day_closed",
+            "count": 1
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1577900PE",
+          "qty": 20,
+          "entryPrice": 77782.75,
+          "exitPrice": 77704.05,
+          "spotAtEntry": 77782.75,
+          "spotAtExit": 77704.05,
+          "indexAtEntry": 77782.75,
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionEntryLtp": 560.15,
+          "optionExitLtp": 603.6,
+          "bestOptionLtp": 615.65,
+          "entryTime": "12/10/2026, 10:09:06",
+          "exitTime": "12/10/2026, 10:21:34",
+          "entryBarTime": 1791779940,
+          "exitBarTime": 1791780660,
+          "pnl": 794.41,
+          "pnlMode": "option premium: entry ₹560.15 → exit ₹603.6 (levels measured on SENSEX spot)",
+          "exitReason": "Profit lock trail 85% — premium Rs604.1 fell to the trailed floor Rs607.32 (keeps 85% of the gain to peak Rs615.65, entry Rs560.15)",
+          "entryReason": "PREV ORB PE: 09:15 candle closed 77842.4 below yesterday's LOW 78311.9 → PE day · 10:06 3-min candle closed 77788.95 below 77790.5 (candle size 32.85pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 77900,
+          "optionExpiry": "26O15",
+          "optionType": "PE",
+          "optionEntrySymbol": "BSE:SENSEX26O1577900PE",
+          "signalStrength": "STRONG",
+          "candleSize": 32.85,
+          "breakLevel": 77790.5,
+          "prevHigh": 78922.4,
+          "prevLow": 78311.9,
+          "prevDate": "2026-10-09",
+          "orHigh": 78096.15,
+          "orLow": 77790.5,
+          "orClose": 77842.4,
+          "signalRawHigh": 77810.05,
+          "signalRawLow": 77777.2,
+          "signalBarTime": 1791779760,
+          "mfeSpotPts": 101.1,
+          "mfePnl": 1110,
+          "maeSpotPts": 0,
+          "maePnl": 0,
+          "secsToMFE": 716,
+          "secsToMAE": 0,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 4,
+          "pathPts": [
+            20.35,
+            18.95,
+            17.15,
+            21.75,
+            28,
+            27.25,
+            35.15,
+            32.4,
+            29.7,
+            47.05,
+            39.7,
+            57.55,
+            56.6,
+            66.1,
+            54.35,
+            57.95,
+            69.3,
+            76.95,
+            64.4,
+            56.6,
+            65.65,
+            88.85,
+            88.1,
+            95.6
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 748000,
+          "charges": 74.59,
+          "isSpot": false,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "PREV_ORB_SCALP",
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 559.15,
+            "ask": 560.15,
+            "ltp": 559.65
+          },
+          "exitQuote": {
+            "bid": 603.6,
+            "ask": 604.6,
+            "ltp": 604.1
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 1,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 1,
+        "byGate": [
+          {
+            "gate": "no_setup_inside_range",
+            "count": 1
+          }
+        ]
+      },
+      "raw": []
+    }
+  ]
+}
