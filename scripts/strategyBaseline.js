@@ -13,7 +13,7 @@
  *
  * PAIRS: the same harness also replays the (strategy, market) pairs a create(pair)
  * builder runs (PAIRS below) through synthetic SENSEX / BANKNIFTY / NIFTY-futures
- * sessions — each market recorded into its own ticks dir, so the NIFTY recording
+ * sessions — each pair recorded into its own ticks dir, so the NIFTY recording
  * is byte-for-byte what it always was — into tests/baseline/<route>.<MARKET>.json.
  *
  *   node scripts/strategyBaseline.js            regenerate tests/baseline/*.json
@@ -164,6 +164,9 @@ const PAIRS = [
   { route: "ema9vwapPaper",   market: "SENSEX",    mode: "sensex_ema9vwap-paper",      enabledKey: "SENSEX_EMA9VWAP_MODE_ENABLED" },
   { route: "ema9vwapPaper",   market: "BANKNIFTY", mode: "bn_ema9vwap-paper",          enabledKey: "BN_EMA9VWAP_MODE_ENABLED" },
   { route: "ema9vwapPaper",   market: "NIFTY_FUT", mode: "fut_ema9vwap-paper",         enabledKey: "FUT_EMA9VWAP_MODE_ENABLED" },
+  { route: "trendPbPaper",    market: "SENSEX",    mode: "sensex_trend_pb-paper",      enabledKey: "SENSEX_TREND_PB_MODE_ENABLED" },
+  { route: "trendPbPaper",    market: "BANKNIFTY", mode: "bn_trend_pb-paper",          enabledKey: "BN_TREND_PB_MODE_ENABLED" },
+  { route: "trendPbPaper",    market: "NIFTY_FUT", mode: "fut_trend_pb-paper",         enabledKey: "FUT_TREND_PB_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {

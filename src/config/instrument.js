@@ -940,7 +940,9 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
   //    Set {MODE}_ITM_STEPS=0 to fall back to ATM. ─────────────────────────────
   const _itmMode = String(mode || "").toUpperCase();
   if (!_hasOverride && (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "TDS" || _itmMode === "HA_SCALP" || _itmMode === "PREV_ORB_SCALP" || _itmMode === "EARLYBIRD")) {
-    const itmSteps = parseInt(process.env[`${_itmMode}_ITM_STEPS`] || "1", 10);
+    // opts.itmSteps: a market pair's own value (<PAIR>_<MODE>_ITM_STEPS, else NIFTY's).
+    const _itmRaw  = opts.itmSteps != null && opts.itmSteps !== "" ? String(opts.itmSteps) : process.env[`${_itmMode}_ITM_STEPS`];
+    const itmSteps = parseInt(_itmRaw || "1", 10);
     if (itmSteps > 0 && (side === "CE" || side === "PE")) {
       const shifted = side === "CE" ? strike - itmSteps * U.strikeStep : strike + itmSteps * U.strikeStep;
       console.log(`${TAG} ${_itmMode} ITM: ${side} strike ${strike} → ${shifted} (${itmSteps} step${itmSteps > 1 ? "s" : ""} × ${U.strikeStep} pts ITM, ~delta 0.6)`);

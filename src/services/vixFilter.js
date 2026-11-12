@@ -255,8 +255,9 @@ function buildVixLookup(vixCandles) {
  * @param {object} [opts]
  * @param {"ema_rsi_st"|"bb_rsi"|"pa"|"orb"} [opts.mode="ema_rsi_st"]
  * @param {boolean} [opts.force=false] — skip enabled check (used by bb_rsi/PA backtests which gate outside)
+ * @param {string|number} [opts.maxEntry] — a caller's own max-entry level (a market pair's key); blank = the mode's
  */
-function checkBacktestVix(vix, signalStrength, { mode = "ema_rsi_st", force = false } = {}) {
+function checkBacktestVix(vix, signalStrength, { mode = "ema_rsi_st", force = false, maxEntry: maxEntryOverride } = {}) {
   if (!force && !getVixEnabled(mode)) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   if (vix === null || vix === undefined) {
@@ -267,7 +268,7 @@ function checkBacktestVix(vix, signalStrength, { mode = "ema_rsi_st", force = fa
     return { allowed: false, vix: null, reason: "VIX data unavailable — blocking entry (fail-closed)" };
   }
 
-  const maxEntry   = getVixMaxEntry(mode);
+  const maxEntry   = _numOr(maxEntryOverride, getVixMaxEntry(mode));
   const strongOnly = getVixStrongOnly(mode);
 
   if (vix > maxEntry) {

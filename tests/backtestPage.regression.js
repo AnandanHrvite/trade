@@ -252,7 +252,10 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   assert.deepStrictEqual(e9.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of e9) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `ema9vwap ${m.key}`);
   assert.ok(e9.some((m) => m.key === "CRUDE" && !m.enabled) && e9.some((m) => m.key === "SAIL" && !m.enabled), "EMA9+VWAP MCX / stock backtests are coming soon");
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap"]);
+  const tpb = page.marketOptions("trendPb");
+  assert.deepStrictEqual(tpb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of tpb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `trendPb ${m.key}: MCX / stocks stay coming soon`);
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -869,6 +872,53 @@ check("the old EMA9+VWAP page is untouched by markets: NIFTY run reads NIFTY's c
 check("EMA9+VWAP section: global VIX filter restored", () => {
   if (_e9VixWas === undefined) delete process.env.VIX_FILTER_ENABLED;
   else process.env.VIX_FILTER_ENABLED = _e9VixWas;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4g. Trend Pullback is market-aware");
+
+const TPB_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`Trend Pullback on ${mk}: its own candles, lot, exchange charges; NIFTY's legacy slot untouched`, async () => {
+    const mark = fetchLog.length, saves = legacySaves.length;
+    const neu = await runNew({ strategy: "trendPb", market: mk, settings: "current", from: FROM, to: TO });
+    TPB_RUNS[mk] = neu;
+    const ctx = bm.context(mk);
+    const asked = fetchLog.slice(mark).filter((f) => String(f.resolution) !== "D").map((f) => f.symbol);
+    assert.ok(asked.length && asked.every((s) => s === ctx.spotSymbol), `fetched ${asked.join(",")} for ${mk}`);
+    assert.strictEqual(neu.result.market, mk);
+    assert.strictEqual(neu.record.market, mk);
+    assert.strictEqual(legacySaves.length, saves, "a non-NIFTY run overwrote NIFTY's legacy slot");
+    const trades = neu.result.trades;
+    assert.ok(trades.length > 0, `${mk}: the synthetic market produced no trade`);
+    for (const t of trades) {
+      const charges = getCharges({ broker: "fyers", isFutures: ctx.isFutures, exchange: ctx.exchange, entryPremium: t.eOpt, exitPremium: t.xOpt, qty: ctx.lotQty });
+      const want = (t.xOpt - t.eOpt) * ctx.lotQty - charges;
+      assert.ok(Math.abs(t.pnl - want) <= ctx.lotQty * 0.005 + 0.02,
+        `${mk} trade ${t.entry}: pnl ${t.pnl} ≠ (${t.xOpt}−${t.eOpt})×${ctx.lotQty}−${charges}`);
+      if (ctx.isFutures) assert.strictEqual(t.eOpt, t.ePrice, `${mk}: a futures entry is the index level`);
+    }
+    assert.strictEqual(!!neu.result.stats.isFutures, ctx.isFutures);
+    assert.strictEqual(neu.result.stats.optionSim, !ctx.isFutures);
+    assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+  });
+}
+check("Trend Pullback: SENSEX trades sit on the SENSEX series; the old NIFTY page reads NIFTY only", async () => {
+  assert.ok(TPB_RUNS.SENSEX && TPB_RUNS.SENSEX.result.trades.every((t) => t.ePrice > 50000));
+  const mark = fetchLog.length;
+  const oldRes = await runOld("trendPb", `from=${FROM}&to=${TO}`);
+  assert.ok(fetchLog.slice(mark).filter((f) => String(f.resolution) !== "D").every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
+  assert.strictEqual(oldRes.market, undefined, "a NIFTY result must not grow a market field");
+});
+check("Trend Pullback pair settings: a BANKNIFTY-own key reaches the engine for that run only", async () => {
+  process.env.BN_TREND_PB_ENTRY_END = "11:00";
+  try {
+    const { overrides } = page.buildOverrides("trendPb", "BANKNIFTY", null);
+    assert.strictEqual(overrides.TREND_PB_ENTRY_END, "11:00");
+    const neu = await runNew({ strategy: "trendPb", market: "BANKNIFTY", settings: "current", from: FROM, to: TO });
+    for (const t of neu.result.trades) assert.ok(t.entry.split(", ")[1].slice(0, 5) < "11:00", `BANKNIFTY trade entered at ${t.entry}`);
+    assert.strictEqual(process.env.TREND_PB_ENTRY_END, undefined, "the pair value leaked into the real env");
+  } finally { delete process.env.BN_TREND_PB_ENTRY_END; }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

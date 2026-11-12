@@ -81,7 +81,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -607,6 +607,79 @@ check("bbRsiPaper: a pair's own VIX switch (Settings → that market) drives its
     assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, true], "an unset pair key inherits NIFTY's"));
   withEnv({ BB_RSI_VIX_ENABLED: "true", SENSEX_BB_RSI_VIX_ENABLED: "false" }, () =>
     assert.deepStrictEqual([vixOn(R), vixOn(S)], [true, false], "SENSEX's own key OFF wins over NIFTY's"));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("Trend Pullback runs as a pair (routes/trendPbPaper.js)");
+
+const tpbOf = (mk) => pairRuntime.forStrategy("trendPb", mk);
+check("NIFTY is the registry's Trend Pullback; other markets get their own path, file, slot", () => {
+  const n = tpbOf("NIFTY"), bn = tpbOf("BANKNIFTY");
+  assert.deepStrictEqual(
+    [n.home, n.modeKey, n.envPrefix, n.paperPath, n.replayMode, n.tradesFile, n.socketSlot.mode, n.notifyMode, n.sidebarKey, n.historySidebarKey, n.spotLabel, n.oiApplies],
+    [true, "trend_pb", "TREND_PB", "/trend-pb-paper", "trend-pb-paper", "trend_pb_paper_trades.json", "TREND_PB_PAPER", "TREND_PB-PAPER", "trendPbPaper", "trendPbHistory", "NIFTY", true]);
+  assert.deepStrictEqual([bn.paperPath, bn.tradesFile, bn.modeKey, bn.socketSlot.mode, bn.notifyMode, bn.oiApplies],
+    ["/bn_trend_pb-paper", "bn_trend_pb_paper_trades.json", "bn_trend_pb", "BN_TREND_PB_PAPER", "BN_TREND_PB-PAPER", false]);
+  assert.strictEqual(tpbOf("SENSEX").paperPath, "/sensex_trend_pb-paper");
+  assert.strictEqual(tpbOf("NIFTY_FUT").instrumentName(), "NIFTY_FUTURES");
+  for (const mk of ["BANKNIFTY", "SENSEX", "NIFTY_FUT", "CRUDE", "SAIL"]) assert.strictEqual(tpbOf(mk).enabled(), false, `${mk} ships OFF`);
+});
+check("the NIFTY instance holds Trend Pullback's own named slot; a pair holds its own", () => {
+  const sss = require("../src/utils/sharedSocketState");
+  const slot = tpbOf("NIFTY").socketSlot;
+  slot.set();
+  try { assert.ok(sss.isTrendPbActive() && !tpbOf("BANKNIFTY").socketSlot.isActive()); }
+  finally { slot.clear(); }
+  assert.ok(!sss.isTrendPbActive());
+  const bn = tpbOf("BANKNIFTY").socketSlot;
+  bn.set();
+  try { assert.ok(bn.isActive() && !sss.isTrendPbActive() && !rtOf("BANKNIFTY").socketSlot.isActive(), "V2's BANKNIFTY slot is a different one"); }
+  finally { bn.clear(); }
+});
+check("engine: a pair prefix reads its own TREND_PB keys, else NIFTY's; no prefix reads NIFTY only", () => {
+  const eng = require("../src/strategies/trend_pb");
+  const t = Math.floor(istMs("2026-11-12", 10, 0) / 1000);
+  const c = [{ time: t - 300, open: 1, high: 1, low: 1, close: 1 }, { time: t, open: 1, high: 1, low: 1, close: 1 }];
+  withEnv({ TREND_PB_ENTRY_START: "12:00", BN_TREND_PB_ENTRY_START: undefined, SENSEX_TREND_PB_ENTRY_START: "11:00" }, () => {
+    assert.strictEqual(eng.getSignal(c, { silent: true }).reason, "Before entry window (12:00 IST)");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "BN_TREND_PB" }).reason, "Before entry window (12:00 IST)", "inherits NIFTY's");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "SENSEX_TREND_PB" }).reason, "Before entry window (11:00 IST)", "own value wins");
+  });
+  withEnv({ TREND_PB_ENTRY_START: undefined, TREND_PB_ENTRY_END: undefined, BN_TREND_PB_ENTRY_START: "09:20", BN_TREND_PB_ENTRY_END: "09:50" }, () => {
+    assert.ok(!/entry window/.test(eng.getSignal(c, { silent: true }).reason), "NIFTY never reads a pair key");
+    assert.strictEqual(eng.getSignal(c, { silent: true, prefix: "BN_TREND_PB" }).reason, "Past entry window (09:50 IST) — no new entries");
+  });
+});
+check("route: one builder serves every offered market; NIFTY is the default export", () => {
+  const route = require("../src/routes/trendPbPaper");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.pairRuntime.home, true);
+  const bn = route.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== route && typeof bn.stopSession === "function" && typeof route.stopSession === "function");
+  assert.strictEqual(bn.pairRuntime.modeKey, "bn_trend_pb");
+  assert.strictEqual(route.forMarket("BANKNIFTY"), bn, "one instance per pair");
+  for (const p of pairs.runnable().filter(x => x.strategyId === "trendPb")) assert.ok(route.forPair(p), p.id);
+});
+check("route source: market facts come from the runtime, the journal is hooked, OI stays NIFTY-only", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../src/routes/trendPbPaper.js"), "utf8");
+  assert.ok(!/NSE:NIFTY50-INDEX/.test(src), "a spot symbol is typed in the route");
+  assert.ok(!/(capitalPool|skipLogger|tradeLogger)\.\w+\("trend_pb"/.test(src), "the mode key is typed in the route");
+  assert.ok(/rt\.oiApplies && oiFilter\.getOiEnabled\(MODE\)/.test(src) && /if \(rt\.oiApplies\) await oiFilter\.recordOiSample/.test(src));
+  for (const h of ["onEntry", "onTick", "onStopChange", "onExit", "fields"]) assert.ok(src.includes(`tradeJournal.${h}(`), `tradeJournal.${h} not hooked`);
+});
+check("pair keys Settings shows reach the paper engine: ITM steps, VIX max entry; pair VIX is force-fetched", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../src/routes/trendPbPaper.js"), "utf8");
+  assert.ok(/underlying: rt\.underlyingKey, itmSteps: PV\("ITM_STEPS"\)/.test(src), "a pair's ITM_STEPS is not passed to the symbol resolver");
+  assert.ok(/fetchLiveVix\(\{ force: true \}\), sig\.signalStrength, \{ mode: "trend_pb", force: true, maxEntry: PV\("VIX_MAX_ENTRY"\) \}/.test(src),
+    "a pair's VIX gate must force-fetch VIX (pair keys are unknown to anyVixEnabled) and use its own max entry");
+  const vf = require("../src/services/vixFilter");
+  withEnv({ TREND_PB_VIX_MAX_ENTRY: "22" }, () => {
+    assert.strictEqual(vf.checkBacktestVix(18, "STRONG", { mode: "trend_pb", force: true }).allowed, true);
+    assert.strictEqual(vf.checkBacktestVix(18, "STRONG", { mode: "trend_pb", force: true, maxEntry: "15" }).allowed, false);
+    assert.strictEqual(vf.checkBacktestVix(18, "STRONG", { mode: "trend_pb", force: true, maxEntry: undefined }).allowed, true, "blank = the mode's level");
+  });
+  const isrc = fs.readFileSync(path.join(__dirname, "../src/config/instrument.js"), "utf8");
+  assert.ok(/opts\.itmSteps != null && opts\.itmSteps !== "" \? String\(opts\.itmSteps\) : process\.env\[`\$\{_itmMode\}_ITM_STEPS`\]/.test(isrc));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

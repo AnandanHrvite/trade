@@ -20,6 +20,15 @@
  *
  * Option P&L is δ+θ simulated (no historical option chain) — treat ₹ as
  * DIRECTIONAL, not exact. Endpoints mirror the ORB backtest (background job).
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles, lot, exchange charges (BSE for SENSEX) and — for
+ * NIFTY_FUT — futures pricing (index points 1:1, the common futures stop in
+ * place of the premium lock) come from services/backtestMarket.js, and the
+ * market's pair settings are mapped onto the TREND_PB_* keys for that run only
+ * (services/backtestPage.js). With market NIFTY nothing changes. MCX and stock
+ * markets are not backtestable yet (no index candles / rule expiry there).
  */
 
 const express = require("express");
@@ -34,8 +43,8 @@ const { renderBacktestResults, computeBacktestStats } = require("../utils/backte
 const { walkForward } = require("../utils/walkForward");
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
-const instrumentConfig = require("../config/instrument");
 const tradeGuards = require("../utils/tradeGuards");
+const backtestMarket = require("../services/backtestMarket");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
@@ -47,7 +56,6 @@ function _futStopMsg(entry, px, peak) {
 }
 const backtestCosts = require("../config/backtestCosts");
 
-const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#ec4899";
 const ENDPOINT = "/trend-pb-backtest";
 const RESULT_KEY = "TREND_PB_BACKTEST";
@@ -71,8 +79,10 @@ function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSe
 /**
  * Run the backtest. `baseline=true` swaps the entry rule for the naive
  * bias-at-window-open engine but keeps the identical exit machinery + costs.
+ * `market` is a backtestMarket.context() — the market's lot, exchange and
+ * futures flag. Omitted = NIFTY options, exactly as before markets existed.
  */
-async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = {}) {
+async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [], market = null } = {}) {
   if (!allCandles || !allCandles.length) return [];
   allCandles = allCandles.slice().sort((a, b) => a.time - b.time);
 
@@ -80,12 +90,14 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
   // TREND_PB_VIX_ENABLED=true, which checkBacktestVix decides for itself).
   const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
 
-  // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
-  // "premium" the sim carries IS the spot level (see instrumentMode.js).
-  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const M = market || backtestMarket.context("NIFTY");
+  // FUTURES MODE (the NIFTY_FUT market only) — index points are rupees 1:1: no
+  // delta, no theta, and the "premium" the sim carries IS the spot level.
+  const IS_FUT       = M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = instrumentConfig.getLotQty();
+  const LOT_SIZE     = M.lotQty;
+  const EXCHANGE     = M.exchange;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.     // slightly-ITM ≈ ATM + one strike intrinsic
   const SLIPPAGE_PTS = backtestCosts.slippagePts();     // spread+slippage haircut EACH way (premium pts)
@@ -131,7 +143,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     const spotMove = pos.side === "CE" ? (exitSpot - pos.entrySpot) : (pos.entrySpot - exitSpot);
     const exitPremRaw = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
     const exitPrem = Math.max(0.05, exitPremRaw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-    const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+    const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, exchange: EXCHANGE, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
     const pnl = parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2));
     return { pnl, exitPrem: parseFloat(exitPrem.toFixed(2)), heldCandles: Math.round(candlesHeld) };
   }
@@ -279,8 +291,11 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
-function _resultsView(from, to, trades, stats, baselineStats, wf) {
+/** `market` is the run's market key (absent / "NIFTY" on a NIFTY run). */
+function _resultsView(from, to, trades, stats, baselineStats, wf, market) {
   const inf = (x) => x === Infinity ? "∞" : x;
+  const M = backtestMarket.context(market || "NIFTY");
+  const futMode = M.isFutures === true;
   const beatsBaseline = (stats.totalPnl || 0) - (baselineStats.totalPnl || 0);
   const wfLine = wf.foldCount
     ? `Walk-forward (${wf.foldCount} × ${wf.testDays}-day OOS folds): net ₹${wf.oosNetPnl}, PF ${inf(wf.oosProfitFactor)}, ${wf.positiveFolds}/${wf.foldCount} folds positive${wf.thinFolds ? `, ${wf.thinFolds} thin (<${wf.minTrades} trades)` : ""} — ${wf.verdict}.`
@@ -307,7 +322,7 @@ function _resultsView(from, to, trades, stats, baselineStats, wf) {
       { label: "vs Dumb Baseline", value: `${beatsBaseline >= 0 ? "+" : ""}₹${beatsBaseline.toFixed(0)} (base ₹${baselineStats.totalPnl}, ${baselineStats.totalTrades}t/${baselineStats.winRate}%)` },
       { label: "WF verdict", value: wf.foldCount ? `${wf.positiveFolds}/${wf.foldCount} folds +ve` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}Option premium δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded slightly-ITM at ₹${backtestCosts.seedPremium()}, PLUS a spread/slippage haircut of ${backtestCosts.slippagePts()}pt EACH way — treat ₹ as directional, not exact. Entry: 15m bias (HH/HL + EMA20>EMA50 + slope + VWAP) → healthy 5m pullback to EMA20 → resumption body ≥ ${process.env.TREND_PB_BODY_ATR_MULT || "0.5"}×ATR5. Exit: the global profit lock on the simulated premium is the only automatic exit; otherwise the trade is held to the day's last candle (session end). <b>${wfLine}</b> The DUMB BASELINE (enter in the 15m-trend direction at the window open, same exit, NO pullback filter) is the bar to beat: if the strategy doesn't clear it out-of-sample, the pullback filter is noise. Use Replay (recorded ticks) for tick-accurate fills.`,
+    notes: `${M.key !== "NIFTY" ? `<b>MARKET: ${M.label}</b> — ${M.spotSymbol} candles, lot ${M.lotQty}, ${M.exchange} charges. ` : ""}${futMode ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}Option premium δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded slightly-ITM at ₹${backtestCosts.seedPremium()}, PLUS a spread/slippage haircut of ${backtestCosts.slippagePts()}pt EACH way — treat ₹ as directional, not exact. Entry: 15m bias (HH/HL + EMA20>EMA50 + slope + VWAP) → healthy 5m pullback to EMA20 → resumption body ≥ ${process.env.TREND_PB_BODY_ATR_MULT || "0.5"}×ATR5. Exit: the global profit lock on the simulated premium is the only automatic exit; otherwise the trade is held to the day's last candle (session end). <b>${wfLine}</b> The DUMB BASELINE (enter in the 15m-trend direction at the window open, same exit, NO pullback filter) is the bar to beat: if the strategy doesn't clear it out-of-sample, the pullback filter is noise. Use Replay (recorded ticks) for tick-accurate fills.`,
   };
 }
 
@@ -319,13 +334,16 @@ function _renderResults(res, from, to, trades, stats, baselineStats, wf) {
 /**
  * One run, start to finish, on job `id` — fetch, simulate, save, then
  * completeJob / failJob. This page and the unified /backtest page both call it.
+ *   p = { from, to, market? }   market: a markets.js key, default NIFTY
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
   try {
-    console.log(`🔍 Trend Pullback Backtest job ${id}: ${from} → ${to}`);
+    console.log(`🔍 Trend Pullback Backtest job ${id}: ${from} → ${to}${home ? "" : ` on ${M.key}`}`);
     backtestJobs.updateProgress(id, { phase: "Fetching candle data…", pct: 0 });
-    const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, (p) => backtestJobs.updateProgress(id, p));
+    const candles = await fetchCandlesCachedBT(M.spotSymbol, "5", from, to, false, (p) => backtestJobs.updateProgress(id, p));
     if (!Array.isArray(candles) || candles.length < 5) {
       const n = Array.isArray(candles) ? candles.length : 0;
       const msg = n === 0
@@ -345,21 +363,28 @@ async function _runJob(id, p) {
       : [];
 
     backtestJobs.updateProgress(id, { phase: `Running Trend Pullback backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-    const trades = await runTrendPbBacktest(candles, { baseline: false, vixCandles });
+    const trades = await runTrendPbBacktest(candles, { baseline: false, vixCandles, market: M });
     const stats = computeBacktestStats(trades);
-    stats.optionSim = true;
+    stats.optionSim = !M.isFutures;
     stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
     stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    if (M.isFutures) stats.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
 
     backtestJobs.updateProgress(id, { phase: "Running dumb baseline + walk-forward…", pct: 90 });
-    const baselineTrades = await runTrendPbBacktest(candles, { baseline: true, vixCandles });
+    const baselineTrades = await runTrendPbBacktest(candles, { baseline: true, vixCandles, market: M });
     const baselineStats = computeBacktestStats(baselineTrades);
     const wf = walkForward(trades, {});
 
-    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } }); }
-    catch (e) { console.warn("[trend-pb-backtest] saveResult failed:", e.message); }
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (home) {
+      try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } }); }
+      catch (e) { console.warn("[trend-pb-backtest] saveResult failed:", e.message); }
+    }
 
-    backtestJobs.completeJob(id, { trades, stats, baselineStats, wf, from, to });
+    const result = { trades, stats, baselineStats, wf, from, to };
+    if (!home) result.market = M.key;
+    backtestJobs.completeJob(id, result);
     console.log(`✅ Trend Pullback Backtest job ${id} complete — ${trades.length} trades (baseline ${baselineTrades.length}); WF: ${wf.verdict}`);
   } catch (err) {
     console.error("[trend-pb-backtest] job error:", err);
@@ -404,10 +429,10 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
-  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.baselineStats, r.wf),
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to, market: p.market }),
+  view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.baselineStats, r.wf, r.market || p.market),
 };
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).
 module.exports.runTrendPbBacktest = runTrendPbBacktest;
