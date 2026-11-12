@@ -63,7 +63,7 @@
  * found requiring a retest made ORB worse — watch for the same here.
  *
  * Contract:
- *   getConfig()                              -> live env read (never cached)
+ *   getConfig(prefix?)                       -> live env read (never cached); prefix = a pair's own keys
  *   computeSeries(candles, cfg)              -> window + aligned ema[] / vwap[]
  *   getSignal(candles, opts)                 -> { signal, side, phase, ... }
  *   itmStrike(spot, side, step)              -> strike
@@ -106,13 +106,25 @@ function _fmtMins(mins) {
   const h = Math.floor(mins / 60), m = mins % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+// Env read for one key. The home pair (no prefix / "ITM20_SCALP") reads
+// process.env exactly as it always did; another market's pair
+// (SENSEX_ITM20_SCALP, BN_ITM20_SCALP ...) reads its own key with pair
+// inheritance: its value when set, else NIFTY's ITM20_SCALP_* value
+// (config/pairs.js envGet). `key` is always the NIFTY key, so the literal
+// names stay greppable.
+let _pairsMod = null;
+function _rawEnv(key, prefix) {
+  if (!prefix || prefix === NAME) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(`${prefix}${key.slice(NAME.length)}`);
+}
+function _intEnv(key, def, min, max, prefix) {
+  const v = parseInt(_rawEnv(key, prefix), 10);
   if (!Number.isFinite(v) || v < min || v > max) return def;
   return v;
 }
-function _numEnv(key, def, min, max, exclusiveMin) {
-  const v = parseFloat(process.env[key]);
+function _numEnv(key, def, min, max, exclusiveMin, prefix) {
+  const v = parseFloat(_rawEnv(key, prefix));
   if (!Number.isFinite(v)) return def;
   if (exclusiveMin ? !(v > min) : v < min) return def;
   if (v > max) return def;
@@ -122,9 +134,16 @@ function _okBar(c) {
   return !!c && _num(c.time) && _num(c.open) && _num(c.high) && _num(c.low) && _num(c.close);
 }
 
-/** Live config read. Settings saves mutate process.env — never cache. */
-function getConfig() {
-  const sessionStartMin = _parseHHMM(process.env.ITM20_SCALP_SESSION_START, 9 * 60 + 15);
+/**
+ * Live config read. Settings saves mutate process.env — never cache.
+ *
+ * `prefix`: a (strategy, market) pair's env prefix ("SENSEX_ITM20_SCALP",
+ * "BN_ITM20_SCALP" ...), whose keys are read with pair inheritance. Omitted (or
+ * "ITM20_SCALP") = the NIFTY keys, read exactly as before.
+ */
+function getConfig(prefix) {
+  const P = prefix && prefix !== NAME ? prefix : null;   // a pair: read through pairs.envGet
+  const sessionStartMin = _parseHHMM(P ? _rawEnv("ITM20_SCALP_SESSION_START", P) : process.env.ITM20_SCALP_SESSION_START, 9 * 60 + 15);
   const orEndMin = sessionStartMin + OR_MINS;
   return {
     resolutionMins: RESOLUTION_MIN,
@@ -132,17 +151,17 @@ function getConfig() {
     sessionStartMin,
     orEndMin,
     // No breakout candle may start before the range is complete.
-    entryStartMin: Math.max(orEndMin, _parseHHMM(process.env.ITM20_SCALP_ENTRY_START, 9 * 60 + 30)),
-    entryEndMin:   _parseHHMM(process.env.ITM20_SCALP_ENTRY_END, 11 * 60 + 30),
-    squareOffMin:  _parseHHMM(process.env.ITM20_SCALP_SQUARE_OFF, 15 * 60 + 15),
-    emaPeriod:     _intEnv("ITM20_SCALP_EMA_PERIOD", 9, 2, 50),
-    retestTolPts:  _numEnv("ITM20_SCALP_RETEST_TOL_PTS", 5, 0, 100, false),
-    retestCandles: _intEnv("ITM20_SCALP_RETEST_CANDLES", 3, 1, 10),
-    targetPts:     _numEnv("ITM20_SCALP_TARGET_PTS", 20, 0, 500, true),
-    slPts:         _numEnv("ITM20_SCALP_SL_PTS", 10, 0, 500, true),
-    maxTrades:     _intEnv("ITM20_SCALP_MAX_TRADES", 2, 1, 5),
-    dailyLossPts:  _numEnv("ITM20_SCALP_DAILY_LOSS_PTS", 20, 0, 1000, true),
-    tradeExpiryDay: String(process.env.ITM20_SCALP_TRADE_EXPIRY_DAY || "false").toLowerCase() === "true",
+    entryStartMin: Math.max(orEndMin, _parseHHMM(P ? _rawEnv("ITM20_SCALP_ENTRY_START", P) : process.env.ITM20_SCALP_ENTRY_START, 9 * 60 + 30)),
+    entryEndMin:   _parseHHMM(P ? _rawEnv("ITM20_SCALP_ENTRY_END", P) : process.env.ITM20_SCALP_ENTRY_END, 11 * 60 + 30),
+    squareOffMin:  _parseHHMM(P ? _rawEnv("ITM20_SCALP_SQUARE_OFF", P) : process.env.ITM20_SCALP_SQUARE_OFF, 15 * 60 + 15),
+    emaPeriod:     _intEnv("ITM20_SCALP_EMA_PERIOD", 9, 2, 50, P),
+    retestTolPts:  _numEnv("ITM20_SCALP_RETEST_TOL_PTS", 5, 0, 100, false, P),
+    retestCandles: _intEnv("ITM20_SCALP_RETEST_CANDLES", 3, 1, 10, P),
+    targetPts:     _numEnv("ITM20_SCALP_TARGET_PTS", 20, 0, 500, true, P),
+    slPts:         _numEnv("ITM20_SCALP_SL_PTS", 10, 0, 500, true, P),
+    maxTrades:     _intEnv("ITM20_SCALP_MAX_TRADES", 2, 1, 5, P),
+    dailyLossPts:  _numEnv("ITM20_SCALP_DAILY_LOSS_PTS", 20, 0, 1000, true, P),
+    tradeExpiryDay: String((P ? _rawEnv("ITM20_SCALP_TRADE_EXPIRY_DAY", P) : process.env.ITM20_SCALP_TRADE_EXPIRY_DAY) || "false").toLowerCase() === "true",
   };
 }
 
