@@ -68,7 +68,7 @@ const MARKET_KEYS = Object.keys(markets.MARKET_DEFS);
 
 // Strategies whose paper route is a create(pair) builder — every offered pair of
 // these runs. Add a strategy's id here when its route is converted.
-const RUNS_AS_PAIR = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa"]);
+const RUNS_AS_PAIR = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb"]);
 
 function marketPrefix(marketKey) {
   const k = String(marketKey || "").toUpperCase();

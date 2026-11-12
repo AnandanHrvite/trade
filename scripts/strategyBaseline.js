@@ -158,6 +158,9 @@ const PAIRS = [
   { route: "paPaper",         market: "BANKNIFTY", mode: "bn_pa-paper",                enabledKey: "BN_PA_MODE_ENABLED",
     settings: { BN_PA_MIN_SL_PTS: "18", BN_PA_MAX_SL_PTS: "60" } },
   { route: "paPaper",         market: "NIFTY_FUT", mode: "fut_pa-paper",               enabledKey: "FUT_PA_MODE_ENABLED" },
+  { route: "orbPaper",        market: "SENSEX",    mode: "sensex_orb-paper",           enabledKey: "SENSEX_ORB_MODE_ENABLED" },
+  { route: "orbPaper",        market: "BANKNIFTY", mode: "bn_orb-paper",               enabledKey: "BN_ORB_MODE_ENABLED" },
+  { route: "orbPaper",        market: "NIFTY_FUT", mode: "fut_orb-paper",              enabledKey: "FUT_ORB_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {

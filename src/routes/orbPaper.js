@@ -17,12 +17,23 @@
  *   /orb-paper/status   → live view (position, P&L, log)
  *   /orb-paper/history  → past sessions
  *   /orb-paper/status/data → JSON for AJAX poll
+ *
+ * MARKETS. This file is a create(pair) builder (utils/pairRuntime.js — the
+ * pattern routes/emaRsiStV2Paper.js set): its default export is the NIFTY
+ * instance (/orb-paper — same files, keys, logs and decisions as always), and
+ * forMarket(key) builds the same rules for every other market pairs.js offers
+ * ORB on (/bn_orb-paper, /sensex_orb-paper, /fut_orb-paper, /sail_orb-paper —
+ * not MCX: ORB needs the 09:15 index open). A pair ships OFF
+ * (<PAIR>_MODE_ENABLED), reads its own <PAIR>_ORB_* keys with NIFTY's as the
+ * fallback (pairs.envGet), keeps its own trades file / logs / slot / capital
+ * book, fills options at the ask / bid of a fresh quote
+ * (<PAIR>_PAPER_FILL_AT_QUOTE) and uses its own spread limit. NIFTY_FUT trades
+ * the month future priced at the index. The OI gate stays NIFTY-only.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const express = require("express");
 const { trackPath, pathFields } = require("../utils/tradePath");
-const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 
@@ -55,19 +66,85 @@ const { RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 const tradeGuards = require("../utils/tradeGuards");
 const capitalPool  = require("../utils/capitalPool");
+const pairs        = require("../config/pairs");
+const pairRuntime  = require("../utils/pairRuntime");
+const tradeJournal = require("../utils/tradeJournal");
 
-const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
-const CALLBACK_ID        = "orbPaper";
 const RES_MIN            = 5;   // 5-min candles (textbook 15-min OR + 5-min confirm)
 const OR_BARS            = 3;   // 15-min OR = 3 × 5-min bars
 
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const PT_FILE  = path.join(DATA_DIR, "orb_paper_trades.json");
 
 function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+
+/**
+ * The NIFTY_FUT pair's arithmetic: a future priced at the index level —
+ * index points × direction (CE = LONG, PE = SHORT) × qty, futures charges, and
+ * the underlying's SPAN+exposure margin as the capital it ties up. The same
+ * rules instrumentMode applies to a future; the call shapes match instrumentMode's
+ * so every call site below reads `IM.` whichever market the instance runs.
+ */
+function _indexPricedMath(underlying) {
+  const dir = (side) => (String(side).toUpperCase() === "PE" ? -1 : 1);
+  return {
+    computePnl({ side, entrySpot, exitSpot, qty, broker, isFutures }) {
+      const q = qty || 0, d = dir(side);
+      const gross = (exitSpot - entrySpot) * d * q;
+      const charges = getCharges({ broker, isFutures, entryPremium: entrySpot, exitPremium: exitSpot, qty: q });
+      return {
+        gross:   parseFloat(gross.toFixed(2)),
+        charges,
+        pnl:     parseFloat((gross - charges).toFixed(2)),
+        pnlMode: `futures: entry ₹${entrySpot} → exit ₹${exitSpot} (${d > 0 ? "LONG" : "SHORT"})`,
+        isFutures,
+      };
+    },
+    unrealisedPnl({ side, entrySpot, currentSpot, qty }) {
+      return parseFloat((((currentSpot - entrySpot) * dir(side)) * (qty || 0)).toFixed(2));
+    },
+    capitalRequired(qty, price) {
+      const pct = instrumentConfig.underlyingOf(underlying).marginPct;
+      return parseFloat(((qty || 0) * (price || 0) * (pct / 100)).toFixed(2));
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUILDER — one paper engine per (strategy, market) pair. create(pair) returns an
+// Express router holding ALL of that pair's state; the module's default export is
+// the NIFTY instance. Every per-market fact comes from utils/pairRuntime.js.
+// ═══════════════════════════════════════════════════════════════════════════════
+function create(pair) {
+const rt     = pairRuntime.forPair(pair);
+const router = express.Router();
+const MODE   = rt.modeKey;                 // "orb" on NIFTY — logger / skip / capital key
+const PREFIX = rt.envPrefix;               // "ORB" on NIFTY
+const ROUTE  = rt.paperPath;               // "/orb-paper" on NIFTY
+const OWNER  = rt.ownerId;                 // "orb-paper" — option-feed owner + recorder tag
+const TAG    = `[${rt.tag}-PAPER]`;        // "[ORB-PAPER]" on NIFTY
+const NOTIFY_MODE = rt.notifyMode;         // "ORB-PAPER" on NIFTY
+const SPOT_LABEL  = rt.spotLabel;          // "NIFTY" on NIFTY
+const TITLE  = rt.home ? "ORB" : rt.title;
+const CALLBACK_ID = rt.home ? "orbPaper" : OWNER;   // socket callback id
+// Engine options: the pair prefix only off NIFTY, so every NIFTY engine call is
+// exactly the call it always was.
+const ENG = (o) => (rt.home ? o : Object.assign({ prefix: PREFIX }, o || {}));
+const ENG_PREFIX = rt.home ? undefined : PREFIX;
+// A pair's own value of one of the strategy's keys (else NIFTY's — pairs.envGet);
+// undefined on NIFTY, so `PV("X") || <the ORB_X env read> || d` is the old read there.
+const PV = (k) => (rt.home ? undefined : pairs.envGet(`${PREFIX}_${k}`));
+// Futures (the NIFTY_FUT pair) are priced at the index; NIFTY and every options
+// market go through instrumentMode exactly as before.
+const IM = rt.isFutures ? _indexPricedMath(rt.underlyingKey) : instrumentMode;
+// Spot symbol the candles are built from — resolved at /start.
+let _spotSym = null;
+const SPOT = () => _spotSym || rt.spotSymbol();
+rt.registerCapital();
+
+const PT_FILE  = path.join(DATA_DIR, rt.tradesFile);
 
 let _dataCache = null;
 function loadData() {
@@ -81,7 +158,7 @@ function loadData() {
   }
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
-    console.error("[orb-paper] orb_paper_trades.json corrupt — resetting:", e.message);
+    console.error(`[${OWNER}] ${rt.tradesFile} corrupt — resetting:`, e.message);
     _dataCache = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
@@ -127,6 +204,7 @@ function _freshState() {
     _expiryDayBlocked: false,
     _ltpStaleLogged: false,   // one stale-premium warning per trade, not per process
     _reentryBlockUntil: 0,    // wait-after-any-exit cooldown (epoch ms), see simulateSell
+    optionQuote:    null,     // latest bid/ask of the held contract (non-NIFTY fills)
   };
 }
 
@@ -157,7 +235,7 @@ function rehydrateSessionFromJsonl() {
     //    session a restart would wipe). Day files interleave settings_snapshot/meta
     //    lines with trades — keep only real trade records.
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades("orb", today)
+    const all = tradeLogger.readDailyTrades(MODE, today)
       .filter(t => t && !t.type && !t._live && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) {
@@ -190,21 +268,21 @@ function rehydrateSessionFromJsonl() {
     state.tradesTaken   = trades.length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
-    console.log(`♻️ [ORB-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
+    console.log(`♻️ ${TAG} Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
-    console.warn(`[ORB-PAPER] session rehydrate failed: ${err.message}`);
+    console.warn(`${TAG} session rehydrate failed: ${err.message}`);
   }
 }
 rehydrateSessionFromJsonl();
 
 // A previous day's session may only stay on screen while the market is shut.
-require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[ORB-PAPER]");
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, TAG);
 
 // Capital pool realized P&L = file totalPnl + this session's unsaved closed trades.
 // A replay re-requires this module — it must not replace the live instance's getter.
 let _replayLoad = false;
 try { _replayLoad = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
-if (!_replayLoad) capitalPool.trackSession("orb", () => (state._unsaved ? state.sessionPnl : 0));
+if (!_replayLoad) capitalPool.trackSession(MODE, () => (state._unsaved ? state.sessionPnl : 0));
 
 // ── Option LTP polling ──────────────────────────────────────────────────────
 
@@ -217,7 +295,7 @@ const OPTION_POLL_MS = 3000;
 // optionFeed, so the REST call below fires only when the stream is quiet or
 // unavailable. The loop itself stays — it renews the optionFeed lease, and it is
 // the fallback that keeps behaviour identical if the stream is down.
-const OPTION_FEED_OWNER = "orb-paper";
+const OPTION_FEED_OWNER = OWNER;
 let _optionPollTimer = null;
 let _optionPollStopped = true;
 
@@ -234,7 +312,7 @@ function _applyOptionLtp(symbol, ltp, at, record) {
   // Premium bars for the option chart (display only — never read by the engine).
   state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp, at);
   state.optionLtpUpdatedAt = at || Date.now();
-  if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, "orb-paper"); } catch (_) {} }
+  if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, OWNER); } catch (_) {} }
 }
 
 function startOptionPolling() {
@@ -248,16 +326,30 @@ function startOptionPolling() {
         if (state.position && state.position.symbol === symbol) _applyOptionLtp(symbol, ltp, at, false);
       });
       const streamed = optionFeed.getFresh(symbol);
-      if (streamed) {
+      // A fill-at-quote pair also needs a fresh bid/ask for its exit, which the
+      // stream does not carry — so it keeps one REST quote at most ~5 s old.
+      // Always false on NIFTY.
+      const _q = state.optionQuote;
+      const _needQuote = !rt.home && rt.fillAtQuote() && !(_q && _q.symbol === symbol && Date.now() - _q.at <= 5000);
+      if (streamed && !_needQuote) {
         _applyOptionLtp(symbol, streamed.ltp, streamed.at, false);
       } else {
+        let _got = false;
         try {
           const r = await require("../services/marketData").getQuotes([symbol]);
           if (r && r.s === "ok" && r.d && r.d.length) {
             const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
-            if (typeof ltp === "number" && ltp > 0) _applyOptionLtp(symbol, ltp, Date.now(), true);
+            if (typeof ltp === "number" && ltp > 0) {
+              _applyOptionLtp(symbol, ltp, Date.now(), true);
+              _got = true;
+              if (!rt.home) {
+                const v = r.d[0].v, _b = Number(v.bid || v.bid_price || 0), _a = Number(v.ask || v.ask_price || 0);
+                if (_b > 0 && _a > 0 && state.position && state.position.symbol === symbol) state.optionQuote = { symbol, bid: _b, ask: _a, ltp, at: Date.now() };
+              }
+            }
           }
         } catch (_) {}
+        if (!_got && streamed && !rt.home) _applyOptionLtp(symbol, streamed.ltp, streamed.at, false);
       }
     }
     if (!_optionPollStopped) _optionPollTimer = setTimeout(poll, OPTION_POLL_MS);
@@ -288,7 +380,7 @@ async function simulateBuy(side, sigSnapshot) {
   if ((!sigSnapshot || sigSnapshot.signalStrength !== "MANUAL") && state._reentryBlockUntil > Date.now()) {
     if (state._reentryBlockLogged !== state._reentryBlockUntil) {
       state._reentryBlockLogged = state._reentryBlockUntil;
-      log(`⏸️ [ORB-PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} @ spot ${spot} rejected)`);
+      log(`⏸️ ${TAG} Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} @ spot ${spot} rejected)`);
     }
     return;
   }
@@ -304,19 +396,28 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   const _sid = state._sessionId;
 
   // Resolve ATM option symbol (auto expiry)
-  const _isFut = instrumentMode.isFutures();
+  // NIFTY: the instrument the strategy has always resolved. Other markets: the
+  // NIFTY_FUT pair trades the month future; an options market keeps the
+  // slightly-ITM rule (ORB_ITM_STEPS) on its own strike grid, stem and expiry.
+  const _isFut = rt.home ? instrumentMode.isFutures() : rt.isFutures;
 
   let optInfo;
   try {
-    optInfo = _isFut
-      ? await instrumentMode.resolveEntryInstrument(spot, side, "ORB")
-      : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "ORB");
+    if (rt.home) {
+      optInfo = _isFut
+        ? await instrumentMode.resolveEntryInstrument(spot, side, "ORB")
+        : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "ORB");
+    } else if (_isFut) {
+      optInfo = await rt.resolveEntrySymbol(spot, side);
+    } else {
+      optInfo = await instrumentConfig.validateAndGetOptionSymbol(spot, side, "ORB", { underlying: rt.underlyingKey });
+    }
   } catch (e) {
-    log(`❌ [ORB-PAPER] Symbol resolve failed: ${e.message}`);
+    log(`❌ ${TAG} Symbol resolve failed: ${e.message}`);
     return;
   }
   if (!optInfo || optInfo.invalid) {
-    log(`❌ [ORB-PAPER] No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
+    log(`❌ ${TAG} No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
     return;
   }
 
@@ -336,53 +437,64 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
           optionEntryLtp = ltp;
           optBid = Number(v.bid || v.bid_price || 0) || null;
           optAsk = Number(v.ask || v.ask_price || 0) || null;
-          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "orb-paper"); } catch (_) {}
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, OWNER); } catch (_) {}
         }
       }
     } catch (e) {
-      log(`⚠️ [ORB-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
+      log(`⚠️ ${TAG} Option LTP fetch failed: ${e.message} — entry blocked`);
       return;
     }
     if (!optionEntryLtp) {
-      log(`❌ [ORB-PAPER] Option LTP not available — entry skipped`);
+      log(`❌ ${TAG} Option LTP not available — entry skipped`);
       return;
     }
 
     // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
     // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
-    const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
-    const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
-    const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
+    const premMin = parseFloat(PV("PREMIUM_MIN") || process.env.ORB_PREMIUM_MIN || "120");
+    const premMax = parseFloat(PV("PREMIUM_MAX") || process.env.ORB_PREMIUM_MAX || "400");
+    const premGateOn = (PV("PREMIUM_GATE_ENABLED") || process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
     if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
-      log(`⏸️ [ORB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
-      skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });
+      log(`⏸️ ${TAG} Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
+      skipLogger.appendSkipLog(MODE, { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });
       return;
     }
     // Bid-ask spread gate — fails OPEN when the snapshot lacks depth (no-quote).
-    const maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
+    // Another market has its own limit (<PAIR>_MAX_SPREAD_PTS → the common one).
+    const maxSpread = rt.home ? parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2") : rt.maxSpreadPts();
     const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
     if (!_sp.ok) {
-      log(`⏸️ [ORB-PAPER] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
-      skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread });
+      log(`⏸️ ${TAG} Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
+      skipLogger.appendSkipLog(MODE, { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread });
       return;
     }
+  }
+
+  // Another market fills at the ASK of the quote just fetched when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (its default) — pairRuntime.entryFill.
+  // The premium gate above judged the LTP, as NIFTY's does. NIFTY: unchanged.
+  const _ltpAtEntry = optionEntryLtp;
+  let _askFill = null;
+  if (!rt.home && !_isFut) {
+    const f = rt.entryFill(optionEntryLtp, { bid: optBid, ask: optAsk, ltp: optionEntryLtp, at: Date.now() }, Date.now());
+    if (f.source === "ask") { _askFill = f.price; optionEntryLtp = f.price; }
   }
 
   // /stop (or a stop + restart) may have run while we awaited — opening now
   // would strand an orphan position and its capital block.
   if (state.position || !state.running || state._sessionId !== _sid) return;
 
-  const qty = instrumentConfig.getLotQty();
+  const qty = rt.lotQty();
 
   // ── Capital gate — HARD: the pool must fund this position or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    Sits AFTER the last strategy abort path so a refusal is never logged for
   //    a signal that would have been dropped anyway.
-  const _cap = capitalPool.gate("orb", instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
+  const _cap = capitalPool.gate(MODE, IM.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
     if (!_cap.muted) {
-      log(`❌ [ORB-PAPER] Entry REFUSED — ${_cap.reason}`);
-      skipLogger.appendSkipLog("orb", { gate: "capital", reason: _cap.reason, spot: spot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
+      log(`❌ ${TAG} Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _cap.reason, spot: spot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
     }
     return;
   }
@@ -407,8 +519,8 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     peakPremium:    optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength,
     vixAtEntry:     getCachedVix(),
-    oiAtEntry:      oiFilter.getCachedOi(),
-    oiRegime:       oiFilter.getCachedRegime(),
+    oiAtEntry:      rt.oiApplies ? oiFilter.getCachedOi() : null,
+    oiRegime:       rt.oiApplies ? oiFilter.getCachedRegime() : null,
     vwapAtEntry:    sigSnapshot.vwap,
     volRatio:       sigSnapshot.volRatio,
     wickRatio:      sigSnapshot.wickRatio,
@@ -426,10 +538,32 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     secsToMAE:      0,
     entryReason:    sigSnapshot.reason,
   };
+  // Other markets: the position names its market and instrument, and how its
+  // option leg was filled. NIFTY's position is exactly as above.
+  state.optionQuote = null;
+  if (!rt.home) {
+    Object.assign(pos, { market: rt.marketKey, instrument: rt.instrumentName() });
+    if (!_isFut) {
+      pos.optionEntryFill = _askFill ? "ask" : "ltp";
+      pos.entryQuote = (optBid || optAsk) ? { bid: optBid, ask: optAsk, ltp: _ltpAtEntry } : null;
+    }
+  }
+  // Trade journal (observer only — nothing reads pos.journal back).
+  tradeJournal.onEntry(pos, {
+    reason: pos.entryReason, signal: sigSnapshot.signal,
+    indicators: { orh: sigSnapshot.orh, orl: sigSnapshot.orl, rangePts: sigSnapshot.rangePts, targetSpot: sigSnapshot.targetSpot,
+      vwap: sigSnapshot.vwap, atr5: sigSnapshot.atr5, atr15: sigSnapshot.atr15, gapPts: sigSnapshot.gapPts, bodyPct: sigSnapshot.bodyPct,
+      rsi: sigSnapshot.rsi, superTrend: sigSnapshot.superTrend, superTrendDir: sigSnapshot.superTrendDir, signalStrength: sigSnapshot.signalStrength },
+    spot, optionLtp: _isFut ? null : optionEntryLtp, bid: optBid, ask: optAsk, vix: pos.vixAtEntry,
+    expiry: optInfo.expiryDate || null, market: rt.marketKey, strategy: rt.strategy.key,
+    isFutures: _isFut, qty, sl: _stopLevelOf(pos), target: null,
+    expectedPrice: _isFut ? spot : _ltpAtEntry,
+    candles: state.candles, nowMs: Date.now(),
+  });
 
   state.position = pos;
-  capitalPool.block("orb", instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
-  try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+  capitalPool.block(MODE, IM.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  try { rt.persist.save(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
   state._ltpStaleLogged = false;
@@ -437,20 +571,23 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   // Futures P&L comes from the spot feed — no option contract to poll.
   if (!_isFut) startOptionPolling();
 
-  log(`🟢 [ORB-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spot}${_isFut ? "" : ` optLtp=${optionEntryLtp}`}`);
+  log(`🟢 ${TAG} ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spot}${_isFut ? "" : ` optLtp=${optionEntryLtp}`}`);
+
+  if (_askFill) log(`📌 ${TAG} Entry filled at the ASK ₹${_askFill} (LTP ₹${_ltpAtEntry}, bid ₹${optBid}) — ${rt.fillAtQuoteKey}`);
 
   notifyEntry({
-    mode: "ORB-PAPER",
+    mode: NOTIFY_MODE,
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
     qty,
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
+    ...(rt.home ? {} : { isFutures: _isFut, instrument: rt.instrumentName() }),
   });
 
   try {
     tickRecorder.recordEntry({
-      mode: "orb-paper",
+      mode: rt.replayMode,
       sessionId: state._sessionId,
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
@@ -461,19 +598,44 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   } catch (_) {}
 }
 
-function simulateSell(reason) {
+// `kind` (sl / trail / manual / eod) only labels the trade journal's exit.
+function simulateSell(reason, kind) {
   if (!state.position) return;
   const pos = state.position;
-  const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
+  let exitOptLtp   = state.optionLtp || pos.optionEntryLtp;
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
   const qty        = pos.qty;
-  const _pnlRes    = instrumentMode.computePnl({
+  // Other markets: SOLD AT THE BID of a fresh quote of the held contract when
+  // <PAIR>_PAPER_FILL_AT_QUOTE is on (pairRuntime.exitFill). NIFTY: unchanged.
+  const _ltpAtExit = exitOptLtp;
+  let _exitFill = null, _exitQuote = null;
+  if (!rt.home && !pos.isFutures) {
+    const _q = state.optionQuote && state.optionQuote.symbol === pos.symbol ? state.optionQuote : null;
+    const f = rt.exitFill(exitOptLtp, _q, Date.now());
+    _exitFill = f.source;
+    if (f.source === "bid") { exitOptLtp = f.price; _exitQuote = { bid: _q.bid, ask: _q.ask, ltp: _q.ltp }; }
+  }
+  const _pnlRes    = IM.computePnl({
     side: pos.side, entrySpot: pos.entrySpot, exitSpot,
     entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
-    qty, broker: "fyers",
+    qty, broker: "fyers", ...(rt.home ? {} : { isFutures: !!pos.isFutures }),
   });
   const charges    = _pnlRes.charges;
   const pnl        = _pnlRes.pnl;
+
+  // Trade journal exit — before the trade object is built (observer only).
+  // A stop / lock exit aimed at the level it sits at (the journal's last stop);
+  // anything else at the price it was taken at.
+  const _aim = (kind === "sl" || kind === "trail") ? _stopLevelOf(pos) : null;
+  tradeJournal.onExit(pos, {
+    reason, kind: kind || null,
+    spot: exitSpot, optionLtp: pos.isFutures ? null : exitOptLtp,
+    bid: _exitQuote ? _exitQuote.bid : null, ask: _exitQuote ? _exitQuote.ask : null,
+    expectedPrice: _aim != null ? _aim : (pos.isFutures ? exitSpot : _ltpAtExit), fillPrice: pos.isFutures ? exitSpot : exitOptLtp,
+    favPts: (exitSpot - pos.entrySpot) * (pos.side === "CE" ? 1 : -1), pnlRs: _pnlRes.gross,
+    candlesHeld: (Date.now() - pos.entryTimeMs) / (RES_MIN * 60000),
+    nowMs: Date.now(),
+  });
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
 
@@ -522,15 +684,29 @@ function simulateSell(reason) {
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
     isFutures:      !!pos.isFutures,
-    instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
+    instrument:     rt.home ? (pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS") : rt.instrumentName(),
   };
+  // Other markets: the record names its market, strategy and spot (consolidation,
+  // post-exit tracking and the MCP read them) and how each leg was filled.
+  if (!rt.home) {
+    Object.assign(trade, {
+      market:          rt.marketKey,
+      strategyId:      rt.strategy.key,
+      spotSymbol:      SPOT(),
+      optionEntryFill: pos.isFutures ? null : (pos.optionEntryFill || "ltp"),
+      optionExitFill:  pos.isFutures ? null : _exitFill,
+      entryQuote:      pos.entryQuote || null,
+      exitQuote:       _exitQuote,
+    });
+  }
+  Object.assign(trade, tradeJournal.fields(pos));
   state.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog("orb", trade);
+  tradeLogger.appendTradeLog(MODE, trade);
 
-  log(`🔴 [ORB-PAPER] EXIT ${pos.side} ${pos.symbol} @ ${pos.isFutures ? "" : `optLtp=${exitOptLtp} `}spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
+  log(`🔴 ${TAG} EXIT ${pos.side} ${pos.symbol} @ ${pos.isFutures ? "" : `optLtp=${exitOptLtp} `}spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
   notifyExit({
-    mode: "ORB-PAPER",
+    mode: NOTIFY_MODE,
     side: pos.side, symbol: pos.symbol,
     spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
     optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitOptLtp,
@@ -541,21 +717,23 @@ function simulateSell(reason) {
     peakPnl: trade.mfePnl,
     maxDrawdown: trade.maePnl,
     heldMs: trade.durationMs,
+    ...(rt.home ? {} : { isFutures: !!pos.isFutures, instrument: trade.instrument }),
   });
 
   try {
     tickRecorder.recordExit({
-      mode: "orb-paper", sessionId: state._sessionId, ts: Date.now(),
+      mode: rt.replayMode, sessionId: state._sessionId, ts: Date.now(),
       side: pos.side, symbol: pos.symbol, qty,
       spotExit: exitSpot, optionExit: exitOptLtp, pnl, reason,
     });
   } catch (_) {}
 
   state.position = null;
+  state.optionQuote = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN);
-  capitalPool.release("orb", pnl);
-  try { require("../utils/positionPersist").clearOrbPosition(); } catch (_) {}
+  capitalPool.release(MODE, pnl);
+  try { rt.persist.clear(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();
@@ -565,6 +743,16 @@ function simulateSell(reason) {
 // The RULE lives in src/strategies/orbExits.js (the global profit lock — the only
 // automatic exit). This function is just the paper EXECUTION of that decision:
 // simulate the fill, log, persist.
+
+// The level the automatic exit sits at right now — the profit lock floor or the
+// premium stop on the option (tradeGuards.exitLevelLtp), the index-point stop
+// on a future. Read by the trade journal only; never by a decision.
+function _stopLevelOf(pos) {
+  try {
+    if (pos.isFutures) return tradeGuards.futuresStopLevel(pos.side, pos.entrySpot, pos.mfeSpotPts || 0);
+    return pos.optionEntryLtp ? tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peakPremium) : null;
+  } catch (_) { return null; }
+}
 
 // Tick-level exit: the global profit lock. Also tracks peak premium + MFE/MAE.
 function _checkExits(spotPrice) {
@@ -582,14 +770,31 @@ function _checkExits(spotPrice) {
   // Stale-premium warning. WARN ONLY — every other engine in this repo does the
   // same and leaves the exit rules untouched (see emaRsiStPaper).
   if (orbExits.isLtpStale(state.optionLtpUpdatedAt, Date.now()) && !state._ltpStaleLogged) {
-    log(`⚠️ [ORB-PAPER] Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. Profit lock + P&L are using a stale premium.`);
+    log(`⚠️ ${TAG} Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. Profit lock + P&L are using a stale premium.`);
     state._ltpStaleLogged = true;
   }
 
   orbExits.trackExcursion(pos, spotPrice, optLtp, Date.now());
 
+  // Trade journal (observer only): the tick, then the exit level if it moved.
+  {
+    const _favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
+    const _curPnl = pos.isFutures
+      ? (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1) * pos.qty
+      : (optLtp - pos.optionEntryLtp) * pos.qty;
+    tradeJournal.onTick(pos, { favPts: _favPts, pnlRs: _curPnl, spot: spotPrice, ltp: optLtp, nowMs: Date.now() });
+    const _lvl = _stopLevelOf(pos);
+    if (_lvl != null) {
+      const _ref = pos.isFutures ? pos.entrySpot : pos.optionEntryLtp;
+      const _locked = (_lvl - _ref) * (pos.isFutures && pos.side === "PE" ? -1 : 1) >= 0;
+      tradeJournal.onStopChange(pos, { to: _lvl, kind: _locked ? "lock" : "trail",
+        reason: _locked ? "profit lock floor" : (pos.isFutures ? "futures stop" : "premium stop"),
+        spot: spotPrice, ltp: optLtp, nowMs: Date.now() });
+    }
+  }
+
   const d = orbExits.evaluateTickExits(pos, { spotPrice, optionLtp: optLtp });
-  if (d.exit) simulateSell(d.reason);
+  if (d.exit) simulateSell(d.reason, pos.isFutures || /^Stop-loss/.test(d.reason) ? "sl" : "trail");
 }
 
 // ── Candle close handler ────────────────────────────────────────────────────
@@ -597,7 +802,8 @@ function _checkExits(spotPrice) {
 async function onCandleClose(bar) {
   // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
   // the buildup series stays filled even on no-signal candles.
-  await oiFilter.recordOiSample(bar && bar.close);
+  // The OI gate reads NIFTY's option chain — NIFTY only (pairRuntime.oiApplies).
+  if (rt.oiApplies) await oiFilter.recordOiSample(bar && bar.close);
 
   // Already in position? Nothing to do on the close — the only automatic exit
   // (the profit lock) runs per tick in _checkExits.
@@ -609,45 +815,52 @@ async function onCandleClose(bar) {
   {
     const _pf = require("../utils/portfolioRisk").checkPortfolioCap();
     if (_pf.blocked) {
-      skipLogger.appendSkipLog("orb", { gate: "portfolio_loss", reason: _pf.reason, spot: _spot });
+      skipLogger.appendSkipLog(MODE, { gate: "portfolio_loss", reason: _pf.reason, spot: _spot });
       return;
     }
   }
 
   // Expiry-day-only filter
   if (state._expiryDayBlocked) {
-    skipLogger.appendSkipLog("orb", { gate: "expiry_day_only", reason: "Not an expiry day", spot: _spot });
+    skipLogger.appendSkipLog(MODE, { gate: "expiry_day_only", reason: "Not an expiry day", spot: _spot });
     return;
   }
 
   // Evaluate ORB signal
-  const sig = orbStrategy.getSignal(state.candles);
+  const sig = orbStrategy.getSignal(state.candles, ENG());
   if (sig.signal === "NONE" || !sig.side) {
     // Only log when the signal actually evaluated (range formed) — pre-range
     // candles produce "waiting for OR" noise.
     if (sig.orh != null && sig.orl != null) {
-      skipLogger.appendSkipLog("orb", { gate: "signal_none", reason: sig.reason || "no signal", spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts, funnel: orbStrategy.summarizeGates(sig) });
+      skipLogger.appendSkipLog(MODE, { gate: "signal_none", reason: sig.reason || "no signal", spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts, funnel: orbStrategy.summarizeGates(sig) });
     }
     return;
   }
 
   // VIX gate
-  if ((process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
-    const vixCheck = await checkLiveVix(sig.signalStrength, { mode: "orb" });
+  if ((PV("VIX_ENABLED") || process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
+    // Another market's own switch decides (else NIFTY's); India VIX and the
+    // ORB_VIX_* thresholds are the same for every market. force: vixFilter's
+    // anyVixEnabled() does not know a pair's switch, so with every NIFTY-side VIX
+    // filter off (and VIX_LOG_ENABLED=false) an unforced fetch returns null and
+    // the fail-closed gate would block every entry of this pair.
+    const vixCheck = rt.home
+      ? await checkLiveVix(sig.signalStrength, { mode: "orb" })
+      : vixFilter.checkBacktestVix(await fetchLiveVix({ force: true }), sig.signalStrength, { mode: "orb", force: true });
     if (!vixCheck.allowed) {
-      log(`⏸️ [ORB-PAPER] VIX gate blocked: ${vixCheck.reason}`);
-      skipLogger.appendSkipLog("orb", { gate: "vix", reason: vixCheck.reason, spot: _spot, vix: vixCheck.vix, sig: sig.signal, strength: sig.signalStrength });
+      log(`⏸️ ${TAG} VIX gate blocked: ${vixCheck.reason}`);
+      skipLogger.appendSkipLog(MODE, { gate: "vix", reason: vixCheck.reason, spot: _spot, vix: vixCheck.vix, sig: sig.signal, strength: sig.signalStrength });
       return;
     }
   }
 
   // OI + price buildup gate — block entries fighting a confirmed buildup; tag the
   // entry reason with the regime so every trade records its OI context.
-  if (oiFilter.getOiEnabled("orb")) {
-    const _oi = await oiFilter.checkLiveOi(sig.side, _spot, { mode: "orb" });
+  if (rt.oiApplies && oiFilter.getOiEnabled(MODE)) {
+    const _oi = await oiFilter.checkLiveOi(sig.side, _spot, { mode: MODE });
     if (!_oi.allowed) {
-      log(`⏸️ [ORB-PAPER] OI gate blocked: ${_oi.reason}`);
-      skipLogger.appendSkipLog("orb", { gate: "oi", reason: _oi.reason, spot: _spot, side: sig.side, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null });
+      log(`⏸️ ${TAG} OI gate blocked: ${_oi.reason}`);
+      skipLogger.appendSkipLog(MODE, { gate: "oi", reason: _oi.reason, spot: _spot, side: sig.side, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null });
       return;
     }
     if (_oi.regime) sig.reason = `${sig.reason} | ${_oi.reason}`;
@@ -678,7 +891,7 @@ function onTick(tick) {
         state.candles.push({ ...state.currentBar });
       }
       if (state.candles.length > 300) state.candles.shift();
-      onCandleClose(state.currentBar).catch(e => console.error(`🚨 [ORB-PAPER] onCandleClose error: ${e.message}`));
+      onCandleClose(state.currentBar).catch(e => console.error(`🚨 ${TAG} onCandleClose error: ${e.message}`));
     }
     const bucketSec = Math.floor(bucketMs / 1000);
     const lastPre = state.candles.length ? state.candles[state.candles.length - 1] : null;
@@ -718,15 +931,15 @@ async function preloadHistory() {
     // from today alone. The opening range + VWAP are day-scoped in the strategy,
     // so the prior-day candles seed them without polluting today's OR.
     const istStart = new Date(_now.getTime() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(RES_MIN), istStart, istToday, fetchCandles);
+    const candles = await fetchCandlesCached(SPOT(), String(RES_MIN), istStart, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length > 0) {
       state.candles = candles.slice(-200);
-      log(`📊 [ORB-PAPER] Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles (${istStart}→${istToday}, indicator-seeded)`);
+      log(`📊 ${TAG} Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles (${istStart}→${istToday}, indicator-seeded)`);
     } else {
-      log(`📊 [ORB-PAPER] No history available — will build from live ticks`);
+      log(`📊 ${TAG} No history available — will build from live ticks`);
     }
   } catch (e) {
-    log(`⚠️ [ORB-PAPER] Preload failed: ${e.message}`);
+    log(`⚠️ ${TAG} Preload failed: ${e.message}`);
   }
 }
 
@@ -741,7 +954,7 @@ function _lateStartStopMins() {
   try { if (require("../services/tickReplay").isReplayInProgress()) return 0; } catch (_) {}
   const t = (getISTMinutes() + LATE_START_GRACE_MIN) % 1440;
   const hhmm = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
-  log(`⏰ [ORB-PAPER] Session started after its stop time — will stop at ${hhmm} IST`);
+  log(`⏰ ${TAG} Session started after its stop time — will stop at ${hhmm} IST`);
   return LATE_START_GRACE_MIN;
 }
 
@@ -754,7 +967,7 @@ function scheduleAutoStop() {
   let minsLeft = stopMin - now;
   if (minsLeft <= 0) { minsLeft = _lateStartStopMins(); if (!minsLeft) return; }
   _autoStopTimer = setTimeout(() => {
-    log(`⏰ [ORB-PAPER] Auto-stop @ ${raw} IST`);
+    log(`⏰ ${TAG} Auto-stop @ ${raw} IST`);
     stopSession();
   }, minsLeft * 60 * 1000);
 }
@@ -762,41 +975,58 @@ function scheduleAutoStop() {
 // ── Session lifecycle ───────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
-  if (state.running) return res.redirect("/orb-paper/status");
+  if (state.running) return res.redirect(`${ROUTE}/status`);
 
-  if ((process.env.ORB_MODE_ENABLED || "true").toLowerCase() !== "true") {
-    return res.status(403).send(_errorPage("ORB Mode Disabled", "Enable ORB Mode in Settings first", "/settings", "Go to Settings"));
+  if (rt.home) {
+    if ((process.env.ORB_MODE_ENABLED || "true").toLowerCase() !== "true") {
+      return res.status(403).send(_errorPage("ORB Mode Disabled", "Enable ORB Mode in Settings first", "/settings", "Go to Settings"));
+    }
+  } else if (!rt.enabled()) {
+    // Every non-home pair ships OFF.
+    return res.status(403).send(_errorPage(`${TITLE} is switched off`, `Turn on ${pair.enabledKey} in Settings → ${rt.market().label} first`, "/settings", "Go to Settings"));
   }
 
-  const check = sharedSocketState.canStart("ORB_PAPER");
-  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, "/orb-paper/status", "← Back"));
+  const check = rt.socketSlot.canStart();
+  if (!check.allowed) return res.status(409).send(_errorPage("Cannot Start", check.reason, `${ROUTE}/status`, "← Back"));
 
   const auth = await verifyFyersToken();
   if (!auth.ok) return res.status(401).send(_errorPage("Not Authenticated", auth.message, "/auth/login", "Login with Fyers"));
 
-  const holiday = await isTradingAllowed();
-  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/orb-paper/status", "← Back"));
+  // This market's exchange calendar (NSE / BSE holidays).
+  const holiday = rt.home ? await isTradingAllowed() : await rt.isTradingAllowed();
+  if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, `${ROUTE}/status`, "← Back"));
+
+  // The spot the candles are built from (NIFTY: the NIFTY 50 index, as always).
+  const subscribeSymbol = SPOT();
+  if (!subscribeSymbol) return res.status(400).send(_errorPage("Cannot Start", `${TITLE}: no spot symbol for ${rt.market().label}`, `${ROUTE}/status`, "← Back"));
+  _spotSym = subscribeSymbol;
 
   let _expiryBlocked = false;
-  if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+  if (!rt.home) {
+    // Another market: <PAIR>_EXPIRY_DAY_ONLY against THAT market's expiry calendar.
+    if (rt.expiryDayOnly()) {
+      _expiryBlocked = !rt.isExpiryDay();
+      log(`📅 ${TAG} Expiry-only mode (${rt.market().label}): ${_expiryBlocked ? "❌ not this market's expiry day — entries blocked" : "✅ today is expiry — trading allowed"}`);
+    }
+  } else if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
     const { isExpiryDay } = require("../services/marketData");
     const isExpiry = await isExpiryDay();
     if (!isExpiry) _expiryBlocked = true;
-    log(`📅 [ORB-PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — allowed" : "❌ Not expiry day — entries blocked"}`);
+    log(`📅 ${TAG} Expiry-only mode: ${isExpiry ? "✅ Today is expiry — allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
   state = _freshState();
   state.running = true;
   state._unsaved = true;
   state.sessionStart = new Date().toISOString();
-  state._sessionId = `orb-paper:${Date.now()}`;
+  state._sessionId = `${rt.replayMode}:${Date.now()}`;
   state._expiryDayBlocked = _expiryBlocked;
 
-  sharedSocketState.setOrbActive("ORB_PAPER");
+  rt.socketSlot.set();
 
   await preloadHistory();
 
-  if ((process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
+  if ((PV("VIX_ENABLED") || process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
     resetVixCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
@@ -806,16 +1036,16 @@ router.get("/start", async (req, res) => {
 
   try {
     tickRecorder.recordSessionStart({
-      mode: "orb-paper",
+      mode: rt.replayMode,
       sessionId: state._sessionId,
       settings: tickRecorder.snapshotSettings ? tickRecorder.snapshotSettings() : {},
       warmup: state.candles.map(c => ({ ...c })),
       vix: getCachedVix(),
       meta: {
-        instrument: instrumentConfig.INSTRUMENT,
+        instrument: rt.instrumentName(),
         resolutionMin: RES_MIN,
         expiryDayBlocked: _expiryBlocked,
-        spotSymbol: NIFTY_INDEX_SYMBOL,
+        spotSymbol: subscribeSymbol,
         sessionStartISO: state.sessionStart,
         // Replay-fidelity marker: true means this session writes option LTPs
         // to options.jsonl, so tick-replay can reconstruct exit P&L. Pre-fix
@@ -825,51 +1055,53 @@ router.get("/start", async (req, res) => {
     });
   } catch (_) {}
 
+  // NIFTY binds the default index (no symbol, as always); another market binds its own spot.
+  const _cbSym = rt.home ? undefined : subscribeSymbol;
   if (socketManager.isRunning()) {
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [ORB-PAPER] Piggybacking on existing WebSocket");
+    socketManager.addCallback(CALLBACK_ID, onTick, log, _cbSym);
+    log(`📡 ${TAG} Piggybacking on existing WebSocket`);
   } else {
-      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-      socketManager.addCallback(CALLBACK_ID, onTick, log);
-      log("📡 [ORB-PAPER] Started WebSocket");
+      socketManager.start(subscribeSymbol, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log, _cbSym);
+      log(`📡 ${TAG} Started WebSocket`);
   }
 
   scheduleAutoStop();
-  log(`🟢 [ORB-PAPER] Session started — ${RES_MIN}-min candles, OR=${OR_BARS} bars (${RES_MIN * OR_BARS}-min)`);
+  log(`🟢 ${TAG} Session started — ${RES_MIN}-min candles, OR=${OR_BARS} bars (${RES_MIN * OR_BARS}-min)`);
 
   notifyStarted({
-    mode: "ORB-PAPER",
+    mode: NOTIFY_MODE,
     text: [
-      `📄 ORB PAPER — STARTED`,
+      `📄 ${rt.home ? "ORB" : TITLE.toUpperCase()} PAPER — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
       ``,
       `Strategy  : ${orbStrategy.NAME}`,
-      `OR window : ${process.env.ORB_RANGE_START || "09:15"} → ${process.env.ORB_RANGE_END || "09:30"} IST`,
+      `OR window : ${PV("RANGE_START") || process.env.ORB_RANGE_START || "09:15"} → ${PV("RANGE_END") || process.env.ORB_RANGE_END || "09:30"} IST`,
       // Reports the rule that will actually run today: ORB_ENTRY_START can hold the
       // hunt past the OR lock.
-      `Entry     : from ${process.env.ORB_ENTRY_START || process.env.ORB_RANGE_END || "09:30"} IST`,
+      `Entry     : from ${PV("ENTRY_START") || process.env.ORB_ENTRY_START || PV("RANGE_END") || process.env.ORB_RANGE_END || "09:30"} IST`,
       `Exit      : profit lock only`,
       _expiryBlocked ? `\n⚠️ Expiry-only mode: entries blocked (not expiry day)` : null,
     ].filter(Boolean).join("\n"),
   });
 
-  res.redirect("/orb-paper/status");
+  res.redirect(`${ROUTE}/status`);
 });
 
 function stopSession() {
   if (!state.running) return;
-  if (state.position) simulateSell("Session stopped");
+  if (state.position) simulateSell("Session stopped", "eod");
   state.running = false;
   stopOptionPolling();
 
   try {
-    tickRecorder.recordSessionStop({ mode: "orb-paper", sessionId: state._sessionId || null, reason: "user_stop" });
+    tickRecorder.recordSessionStop({ mode: rt.replayMode, sessionId: state._sessionId || null, reason: "user_stop" });
   } catch (_) {}
 
   socketManager.removeCallback(CALLBACK_ID);
-  sharedSocketState.clearOrb();   // clear OWN mode first — else isAnyActive() is always true → socket never stops (leak)
+  rt.socketSlot.clear();   // clear OWN mode first — else isAnyActive() is always true → socket never stops (leak)
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
   }
@@ -888,17 +1120,17 @@ function stopSession() {
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
       saveData(data);
       state._unsaved = false;   // now inside totalPnl — the pool must not add it twice
-      capitalPool.sessionSaved("orb");
-      log(`💾 [ORB-PAPER] Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
+      capitalPool.sessionSaved(MODE);
+      log(`💾 ${TAG} Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
     } catch (e) {
-      log(`⚠️ [ORB-PAPER] Save failed: ${e.message}`);
+      log(`⚠️ ${TAG} Save failed: ${e.message}`);
     }
   }
 
-  log("🔴 [ORB-PAPER] Session stopped");
+  log(`🔴 ${TAG} Session stopped`);
 
   notifyDayReport({
-    mode: "ORB-PAPER",
+    mode: NOTIFY_MODE,
     sessionTrades: state.sessionTrades,
     sessionPnl: state.sessionPnl,
     sessionStart: state.sessionStart,
@@ -907,12 +1139,12 @@ function stopSession() {
 
 router.get("/stop", (req, res) => {
   stopSession();
-  res.redirect("/orb-paper/status");
+  res.redirect(`${ROUTE}/status`);
 });
 
 router.get("/exit", (req, res) => {
-  if (state.position) simulateSell("Manual exit");
-  res.redirect("/orb-paper/status");
+  if (state.position) simulateSell("Manual exit", "manual");
+  res.redirect(`${ROUTE}/status`);
 });
 
 // ── Manual CE/PE entry — bypasses ORB break, useful when user reads the
@@ -930,7 +1162,7 @@ router.post("/manualEntry", async (req, res) => {
   // Build a synthetic ORB signal snapshot — use current OR if formed, else
   // synthesize a small range around spot so the target line still draws.
   let or = null;
-  try { or = orbStrategy.computeOpeningRange(state.candles); } catch (_) {}
+  try { or = orbStrategy.computeOpeningRange(state.candles, ENG_PREFIX); } catch (_) {}
   const rangePts = or ? Math.round((or.high - or.low) * 100) / 100 : 50;
   const orh = or ? or.high : spot + 25;
   const orl = or ? or.low  : spot - 25;
@@ -947,7 +1179,7 @@ router.post("/manualEntry", async (req, res) => {
     signalStrength: "MANUAL",
     reason: `🖐️ MANUAL ${side} entry @ spot ₹${spot} (range ${rangePts}pt)`,
   };
-  log(`🖐️ [ORB-PAPER] MANUAL ${side} entry triggered by user @ spot ₹${spot}`);
+  log(`🖐️ ${TAG} MANUAL ${side} entry triggered by user @ spot ₹${spot}`);
   try {
     await simulateBuy(side, sig);
     if (!state.position || state.position.entryReason !== sig.reason) {
@@ -957,7 +1189,7 @@ router.post("/manualEntry", async (req, res) => {
     }
     return res.json({ success: true, side, spot, targetSpot });
   } catch (e) {
-    log(`❌ [ORB-PAPER] Manual entry failed: ${e.message}`);
+    log(`❌ ${TAG} Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
   }
 });
@@ -972,7 +1204,7 @@ router.get("/status/chart-data", async (req, res) => {
     // candles for the trades' day so the chart draws them with their markers.
     let srcCandles = state.candles;
     if (!state.running && srcCandles.length === 0 && (state.sessionTrades || []).length > 0) {
-      srcCandles = await chartBackfill.candlesForRestoredTrades(NIFTY_INDEX_SYMBOL, RES_MIN, state.sessionTrades);
+      srcCandles = await chartBackfill.candlesForRestoredTrades(SPOT(), RES_MIN, state.sessionTrades);
     }
     const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) {
@@ -982,7 +1214,7 @@ router.get("/status/chart-data", async (req, res) => {
     // Opening Range box overlay — emit two horizontal lines at ORH and ORL
     let orhLine = [], orlLine = [];
     try {
-      const or = orbStrategy.computeOpeningRange(srcCandles);
+      const or = orbStrategy.computeOpeningRange(srcCandles, ENG_PREFIX);
       if (or && candles.length) {
         // Anchor both OR lines to the LATEST trading day only. The candle buffer
         // carries ~7 days of warm-up history, but the client trims every series to
@@ -1037,7 +1269,7 @@ router.get("/status/chart-data", async (req, res) => {
     // Each is emitted 1:1 with `candles`, and the client trims to today.
     let rsi = [], superTrend = [];
     try {
-      const rsiPeriod = Math.max(2, parseInt(process.env.ORB_RSI_PERIOD || "14", 10));
+      const rsiPeriod = Math.max(2, parseInt(PV("RSI_PERIOD") || process.env.ORB_RSI_PERIOD || "14", 10));
       const closes = candles.map(c => c.close);
       if (closes.length >= rsiPeriod + 1) {
         const arr = RSI.calculate({ period: rsiPeriod, values: closes });
@@ -1049,8 +1281,8 @@ router.get("/status/chart-data", async (req, res) => {
       }
     } catch (_) {}
     try {
-      const stPeriod = Math.max(2, parseInt(process.env.ORB_ST_PERIOD || "10", 10));
-      const stMult   = parseFloat(process.env.ORB_ST_MULT || "3");
+      const stPeriod = Math.max(2, parseInt(PV("ST_PERIOD") || process.env.ORB_ST_PERIOD || "10", 10));
+      const stMult   = parseFloat(PV("ST_MULT") || process.env.ORB_ST_MULT || "3");
       const st = computeSuperTrend(candles, stPeriod, stMult);
       for (let i = 0; i < st.length; i++) {
         if (st[i] && st[i].value != null) {
@@ -1062,10 +1294,10 @@ router.get("/status/chart-data", async (req, res) => {
     // The gate thresholds, so the client can draw the RSI bands without
     // duplicating the defaults.
     const gateCfg = {
-      rsiOn:    (process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
-      rsiCeMin: parseFloat(process.env.ORB_RSI_CE_MIN || "51"),
-      rsiPeMax: parseFloat(process.env.ORB_RSI_PE_MAX || "49"),
-      stOn:     (process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
+      rsiOn:    (PV("RSI_ENABLED") || process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
+      rsiCeMin: parseFloat(PV("RSI_CE_MIN") || process.env.ORB_RSI_CE_MIN || "51"),
+      rsiPeMax: parseFloat(PV("RSI_PE_MAX") || process.env.ORB_RSI_PE_MAX || "49"),
+      stOn:     (PV("ST_ENABLED") || process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
     };
 
     return res.json({ candles, markers, entryPrice, target, orhLine, orlLine, rsi, superTrend, gateCfg,
@@ -1081,14 +1313,14 @@ router.get("/status/data", (req, res) => {
   const data = loadData();
 
   let or = null;
-  try { or = orbStrategy.computeOpeningRange(state.candles); } catch (_) {}
+  try { or = orbStrategy.computeOpeningRange(state.candles, ENG_PREFIX); } catch (_) {}
 
   // Live position P&L (delta-proxy if option LTP stale)
   let livePnl = null;
   if (pos) {
-    const lot = pos.qty || instrumentConfig.getLotQty();
+    const lot = pos.qty || rt.lotQty();
     if (state.optionLtp != null) {
-      livePnl = instrumentMode.unrealisedPnl({
+      livePnl = IM.unrealisedPnl({
         side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
         entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: lot,
       });
@@ -1159,26 +1391,26 @@ router.get("/status", (req, res) => {
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
   const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
   const winRate = state.sessionTrades.length ? ((wins / state.sessionTrades.length) * 100).toFixed(1) : null;
-  let or = null; try { or = orbStrategy.computeOpeningRange(state.candles); } catch (_) {}
+  let or = null; try { or = orbStrategy.computeOpeningRange(state.candles, ENG_PREFIX); } catch (_) {}
   const _vix = getCachedVix();
-  const _vixEnabled = (process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true";
+  const _vixEnabled = (PV("VIX_ENABLED") || process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true";
   const _vixMaxEntry = vixFilter.getVixMaxEntry("orb");
   // ORB_VIX_STRONG_ONLY is a real, honoured threshold (vixFilter.checkLiveVix reads
   // it for mode "orb"), but the badge used to hard-code Infinity here — so it read
   // "NORMAL" right up to the block level and never showed the amber STRONG-ONLY
   // band the setting configures. Same source as the gate.
   const _vixStrongOnly = vixFilter.getVixStrongOnly("orb");
-  const _orStart = process.env.ORB_RANGE_START || "09:15";
-  const _orEnd   = process.env.ORB_RANGE_END   || "09:30";
+  const _orStart = PV("RANGE_START") || process.env.ORB_RANGE_START || "09:15";
+  const _orEnd   = PV("RANGE_END") || process.env.ORB_RANGE_END   || "09:30";
 
   const pnlColor = (n) => (n || 0) >= 0 ? "#10b981" : "#ef4444";
 
   // Live live PnL for badge
   let livePnl = null;
   if (pos && state.optionLtp != null) {
-    livePnl = instrumentMode.unrealisedPnl({
+    livePnl = IM.unrealisedPnl({
       side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
-      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: (pos.qty || instrumentConfig.getLotQty()),
+      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: (pos.qty || rt.lotQty()),
     });
   }
 
@@ -1312,11 +1544,11 @@ router.get("/status", (req, res) => {
       <!-- Levels grid -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY @ Entry</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${SPOT_LABEL} @ Entry</div>
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">₹${pos.entrySpot ? pos.entrySpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${SPOT_LABEL} LTP</div>
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${state.lastTickPrice ? "₹" + state.lastTickPrice.toFixed(2) : "—"}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div>
         </div>
@@ -1365,7 +1597,7 @@ router.get("/status", (req, res) => {
 <html lang="en"><head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 ${faviconLink()}
-<title>ORB Paper — ${orbStrategy.NAME}</title>
+<title>${TITLE} Paper — ${orbStrategy.NAME}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
@@ -1375,21 +1607,21 @@ ${bbRsiStyleCSS()}
 </style></head>
 <body>
 <div class="app-shell">
-${buildSidebar('orbPaper', liveActive, state.running, {
-  showStartBtn: !state.running, startBtnJs: `secretGo('/orb-paper/start', this)`, startLabel: '▶ Start ORB',
-  showStopBtn: state.running,   stopBtnJs:  `secretGo('/orb-paper/stop', this)`,  stopLabel:  '■ Stop ORB',
-  showExitBtn: state.running && !!state.position, exitBtnJs: `secretGo('/orb-paper/exit', this)`, exitLabel: '🚪 Exit Trade',
+${buildSidebar(rt.sidebarKey, liveActive, state.running, {
+  showStartBtn: !state.running, startBtnJs: `secretGo('${ROUTE}/start', this)`, startLabel: '▶ Start ORB',
+  showStopBtn: state.running,   stopBtnJs:  `secretGo('${ROUTE}/stop', this)`,  stopLabel:  '■ Stop ORB',
+  showExitBtn: state.running && !!state.position, exitBtnJs: `secretGo('${ROUTE}/exit', this)`, exitLabel: '🚪 Exit Trade',
 })}
 <div class="main-content">
 
 ${bbRsiTopBar({
-  title: "ORB Paper Trade",
+  title: `${TITLE} Paper Trade`,
   metaLine: `Strategy: ${orbStrategy.NAME} · OR ${_orStart}–${_orEnd} · Exit: profit lock · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
   running: state.running,
   vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: _vixStrongOnly },
-  primaryAction: { label: "Start ORB Paper", href: "/orb-paper/start" },
-  stopAction:    { label: "Stop Session",    href: "/orb-paper/stop"  },
-  historyHref: "/orb-paper/history",
+  primaryAction: { label: "Start ORB Paper", href: `${ROUTE}/start` },
+  stopAction:    { label: "Stop Session",    href: `${ROUTE}/stop`  },
+  historyHref: `${ROUTE}/history`,
 })}
 
 ${bbRsiCapitalStrip({
@@ -1409,7 +1641,7 @@ ${posHtml}
 
 ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
 <div style="margin-bottom:18px;">
-  <div class="section-title">NIFTY ${RES_MIN}-Min Chart (Opening Range overlay)</div>
+  <div class="section-title">${SPOT_LABEL} ${RES_MIN}-Min Chart (Opening Range overlay)</div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;line-height:1.6;">
@@ -1428,7 +1660,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
 
 <!-- Session trades -->
 <div id="orbp-trades-section" style="margin-bottom:18px;">
-  <div class="section-title">Session Trades <span id="orbp-trades-hint" style="color:var(--muted-1,#8ba1c2);font-weight:400;letter-spacing:0.5px;text-transform:none;margin-left:8px;">${state.sessionTrades.length} trades</span><a href="/orb-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="float:right;font-weight:400;font-size:0.72rem;letter-spacing:0.5px;text-transform:none;color:#4a9cf5;text-decoration:none;">🤖 AI export</a></div>
+  <div class="section-title">Session Trades <span id="orbp-trades-hint" style="color:var(--muted-1,#8ba1c2);font-weight:400;letter-spacing:0.5px;text-transform:none;margin-left:8px;">${state.sessionTrades.length} trades</span><a href="${ROUTE}/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="float:right;font-weight:400;font-size:0.72rem;letter-spacing:0.5px;text-transform:none;color:#4a9cf5;text-decoration:none;">🤖 AI export</a></div>
   <div id="orbp-trades-box" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;${state.sessionTrades.length ? "" : "padding:24px;text-align:center;color:var(--muted-1,#8ba1c2);font-size:0.82rem;"}">${state.sessionTrades.length ? "" : "No trades yet"}</div>
 </div>
 
@@ -1446,7 +1678,7 @@ async function orbpHandleExit(btn) {
   if (!ok) return;
   var origLabel = btn.textContent;
   btn.disabled = true; btn.textContent = 'Exiting...';
-  secretFetch('/orb-paper/exit').then(function(r){
+  secretFetch('${ROUTE}/exit').then(function(r){
     if (!r) { btn.disabled = false; btn.textContent = origLabel; return; }
     location.reload();
   }).catch(function(){ location.reload(); });
@@ -1455,7 +1687,7 @@ async function orbpManualEntry(side) {
   var ok = await showConfirm({ icon:'✋', title:'Manual entry', message:'Manual '+side+' entry at current spot? Bypasses OR-break filter.', confirmText:'Enter '+side });
   if (!ok) return;
   try {
-    var r = await secretFetch('/orb-paper/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ side: side }) });
+    var r = await secretFetch('${ROUTE}/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ side: side }) });
     if (!r) return;
     var j = await r.json();
     if (!j.success) { alert('Entry failed: ' + (j.error || 'Unknown error')); return; }
@@ -1520,7 +1752,7 @@ async function orbpManualEntry(side) {
   var _rsiBands = false;
   async function fetchChart(){
     try {
-      var r = await fetch('/orb-paper/status/chart-data', { cache:'no-store' });
+      var r = await fetch('${ROUTE}/status/chart-data', { cache:'no-store' });
       var d = await r.json();
       // Trim every series to the latest IST trading day so zooming out still
       // shows only today — warmup history stays server-side for indicator calc.
@@ -1612,7 +1844,7 @@ async function orbpManualEntry(side) {
   });
 })();
 </script>
-${optionChart.optionChartScript({ dataUrl: '/orb-paper/status/chart-data', id: 'orb-opt-chart' })}
+${optionChart.optionChartScript({ dataUrl: ROUTE + '/status/chart-data', id: 'orb-opt-chart' })}
 
 <script>
 // ── AJAX live refresh — only updates DOM fragments; full reload on state change
@@ -1673,7 +1905,7 @@ ${optionChart.optionChartScript({ dataUrl: '/orb-paper/status/chart-data', id: '
 
   async function fetchAndUpdate(){
     try {
-      var r = await fetch('/orb-paper/status/data', { cache:'no-store' });
+      var r = await fetch('${ROUTE}/status/data', { cache:'no-store' });
       if (!r.ok) return;
       var d = await r.json();
 
@@ -1772,7 +2004,7 @@ ${optionChart.optionChartScript({ dataUrl: '/orb-paper/status/chart-data', id: '
         if (_interval) { clearInterval(_interval); _interval = null; }
         setTimeout(function(){ window.location.reload(); }, 1500);
       }
-    } catch (e) { console.warn('[orb-paper] refresh:', e.message); }
+    } catch (e) { console.warn('[${OWNER}] refresh:', e.message); }
   }
 
   renderTrades(${tradesJSON});  // paint existing trades on load (covers stopped/reloaded sessions)
@@ -1797,16 +2029,16 @@ router.get("/history", (req, res) => {
   const liveActive = false;
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
-    routePrefix: "/orb-paper",
-    sidebarKey: "orbHistory",
-    pageTitle: "🌅 ORB Paper Trade History",
-    pageDocTitle: "ORB Paper — History",
-    modalLabel: "ORB Paper",
+    routePrefix: ROUTE,
+    sidebarKey: rt.historySidebarKey,
+    pageTitle: `🌅 ${TITLE} Paper Trade History`,
+    pageDocTitle: `${TITLE} Paper — History`,
+    modalLabel: `${TITLE} Paper`,
     liveActive,
     sessions: data.sessions || [],
     totalPnl: data.totalPnl,
     startCap,
-    emptyLabel: "Start ORB paper trading to record your first session.",
+    emptyLabel: `Start ${TITLE} paper trading to record your first session.`,
   }));
 });
 
@@ -1814,8 +2046,8 @@ router.get("/history", (req, res) => {
 const _ORB_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates("orb");
-  const trades = tradeLogger.listDailyDates("orb");
+  const skips  = skipLogger.listDates(MODE);
+  const trades = tradeLogger.listDailyDates(MODE);
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) {
@@ -1830,11 +2062,11 @@ router.get("/download/daily-files", (req, res) => {
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="orb_paper_skips_all_${today}.txt"`);
-  const dates = skipLogger.listDates("orb").map(d => d.date).sort();
+  res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates(MODE).map(d => d.date).sort();
   let body = "";
   for (const d of dates) {
-    try { const p = skipLogger.filePathFor("orb", d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {}
+    try { const p = skipLogger.filePathFor(MODE, d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {}
   }
   res.send(body);
 });
@@ -1847,23 +2079,23 @@ router.get("/download/skips-all", (req, res) => {
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("orb", date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `orb_paper_skips_${date}.txt`);
+  res.download(p, `${MODE}_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("orb", date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `orb_paper_trades_${date}.txt`);
+  res.download(p, `${MODE}_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("orb", date);
+  const p = skipLogger.filePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1873,7 +2105,7 @@ router.get("/view/skips/:date", (req, res) => {
 router.get("/view/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("orb", date);
+  const p = tradeLogger.dailyFilePathFor(MODE, date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -1898,7 +2130,7 @@ router.post("/restore-session/:date", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop ORB paper trading before restoring." });
   const date = String(req.params.date || "").trim();
   if (!_ORB_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
-  const allTrades = tradeLogger.readDailyTrades("orb", date);
+  const allTrades = tradeLogger.readDailyTrades(MODE, date);
   if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   const data = loadData();
   const seen = new Set();
@@ -1919,7 +2151,7 @@ router.post("/restore-session/:date", (req, res) => {
   saveData(data);
   // Today's restored trades are the ones a restart rehydrated as unsaved — now in totalPnl.
   if (date === tradeLogger.istDateString(Date.now())) state._unsaved = false;
-  capitalPool.sessionSaved("orb");   // drop the pool's file-P&L memo now
+  capitalPool.sessionSaved(MODE);   // drop the pool's file-P&L memo now
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
@@ -1928,10 +2160,10 @@ router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop ORB paper trading before resetting." });
   const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
-  require("../utils/paperReset").clearTodayFiles("orb"); // else restart rehydrates today's session
+  require("../utils/paperReset").clearTodayFiles(MODE); // else restart rehydrates today's session
   state._unsaved = false;   // the rehydrated unsaved trades were just wiped with the history
-  capitalPool.sessionSaved("orb");
-  return res.json({ success: true, message: `ORB paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
+  capitalPool.sessionSaved(MODE);
+  return res.json({ success: true, message: `${TITLE} paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
 // NOTE: there is deliberately only ONE session-delete endpoint above
@@ -1948,19 +2180,19 @@ router.get("/download/trades.jsonl", (req, res) => {
     const records = [];
     for (const s of (data.sessions || [])) {
       for (const t of (s.trades || [])) {
-        records.push(Object.assign({ date: s.date, mode: "orb", strategy: s.strategy }, t));
+        records.push(Object.assign({ date: s.date, mode: MODE, strategy: s.strategy }, t));
       }
     }
     const today = new Date().toISOString().slice(0, 10);
     const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
     if (ai) {
-      const md = aiExport.buildMarkdown(records, { title: "ORB paper trades (full log)", source: "orb-paper" });
+      const md = aiExport.buildMarkdown(records, { title: `${TITLE} paper trades (full log)`, source: rt.replayMode });
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="orb_paper_trades_AI_${today}.md"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_AI_${today}.md"`);
       return res.send(md);
     }
     res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Content-Disposition", `attachment; filename="orb_paper_trades_${today}.jsonl"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${MODE}_paper_trades_${today}.jsonl"`);
     res.send(records.map(r => JSON.stringify(r)).join("\n"));
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1978,5 +2210,23 @@ a{color:#3b82f6;text-decoration:none;border:0.5px solid #0e1e36;padding:8px 14px
 </head><body><h2>${title}</h2><p>${message}</p><a href="${backHref}">${backLabel}</a></body></html>`;
 }
 
-module.exports = router;
-module.exports.stopSession = stopSession;
+router.stopSession = stopSession;
+router.pairRuntime = rt;
+return router;
+}   // ── end create(pair) ──
+
+// One instance per pair, built on first use — the NIFTY one at load.
+const _instances = new Map();
+function forPairInstance(p) {
+  if (!p) return null;
+  if (!_instances.has(p.id)) _instances.set(p.id, create(p));
+  return _instances.get(p.id);
+}
+/** The router of this strategy on `marketKey` ("BANKNIFTY", "SENSEX", …), or null when not offered. */
+function forMarket(marketKey) { return forPairInstance(pairs.get("orb", marketKey)); }
+
+const nifty = forMarket("NIFTY");
+nifty.create    = create;
+nifty.forMarket = forMarket;
+nifty.forPair   = forPairInstance;
+module.exports  = nifty;
