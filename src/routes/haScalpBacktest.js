@@ -36,6 +36,16 @@
  * There is NO historical option chain, so premium is δ+θ simulated. Treat ₹ as
  * DIRECTIONAL, not exact. A spread/slippage haircut of BACKTEST_SLIPPAGE_PTS
  * is applied EACH way — without it a backtest of option BUYING always flatters.
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles, lot, exchange charges (BSE for SENSEX) and, for
+ * NIFTY_FUT, futures pricing come from services/backtestMarket.js; the market's
+ * pair settings (config/pairs.js: own key, else NIFTY's, else the default) are
+ * mapped onto the HA_SCALP_* keys the engine reads, for that run only
+ * (utils/scopedEnv.js). With market NIFTY nothing changes. MCX and SAIL stay
+ * "coming soon": backtestMarket has no MCX spot series, and SAIL is not one of
+ * its backtest markets yet.
  */
 
 const express = require("express");
@@ -66,6 +76,7 @@ function _futStopMsg(entry, px, peak) {
   return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
+const backtestMarket = require("../services/backtestMarket");
 
 const ACCENT = "#f59e0b";
 const ENDPOINT = "/ha-scalp-backtest";
@@ -127,6 +138,8 @@ function warmupRange(from, to) {
  * @param {string} rangeFrom "YYYY-MM-DD" IST — the first day a TRADE may open.
  *        Bars before it are warm-up only: they feed the Heikin Ashi chain and
  *        the MA, and are never entered on.
+ * @param {object} [mkt] a backtestMarket.context(): the market's lot, exchange
+ *        and futures flag. Omitted = NIFTY, exactly as before markets existed.
  *
  * Heikin Ashi and the MA are computed ONCE over the whole array and passed into
  * every getSignal call. That is not only cheaper — haOpen is recursive, so
@@ -134,7 +147,7 @@ function warmupRange(from, to) {
  * seed-contaminated) series than the chart shows, and the decision and the chart
  * must agree.
  */
-async function runHaScalpBacktest(intraday, rangeFrom) {
+async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
   const empty = {
     trades: [], days: 0, skipped: [],
     funnel: { barsSeen: 0, warmupBars: 0, tradableBars: 0, setups: 0, entries: 0, trendUp: 0, trendDown: 0, trendFlat: 0 },
@@ -143,12 +156,15 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
   if (!intraday || !intraday.length) return empty;
 
   const cfg = haStrategy.getConfig();
+  const M = mkt || backtestMarket.context("NIFTY");
   // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
-  // "premium" the sim carries IS the spot level (see instrumentMode.js).
-  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  // "premium" the sim carries IS the spot level (see instrumentMode.js). NIFTY:
+  // the global instrument switch, as always; another market: its own kind.
+  const IS_FUT       = M.key === "NIFTY" ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = instrumentConfig.getLotQty();
+  const LOT_SIZE     = M.key === "NIFTY" ? instrumentConfig.getLotQty() : M.lotQty;
+  const EXCHANGE     = M.exchange;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
@@ -224,7 +240,7 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
       const barsHeld = Math.max(0, (exitTime - pos.entryTime) / 60 / RES);
       const raw = premiumAt(exitPx, exitTime);
       const exitPrem = Math.max(0.05, raw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-      const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+      const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, exchange: EXCHANGE, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
       return {
         pnl: parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2)),
         exitPrem: parseFloat(exitPrem.toFixed(2)),
@@ -433,9 +449,16 @@ const MOBILE_CSS = `<style>
 }
 </style>`;
 
+/**
+ * The results-page options for one finished run: this page and the unified
+ * /backtest page render the same view. `meta.market` is the run's market key
+ * (absent on a NIFTY run).
+ */
 function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = haStrategy.getConfig();
+  const M   = backtestMarket.context(meta.market || "NIFTY");
+  const home = M.key === "NIFTY";
   const f = meta.funnel || { barsSeen: 0, warmupBars: 0, tradableBars: 0, setups: 0, entries: 0, trendUp: 0, trendDown: 0, trendFlat: 0 };
   const xr = meta.exitReasons || {};
   const exitMix = Object.keys(xr).length
@@ -472,7 +495,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Exit mix", value: exitMix },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 <b>INDEX spot</b> (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min — not futures, and no volume is read anywhere in this strategy. Heikin Ashi is built ${cfg.haContinuous ? "CONTINUOUSLY across days (TradingView's own behaviour)" : "reseeded each IST day"}. <b>Warm-up:</b> ${escHtml(String(meta.warmupDays))} calendar day(s) of history were fetched BEFORE ${escHtml(from)} so the first requested session could already decide — the engine refuses to signal until it holds ${Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1} bars (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the recursive HA seed decay); those runway bars never open a trade. <b>Trend gate:</b> raw close above the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} → CE only, below → PE only. A with-trend candle on the wrong side of the MA is skipped on purpose. <b>Entry candle:</b> a Heikin Ashi candle of the trend's colour with NO ${cfg.maxWickPct > 0 ? `wick beyond ${cfg.maxWickPct}% of its range` : "wick at all (exact zero — strict by the user's choice, so low frequency is expected)"} on the trend side, body ≥ ${cfg.minBodyPts}pt. <b>Fill:</b> the NEXT raw candle's OPEN — the signal fires on a closed bar and is filled on the bar that follows, which is what Paper and Live do on the first tick after the close. <b>Exit:</b> the global profit lock is the ONLY automatic exit — no stop, trail, target or candle exit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. A doji (HA body ≤ ${cfg.dojiBodyPct}% of range) is never an entry. The entry window is ${haStrategy._fmtMins(cfg.entryStartMin)}–${haStrategy._fmtMins(cfg.entryEndMin)}. Option premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}, θ ₹${escHtml(process.env.BACKTEST_THETA_DAY || "8")}/day) seeded at ₹${escHtml(backtestCosts.seedPremium())}, PLUS ${escHtml(backtestCosts.slippagePts())}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the no-wick frequency has never been measured.</b>`,
+    notes: `${home ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${escHtml(M.exchange)} charges. `}${(home ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true) ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> ${home ? "NIFTY 50" : escHtml(M.label)} <b>INDEX spot</b> (<code>${escHtml(home ? SPOT_SYMBOL : M.spotSymbol)}</code>) ${cfg.resolutionMins}-min — not futures, and no volume is read anywhere in this strategy. Heikin Ashi is built ${cfg.haContinuous ? "CONTINUOUSLY across days (TradingView's own behaviour)" : "reseeded each IST day"}. <b>Warm-up:</b> ${escHtml(String(meta.warmupDays))} calendar day(s) of history were fetched BEFORE ${escHtml(from)} so the first requested session could already decide — the engine refuses to signal until it holds ${Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1} bars (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the recursive HA seed decay); those runway bars never open a trade. <b>Trend gate:</b> raw close above the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} → CE only, below → PE only. A with-trend candle on the wrong side of the MA is skipped on purpose. <b>Entry candle:</b> a Heikin Ashi candle of the trend's colour with NO ${cfg.maxWickPct > 0 ? `wick beyond ${cfg.maxWickPct}% of its range` : "wick at all (exact zero — strict by the user's choice, so low frequency is expected)"} on the trend side, body ≥ ${cfg.minBodyPts}pt. <b>Fill:</b> the NEXT raw candle's OPEN — the signal fires on a closed bar and is filled on the bar that follows, which is what Paper and Live do on the first tick after the close. <b>Exit:</b> the global profit lock is the ONLY automatic exit — no stop, trail, target or candle exit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. A doji (HA body ≤ ${cfg.dojiBodyPct}% of range) is never an entry. The entry window is ${haStrategy._fmtMins(cfg.entryStartMin)}–${haStrategy._fmtMins(cfg.entryEndMin)}. Option premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}, θ ₹${escHtml(process.env.BACKTEST_THETA_DAY || "8")}/day) seeded at ₹${escHtml(backtestCosts.seedPremium())}, PLUS ${escHtml(backtestCosts.slippagePts())}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the no-wick frequency has never been measured.</b>`,
   };
 }
 
@@ -489,22 +512,27 @@ function _renderResults(res, from, to, trades, stats, meta) {
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  // The candles the run reads: NIFTY 50 as always, else the market's own spot
+  // (NIFTY_FUT signals off the NIFTY index, priced as the future).
+  const SPOT = home ? SPOT_SYMBOL : M.spotSymbol;
   try {
     const cfg = haStrategy.getConfig();
     const minBars = Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1;
     const { fetchFrom, fetchTo, warmupDays } = warmupRange(from, to);
-    console.log(`${LOG} job ${id}: ${from} → ${to} (fetching from ${fetchFrom} — ${warmupDays} warm-up day(s) so day one already holds the ${minBars} bars the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} + Heikin Ashi chain need)`);
+    console.log(`${LOG} job ${id}: ${from} → ${to}${home ? "" : ` on ${M.key}`} (fetching from ${fetchFrom} — ${warmupDays} warm-up day(s) so day one already holds the ${minBars} bars the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} + Heikin Ashi chain need)`);
 
-    backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT_SYMBOL} ${cfg.resolutionMins}-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
+    backtestJobs.updateProgress(id, { phase: `Fetching ${SPOT} ${cfg.resolutionMins}-min candles (${fetchFrom} → ${fetchTo})…`, pct: 10 });
     let intraday;
     try {
-      intraday = await fetchCandlesCachedBT(SPOT_SYMBOL, String(cfg.resolutionMins), fetchFrom, fetchTo, false,
-        (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT_SYMBOL}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
+      intraday = await fetchCandlesCachedBT(SPOT, String(cfg.resolutionMins), fetchFrom, fetchTo, false,
+        (p) => backtestJobs.updateProgress(id, { phase: p && p.phase ? p.phase : `Fetching ${SPOT}…`, pct: Math.min(65, 10 + Math.round((p && p.pct ? p.pct : 0) * 0.55)) }));
     } catch (err) {
       const msg = fyersErrText(err);
       console.warn(`${LOG} fetch refused: ${msg.slice(0, 300)}`);
       backtestJobs.failJob(id,
-        `Fyers refused the ${SPOT_SYMBOL} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. ` +
+        `Fyers refused the ${SPOT} history request for ${fetchFrom} → ${fetchTo}: ${msg.slice(0, 200)}. ` +
         `That wording is Fyers' own. "Could not authenticate the user" means the Fyers session needs re-login.`);
       return;
     }
@@ -514,21 +542,26 @@ async function _runJob(id, p) {
       // The overwhelmingly common cause in this repo is a dead Fyers token:
       // an expired session returns no_data (zero candles), NOT an auth error.
       backtestJobs.failJob(id, intraday.length === 0
-        ? `Fyers returned no historical candles for ${SPOT_SYMBOL} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error. Log in to Fyers again, then retry.`
+        ? `Fyers returned no historical candles for ${SPOT} ${fetchFrom} → ${fetchTo}. Most often the Fyers session needs re-login — an expired token returns no data rather than an auth error. Log in to Fyers again, then retry.`
         : `Only ${intraday.length} ${cfg.resolutionMins}-min candle(s) for ${fetchFrom} → ${fetchTo}, and this engine cannot decide anything until it holds ${minBars} (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the Heikin Ashi warm-up). Widen the range or raise HA_SCALP_WARMUP_DAYS (currently ${warmupDays}).`);
       return;
     }
     console.log(`${LOG} job ${id}: ${intraday.length.toLocaleString()} ${cfg.resolutionMins}-min spot candles fetched (warm-up included)`);
 
     backtestJobs.updateProgress(id, { phase: `Running HA Scalp backtest (${intraday.length.toLocaleString()} spot candles)…`, pct: 75 });
-    const result = await runHaScalpBacktest(intraday, from);
+    const result = await runHaScalpBacktest(intraday, from, M);
     const stats = computeBacktestStats(result.trades);
-    stats.optionSim = true;
+    stats.optionSim = home ? true : !M.isFutures;
     stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
     stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    if (!home && M.isFutures) stats.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
 
-    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(cfg.resolutionMins) } }); }
-    catch (e) { console.warn(`${LOG} saveResult failed:`, e.message); }
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (home) {
+      try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(cfg.resolutionMins) } }); }
+      catch (e) { console.warn(`${LOG} saveResult failed:`, e.message); }
+    }
 
     const topSkips = Object.entries(result.skipReasons).sort((a, b) => b[1] - a[1]).slice(0, 5);
     console.log(`${LOG} funnel: ${result.funnel.barsSeen} bars seen | ${result.funnel.warmupBars} warm-up | ${result.funnel.tradableBars} decided | trend UP ${result.funnel.trendUp} / DOWN ${result.funnel.trendDown} / FLAT ${result.funnel.trendFlat} | ${result.funnel.setups} setup(s) → ${result.funnel.entries} entr${result.funnel.entries === 1 ? "y" : "ies"}`);
@@ -538,11 +571,11 @@ async function _runJob(id, p) {
 
     backtestJobs.completeJob(id, {
       trades: result.trades, stats, from, to,
-      meta: {
+      meta: Object.assign({
         days: result.days, skipped: result.skipped, funnel: result.funnel,
         skipReasons: result.skipReasons, exitReasons: result.exitReasons,
         warmupDays, fetchFrom, candles: intraday.length,
-      },
+      }, home ? {} : { market: M.key }),
     });
     console.log(`${LOG} job ${id} complete — ${result.trades.length} trades over ${result.days} sessions (${result.funnel.setups} no-wick setups seen)`);
   } catch (err) {
@@ -598,9 +631,9 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to, market: p.market }),
   view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, skipped: [], funnel: {}, exitReasons: {}, warmupDays: _warmupDays() }),
 };
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).

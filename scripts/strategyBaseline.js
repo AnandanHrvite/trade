@@ -174,6 +174,14 @@ const PAIRS = [
   { route: "trendDayScalpPaper", market: "SENSEX",    mode: "sensex_trend_day_scalp-paper", enabledKey: "SENSEX_TDS_MODE_ENABLED", settings: { SENSEX_TDS_MAX_SL_PTS: "130" } },
   { route: "trendDayScalpPaper", market: "BANKNIFTY", mode: "bn_trend_day_scalp-paper",     enabledKey: "BN_TDS_MODE_ENABLED",     settings: { BN_TDS_MAX_SL_PTS: "95" } },
   { route: "trendDayScalpPaper", market: "NIFTY_FUT", mode: "fut_trend_day_scalp-paper",    enabledKey: "FUT_TDS_MODE_ENABLED" },
+  // HA_SCALP_MIN_BODY_PTS (5) and HA_SCALP_MAX_MA_DIST_PTS (150) are NIFTY index
+  // points; SENSEX / BANKNIFTY set them scaled to their index through their OWN
+  // keys (as TDS does above), so the stretched-move guard means the same there.
+  { route: "haScalpPaper", market: "SENSEX",    mode: "sensex_ha_scalp-paper", enabledKey: "SENSEX_HA_SCALP_MODE_ENABLED",
+    settings: { SENSEX_HA_SCALP_MIN_BODY_PTS: "16", SENSEX_HA_SCALP_MAX_MA_DIST_PTS: "500" } },
+  { route: "haScalpPaper", market: "BANKNIFTY", mode: "bn_ha_scalp-paper",     enabledKey: "BN_HA_SCALP_MODE_ENABLED",
+    settings: { BN_HA_SCALP_MIN_BODY_PTS: "12", BN_HA_SCALP_MAX_MA_DIST_PTS: "360" } },
+  { route: "haScalpPaper", market: "NIFTY_FUT", mode: "fut_ha_scalp-paper",    enabledKey: "FUT_HA_SCALP_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {

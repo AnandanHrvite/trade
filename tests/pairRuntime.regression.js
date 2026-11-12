@@ -14,6 +14,8 @@
  *     running pair is on
  *   • EMA_RSI_ST (V1): its pairs' identity, slots, legacy TRADE_* inheritance,
  *     the forPrefix engine window and the one builder route file
+ *   • HA SCALP: its pairs' identity, engine config per pair, the route
+ *     builder's instances, a switched-off pair refusing /start
  *
  *   node tests/pairRuntime.regression.js
  */
@@ -30,7 +32,7 @@ const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), "pair-runtime-"));
 process.env.HOME = SANDBOX;
 process.chdir(SANDBOX);
 for (const k of Object.keys(process.env)) {
-  if (/(_MODE_ENABLED|_EXPIRY_DAY_ONLY|_PAPER_FILL_AT_QUOTE|_MAX_SPREAD_PTS|_OPTION_EXPIRY_OVERRIDE|_OPTION_EXPIRY_TYPE)$|^(MAX_BID_ASK_SPREAD_PTS|LOT_MULTIPLIER|EMA_RSI_ST_V2_|TDS_)/.test(k)) delete process.env[k];
+  if (/(_MODE_ENABLED|_EXPIRY_DAY_ONLY|_PAPER_FILL_AT_QUOTE|_MAX_SPREAD_PTS|_OPTION_EXPIRY_OVERRIDE|_OPTION_EXPIRY_TYPE)$|^(MAX_BID_ASK_SPREAD_PTS|LOT_MULTIPLIER|EMA_RSI_ST_V2_|TDS_|HA_SCALP_)/.test(k)) delete process.env[k];
 }
 
 let pass = 0, fail = 0;
@@ -81,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -761,6 +763,102 @@ check("route builder: NIFTY is the default export; one cached router per market;
           } catch (e) { reject(e); }
         });
       }).on("error", (e) => { srv.close(); reject(e); });
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("HA SCALP runs as a pair");
+
+const haOf = (mk) => pairRuntime.forStrategy("haScalp", mk);
+check("NIFTY is the registry's HA SCALP: path, file, slot, sidebar", () => {
+  const rt = haOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey],
+    [true, "ha_scalp", "HA_SCALP", "/ha-scalp-paper", "ha-scalp-paper", "ha-scalp-paper", "ha_scalp_paper_trades.json", "HA_SCALP_PAPER", "haScalpPaper", "haScalpHistory"]);
+});
+check("HA SCALP other markets: own path, file, slot, prefix and instrument", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "CRUDE"].map(mk => { const r = haOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_HA_SCALP", "/sensex_ha_scalp-paper", "sensex_ha_scalp_paper_trades.json", "SENSEX_HA_SCALP_PAPER", "SENSEX_HA_SCALP-PAPER", "SENSEX_OPTIONS"],
+    ["BANKNIFTY", "BN_HA_SCALP", "/bn_ha_scalp-paper", "bn_ha_scalp_paper_trades.json", "BN_HA_SCALP_PAPER", "BN_HA_SCALP-PAPER", "BANKNIFTY_OPTIONS"],
+    ["NIFTY_FUT", "FUT_HA_SCALP", "/fut_ha_scalp-paper", "fut_ha_scalp_paper_trades.json", "FUT_HA_SCALP_PAPER", "FUT_HA_SCALP-PAPER", "NIFTY_FUTURES"],
+    ["CRUDE", "CRUDE_HA_SCALP", "/crude_ha_scalp-paper", "crude_ha_scalp_paper_trades.json", "CRUDE_HA_SCALP_PAPER", "CRUDE_HA_SCALP-PAPER", "MCX_OPTIONS"],
+  ]);
+  assert.strictEqual(pairs.byReplayMode("sensex_ha_scalp-paper").strategyId, "haScalp");
+  assert.strictEqual(pairs.byReplayMode("ha-scalp-paper"), null, "the home mode is the registry's");
+});
+check("HA SCALP engine config: NIFTY reads HA_SCALP_* exactly; a pair its own key, else NIFTY's", () => {
+  const eng = require("../src/strategies/ha_scalp");
+  withEnv({ HA_SCALP_MIN_BODY_PTS: "7", HA_SCALP_MA_TYPE: "ema", HA_SCALP_ENTRY_END: "14:00", SENSEX_HA_SCALP_MIN_BODY_PTS: "20", SENSEX_HA_SCALP_MAX_MA_DIST_PTS: "500", BN_HA_SCALP_MIN_BODY_PTS: undefined }, () => {
+    const n = eng.getConfig(), s = eng.getConfig("SENSEX_HA_SCALP"), b = eng.getConfig("BN_HA_SCALP");
+    assert.deepStrictEqual([n.minBodyPts, n.maType, n.entryEndMin, n.maxMaDistPts], [7, "ema", 840, 150]);
+    assert.deepStrictEqual([s.minBodyPts, s.maType, s.entryEndMin, s.maxMaDistPts], [20, "ema", 840, 500], "own body / MA distance, inherited MA type and window");
+    assert.deepStrictEqual([b.minBodyPts, b.maxMaDistPts], [7, 150], "inherits NIFTY");
+    assert.deepStrictEqual(eng.getConfig("HA_SCALP"), n, "the HA_SCALP prefix is NIFTY");
+  });
+  withEnv({ SENSEX_HA_SCALP_MA_PERIOD: "abc" }, () => assert.strictEqual(eng.getConfig("SENSEX_HA_SCALP").maPeriod, 50, "bad own value falls to the default"));
+});
+check("HA SCALP <PAIR>_EXPIRY_DAY_ONLY / paper switch / fill at quote follow the HA_SCALP keys", () => {
+  assert.strictEqual(haOf("SENSEX").expiryDayOnly(), false);
+  withEnv({ HA_SCALP_EXPIRY_DAY_ONLY: "true" }, () => assert.strictEqual(haOf("SENSEX").expiryDayOnly(), true));
+  assert.strictEqual(haOf("BANKNIFTY").paperEnabled(), true, "HA_SCALP_PAPER_ENABLED defaults on");
+  withEnv({ BN_HA_SCALP_PAPER_ENABLED: "false" }, () => assert.strictEqual(haOf("BANKNIFTY").paperEnabled(), false));
+  assert.deepStrictEqual([haOf("SENSEX").fillAtQuote(), haOf("SENSEX").fillAtQuoteKey, haOf("NIFTY").fillAtQuote()], [true, "SENSEX_HA_SCALP_PAPER_FILL_AT_QUOTE", false]);
+});
+check("HA SCALP crash snapshot, logs and tags per pair; capital on the Fyers pool", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveHaScalpPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger"), tags = require("../src/utils/logTags");
+  assert.ok(tl.modes().includes("sensex_ha_scalp") && sl.modes().includes("fut_ha_scalp"));
+  assert.deepStrictEqual(tags.tagsFor("bn_ha_scalp", {}), { market: "BANKNIFTY", strategy: "HA_SCALP" });
+  assert.deepStrictEqual(tags.tagsFor("ha_scalp", {}), { market: "NIFTY", strategy: "HA_SCALP" });
+  assert.strictEqual(pairs.get("haScalp", "SENSEX").broker, "fyers");
+  assert.strictEqual(pairs.get("haScalp", "NIFTY").broker, "zerodha", "NIFTY keeps its Zerodha book");
+  haOf("BANKNIFTY").persist.save({ side: "CE", symbol: "NSE:BANKNIFTY26NOV57700CE", entryPrice: 57800 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("bn_ha_scalp").position.symbol, "NSE:BANKNIFTY26NOV57700CE");
+    pp.clearPairPositions();
+  });
+});
+check("HA SCALP route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/haScalpPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/ha-scalp-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(typeof route.attributeQuotes, "function", "the quote attribution stays exported");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  const sx = route.forMarket("SENSEX");
+  assert.ok(sx && sx !== route && route.forMarket("SENSEX") === sx, "one instance per market");
+  assert.strictEqual(sx.pairRuntime.paperPath, "/sensex_ha_scalp-paper");
+  assert.strictEqual(typeof sx.stopSession, "function");
+  assert.ok(route.forMarket("CRUDE") && route.forMarket("CRUDE") !== sx, "MCX is offered (no 09:15 index open needed)");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(sx.pairRuntime.paperPath, sx);
+  app.use(route.pairRuntime.paperPath, route);
+  const get = (port, p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${p}`, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => resolve({ code: res.statusCode, body }));
+    }).on("error", reject);
+  });
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, async () => {
+      const port = srv.address().port;
+      try {
+        const r = await get(port, "/sensex_ha_scalp-paper/start");
+        assert.strictEqual(r.code, 403);
+        assert.ok(r.body.includes("SENSEX_HA_SCALP_MODE_ENABLED"), "names the pair's switch");
+        assert.ok(!sx.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+        const a = JSON.parse((await get(port, "/sensex_ha_scalp-paper/status/data")).body);
+        const b = JSON.parse((await get(port, "/ha-scalp-paper/status/data")).body);
+        assert.strictEqual(a.spotSymbol, "BSE:SENSEX-INDEX", "the SENSEX instance reads the SENSEX index");
+        assert.strictEqual(b.spotSymbol, "NSE:NIFTY50-INDEX");
+        assert.strictEqual(a.running, false);
+        srv.close();
+        resolve();
+      } catch (e) { srv.close(); reject(e); }
     });
   });
 });

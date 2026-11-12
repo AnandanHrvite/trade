@@ -103,7 +103,7 @@
  * gate.
  *
  * Contract:
- *   getConfig()                      -> live env read (never cached)
+ *   getConfig(prefix?)               -> live env read (never cached); prefix = a pair's own keys
  *   toHeikinAshi(candles, opts)      -> HA series, index-aligned to `candles`
  *   computeMA(candles, cfg)          -> MA series, index-aligned to `candles`
  *   classifyCandle(ha, cfg)          -> { bullish, bearish, doji, ... }
@@ -153,24 +153,36 @@ function _fmtMins(mins) {
 /** Finite-number guard. Number(null)===0 and Number("")===0 both invent a price. */
 function _num(x) { return typeof x === "number" && Number.isFinite(x); }
 
-function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+// Env read for one key. The home pair (no prefix / "HA_SCALP") reads
+// process.env exactly as it always did; another market's pair (SENSEX_HA_SCALP,
+// BN_HA_SCALP ...) reads its own key with pair inheritance: its value when set,
+// else NIFTY's HA_SCALP_* value (config/pairs.js envGet). `key` is always the
+// NIFTY key, so the literal names stay greppable.
+let _pairsMod = null;
+function _rawEnv(key, prefix) {
+  if (!prefix || prefix === NAME) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(`${prefix}${key.slice(NAME.length)}`);
+}
+
+function _numEnv(key, def, min, max, prefix) {
+  const v = parseFloat(_rawEnv(key, prefix));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
 
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+function _intEnv(key, def, min, max, prefix) {
+  const v = parseInt(_rawEnv(key, prefix), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
 
-function _boolEnv(key, def) {
-  const raw = process.env[key];
+function _boolEnv(key, def, prefix) {
+  const raw = _rawEnv(key, prefix);
   if (raw == null || raw === "") return def;
   const s = String(raw).trim().toLowerCase();
   if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
@@ -188,34 +200,39 @@ const MA_TYPES = ["sma", "ema"];
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ *
+ * `prefix`: a (strategy, market) pair's env prefix ("SENSEX_HA_SCALP",
+ * "BN_HA_SCALP" ...), whose keys are read with pair inheritance. Omitted (or
+ * "HA_SCALP") = the NIFTY keys, read exactly as before.
  */
-function getConfig() {
-  const rawMaType = String(process.env.HA_SCALP_MA_TYPE || "sma").trim().toLowerCase();
+function getConfig(prefix) {
+  const P = prefix && prefix !== NAME ? prefix : null;   // a pair: read through pairs.envGet
+  const rawMaType = String((P ? _rawEnv("HA_SCALP_MA_TYPE", P) : undefined) || process.env.HA_SCALP_MA_TYPE || "sma").trim().toLowerCase();
   return {
     // Timeframe — STRATEGY-LEVEL. 15 minutes is the chart the rules were read
     // off; the repo-wide 5-minute default does not apply here.
-    resolutionMins:  _intEnv("HA_SCALP_RESOLUTION", 15, 1, 60),
-    sessionStartMin: _parseHHMM(process.env.HA_SCALP_SESSION_START, 9 * 60 + 15),
-    entryStartMin:   _parseHHMM(process.env.HA_SCALP_ENTRY_START,   9 * 60 + 30),
-    entryEndMin:     _parseHHMM(process.env.HA_SCALP_ENTRY_END,    15 * 60),
+    resolutionMins:  _intEnv("HA_SCALP_RESOLUTION", 15, 1, 60, P),
+    sessionStartMin: _parseHHMM(P ? _rawEnv("HA_SCALP_SESSION_START", P) : process.env.HA_SCALP_SESSION_START, 9 * 60 + 15),
+    entryStartMin:   _parseHHMM(P ? _rawEnv("HA_SCALP_ENTRY_START", P) : process.env.HA_SCALP_ENTRY_START,   9 * 60 + 30),
+    entryEndMin:     _parseHHMM(P ? _rawEnv("HA_SCALP_ENTRY_END", P) : process.env.HA_SCALP_ENTRY_END,    15 * 60),
 
     // Heikin Ashi construction
-    haContinuous:    _boolEnv("HA_SCALP_HA_CONTINUOUS", true),
-    haWarmupBars:    _intEnv("HA_SCALP_HA_WARMUP_BARS", 20, 1, 500),
+    haContinuous:    _boolEnv("HA_SCALP_HA_CONTINUOUS", true, P),
+    haWarmupBars:    _intEnv("HA_SCALP_HA_WARMUP_BARS", 20, 1, 500, P),
 
     // Trend gate
-    maPeriod:        _intEnv("HA_SCALP_MA_PERIOD", 50, 2, 400),
+    maPeriod:        _intEnv("HA_SCALP_MA_PERIOD", 50, 2, 400, P),
     maType:          MA_TYPES.includes(rawMaType) ? rawMaType : "sma",
 
     // The entry candle
-    maxWickPct:      _numEnv("HA_SCALP_MAX_WICK_PCT", 0, 0, 100),
-    minBodyPts:      _numEnv("HA_SCALP_MIN_BODY_PTS", 5, 0),
+    maxWickPct:      _numEnv("HA_SCALP_MAX_WICK_PCT", 0, 0, 100, P),
+    minBodyPts:      _numEnv("HA_SCALP_MIN_BODY_PTS", 5, 0, undefined, P),
 
     // A doji (body <= this % of range) is never an entry.
-    dojiBodyPct:     _numEnv("HA_SCALP_DOJI_BODY_PCT", 20, 0, 100),
+    dojiBodyPct:     _numEnv("HA_SCALP_DOJI_BODY_PCT", 20, 0, 100, P),
 
     // Stretched-move guard: skip when the raw close is this far from the MA.
-    maxMaDistPts:    _numEnv("HA_SCALP_MAX_MA_DIST_PTS", 150, 0),
+    maxMaDistPts:    _numEnv("HA_SCALP_MAX_MA_DIST_PTS", 150, 0, undefined, P),
   };
 }
 
