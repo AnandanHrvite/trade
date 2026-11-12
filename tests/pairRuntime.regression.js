@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK, pivotEmaSt: MK, prevOrbScalp: NO_MCX };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -1024,6 +1024,103 @@ check("route builder: NIFTY is the default export; one cached router per market;
           } catch (e) { reject(e); }
         });
       }).on("error", (e) => { srv.close(); reject(e); });
+    });
+  });
+});
+
+section("PREV ORB SCALP runs as a pair (routes/prevOrbScalpPaper.js)");
+
+const posOf = (mk) => pairRuntime.forStrategy("prevOrbScalp", mk);
+check("NIFTY is the registry's PREV ORB SCALP: path, file, slot, sidebar", () => {
+  const rt = posOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.sidebarKey, rt.historySidebarKey],
+    [true, "prev_orb_scalp", "PREV_ORB_SCALP", "/prev-orb-scalp-paper", "prev-orb-scalp-paper", "prev-orb-scalp-paper", "prev_orb_scalp_paper_trades.json", "PREV_ORB_SCALP_PAPER", "prevOrbScalpPaper", "prevOrbScalpHistory"]);
+});
+check("PREV ORB SCALP other markets: own path, file, slot, prefix and instrument; never MCX", () => {
+  const rows = ["SENSEX", "BANKNIFTY", "NIFTY_FUT", "SAIL"].map(mk => { const r = posOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.notifyMode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_PREV_ORB_SCALP", "/sensex_prev_orb_scalp-paper", "sensex_prev_orb_scalp_paper_trades.json", "SENSEX_PREV_ORB_SCALP_PAPER", "SENSEX_PREV_ORB_SCALP-PAPER", "SENSEX_OPTIONS"],
+    ["BANKNIFTY", "BN_PREV_ORB_SCALP", "/bn_prev_orb_scalp-paper", "bn_prev_orb_scalp_paper_trades.json", "BN_PREV_ORB_SCALP_PAPER", "BN_PREV_ORB_SCALP-PAPER", "BANKNIFTY_OPTIONS"],
+    ["NIFTY_FUT", "FUT_PREV_ORB_SCALP", "/fut_prev_orb_scalp-paper", "fut_prev_orb_scalp_paper_trades.json", "FUT_PREV_ORB_SCALP_PAPER", "FUT_PREV_ORB_SCALP-PAPER", "NIFTY_FUTURES"],
+    ["SAIL", "SAIL_PREV_ORB_SCALP", "/sail_prev_orb_scalp-paper", "sail_prev_orb_scalp_paper_trades.json", "SAIL_PREV_ORB_SCALP_PAPER", "SAIL_PREV_ORB_SCALP-PAPER", "SAIL_OPTIONS"],
+  ]);
+  for (const mk of ["CRUDE", "GOLD", "SILVER"]) assert.strictEqual(posOf(mk), null, `${mk}: the setup needs the 09:15 index open`);
+  assert.strictEqual(pairs.byReplayMode("bn_prev_orb_scalp-paper").strategyId, "prevOrbScalp");
+  assert.strictEqual(pairs.byReplayMode("prev-orb-scalp-paper"), null, "the home mode is the registry's");
+});
+check("PREV ORB SCALP engine config: NIFTY reads PREV_ORB_SCALP_* exactly; a pair its own key, else NIFTY's", () => {
+  const eng = require("../src/strategies/prev_orb_scalp");
+  withEnv({ PREV_ORB_SCALP_OR_MINS: "30", PREV_ORB_SCALP_ENTRY_END: "13:00", SENSEX_PREV_ORB_SCALP_OR_MINS: "15", SENSEX_PREV_ORB_SCALP_ENTRY_END: undefined, BN_PREV_ORB_SCALP_OR_MINS: undefined }, () => {
+    const n = eng.getConfig(), s = eng.getConfig("SENSEX_PREV_ORB_SCALP"), b = eng.getConfig("BN_PREV_ORB_SCALP");
+    assert.deepStrictEqual([n.orMins, n.entryStartMin, n.entryEndMin], [30, 585, 780]);
+    assert.deepStrictEqual([s.orMins, s.entryStartMin, s.entryEndMin], [15, 570, 780], "own OR minutes, inherited cut-off");
+    assert.deepStrictEqual([b.orMins, b.entryEndMin], [30, 780], "inherits NIFTY");
+    assert.deepStrictEqual(eng.getConfig("PREV_ORB_SCALP"), n, "the PREV_ORB_SCALP prefix is NIFTY");
+  });
+  withEnv({ SENSEX_PREV_ORB_SCALP_RESOLUTION: "abc", PREV_ORB_SCALP_RESOLUTION: undefined }, () => assert.strictEqual(eng.getConfig("SENSEX_PREV_ORB_SCALP").resolutionMins, 3, "bad own value falls to the default"));
+});
+check("PREV ORB SCALP <PAIR>_EXPIRY_DAY_ONLY / paper switch / fill at quote follow the PREV_ORB_SCALP keys", () => {
+  assert.strictEqual(posOf("SENSEX").expiryDayOnly(), false);
+  withEnv({ PREV_ORB_SCALP_EXPIRY_DAY_ONLY: "true" }, () => assert.strictEqual(posOf("SENSEX").expiryDayOnly(), true));
+  assert.strictEqual(posOf("BANKNIFTY").paperEnabled(), true, "PREV_ORB_SCALP_PAPER_ENABLED defaults on");
+  withEnv({ BN_PREV_ORB_SCALP_PAPER_ENABLED: "false" }, () => assert.strictEqual(posOf("BANKNIFTY").paperEnabled(), false));
+  assert.deepStrictEqual([posOf("SENSEX").fillAtQuote(), posOf("SENSEX").fillAtQuoteKey, posOf("NIFTY").fillAtQuote()], [true, "SENSEX_PREV_ORB_SCALP_PAPER_FILL_AT_QUOTE", false]);
+});
+check("PREV ORB SCALP crash snapshot, logs and tags per pair; capital on the Fyers pool", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.savePrevOrbScalpPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger"), tags = require("../src/utils/logTags");
+  assert.ok(tl.modes().includes("sensex_prev_orb_scalp") && sl.modes().includes("fut_prev_orb_scalp"));
+  assert.deepStrictEqual(tags.tagsFor("bn_prev_orb_scalp", {}), { market: "BANKNIFTY", strategy: "PREV_ORB_SCALP" });
+  assert.deepStrictEqual(tags.tagsFor("prev_orb_scalp", {}), { market: "NIFTY", strategy: "PREV_ORB_SCALP" });
+  assert.strictEqual(pairs.get("prevOrbScalp", "SENSEX").broker, "fyers");
+  assert.strictEqual(pairs.get("prevOrbScalp", "NIFTY").broker, "zerodha", "NIFTY keeps its Zerodha book");
+  posOf("BANKNIFTY").persist.save({ side: "PE", symbol: "NSE:BANKNIFTY26NOV57900PE", entryPrice: 57800 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("bn_prev_orb_scalp").position.symbol, "NSE:BANKNIFTY26NOV57900PE");
+    pp.clearPairPositions();
+  });
+});
+check("PREV ORB SCALP route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/prevOrbScalpPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/prev-orb-scalp-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(typeof route.attributeQuotes, "function", "the quote attribution stays exported");
+  assert.strictEqual(typeof route._test.freshState, "function", "the offline test hooks stay exported");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  assert.strictEqual(route.forMarket("CRUDE"), null, "not offered on MCX");
+  const sx = route.forMarket("SENSEX");
+  assert.ok(sx && sx !== route && route.forMarket("SENSEX") === sx, "one instance per market");
+  assert.strictEqual(sx.pairRuntime.paperPath, "/sensex_prev_orb_scalp-paper");
+  assert.ok(sx._test.getState() !== route._test.getState(), "each market holds its own state");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(sx.pairRuntime.paperPath, sx);
+  app.use(route.pairRuntime.paperPath, route);
+  const get = (port, p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${p}`, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => resolve({ code: res.statusCode, body }));
+    }).on("error", reject);
+  });
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, async () => {
+      const port = srv.address().port;
+      try {
+        const r = await get(port, "/sensex_prev_orb_scalp-paper/start");
+        assert.strictEqual(r.code, 403);
+        assert.ok(r.body.includes("SENSEX_PREV_ORB_SCALP_MODE_ENABLED"), "names the pair's switch");
+        assert.ok(!sx.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+        const a = JSON.parse((await get(port, "/sensex_prev_orb_scalp-paper/status/data")).body);
+        const b = JSON.parse((await get(port, "/prev-orb-scalp-paper/status/data")).body);
+        assert.strictEqual(a.spotSymbol, "BSE:SENSEX-INDEX", "the SENSEX instance reads the SENSEX index");
+        assert.strictEqual(b.spotSymbol, "NSE:NIFTY50-INDEX");
+        assert.strictEqual(a.running, false);
+        srv.close();
+        resolve();
+      } catch (e) { srv.close(); reject(e); }
     });
   });
 });
