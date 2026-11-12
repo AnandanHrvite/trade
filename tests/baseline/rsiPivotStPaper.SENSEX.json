@@ -1,0 +1,606 @@
+{
+  "baselineVersion": 1,
+  "strategy": "rsiPivotStPaper.SENSEX",
+  "mode": "sensex_rsi_pivot_st-paper",
+  "totalTrades": 3,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -370.14,
+      "warmupBlind": true,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0877100PE",
+          "strike": 77100,
+          "qty": 20,
+          "entryTime": "6/10/2026, 11:40:06",
+          "exitTime": "6/10/2026, 11:51:34",
+          "entrySpot": 77938,
+          "exitSpot": 78018.6,
+          "entryLtp": 98.8,
+          "exitLtp": 82.85,
+          "reason": "Stop-loss trail 20% — premium Rs83.1 fell to the trailed stop Rs83.6 (peak Rs104.5, entry Rs98.8)",
+          "pnl": -370.14
+        }
+      ],
+      "skips": {
+        "total": 35,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 35,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 35
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0877100PE",
+          "qty": 20,
+          "entryPrice": 77938,
+          "exitPrice": 78018.6,
+          "spotAtEntry": 77938,
+          "spotAtExit": 78018.6,
+          "optionEntryLtp": 98.8,
+          "optionExitLtp": 82.85,
+          "bestOptionLtp": 104.5,
+          "entryTime": "6/10/2026, 11:40:06",
+          "exitTime": "6/10/2026, 11:51:34",
+          "entryBarTime": 1791267000,
+          "exitBarTime": 1791267600,
+          "pnl": -370.14,
+          "pnlMode": "option premium: entry ₹98.8 → exit ₹82.85",
+          "exitReason": "Stop-loss trail 20% — premium Rs83.1 fell to the trailed stop Rs83.6 (peak Rs104.5, entry Rs98.8)",
+          "entryReason": "SENSEX_RSI_PIVOT_ST PE: RSI 17.26 < 40 and the breakout candle closed below S1 77982.77 and this candle confirmed by closing 77933.5, past its low 77943.1 (pivots from 2026-10-05) | strike 77100 (OTM, 8 steps = 833.5pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 77100,
+          "optionExpiry": "26O08",
+          "optionType": "PE",
+          "optionEntrySymbol": "BSE:SENSEX26O0877100PE",
+          "signalStrength": "STRONG",
+          "signalRsi": 17.26,
+          "pivotPp": 78362.13,
+          "pivotR1": 79113.12,
+          "pivotS1": 77982.77,
+          "pivotFrom": "2026-10-05",
+          "crossedLevel": 77982.77,
+          "strikeMode": "OTM",
+          "strikeSteps": 8,
+          "strikeDistancePts": 838,
+          "mfeSpotPts": 36.9,
+          "mfePnl": 114,
+          "maeSpotPts": -80.6,
+          "maePnl": -302,
+          "secsToMFE": 260,
+          "secsToMAE": 688,
+          "firstMoveDir": "UP",
+          "secsToFirstMove": 2,
+          "pathPts": [
+            5.4,
+            -11.8,
+            -8.75,
+            -12.35,
+            0.7,
+            -5.4,
+            15.95,
+            26.5,
+            19.3,
+            4.2,
+            2.05,
+            7.85,
+            7.9,
+            -0.05,
+            -10.75,
+            -5.15,
+            -34.5,
+            -47.05,
+            -62.5,
+            -64.3,
+            -60.05,
+            -67.15
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 688000,
+          "charges": 51.14,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "RSI_PIVOT_ST",
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionExpiryDate": "2026-10-08",
+          "strikeAtm": 77900,
+          "strikeStep": 100,
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 98.3,
+            "ask": 98.8,
+            "ltp": 98.55
+          },
+          "exitQuote": {
+            "bid": 82.85,
+            "ask": 83.35,
+            "ltp": 83.1
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 55.21,
+      "warmupBlind": true,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0877300PE",
+          "strike": 77300,
+          "qty": 20,
+          "entryTime": "7/10/2026, 12:05:06",
+          "exitTime": "7/10/2026, 12:08:54",
+          "entrySpot": 78096.9,
+          "exitSpot": 78061.7,
+          "entryLtp": 52.2,
+          "exitLtp": 57.45,
+          "reason": "Profit lock trail 85% — premium Rs57.7 fell to the trailed floor Rs58.02 (keeps 85% of the gain to peak Rs59.05, entry Rs52.2)",
+          "pnl": 55.21
+        }
+      ],
+      "skips": {
+        "total": 34,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 34,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 34
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O0877300PE",
+          "qty": 20,
+          "entryPrice": 78096.9,
+          "exitPrice": 78061.7,
+          "spotAtEntry": 78096.9,
+          "spotAtExit": 78061.7,
+          "optionEntryLtp": 52.2,
+          "optionExitLtp": 57.45,
+          "bestOptionLtp": 59.05,
+          "entryTime": "7/10/2026, 12:05:06",
+          "exitTime": "7/10/2026, 12:08:54",
+          "entryBarTime": 1791354900,
+          "exitBarTime": 1791354900,
+          "pnl": 55.21,
+          "pnlMode": "option premium: entry ₹52.2 → exit ₹57.45",
+          "exitReason": "Profit lock trail 85% — premium Rs57.7 fell to the trailed floor Rs58.02 (keeps 85% of the gain to peak Rs59.05, entry Rs52.2)",
+          "entryReason": "SENSEX_RSI_PIVOT_ST PE: RSI 25.81 < 40 and the breakout candle closed below S1 78234.82 and this candle confirmed by closing 78099.4, past its low 78122.4 (pivots from 2026-10-06) | strike 77300 (OTM, 8 steps = 799.4pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 77300,
+          "optionExpiry": "26O08",
+          "optionType": "PE",
+          "optionEntrySymbol": "BSE:SENSEX26O0877300PE",
+          "signalStrength": "STRONG",
+          "signalRsi": 25.81,
+          "pivotPp": 78583.03,
+          "pivotR1": 79264.97,
+          "pivotS1": 78234.82,
+          "pivotFrom": "2026-10-06",
+          "crossedLevel": 78234.82,
+          "strikeMode": "OTM",
+          "strikeSteps": 8,
+          "strikeDistancePts": 796.9,
+          "mfeSpotPts": 44.3,
+          "mfePnl": 137,
+          "maeSpotPts": -10.05,
+          "maePnl": -29,
+          "secsToMFE": 224,
+          "secsToMAE": 22,
+          "firstMoveDir": "DOWN",
+          "secsToFirstMove": 2,
+          "pathPts": [
+            5.55,
+            8.3,
+            2.6,
+            0.3,
+            5.15,
+            12.2,
+            37.95
+          ],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 228000,
+          "charges": 49.79,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "RSI_PIVOT_ST",
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionExpiryDate": "2026-10-08",
+          "strikeAtm": 78100,
+          "strikeStep": 100,
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 51.7,
+            "ask": 52.2,
+            "ltp": 51.95
+          },
+          "exitQuote": {
+            "bid": 57.45,
+            "ask": 57.95,
+            "ltp": 57.7
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": -51.22,
+      "warmupBlind": true,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1577000PE",
+          "strike": 77000,
+          "qty": 20,
+          "entryTime": "15/10/2026, 11:05:06",
+          "exitTime": "15/10/2026, 11:05:08",
+          "entrySpot": 77809,
+          "exitSpot": 77813.65,
+          "entryLtp": 0.5,
+          "exitLtp": 0.3,
+          "reason": "Stop-loss -20% — premium Rs0.4 fell to the stop Rs0.4 (entry Rs0.5)",
+          "pnl": -51.22
+        }
+      ],
+      "skips": {
+        "total": 35,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 35,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 35
+          }
+        ]
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "BSE:SENSEX26O1577000PE",
+          "qty": 20,
+          "entryPrice": 77809,
+          "exitPrice": 77813.65,
+          "spotAtEntry": 77809,
+          "spotAtExit": 77813.65,
+          "optionEntryLtp": 0.5,
+          "optionExitLtp": 0.3,
+          "bestOptionLtp": 0.5,
+          "entryTime": "15/10/2026, 11:05:06",
+          "exitTime": "15/10/2026, 11:05:08",
+          "entryBarTime": 1792042500,
+          "exitBarTime": 1792042500,
+          "pnl": -51.22,
+          "pnlMode": "option premium: entry ₹0.5 → exit ₹0.3",
+          "exitReason": "Stop-loss -20% — premium Rs0.4 fell to the stop Rs0.4 (entry Rs0.5)",
+          "entryReason": "SENSEX_RSI_PIVOT_ST PE: RSI 20.09 < 40 and the breakout candle closed below S1 78124.63 and this candle confirmed by closing 77812.55, past its low 77956.25 (pivots from 2026-10-14) | strike 77000 (OTM, 8 steps = 812.55pt)",
+          "stopLoss": null,
+          "target": null,
+          "optionStrike": 77000,
+          "optionExpiry": "26O15",
+          "optionType": "PE",
+          "optionEntrySymbol": "BSE:SENSEX26O1577000PE",
+          "signalStrength": "STRONG",
+          "signalRsi": 20.09,
+          "pivotPp": 78413.37,
+          "pivotR1": 78692.63,
+          "pivotS1": 78124.63,
+          "pivotFrom": "2026-10-14",
+          "crossedLevel": 78124.63,
+          "strikeMode": "OTM",
+          "strikeSteps": 8,
+          "strikeDistancePts": 809,
+          "mfeSpotPts": 0,
+          "mfePnl": 0,
+          "maeSpotPts": -4.65,
+          "maePnl": 0,
+          "secsToMFE": 0,
+          "secsToMAE": 2,
+          "firstMoveDir": "DOWN",
+          "secsToFirstMove": 2,
+          "pathPts": [],
+          "vixAtEntry": null,
+          "vixAtExit": null,
+          "durationMs": 2000,
+          "charges": 47.22,
+          "isFutures": false,
+          "instrument": "SENSEX_OPTIONS",
+          "market": "SENSEX",
+          "strategyId": "RSI_PIVOT_ST",
+          "spotSymbol": "BSE:SENSEX-INDEX",
+          "optionExpiryDate": "2026-10-15",
+          "strikeAtm": 77800,
+          "strikeStep": 100,
+          "optionEntryFill": "ask",
+          "optionExitFill": "bid",
+          "entryQuote": {
+            "bid": 0.3,
+            "ask": 0.5,
+            "ltp": 0.4
+          },
+          "exitQuote": {
+            "bid": 0.3,
+            "ask": 0.5,
+            "ltp": 0.4
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": true,
+      "trades": [],
+      "skips": {
+        "total": 38,
+        "dropped": 0,
+        "noSignalCandles": 0,
+        "blockedSignals": 38,
+        "byGate": [
+          {
+            "gate": "rsi",
+            "count": 38
+          }
+        ]
+      },
+      "raw": []
+    }
+  ]
+}

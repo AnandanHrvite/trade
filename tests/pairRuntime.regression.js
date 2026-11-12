@@ -83,7 +83,7 @@ check("running pairs = every offered non-home pair of a RUNS_AS_PAIR strategy; n
   const MK = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL"];
   // Strategies that need the 09:15 index open are never offered on MCX.
   const NO_MCX = ["NIFTY_FUT", "BANKNIFTY", "SENSEX", "SAIL"];
-  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK };
+  const WANT = { emaRsiStV2: MK, emaRsiSt: MK, bbRsi: MK, pa: MK, orb: NO_MCX, ema9vwap: MK, trendPb: MK, trendDayScalp: MK, haScalp: MK, rsiPivotSt: MK };
   for (const id of Object.keys(WANT)) {
     assert.deepStrictEqual(pairs.runnable().filter(p => p.strategyId === id).map(p => p.marketKey), WANT[id], id);
   }
@@ -859,6 +859,97 @@ check("HA SCALP route builder: NIFTY is the default export; one cached router pe
         srv.close();
         resolve();
       } catch (e) { srv.close(); reject(e); }
+    });
+  });
+});
+
+section("RSI PIVOT ST runs as a pair (routes/rsiPivotStPaper.js)");
+
+const rpsOf = (mk) => pairRuntime.forStrategy("rsiPivotSt", mk);
+check("NIFTY is the registry's RSI PIVOT ST: path, file, slot, sidebar, notify tag", () => {
+  const rt = rpsOf("NIFTY");
+  assert.deepStrictEqual(
+    [rt.home, rt.modeKey, rt.envPrefix, rt.paperPath, rt.replayMode, rt.ownerId, rt.tradesFile, rt.socketSlot.mode, rt.notifyMode, rt.sidebarKey, rt.historySidebarKey],
+    [true, "rsi_pivot_st", "RSI_PIVOT_ST", "/rsi-pivot-st-paper", "rsi-pivot-st-paper", "rsi-pivot-st-paper", "rsi_pivot_st_paper_trades.json", "RSI_PIVOT_ST_PAPER", "RSI_PIVOT_ST-PAPER", "rsiPivotStPaper", "rsiPivotStHistory"]);
+});
+check("BANKNIFTY keeps the retired BN_PIVOT_RSI_ST copy's path, file, keys and slot", () => {
+  const bn = rpsOf("BANKNIFTY");
+  assert.deepStrictEqual(
+    [bn.envPrefix, bn.modeKey, bn.paperPath, bn.replayMode, bn.tradesFile, bn.socketSlot.mode, bn.notifyMode, bn.pair.enabledKey, bn.instrumentName()],
+    ["BN_PIVOT_RSI_ST", "bn_pivot_rsi_st", "/bn-pivot-rsi-st-paper", "bn-pivot-rsi-st-paper", "bn_pivot_rsi_st_paper_trades.json", "BN_PIVOT_RSI_ST_PAPER", "BN_PIVOT_RSI_ST-PAPER", "BN_PIVOT_RSI_ST_MODE_ENABLED", "BANKNIFTY_OPTIONS"]);
+  assert.strictEqual(pairs.byReplayMode("bn-pivot-rsi-st-paper").id, "rsiPivotSt@BANKNIFTY");
+  assert.strictEqual(pairs.byModeKey("bn_pivot_rsi_st").marketKey, "BANKNIFTY");
+  assert.strictEqual(pairs.pairKey(bn.pair, "RSI_PIVOT_ST_RSI_CE_MIN"), "BN_PIVOT_RSI_ST_RSI_CE_MIN");
+  const rows = ["SENSEX", "NIFTY_FUT", "CRUDE"].map(mk => { const r = rpsOf(mk); return [mk, r.envPrefix, r.paperPath, r.tradesFile, r.socketSlot.mode, r.instrumentName()]; });
+  assert.deepStrictEqual(rows, [
+    ["SENSEX", "SENSEX_RSI_PIVOT_ST", "/sensex_rsi_pivot_st-paper", "sensex_rsi_pivot_st_paper_trades.json", "SENSEX_RSI_PIVOT_ST_PAPER", "SENSEX_OPTIONS"],
+    ["NIFTY_FUT", "FUT_RSI_PIVOT_ST", "/fut_rsi_pivot_st-paper", "fut_rsi_pivot_st_paper_trades.json", "FUT_RSI_PIVOT_ST_PAPER", "NIFTY_FUTURES"],
+    ["CRUDE", "CRUDE_RSI_PIVOT_ST", "/crude_rsi_pivot_st-paper", "crude_rsi_pivot_st_paper_trades.json", "CRUDE_RSI_PIVOT_ST_PAPER", "MCX_OPTIONS"],
+  ]);
+  assert.strictEqual(pairs.byReplayMode("rsi-pivot-st-paper"), null, "the home mode is the registry's");
+});
+check("engine config: NIFTY reads RSI_PIVOT_ST_* exactly; a pair its own key, else NIFTY's; strikes on its own grid", () => {
+  const eng = require("../src/strategies/rsi_pivot_st");
+  withEnv({ RSI_PIVOT_ST_RSI_CE_MIN: "65", RSI_PIVOT_ST_STRIKE_MODE: "ITM", SENSEX_RSI_PIVOT_ST_RSI_CE_MIN: "72", BN_PIVOT_RSI_ST_RSI_CE_MIN: undefined }, () => {
+    const n = eng.getConfig(), s = eng.getConfig("SENSEX_RSI_PIVOT_ST"), b = eng.getConfig("BN_PIVOT_RSI_ST");
+    assert.deepStrictEqual([n.rsiCeMin, n.strikeMode], [65, "ITM"]);
+    assert.deepStrictEqual([s.rsiCeMin, s.strikeMode], [72, "ITM"], "own threshold, inherited strike mode");
+    assert.deepStrictEqual([b.rsiCeMin, b.strikeMode], [65, "ITM"], "inherits NIFTY");
+    assert.deepStrictEqual(eng.getConfig("RSI_PIVOT_ST"), n, "the RSI_PIVOT_ST prefix is NIFTY");
+  });
+  withEnv({ SENSEX_RSI_PIVOT_ST_RSI_PERIOD: "abc" }, () => assert.strictEqual(eng.getConfig("SENSEX_RSI_PIVOT_ST").rsiPeriod, 14, "bad own value falls to the default"));
+  const cfg = Object.assign(eng.getConfig(), { strikeMode: "OTM", strikePct: 1 });
+  assert.deepStrictEqual(eng.strikeForSide(24012, "CE", cfg), { strike: 24250, steps: 5, mode: "OTM", atm: 24000, distancePts: 238 }, "NIFTY: 50-pt grid");
+  assert.strictEqual(eng.strikeForSide(57040, "PE", Object.assign({}, cfg, { strikeStep: 100 })).strike, 56400, "BANKNIFTY: 100-pt grid, 6 strikes out");
+});
+check("<PAIR>_EXPIRY_DAY_ONLY / paper switch / fill at quote follow the RSI_PIVOT_ST keys", () => {
+  assert.strictEqual(rpsOf("SENSEX").expiryDayOnly(), false);
+  withEnv({ RSI_PIVOT_ST_EXPIRY_DAY_ONLY: "true" }, () => assert.strictEqual(rpsOf("SENSEX").expiryDayOnly(), true));
+  withEnv({ RSI_PIVOT_ST_EXPIRY_DAY_ONLY: "true", BN_PIVOT_RSI_ST_EXPIRY_DAY_ONLY: "false" }, () => assert.strictEqual(rpsOf("BANKNIFTY").expiryDayOnly(), false));
+  assert.strictEqual(rpsOf("BANKNIFTY").paperEnabled(), true, "RSI_PIVOT_ST_PAPER_ENABLED defaults on");
+  withEnv({ BN_PIVOT_RSI_ST_PAPER_ENABLED: "false" }, () => assert.strictEqual(rpsOf("BANKNIFTY").paperEnabled(), false));
+  assert.deepStrictEqual([rpsOf("SENSEX").fillAtQuote(), rpsOf("BANKNIFTY").fillAtQuoteKey, rpsOf("NIFTY").fillAtQuote()], [true, "BN_PIVOT_RSI_ST_PAPER_FILL_AT_QUOTE", false]);
+});
+check("crash snapshot and logs per RSI PIVOT ST pair", () => {
+  const pp = require("../src/utils/positionPersist");
+  assert.strictEqual(typeof pp.saveRsiPivotStPosition, "function", "NIFTY keeps its named snapshot");
+  const tl = require("../src/utils/tradeLogger"), sl = require("../src/utils/skipLogger");
+  assert.ok(tl.modes().includes("bn_pivot_rsi_st") && sl.modes().includes("sensex_rsi_pivot_st"));
+  rpsOf("BANKNIFTY").persist.save({ side: "CE", symbol: "NSE:BANKNIFTY26NOV58400CE", entryPrice: 57800 }, { sessionPnl: 0 });
+  return new Promise(r => setTimeout(r, 50)).then(() => {
+    assert.strictEqual(pp.loadPairPosition("bn_pivot_rsi_st").position.symbol, "NSE:BANKNIFTY26NOV58400CE");
+    pp.clearPairPositions();
+  });
+});
+check("route builder: NIFTY is the default export; one cached router per market; a pair that is off refuses /start", () => {
+  const route = require("../src/routes/rsiPivotStPaper");
+  assert.strictEqual(route.pairRuntime.paperPath, "/rsi-pivot-st-paper");
+  assert.strictEqual(typeof route.stopSession, "function");
+  assert.strictEqual(route.forMarket("NIFTY"), route);
+  const bn = route.forMarket("BANKNIFTY");
+  assert.ok(bn && bn !== route && route.forMarket("BANKNIFTY") === bn, "one instance per market");
+  assert.ok(route.forMarket("SENSEX") !== bn, "markets never share an instance");
+  assert.strictEqual(bn.pairRuntime.paperPath, "/bn-pivot-rsi-st-paper");
+  const code = fs.readFileSync(path.join(__dirname, "../src/routes/rsiPivotStPaper.js"), "utf8");
+  assert.ok(/const ROUTE\s*=\s*rt\.paperPath;/.test(code) && /const MODE\s*=\s*rt\.modeKey;/.test(code), "path / mode key must come from rt");
+  const express = require("express"), http = require("http");
+  const app = express();
+  app.use(bn.pairRuntime.paperPath, bn);
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, () => {
+      http.get(`http://127.0.0.1:${srv.address().port}/bn-pivot-rsi-st-paper/start`, (res) => {
+        let body = "";
+        res.on("data", (c) => { body += c; });
+        res.on("end", () => {
+          srv.close();
+          try {
+            assert.strictEqual(res.statusCode, 403);
+            assert.ok(body.includes("BN_PIVOT_RSI_ST_MODE_ENABLED"), "names the pair's switch");
+            assert.ok(!bn.pairRuntime.socketSlot.isActive(), "a refused start took no slot");
+            resolve();
+          } catch (e) { reject(e); }
+        });
+      }).on("error", (e) => { srv.close(); reject(e); });
     });
   });
 });

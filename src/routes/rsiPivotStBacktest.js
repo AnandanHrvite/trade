@@ -28,6 +28,17 @@
  *
  * A spread/slippage haircut of BACKTEST_SLIPPAGE_PTS is applied EACH way —
  * without it a backtest of option BUYING always flatters.
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles (intraday AND the daily pivot series), lot, strike
+ * grid, exchange charges (BSE for SENSEX) and, for NIFTY_FUT, futures pricing
+ * come from services/backtestMarket.js; the market's pair settings
+ * (config/pairs.js: own key, else NIFTY's, else the default) are mapped onto the
+ * RSI_PIVOT_ST_* keys the engine reads, for that run only (utils/scopedEnv.js).
+ * A pair's charges use Fyers, its paper broker. With market NIFTY nothing
+ * changes. MCX and SAIL stay "coming soon": backtestMarket has no MCX spot
+ * series or rule expiry, and SAIL is not one of its backtest markets yet.
  */
 
 const express = require("express");
@@ -52,6 +63,7 @@ function _futStopMsg(entry, px, peak) {
   return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
+const backtestMarket = require("../services/backtestMarket");
 
 const ACCENT = "#c2410c";
 const ENDPOINT = "/rsi-pivot-st-backtest";
@@ -82,20 +94,33 @@ function _shiftDate(dateStr, days) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-async function runRsiPivotStBacktest(intraday, daily) {
+/**
+ * @param {object} [mkt] a backtestMarket.context(): the market's lot, strike
+ *        grid, exchange and futures flag. Omitted = NIFTY, exactly as before
+ *        markets existed.
+ */
+async function runRsiPivotStBacktest(intraday, daily, mkt) {
   const empty = {
     trades: [], days: 0, skipped: [],
     gateStats: { noPivots: 0, crossNoRsi: 0, rsiNoCross: 0, noSuperTrend: 0, setups: 0 },
   };
   if (!intraday || !intraday.length) return empty;
 
+  const M    = mkt || backtestMarket.context("NIFTY");
+  const HOME = M.key === "NIFTY";
   const cfg = rsiPivotStrategy.getConfig();
+  // Another market's strike grid (100 on SENSEX / BANKNIFTY); NIFTY keeps 50.
+  if (!HOME && M.strikeStep > 0) cfg.strikeStep = M.strikeStep;
   // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
-  // "premium" the sim carries IS the spot level (see instrumentMode.js).
-  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  // "premium" the sim carries IS the spot level (see instrumentMode.js). NIFTY
+  // follows the global instrument mode as it always did; another market is
+  // futures only as NIFTY_FUT.
+  const IS_FUT       = HOME ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = instrumentConfig.getLotQty();
+  const LOT_SIZE     = HOME ? instrumentConfig.getLotQty() : M.lotQty;
+  // Charges as the paper engine books them: NIFTY Zerodha, a pair Fyers on its exchange.
+  const CHARGE_OPTS  = HOME ? { broker: "zerodha" } : { broker: "fyers", exchange: M.exchange };
   const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
@@ -164,7 +189,7 @@ async function runRsiPivotStBacktest(intraday, daily) {
     function priceAt(exitPx, exitTime) {
       const raw = premiumAt(exitPx, exitTime);
       const exitPrem = Math.max(0.05, raw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-      const charges = getCharges({ broker: "zerodha", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+      const charges = getCharges(Object.assign({}, CHARGE_OPTS, { isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE }));
       return {
         pnl: parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2)),
         exitPrem: parseFloat(exitPrem.toFixed(2)),
@@ -291,9 +316,17 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
+/**
+ * The results-page options for one finished run: this page and the unified
+ * /backtest page render the same view. `meta.market` is the run's market key
+ * (absent on a NIFTY run).
+ */
 function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = rsiPivotStrategy.getConfig();
+  const M   = backtestMarket.context(meta.market || "NIFTY");
+  const HOME = M.key === "NIFTY";
+  const IS_FUT = HOME ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true;
   const gs = meta.gateStats || { noPivots: 0, crossNoRsi: 0, rsiNoCross: 0, noSuperTrend: 0, setups: 0 };
   return {
     mode: "RSI_PIVOT_ST",
@@ -322,7 +355,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Skipped — SuperTrend disagreed", value: gs.noSuperTrend },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 INDEX ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest 50. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>RSI_PIVOT_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, and the lock is measured against that simulated number rather than a real quote, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
+    notes: `${HOME ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${escHtml(M.exchange)} charges (Fyers)${M.isFutures ? "" : `, strikes every ${M.strikeStep}pt`}. `}${IS_FUT ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> ${HOME ? "NIFTY 50 INDEX" : escHtml(M.spotSymbol)} ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest ${HOME ? 50 : M.strikeStep}. <b>SuperTrend filter:</b> SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) must agree with the trade on <b>${cfg.stSides}</b> (<code>RSI_PIVOT_ST_ST_SIDES</code>) — bullish for a CE, bearish for a PE. <b>Exit:</b> the global profit lock is the ONLY automatic exit — there is no stop loss, trail, target or day-loss limit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. There is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${backtestCosts.seedPremium()}, and the lock is measured against that simulated number rather than a real quote, PLUS ${backtestCosts.slippagePts()}pt slippage EACH way. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
   };
 }
 
@@ -337,13 +370,16 @@ function _renderResults(res, from, to, trades, stats, meta) {
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  const SPOT = home ? SPOT_SYMBOL : M.spotSymbol;
   try {
-    console.log(`🔍 RSI_PIVOT_ST Backtest job ${id}: ${from} → ${to}`);
-    backtestJobs.updateProgress(id, { phase: `Fetching ${_resMin()}-min NIFTY candles…`, pct: 20 });
+    console.log(`🔍 RSI_PIVOT_ST Backtest job ${id}: ${from} → ${to}${home ? "" : ` on ${M.key}`}`);
+    backtestJobs.updateProgress(id, { phase: `Fetching ${_resMin()}-min ${home ? "NIFTY" : M.shortLabel} candles…`, pct: 20 });
 
     let intraday = [];
     try {
-      intraday = await fetchCandles(SPOT_SYMBOL, String(_resMin()), from, to);
+      intraday = await fetchCandles(SPOT, String(_resMin()), from, to);
     } catch (err) {
       backtestJobs.failJob(id, `Fyers refused the intraday request for ${from} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
       return;
@@ -360,7 +396,7 @@ async function _runJob(id, p) {
     backtestJobs.updateProgress(id, { phase: "Fetching daily candles for the pivot levels…", pct: 45 });
     let daily = [];
     try {
-      daily = await fetchCandles(SPOT_SYMBOL, "D", _shiftDate(from, -10), to);
+      daily = await fetchCandles(SPOT, "D", _shiftDate(from, -10), to);
     } catch (err) {
       backtestJobs.failJob(id, `Intraday candles fetched, but the DAILY series (needed for R1/S1) was refused: ${fyersErrText(err).slice(0, 300)}`);
       return;
@@ -371,16 +407,23 @@ async function _runJob(id, p) {
     }
 
     backtestJobs.updateProgress(id, { phase: `Running RSI Pivot ST backtest (${intraday.length.toLocaleString()} candles, ${daily.length} daily bars)…`, pct: 75 });
-    const result = await runRsiPivotStBacktest(intraday, daily);
+    const result = await runRsiPivotStBacktest(intraday, daily, M);
     const stats = computeBacktestStats(result.trades);
-    stats.optionSim = true;
+    stats.optionSim = home ? true : !M.isFutures;
     stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
     stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    if (!home && M.isFutures) stats.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
 
-    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
-    catch (e) { console.warn("[rsi-pivot-st-backtest] saveResult failed:", e.message); }
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (home) {
+      try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
+      catch (e) { console.warn("[rsi-pivot-st-backtest] saveResult failed:", e.message); }
+    }
 
-    backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, skipped: result.skipped, gateStats: result.gateStats } });
+    const meta = { days: result.days, skipped: result.skipped, gateStats: result.gateStats };
+    if (!home) meta.market = M.key;
+    backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta });
     console.log(`✅ RSI_PIVOT_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
   } catch (err) {
     console.error("[rsi-pivot-st-backtest] job error:", err);
@@ -436,8 +479,8 @@ a{display:inline-block;margin-top:16px;background:${ACCENT};color:#fff;padding:9
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to, market: p.market }),
   view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, skipped: [], gateStats: {} }),
 };
