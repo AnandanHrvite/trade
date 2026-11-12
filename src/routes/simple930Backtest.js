@@ -45,6 +45,17 @@
  *     Statutory charges come from the repo's own charges.js on the ZERODHA
  *     schedule, because that is where these orders would go.
  *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME day
+ * simulation on BANKNIFTY and SENSEX through `backtestPage` (exported below):
+ * that market's index candles, ATM on its own strike grid, its own option
+ * symbols on its own expiry (SENSEX weekly, BANKNIFTY monthly — holiday-
+ * preponed), its lot and its exchange's charges on the Fyers schedule come
+ * from services/backtestMarket.js; the market's pair settings (config/pairs.js:
+ * own key, else NIFTY's, else the default) are mapped onto the SIMPLE930_* keys
+ * the engine reads, for that run only (utils/scopedEnv.js). With market NIFTY
+ * nothing changes. NIFTY futures stay "coming soon": every level here is an
+ * option premium, which a future does not have (paper refuses it too).
+ *
  * NOT VALIDATED. This strategy has never traded live or on paper.
  */
 
@@ -67,6 +78,8 @@ const instrumentConfig = require("../config/instrument");
 const tradeGuards      = require("../utils/tradeGuards");
 const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require("../utils/nseHolidays");
 const backtestCosts = require("../config/backtestCosts");
+const backtestMarket = require("../services/backtestMarket");
+const { preponedExpirySync } = require("../utils/nseHolidays");
 
 const ACCENT      = "#f59e0b";
 const ENDPOINT    = "/simple930-backtest";
@@ -126,6 +139,20 @@ async function weeklyExpiryOnOrAfter(dayStr) {
   return { date: local, code: instrumentConfig.expiryCodeFor(local), dateStr: formatDateToYYYYMMDD(local) };
 }
 
+/**
+ * Another market's nearest expiry on or after an IST calendar day, as its paper
+ * engine resolves it at the 09:25 selection: SENSEX's weekly, BANKNIFTY's
+ * monthly (instrument.weeklyExpiryAt), holiday-preponed. NIFTY keeps
+ * weeklyExpiryOnOrAfter above.
+ */
+function marketExpiryOnOrAfter(dayStr, underlying) {
+  const [y, m, d] = String(dayStr).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const U = instrumentConfig.underlyingOf(underlying);
+  const eff = preponedExpirySync(instrumentConfig.weeklyExpiryAt(new Date(y, m - 1, d, 9, 25, 0, 0), U));
+  return { date: eff, code: instrumentConfig.expiryCodeFor(eff, U), dateStr: formatDateToYYYYMMDD(eff) };
+}
+
 /** Group an ascending candle array by IST day. */
 function byDay(candles) {
   const m = new Map();
@@ -155,9 +182,12 @@ function barAtMinute(bars, mins) {
  *   { dateStr, spotBars, ladder:[{strike,side,steps,moneyness,symbol,bars}] }
  * @param {object} cfg  strategy.getConfig()
  * @param {number} qty  lot quantity
+ * @param {object} [mkt] a backtestMarket.context(): the market's underlying
+ *        (ATM grid), label and exchange. Omitted = NIFTY, exactly as before.
  * @returns {{ trade:object|null, audit:object }}
  */
-function simulateDay(day, cfg, qty) {
+function simulateDay(day, cfg, qty, mkt) {
+  const home = !mkt || mkt.key === "NIFTY";
   const slip  = _slippagePts();
   const audit = {
     date: day.dateStr,
@@ -173,14 +203,15 @@ function simulateDay(day, cfg, qty) {
   // do not exist, so it is refused the same way the live route refuses to select
   // without an index price.
   if (!selBar || !strategy._px(selBar.open)) {
+    const idx = home ? "NIFTY" : mkt.shortLabel;
     audit.note = selBar
-      ? `the ${strategy._fmtMins(cfg.selectionMin)} NIFTY index bar carries no usable open — the ATM strike cannot be derived`
-      : `no NIFTY index bar at ${strategy._fmtMins(cfg.selectionMin)}`;
+      ? `the ${strategy._fmtMins(cfg.selectionMin)} ${idx} index bar carries no usable open — the ATM strike cannot be derived`
+      : `no ${idx} index bar at ${strategy._fmtMins(cfg.selectionMin)}`;
     return { trade: null, audit };
   }
   const spot = selBar.open;
   audit.spot = strategy._r2(spot);
-  const atm = instrumentConfig.calcATMStrike(spot);
+  const atm = home ? instrumentConfig.calcATMStrike(spot) : instrumentConfig.calcATMStrike(spot, null, mkt.underlying);
   audit.atm = atm;
 
   const rungs = (day.ladder || []).map(r => {
@@ -347,7 +378,10 @@ function simulateDay(day, cfg, qty) {
   }
 
   const exitFilled = strategy._r2(Math.max(0, exitPx - slip));   // slippage given up on a sell
-  const charges = getCharges({ broker: "zerodha", isFutures: false, entryPremium: entryPx, exitPremium: exitFilled, qty });
+  // Another market: its exchange's charges (BSE for SENSEX) on the Fyers schedule its pair trades on.
+  const charges = home
+    ? getCharges({ broker: "zerodha", isFutures: false, entryPremium: entryPx, exitPremium: exitFilled, qty })
+    : getCharges({ broker: "fyers", isFutures: false, exchange: mkt.exchange, entryPremium: entryPx, exitPremium: exitFilled, qty });
   const pnl = parseFloat(((exitFilled - entryPx) * qty - charges).toFixed(2));
 
   audit.outcome = "trade";
@@ -382,7 +416,7 @@ function simulateDay(day, cfg, qty) {
     optionExitLtp:  exitFilled,
     optionStrike:   leg.strike,
     optionType:     side,
-    broker:         "zerodha",
+    broker:         home ? "zerodha" : "fyers",
   };
   return { trade, audit };
 }
@@ -421,9 +455,15 @@ async function currentContractWindow(todayStr) {
   return { from: mon.toISOString().slice(0, 10), to: todayStr, code: exp.code };
 }
 
-async function runJob(id, from, to) {
+async function runJob(id, from, to, mkt) {
   const cfg = strategy.getConfig();
-  const qty = simpleLotQty();
+  const M = mkt || backtestMarket.context("NIFTY");
+  const home = M.key === "NIFTY";
+  // The index the ATM comes from: NIFTY 50 as always, else the market's own.
+  const SPOT = home ? SPOT_SYMBOL : M.spotSymbol;
+  const IDX  = home ? "NIFTY" : M.shortLabel;
+  const qty = home ? simpleLotQty() : M.lotQty;
+  const U = home ? null : instrumentConfig.underlyingOf(M.underlying);
   const todayStr = _todayStr();
   const days = tradingDaysIn(from, to, todayStr);
   if (!days.length) {
@@ -435,17 +475,17 @@ async function runJob(id, from, to) {
   }
 
   // ── Phase 1: the index series, and each day's ATM + expiry ──
-  backtestJobs.updateProgress(id, { phase: `Fetching NIFTY index ${RES}-min candles (${days.length} session(s))…`, pct: 5 });
+  backtestJobs.updateProgress(id, { phase: `Fetching ${IDX} index ${RES}-min candles (${days.length} session(s))…`, pct: 5 });
   let spotAll = [];
   try {
-    spotAll = await fetchCandles(SPOT_SYMBOL, RES, days[0], days[days.length - 1], { waitForSlot: true });
+    spotAll = await fetchCandles(SPOT, RES, days[0], days[days.length - 1], { waitForSlot: true });
   } catch (err) {
-    backtestJobs.failJob(id, `NIFTY index history failed: ${fyersErrText(err)}`);
+    backtestJobs.failJob(id, `${IDX} index history failed: ${fyersErrText(err)}`);
     return;
   }
   const spotByDay = byDay(spotAll);
   if (!spotByDay.size) {
-    backtestJobs.failJob(id, `Fyers returned no NIFTY index candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error).`);
+    backtestJobs.failJob(id, `Fyers returned no ${IDX} index candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error).`);
     return;
   }
 
@@ -458,12 +498,17 @@ async function runJob(id, from, to) {
     // No usable open ⇒ no spot ⇒ no ATM. Naming rungs off a NaN strike would ask
     // Fyers for contracts that do not exist and burn the whole run on refusals.
     if (!selBar || !strategy._px(selBar.open)) { plans.push({ dateStr, spotBars, skip: `no usable index bar at ${strategy._fmtMins(cfg.selectionMin)}` }); continue; }
-    const exp = await weeklyExpiryOnOrAfter(dateStr);
+    const exp = home ? await weeklyExpiryOnOrAfter(dateStr) : marketExpiryOnOrAfter(dateStr, M.underlying);
     if (!exp) { plans.push({ dateStr, spotBars, skip: "could not resolve the weekly expiry" }); continue; }
-    const atm = instrumentConfig.calcATMStrike(selBar.open);
-    const rungs = strategy.buildCandidateStrikes(atm, cfg).map(c => ({
-      ...c, symbol: strategy.optionSymbol(exp.code, c.strike, c.side),
-    }));
+    // Another market: its own strike grid and option-symbol stem; NIFTY's calls as always.
+    const atm = home ? instrumentConfig.calcATMStrike(selBar.open) : instrumentConfig.calcATMStrike(selBar.open, null, M.underlying);
+    const rungs = home
+      ? strategy.buildCandidateStrikes(atm, cfg).map(c => ({
+          ...c, symbol: strategy.optionSymbol(exp.code, c.strike, c.side),
+        }))
+      : strategy.buildCandidateStrikes(atm, cfg, U.strikeStep).map(c => ({
+          ...c, symbol: strategy.optionSymbol(exp.code, c.strike, c.side, `${U.exchange}:${U.optPrefix}`),
+        }));
     for (const r of rungs) if (!needed.has(r.symbol)) needed.set(r.symbol, r);
     plans.push({ dateStr, spotBars, atm, expiryCode: exp.code, expiryDate: exp.dateStr, rungs });
   }
@@ -498,7 +543,7 @@ async function runJob(id, from, to) {
     const allDelisted = refused.length > 0 && refused.every(r => /expired|not listed/i.test(r.error));
     backtestJobs.failJob(id,
       allDelisted
-        ? `Not one option contract in ${from} → ${to} is still listed — a NIFTY weekly option is DELISTED the moment it expires, so its premium history can never be fetched again. This strategy can only be backtested over contracts that still exist. Try ${ENDPOINT}?from=${win.from}&to=${win.to}.`
+        ? `Not one option contract in ${from} → ${to} is still listed — a${home ? " NIFTY weekly" : `n ${IDX}`} option is DELISTED the moment it expires, so its premium history can never be fetched again. This strategy can only be backtested over contracts that still exist. Try ${ENDPOINT}?from=${win.from}&to=${win.to}.`
         : `Fyers served no option candles for ${from} → ${to}. First reason given: ${(refused[0] || {}).error || "unknown"}. "Could not authenticate the user" means the Fyers session needs re-login.`);
     return;
   }
@@ -516,7 +561,9 @@ async function runJob(id, from, to) {
       const perDay = seriesBySymbol.get(r.symbol);
       return { ...r, bars: (perDay && perDay.get(p.dateStr)) || [] };
     });
-    const { trade, audit } = simulateDay({ dateStr: p.dateStr, spotBars: p.spotBars, ladder, expiryCode: p.expiryCode }, cfg, qty);
+    const { trade, audit } = home
+      ? simulateDay({ dateStr: p.dateStr, spotBars: p.spotBars, ladder, expiryCode: p.expiryCode }, cfg, qty)
+      : simulateDay({ dateStr: p.dateStr, spotBars: p.spotBars, ladder, expiryCode: p.expiryCode }, cfg, qty, M);
     dayLog.push(audit);
     if (trade) trades.push(trade);
   }
@@ -525,20 +572,33 @@ async function runJob(id, from, to) {
   const stats = computeBacktestStats(trades);
   stats.optionSim = false;   // real option candles — NOT a delta/theta model
 
-  try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: RES } }); }
-  catch (e) { console.warn("[simple930-backtest] saveResult failed:", e.message); }
+  // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+  // kept by the /backtest page's own saved runs.
+  if (home) {
+    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: RES } }); }
+    catch (e) { console.warn("[simple930-backtest] saveResult failed:", e.message); }
+  }
 
   backtestJobs.completeJob(id, {
     trades, stats, from, to,
-    meta: { days: plans.length, dayLog, refused, contracts: seriesBySymbol.size, symbolsAsked: symbols.length, qty },
+    meta: Object.assign(
+      { days: plans.length, dayLog, refused, contracts: seriesBySymbol.size, symbolsAsked: symbols.length, qty },
+      home ? {} : { market: M.key }),
   });
   console.log(`✅ SIMPLE_9:30 Backtest job ${id} complete — ${trades.length} trade(s) over ${plans.length} session(s), ${seriesBySymbol.size}/${symbols.length} contracts served`);
 }
 
 // ── Results page ─────────────────────────────────────────────────────────────
+/**
+ * The results-page options for one finished run: this page and the unified
+ * /backtest page render the same view. `meta.market` is the run's market key
+ * (absent on a NIFTY run).
+ */
 function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = strategy.getConfig();
+  const M   = backtestMarket.context(meta.market || "NIFTY");
+  const home = M.key === "NIFTY";
   const dayLog  = meta.dayLog || [];
   const counts  = dayLog.reduce((a, d) => { a[d.outcome] = (a[d.outcome] || 0) + 1; return a; }, {});
   const refused = meta.refused || [];
@@ -588,7 +648,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Ran to session end",  value: trades.filter(t => t.exitKind === "SESSION_END").length },
       { label: "Trade frequency",     value: meta.days ? `${(((counts.trade || 0) / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${coverage}<b>Premiums are REAL:</b> every price here is a 1-minute candle Fyers printed for the option contract the rule would have held — there is no delta model and no theta model, because on this strategy that would be simulating the strategy itself. ` +
+    notes: `${home ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles for the ATM, its own option contracts on its own expiry, lot ${escHtml(meta.qty)}, ${escHtml(M.exchange)} charges on the Fyers schedule. `}${coverage}<b>Premiums are REAL:</b> every price here is a 1-minute candle Fyers printed for the option contract the rule would have held — there is no delta model and no theta model, because on this strategy that would be simulating the strategy itself. ` +
       `<b>Selection:</b> at ${strategy._fmtMins(cfg.selectionMin)} the ladder is ${cfg.scanItmStrikes} ITM${cfg.scanOtmStrikes ? ` + ${cfg.scanOtmStrikes} OTM` : ""} strikes per side and the strike nearest ₹${cfg.triggerPremium} is kept on each side. ` +
       `<b>Entry:</b> the first watchlist leg whose 1-min bar trades above ₹${cfg.triggerPremium} between ${strategy._fmtMins(cfg.entryStartMin)} and ${strategy._fmtMins(cfg.entryEndMin)}, filled at max(bar open, ₹${cfg.triggerPremium}). ` +
       `<b>Exit:</b> the global profit lock is the only one (tested on the option premium against its peak); a trade it never closes is closed at the session end (${strategy._fmtMins(_sessionEndMin())} IST or the day's last bar). ` +
@@ -598,8 +658,8 @@ function _resultsView(from, to, trades, stats, meta) {
         : "") +
       `<b>One trade a session</b>, the same as paper. ` +
       `<b>The lock fill is the backtest's one systematic flattery:</b> a bar low through the floor books exactly the floor level, while paper books the tick that breached it. The slippage haircut offsets part of that, not all of it. ` +
-      `Slippage of ${_slippagePts()}pt is charged EACH way and Zerodha statutory charges are applied on ${meta.qty} qty. ` +
-      `<b>A NIFTY weekly option is delisted at expiry</b>, so sessions older than the listed contracts cannot be fetched at all — they show as "no option data", not as flat days. ` +
+      `Slippage of ${_slippagePts()}pt is charged EACH way and ${home ? "Zerodha" : "Fyers"} statutory charges are applied on ${meta.qty} qty. ` +
+      `<b>${home ? "A NIFTY weekly option" : `A ${escHtml(M.shortLabel)} option`} is delisted at expiry</b>, so sessions older than the listed contracts cannot be fetched at all — they show as "no option data", not as flat days. ` +
       `<b>This strategy has NEVER traded live or on paper. Nothing here is validated.</b>${dayNote}`,
   };
 }
@@ -643,9 +703,10 @@ router.get("/day-log", (req, res) => {
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  const M = backtestMarket.context(p.market || "NIFTY");
   try {
-    console.log(`🔍 SIMPLE_9:30 Backtest job ${id}: ${from} → ${to}`);
-    await runJob(id, from, to);
+    console.log(`🔍 SIMPLE_9:30 Backtest job ${id}: ${from} → ${to}${M.key === "NIFTY" ? "" : ` on ${M.key}`}`);
+    await runJob(id, from, to, M);
   } catch (err) {
     console.error("[simple930-backtest] job error:", err);
     backtestJobs.failJob(id, err.message);
@@ -698,14 +759,15 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  run: (id, p) => _runJob(id, { from: p.from, to: p.to, market: p.market }),
   view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, dayLog: [], refused: [] }),
 };
 // Exposed for offline unit-testing of the day simulation (no Fyers needed).
 module.exports.simulateDay = simulateDay;
 module.exports.tradingDaysIn = tradingDaysIn;
 module.exports.weeklyExpiryOnOrAfter = weeklyExpiryOnOrAfter;
+module.exports.marketExpiryOnOrAfter = marketExpiryOnOrAfter;
 module.exports.barAtMinute = barAtMinute;
 module.exports.byDay = byDay;
