@@ -58,6 +58,20 @@
  *   computeSeries(candles, cfg)            -> { vwap, supertrend } 1:1 with candles
  *   getSignal(candles, opts)               -> { signal, reason, setup, ... }
  *   lotQty(cfg)                            -> SAIL_VWAP_ST_LOTS × SAIL lot size
+ *   forPrefix(prefix, opts)                -> this same API reading `${prefix}_*` keys
+ *
+ * ── ENV PREFIX / OTHER MARKETS ──────────────────────────────────────────────
+ *   The strategy's own keys are read under SAIL_VWAP_ST_ (its home, SAIL).
+ *   Another market's pair (NIFTY_SAIL_VWAP_ST, BN_SAIL_VWAP_ST, FUT_… , CRUDE_…)
+ *   runs these exact rules via forPrefix("<PAIR PREFIX>"), reading its own key
+ *   when set, else SAIL's SAIL_VWAP_ST_* value (config/pairs.js envGet).
+ *   forPrefix(p, { equalWeightVwap: true }) — a market whose candles carry no
+ *   volume (an INDEX: NIFTY / NIFTY BANK / SENSEX ticks have no traded volume,
+ *   and the NIFTY futures pair builds its candles on the index) computes the
+ *   session VWAP EQUAL-WEIGHTED (each candle's hlc3 counts once), the way
+ *   EMA9_VWAP does on NIFTY, so paper (no tick volume) and backtest (Fyers index
+ *   history) compute the same line. SAIL (and MCX futures) stay volume-weighted.
+ *   Omitting the prefix keeps every existing caller on SAIL_VWAP_ST_ exactly.
  */
 
 const { computeSuperTrend } = require("../utils/supertrend");
@@ -95,40 +109,57 @@ function _parseHHMM(raw, def) {
 function _fmtMins(mins) {
   return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 }
-function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+// Env read for one key. The SAIL prefix (SAIL_VWAP_ST) reads process.env
+// exactly as it always did; another market's pair reads with pair inheritance:
+// its own key when set, else SAIL's (config/pairs.js envGet).
+let _pairsMod = null;
+function _rawEnv(key, pairRead) {
+  if (!pairRead) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(key);
+}
+function _numEnv(key, def, min, max, pairRead) {
+  const v = parseFloat(_rawEnv(key, pairRead));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+function _intEnv(key, def, min, max, pairRead) {
+  const v = parseInt(_rawEnv(key, pairRead), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
+}
+
+function _prefixOf(prefix) {
+  const p = String(prefix == null ? "" : prefix).trim().replace(/_+$/, "");
+  return p || PREFIX;
 }
 
 /**
  * Live config read. Settings saves mutate process.env in place, so this must
  * never be cached — every caller re-reads on each evaluation.
+ * `prefix` (optional) — read `${prefix}_*` instead of SAIL_VWAP_ST_*.
  */
-function getConfig() {
-  const tf = _intEnv(PREFIX + "_TF", 5);
+function getConfig(prefix) {
+  const P  = _prefixOf(prefix);
+  const pr = P !== PREFIX;     // a market pair: read through pairs.envGet
+  const tf = _intEnv(P + "_TF", 5, undefined, undefined, pr);
   return {
-    PREFIX,
+    PREFIX: P,
     UNDERLYING,
     TRADE_RES:      TFS.includes(tf) ? tf : 5,
-    ST_PERIOD:      _intEnv(PREFIX + "_ST_PERIOD", 10, 2, 100),
-    ST_MULT:        _numEnv(PREFIX + "_ST_MULT", 2, 0.1, 10),
-    BREAKOUT_BARS:  _intEnv(PREFIX + "_BREAKOUT_BARS", 3, 1, 10),
+    ST_PERIOD:      _intEnv(P + "_ST_PERIOD", 10, 2, 100, pr),
+    ST_MULT:        _numEnv(P + "_ST_MULT", 2, 0.1, 10, pr),
+    BREAKOUT_BARS:  _intEnv(P + "_BREAKOUT_BARS", 3, 1, 10, pr),
 
-    ENTRY_START:    _parseHHMM(process.env[PREFIX + "_ENTRY_START"], 9 * 60 + 30),
-    ENTRY_END:      _parseHHMM(process.env[PREFIX + "_ENTRY_END"], 14 * 60 + 30),
+    ENTRY_START:    _parseHHMM(_rawEnv(P + "_ENTRY_START", pr), 9 * 60 + 30),
+    ENTRY_END:      _parseHHMM(_rawEnv(P + "_ENTRY_END", pr), 14 * 60 + 30),
 
     // Sizing. Route-level, read here so one config describes the mode.
-    LOTS:             _intEnv(PREFIX + "_LOTS", 1, 1, 50),
+    LOTS:             _intEnv(P + "_LOTS", 1, 1, 50, pr),
   };
 }
 
@@ -141,7 +172,10 @@ function warmupBars(cfg) {
   cfg = cfg || getConfig();
   return cfg.ST_PERIOD + 7;
 }
-function warmupDays() { return _intEnv(PREFIX + "_WARMUP_DAYS", 2, 1, 15); }
+function warmupDays(prefix) {
+  const P = _prefixOf(prefix);
+  return _intEnv(P + "_WARMUP_DAYS", 2, 1, 15, P !== PREFIX);
+}
 
 /** Entry window on the signal candle's CLOSE time (= the moment the entry fills). */
 function isInTradingWindow(barTimeSec, cfg) {
@@ -156,8 +190,10 @@ function isInTradingWindow(barTimeSec, cfg) {
 /**
  * Session VWAP on hlc3, restarting each IST day. 1:1 with `candles`; null where
  * the day has no volume yet (a missing/negative volume counts as 0).
+ * `equalWeight` — every valid candle weighs 1 (a market with no volume; see
+ * forPrefix). Omitted: volume-weighted, exactly as SAIL always computed it.
  */
-function computeVwap(candles) {
+function computeVwap(candles, equalWeight) {
   const n = Array.isArray(candles) ? candles.length : 0;
   const out = new Array(n).fill(null);
   let day = null, pv = 0, vol = 0;
@@ -166,7 +202,7 @@ function computeVwap(candles) {
     if (!_okBar(c)) { out[i] = null; continue; }
     const k = _istDayOf(c.time);
     if (k !== day) { day = k; pv = 0; vol = 0; }
-    const v = _num(c.volume) && c.volume > 0 ? c.volume : 0;
+    const v = equalWeight ? 1 : (_num(c.volume) && c.volume > 0 ? c.volume : 0);
     pv  += ((c.high + c.low + c.close) / 3) * v;
     vol += v;
     out[i] = vol > 0 ? pv / vol : null;
@@ -180,7 +216,7 @@ function computeSeries(candles, cfg) {
   const n = Array.isArray(candles) ? candles.length : 0;
   if (n === 0) return { vwap: [], supertrend: [] };
   return {
-    vwap: computeVwap(candles),
+    vwap: cfg.VWAP_WEIGHT === "equal" ? computeVwap(candles, true) : computeVwap(candles),
     supertrend: computeSuperTrend(candles, cfg.ST_PERIOD, cfg.ST_MULT),
   };
 }
@@ -257,13 +293,15 @@ const _NO = { entrySpot: null };
  *                        array. Both indicators are causal, so it equals
  *                        recomputing on candles.slice(0, endIdx + 1).
  *   opts.silent        — no console line on a signal.
+ *   opts.cfg           — the config to decide on (forPrefix() passes its own);
+ *                        default getConfig() — SAIL's keys.
  * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup,
  *           entrySpot, vwap, supertrend, stTrend, setup, crossLevel, ... }.
  */
 function getSignal(candles, opts) {
   const o = opts || {};
   const pre = o.precomputed || null;
-  const cfg = (pre && pre.cfg) || getConfig();
+  const cfg = (pre && pre.cfg) || o.cfg || getConfig();
   const WARMUP = warmupBars(cfg);
   const nBars = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
   if (nBars < WARMUP) {
@@ -290,7 +328,7 @@ function getSignal(candles, opts) {
     signalStrength: "STRONG",
   };
   if (base.vwap == null) {
-    return Object.assign({}, base, { signal: "NONE", warmup: true, reason: "No VWAP — no SAIL volume today yet, refusing to trade" });
+    return Object.assign({}, base, { signal: "NONE", warmup: true, reason: `No VWAP — no ${cfg.UNDERLYING} volume today yet, refusing to trade` });
   }
   if (base.supertrend == null || base.stTrendInt == null) {
     return Object.assign({}, base, { signal: "NONE", warmup: true, reason: "SuperTrend not ready" });
@@ -331,7 +369,7 @@ function getSignal(candles, opts) {
   const reason = side === "CE"
     ? `CE ${tag}: VWAP cross ${crossAt} (C>${setup.vwapAtCross}) → close ${bar.close} > cross high ${setup.level} | VWAP ${base.vwap} | ST green ${stv}`
     : `PE ${tag}: VWAP cross ${crossAt} (C<${setup.vwapAtCross}) → close ${bar.close} < cross low ${setup.level} | VWAP ${base.vwap} | ST red ${stv}`;
-  if (!o.silent) console.log(`[${NAME}] 🟢 ${side === "CE" ? "BUY_CE" : "BUY_PE"} — ${reason}`);
+  if (!o.silent) console.log(`[${cfg.PREFIX}] 🟢 ${side === "CE" ? "BUY_CE" : "BUY_PE"} — ${reason}`);
   return Object.assign({}, base, { signal: side === "CE" ? "BUY_CE" : "BUY_PE", reason });
 }
 
@@ -340,6 +378,41 @@ function lotQty(cfg) {
   cfg = cfg || getConfig();
   const lot = require("../config/instrument").underlyingOf(UNDERLYING).lotSize;
   return lot * cfg.LOTS;
+}
+
+/**
+ * The same API bound to a pair's env prefix (BN_SAIL_VWAP_ST, NIFTY_SAIL_VWAP_ST …).
+ *   opts.equalWeightVwap — the session VWAP weighs every candle equally (an
+ *                          index market with no volume — see the file header).
+ *   opts.label           — the instrument named in "no <label> volume" reasons.
+ * forPrefix("SAIL_VWAP_ST") with no opts decides exactly like the module itself.
+ */
+const _bound = new Map();
+function forPrefix(prefix, opts) {
+  const P  = _prefixOf(prefix);
+  const eq = !!(opts && opts.equalWeightVwap);
+  const label = (opts && opts.label) || UNDERLYING;
+  const key = `${P}|${eq ? 1 : 0}|${label}`;
+  if (_bound.has(key)) return _bound.get(key);
+  const gc = () => {
+    const c = getConfig(P);
+    c.UNDERLYING = label;
+    if (eq) c.VWAP_WEIGHT = "equal";
+    return c;
+  };
+  const api = Object.assign({}, module.exports, {
+    NAME: P,
+    PREFIX: P,
+    getConfig: gc,
+    warmupBars: (cfg) => warmupBars(cfg || gc()),
+    warmupDays: () => warmupDays(P),
+    isInTradingWindow: (t, cfg) => isInTradingWindow(t, cfg || gc()),
+    computeSeries: (candles, cfg) => computeSeries(candles, cfg || gc()),
+    getSignal: (candles, o) => getSignal(candles, Object.assign({}, o, { cfg: (o && o.cfg) || gc() })),
+    lotQty: (cfg) => lotQty(cfg || gc()),
+  });
+  _bound.set(key, api);
+  return api;
 }
 
 module.exports = {
@@ -358,6 +431,7 @@ module.exports = {
   findSetup,
   getSignal,
   lotQty,
+  forPrefix,
   _istDayOf,
   _istMins,
 };
