@@ -174,6 +174,11 @@ const PAIRS = [
   { route: "trendDayScalpPaper", market: "SENSEX",    mode: "sensex_trend_day_scalp-paper", enabledKey: "SENSEX_TDS_MODE_ENABLED", settings: { SENSEX_TDS_MAX_SL_PTS: "130" } },
   { route: "trendDayScalpPaper", market: "BANKNIFTY", mode: "bn_trend_day_scalp-paper",     enabledKey: "BN_TDS_MODE_ENABLED",     settings: { BN_TDS_MAX_SL_PTS: "95" } },
   { route: "trendDayScalpPaper", market: "NIFTY_FUT", mode: "fut_trend_day_scalp-paper",    enabledKey: "FUT_TDS_MODE_ENABLED" },
+  // RSI PIVOT ST on BANKNIFTY keeps the retired BN_PIVOT_RSI_ST copy's identity
+  // (config/pairs.js LEGACY_PAIR_IDENTITY): its mode and keys are that copy's.
+  { route: "rsiPivotStPaper", market: "SENSEX",    mode: "sensex_rsi_pivot_st-paper",  enabledKey: "SENSEX_RSI_PIVOT_ST_MODE_ENABLED" },
+  { route: "rsiPivotStPaper", market: "BANKNIFTY", mode: "bn-pivot-rsi-st-paper",      enabledKey: "BN_PIVOT_RSI_ST_MODE_ENABLED" },
+  { route: "rsiPivotStPaper", market: "NIFTY_FUT", mode: "fut_rsi_pivot_st-paper",     enabledKey: "FUT_RSI_PIVOT_ST_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {
