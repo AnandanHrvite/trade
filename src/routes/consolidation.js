@@ -39,7 +39,7 @@ const SOURCES = [
   // ST_RSI_PIV_BB — its own trades file.
   { mode: "ST_RSI_PIV_BB", file: path.join(DATA_DIR, "st_rsi_piv_bb_paper_trades.json"), label: "ST_RSI_PIV_BB", color: "#a3e635" },
   // SAIL_VWAP_ST (SAIL stock options) — its own trades file.
-  { mode: "SAIL_VWAP_ST", file: path.join(DATA_DIR, "sail_vwap_st_paper_trades.json"), label: "SAIL_VWAP_ST", color: "#fda4af" },
+  { mode: "SAIL_VWAP_ST", file: path.join(DATA_DIR, "sail_vwap_st_paper_trades.json"), label: "VWAP_ST", color: "#fda4af" },
   // PIVOT_EMA_ST — its own trades file (default ON).
   { mode: "PIVOT_EMA_ST", file: path.join(DATA_DIR, "pivot_ema_st_paper_trades.json"), label: "PIVOT_EMA_ST", color: "#38bdf8" },
   // GAP_RUNAWAY (NIFTY options) + its stock scanner (intraday shares) — each its own trades file (default ON).

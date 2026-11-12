@@ -242,7 +242,7 @@ router.get("/", (req, res) => {
   // SAIL STOCK options — the label says so; its P&L comes from a SAIL-scaled
   // simulated premium (SAIL_VWAP_ST_BT_*), not the NIFTY BACKTEST_* keys.
   const sailVwapStPanel = sailVwapStOn ? renderPanel(
-    "SAIL VWAP+ST · SAIL stock", { bg: "rgba(253,164,175,0.12)", fg: "#fda4af", border: "rgba(253,164,175,0.25)" },
+    "VWAP_ST · SAIL stock", { bg: "rgba(253,164,175,0.12)", fg: "#fda4af", border: "rgba(253,164,175,0.25)" },
     sailVwapStStrategy && sailVwapStStrategy.NAME ? sailVwapStStrategy.NAME : "SAIL_VWAP_ST",
     SAIL_VWAP_ST_KEY, "/sail_vwap_st-backtest", sailVwapStResult
   ) : "";

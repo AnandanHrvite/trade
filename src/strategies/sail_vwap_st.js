@@ -80,7 +80,7 @@ const NAME   = "SAIL_VWAP_ST";
 const PREFIX = "SAIL_VWAP_ST";
 const UNDERLYING = "SAIL";
 const DESCRIPTION =
-  "SAIL_VWAP_ST — SAIL 5-min VWAP cross, entered only after a candle closes beyond the cross candle's high/low, " +
+  "VWAP_ST — SAIL 5-min VWAP cross, entered only after a candle closes beyond the cross candle's high/low, " +
   "SuperTrend(10,2) must agree · profit-lock exit · SAIL options, Zerodha";
 
 const TFS = [3, 5, 15];

@@ -276,7 +276,7 @@ const ENTRIES = [
     replay: false,
   },
   {
-    id: "sailVwapSt", kind: "strategy", key: "SAIL_VWAP_ST", label: "SAIL VWAP+ST",
+    id: "sailVwapSt", kind: "strategy", key: "SAIL_VWAP_ST", label: "VWAP_ST",
     modeKey: "sail_vwap_st", envPrefix: "SAIL_VWAP_ST",
     modeEnabled: { key: "SAIL_VWAP_ST_MODE_ENABLED", default: "false" },
     paperEnabled: { key: "SAIL_VWAP_ST_PAPER_ENABLED", default: "false" },
@@ -287,7 +287,7 @@ const ENTRIES = [
     socket: { mode: "SAIL_VWAP_ST_PAPER", set: "setSailVwapStMode", clear: "clearSailVwapStMode", isActive: "isSailVwapStActive", get: "getSailVwapStMode" },
     needsIndexOpen: false,
     telegram: { started: "TG_SAIL_VWAP_ST_STARTED", entry: "TG_SAIL_VWAP_ST_ENTRY", exit: "TG_SAIL_VWAP_ST_EXIT", dayReport: "TG_SAIL_VWAP_ST_DAYREPORT" },
-    nav: { order: 15, groupId: "nav-sail_vwap_st", rosterLabel: "SAIL VWAP+ST" },
+    nav: { order: 15, groupId: "nav-sail_vwap_st", rosterLabel: "VWAP_ST" },
     commonWindow: { start: "SAIL_VWAP_ST_ENTRY_START", end: "SAIL_VWAP_ST_ENTRY_END" },
     tradesFile: "sail_vwap_st_paper_trades.json",
     replay: true,

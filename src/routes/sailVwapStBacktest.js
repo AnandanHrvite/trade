@@ -91,7 +91,7 @@ const backtestMarket = require("../services/backtestMarket");
 const ACCENT = "#0e7490";
 const ENDPOINT = "/sail_vwap_st-backtest";
 const RESULT_KEY = "SAIL_VWAP_ST_BACKTEST";
-const TITLE = "SAIL VWAP ST Backtest";
+const TITLE = "VWAP_ST Backtest";
 
 /** The resolved SAIL row, read LIVE so a Settings save (lot size) lands on the next run. */
 function _u() { return instrumentConfig.underlyingOf(engine.UNDERLYING); }
@@ -429,7 +429,7 @@ function _resultsView(from, to, trades, stats, meta) {
   return {
     mode: "SAIL_VWAP_ST",
     accent: ACCENT,
-    strategyName: engine.NAME,
+    strategyName: "VWAP_ST",
     endpoint: ENDPOINT,
     from, to,
     summary: stats,
@@ -463,7 +463,7 @@ function _pairNotes(M, cfg, bt, meta) {
       : `ATM ${escHtml(M.shortLabel)} options, P&amp;L from the index premium model (seed ₹${bt.SEED_PREMIUM}, δ ${bt.DELTA} <code>BACKTEST_DELTA</code>, θ ₹${bt.THETA_DAY}/day <code>BACKTEST_THETA_DAY</code>), exit on the profit lock. `) +
     `Qty ${escHtml((meta && meta.qty) || "—")} (${cfg.LOTS} lot(s) × the ${escHtml(M.shortLabel)} lot), ₹${bt.SLIPPAGE_PTS} index slippage each way (<code>BACKTEST_SLIPPAGE_PTS</code>), ${escHtml(M.exchange)} charges on the Fyers schedule. ` +
     `<b>The session VWAP is equal-weighted</b> (each candle's hlc3 once) — an index has no traded volume, so paper's pair computes it the same way. ` +
-    `Every rule comes from this market's SAIL_VWAP_ST pair settings. <b>This strategy has NEVER traded, paper or live.</b>`;
+    `Every rule comes from this market's VWAP_ST pair settings. <b>This strategy has NEVER traded, paper or live.</b>`;
 }
 
 function _renderResults(res, from, to, trades, stats, meta) {
@@ -485,7 +485,7 @@ async function _runJob(id, p) {
     const res_ = String(cfg.TRADE_RES);
     const SYM = MKT ? MKT.spotSymbol : SAIL_SPOT_SYMBOL;
     const runwayFrom = _shiftDate(from, -(MKT ? E.warmupDays() * 2 + 7 : runwayCalendarDays()));
-    console.log(`🔍 SAIL_VWAP_ST Backtest job ${id}: ${from} → ${to} (warm-up runway from ${runwayFrom}, never traded)`);
+    console.log(`🔍 VWAP_ST Backtest job ${id}: ${from} → ${to} (warm-up runway from ${runwayFrom}, never traded)`);
     if (MKT) {
       const b = _pairBtConfig(MKT);
       console.log(`   └ market: ${MKT.label} (${SYM}) ${res_}-min, qty ${_pairQty(cfg, MKT)} — ${MKT.isFutures ? "month future at the index level (δ 1)" : `premium SIMULATED (seed ₹${b.SEED_PREMIUM}, δ ${b.DELTA}, θ ₹${b.THETA_DAY}/day)`}, equal-weighted VWAP, ${MKT.exchange} charges`);
@@ -514,7 +514,7 @@ async function _runJob(id, p) {
       return;
     }
 
-    backtestJobs.updateProgress(id, { phase: `Running SAIL VWAP ST backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
+    backtestJobs.updateProgress(id, { phase: `Running VWAP_ST backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
     await new Promise(resolve => setImmediate(resolve));
     const result = MKT ? simulate(candles, { tradeFrom: from, tradeTo: to, market: MKT }) : simulate(candles, { tradeFrom: from, tradeTo: to });
     const stats = result.stats;
@@ -536,7 +536,7 @@ async function _runJob(id, p) {
     backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: MKT
       ? { days: result.days, funnel: result.funnel, exitMix: result.exitMix, market: MKT.key, qty: result.params.qty }
       : { days: result.days, funnel: result.funnel, exitMix: result.exitMix } });
-    console.log(`✅ SAIL_VWAP_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
+    console.log(`✅ VWAP_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
   } catch (err) {
     console.error("[sail_vwap_st-backtest] job error:", err);
     backtestJobs.failJob(id, err.message);

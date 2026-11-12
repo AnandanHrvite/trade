@@ -108,7 +108,8 @@ const ROUTE  = rt.paperPath;                // "/sail_vwap_st-paper" on SAIL
 const OWNER  = rt.ownerId;                  // socket callback + option-feed owner + recorder tag
 const TAG    = `[${rt.tag}-PAPER]`;         // "[SAIL_VWAP_ST-PAPER]" on SAIL
 const NOTIFY_MODE = rt.notifyMode;          // "SAIL_VWAP_ST-PAPER" on SAIL
-const TITLE  = rt.home ? "SAIL_VWAP_ST" : rt.title;
+// Display name (VWAP_ST); the strategy key / env prefix / files stay SAIL_VWAP_ST.
+const TITLE  = rt.home ? "VWAP_ST" : rt.title;
 const SPOT_LABEL = rt.home ? "SAIL" : rt.spotLabel;
 // Paper capital pool of this pair's broker (SAIL: Zerodha; other markets: Fyers).
 const CAP_ENV = rt.home ? "ZERODHA_INV_AMOUNT" : (pair.broker === "fyers" ? "FYERS_INV_AMOUNT" : "ZERODHA_INV_AMOUNT");
@@ -1785,10 +1786,10 @@ router.get("/start", async (req, res) => {
   // Master + per-mode toggles, both default OFF (the strategy ships dark until it
   // has been paper-validated).
   if (rt.home && String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() !== "true") {
-    return res.status(403).json({ success: false, error: "SAIL_VWAP_ST is disabled. Enable SAIL_VWAP_ST Mode in Settings first." });
+    return res.status(403).json({ success: false, error: "VWAP_ST is disabled. Turn on SAIL_VWAP_ST_MODE_ENABLED in Settings first." });
   }
   if (rt.home && String(process.env.SAIL_VWAP_ST_PAPER_ENABLED || "false").toLowerCase() !== "true") {
-    return res.status(403).json({ success: false, error: "SAIL_VWAP_ST paper trading is disabled. Enable SAIL_VWAP_ST Paper Trading in Settings first." });
+    return res.status(403).json({ success: false, error: "VWAP_ST paper trading is disabled. Turn on SAIL_VWAP_ST_PAPER_ENABLED in Settings first." });
   }
   // Another market: the strategy's paper switch — its own value, else SAIL's.
   if (!rt.home && !rt.paperEnabled()) {
@@ -1902,7 +1903,7 @@ router.get("/start", async (req, res) => {
 
   log(`\n════════════════════════════════════════════════════════════════════`);
   log(`🟡 [PAPER] Paper trading started`);
-  log(`   Strategy   : ${ACTIVE} — ${rt.home ? engine.DESCRIPTION : `the SAIL_VWAP_ST rules on ${SPOT_LABEL} (${SAIL_SPOT_SYMBOL()})`}`);
+  log(`   Strategy   : ${rt.home ? TITLE : ACTIVE} — ${rt.home ? engine.DESCRIPTION : `the VWAP_ST rules on ${SPOT_LABEL} (${SAIL_SPOT_SYMBOL()})`}`);
   log(`   Timeframe  : ${_tfLabel}`);
   log(`   Instrument : ${rt.home ? "SAIL_OPTIONS" : rt.instrumentName()}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
@@ -1956,7 +1957,7 @@ router.get("/start", async (req, res) => {
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
       ``,
-      `Strategy  : ${ACTIVE}`,
+      `Strategy  : ${rt.home ? TITLE : ACTIVE}`,
       `Timeframe : ${_tfLabel}`,
       `Instrument: ${rt.home ? "SAIL_OPTIONS" : rt.instrumentName()}`,
       `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
@@ -2874,7 +2875,7 @@ ${buildSidebar(rt.sidebarKey, false, ptState.running, {
   <div class="top-bar">
     <div>
       <div class="top-bar-title">📋 Paper Trade</div>
-      <div class="top-bar-meta">Strategy: ${ACTIVE} — ${engine.NAME} · ${SPOT_LABEL} ${TRADE_RES}-min candles · ${ptState.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+      <div class="top-bar-meta">Strategy: ${TITLE} — ${rt.home ? "SAIL" : ACTIVE} · ${SPOT_LABEL} ${TRADE_RES}-min candles · ${ptState.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
     </div>
     <div class="top-bar-right">
       ${ptState.running

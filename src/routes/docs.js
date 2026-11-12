@@ -25,7 +25,7 @@ const GUIDE_MODE_BY_FILE = {
   "ema_rsi_st_strategy_guide.html":    "EMA_RSI_ST",
   "ema_rsi_st_v2_strategy_guide.html": "EMA_RSI_ST_V2",
   "st_rsi_piv_bb_strategy_guide.html": "ST_RSI_PIV_BB",
-  "sail_vwap_st_strategy_guide.html":  "SAIL_VWAP_ST",
+  "sail_vwap_st_strategy_guide.html":  "VWAP_ST",
   "bb_rsi_strategy_guide.html":        "BB_RSI",
   "price_action_strategy_guide.html":  "PA",
   "orb_strategy_guide.html":           "ORB",

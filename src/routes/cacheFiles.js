@@ -69,7 +69,7 @@ const STRATEGY_BADGE = {
   // ST_RSI_PIV_BB — its own key.
   st_rsi_piv_bb: { label: "ST_RSI_PIV_BB", cls: "mode-st_rsi_piv_bb" },
   // SAIL_VWAP_ST (SAIL stock options) — its own key.
-  sail_vwap_st: { label: "SAIL_VWAP_ST", cls: "mode-sail_vwap_st" },
+  sail_vwap_st: { label: "VWAP_ST", cls: "mode-sail_vwap_st" },
   // PIVOT_EMA_ST family — each its own key.
   pivot_ema_st: { label: "PIVOT_EMA_ST", cls: "mode-pivot_ema_st" },
   // GAP_RUNAWAY + its stock scanner — each its own key.
@@ -692,7 +692,7 @@ ${embed ? '' : buildSidebar('tradeLogs', false)}
     ema_rsi_st:    { label: 'EMA_RSI_ST',    cls: 'mode-ema_rsi_st' },
     ema_rsi_st_v2: { label: 'EMA_RSI_ST_V2', cls: 'mode-ema_rsi_st_v2' },
     st_rsi_piv_bb: { label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
-    sail_vwap_st: { label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
+    sail_vwap_st: { label: 'VWAP_ST', cls: 'mode-sail_vwap_st' },
     pivot_ema_st: { label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
     gap_runaway: { label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
     gap_runaway_stk: { label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },

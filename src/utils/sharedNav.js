@@ -582,7 +582,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     // Its own STOCKS parent: SAIL is not an index, and a parent with no enabled section
     // is dropped, so STOCKS only appears once SAIL_VWAP_ST_MODE_ENABLED is on.
     ...(sailVwapStModeOn ? [{
-      header: 'SAIL VWAP+ST', collapsible: true, collapsed: !isSailVwapStOpen,
+      header: 'VWAP_ST', collapsible: true, collapsed: !isSailVwapStOpen,
       groupId: 'nav-sail_vwap_st',
       parent: 'stocks',
       items: sailVwapStItems,
