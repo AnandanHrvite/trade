@@ -119,16 +119,26 @@ function _fmtMins(mins) {
 /** Finite-number guard. Number(null)===0 and Number("")===0 both invent a price. */
 function _num(x) { return typeof x === "number" && Number.isFinite(x); }
 
-function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+// A market pair's prefix reads its keys with inheritance (config/pairs.js
+// envGet: its own value, else NIFTY's RSI_PIVOT_ST_* value); the default prefix
+// reads process.env exactly as it always did.
+let _pairsMod = null;
+function _read(P, key) {
+  if (!P || P === DEFAULT_PREFIX) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(key);
+}
+
+function _numEnv(key, def, min, max, P) {
+  const v = parseFloat(_read(P, key));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
 
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+function _intEnv(key, def, min, max, P) {
+  const v = parseInt(_read(P, key), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
@@ -169,40 +179,40 @@ function underlyingFor(prefix) { return PREFIXES[prefix || DEFAULT_PREFIX] || "N
  */
 function getConfig(prefix) {
   const P = prefix || DEFAULT_PREFIX;
-  const e = process.env;
-  const rawStrike = String(e[P + "_STRIKE_MODE"] || "OTM").trim().toUpperCase();
+  const e = { get: (k) => _read(P, k) };
+  const rawStrike = String(e.get(P + "_STRIKE_MODE") || "OTM").trim().toUpperCase();
   // SuperTrend sides. The new selector wins; when it is absent we fall back to
   // the legacy CE on/off flag so an old .env is not silently re-enabled.
-  const rawStSides = String(e[P + "_ST_SIDES"] || "").trim().toUpperCase();
-  const legacyCeOff = String(e[P + "_ST_CE_ENABLED"] || "true").toLowerCase() !== "true";
+  const rawStSides = String(e.get(P + "_ST_SIDES") || "").trim().toUpperCase();
+  const legacyCeOff = String(e.get(P + "_ST_CE_ENABLED") || "true").toLowerCase() !== "true";
   const stSides = ST_SIDES.includes(rawStSides) ? rawStSides : (legacyCeOff ? "NONE" : "CE");
   return {
-    resolutionMins:  _intEnv(P + "_RESOLUTION", 5, 1, 60),
-    sessionStartMin: _parseHHMM(e[P + "_SESSION_START"], 9 * 60 + 15),
-    entryStartMin:   _parseHHMM(e[P + "_ENTRY_START"],   9 * 60 + 30),
-    entryEndMin:     _parseHHMM(e[P + "_ENTRY_END"],    15 * 60),
+    resolutionMins:  _intEnv(P + "_RESOLUTION", 5, 1, 60, P),
+    sessionStartMin: _parseHHMM(e.get(P + "_SESSION_START"), 9 * 60 + 15),
+    entryStartMin:   _parseHHMM(e.get(P + "_ENTRY_START"),   9 * 60 + 30),
+    entryEndMin:     _parseHHMM(e.get(P + "_ENTRY_END"),    15 * 60),
 
     // The RSI half of the entry rule.
-    rsiPeriod:       _intEnv(P + "_RSI_PERIOD", 14, 2, 100),
-    rsiCeMin:        _numEnv(P + "_RSI_CE_MIN", 70, 0, 100),
-    rsiPeMax:        _numEnv(P + "_RSI_PE_MAX", 40, 0, 100),
+    rsiPeriod:       _intEnv(P + "_RSI_PERIOD", 14, 2, 100, P),
+    rsiCeMin:        _numEnv(P + "_RSI_CE_MIN", 70, 0, 100, P),
+    rsiPeMax:        _numEnv(P + "_RSI_PE_MAX", 40, 0, 100, P),
 
     // The pivot half. Buffer defaults to 0 = the close must simply be beyond R1/S1.
-    pivotBufferPts:  _numEnv(P + "_PIVOT_BUFFER_PTS", 0, 0),
+    pivotBufferPts:  _numEnv(P + "_PIVOT_BUFFER_PTS", 0, 0, null, P),
 
     // Confirmation candle. ON (default) = the breakout candle only ARMS the
     // setup; entry waits for the NEXT candle to close beyond that breakout
     // candle's high (CE) or low (PE). OFF restores the old behaviour, where
     // the candle that crosses the pivot is itself the entry.
-    confirmEnabled:  String(e[P + "_CONFIRM_ENABLED"] || "true").toLowerCase() === "true",
+    confirmEnabled:  String(e.get(P + "_CONFIRM_ENABLED") || "true").toLowerCase() === "true",
 
     // Strike selection — 1% of spot, direction from STRIKE_MODE.
     strikeMode:      STRIKE_MODES.includes(rawStrike) ? rawStrike : "OTM",
-    strikePct:       _numEnv(P + "_STRIKE_PCT", 1, 0, 20),
+    strikePct:       _numEnv(P + "_STRIKE_PCT", 1, 0, 20, P),
 
     // SuperTrend — entry filter. 10/2 is the user's stated setting.
-    stPeriod:        _intEnv(P + "_ST_PERIOD", 10, 2, 100),
-    stMultiplier:    _numEnv(P + "_ST_MULT", 2, 0.1, 10),
+    stPeriod:        _intEnv(P + "_ST_PERIOD", 10, 2, 100, P),
+    stMultiplier:    _numEnv(P + "_ST_MULT", 2, 0.1, 10, P),
     // Which sides the SuperTrend filter covers: BOTH / CE (default, the original
     // rule) / PE / NONE. Legacy RSI_PIVOT_ST_ST_CE_ENABLED=false still means
     // "no SuperTrend on CE" when the newer key is not set, so an existing .env
@@ -310,13 +320,16 @@ function strikeForSide(spot, side, cfg) {
   if (!_num(spot) || spot <= 0) return null;
   if (side !== "CE" && side !== "PE") return null;
 
-  const atm = Math.round(spot / STRIKE_STEP) * STRIKE_STEP;
+  // Another market's pair puts its own strike grid on cfg.strikeStep (100 on
+  // SENSEX / BANKNIFTY); NIFTY's cfg has none and keeps the 50-point grid.
+  const STEP = cfg.strikeStep > 0 ? cfg.strikeStep : STRIKE_STEP;
+  const atm = Math.round(spot / STEP) * STEP;
   if (cfg.strikeMode === "ATM" || !(cfg.strikePct > 0)) {
     return { strike: atm, steps: 0, mode: "ATM", atm, distancePts: 0 };
   }
 
   const rawPts = spot * (cfg.strikePct / 100);
-  const steps = Math.round(rawPts / STRIKE_STEP);
+  const steps = Math.round(rawPts / STEP);
   if (steps <= 0) {
     return { strike: atm, steps: 0, mode: "ATM", atm, distancePts: 0 };
   }
@@ -324,7 +337,7 @@ function strikeForSide(spot, side, cfg) {
   // OTM: CE strikes sit ABOVE spot, PE strikes BELOW. ITM is the mirror.
   const outward = cfg.strikeMode === "OTM";
   const dir = side === "CE" ? (outward ? 1 : -1) : (outward ? -1 : 1);
-  const strike = atm + dir * steps * STRIKE_STEP;
+  const strike = atm + dir * steps * STEP;
   return {
     strike,
     steps,
