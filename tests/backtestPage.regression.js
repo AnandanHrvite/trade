@@ -274,7 +274,7 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   const s930 = page.marketOptions("simple930");
   assert.deepStrictEqual(s930.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "SENSEX"], "SIMPLE 9:30 is premium-only: no futures backtest");
   for (const m of s930) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `simple930 ${m.key}`);
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp", "simple930", "earlyBird"]);
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp", "simple930", "earlyBird", "sailVwapSt"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -1324,6 +1324,70 @@ check("EARLYBIRD: the market runs traded (the pricing checks above proved someth
   assert.ok(/MARKET: /.test(v.notes) && v.extraStats[0].label === "Market");
   const n = ebBt.backtestPage.view({ from: FROM, to: TO, stats: {}, result: { trades: [], funnel: {} }, meta: {} }, {});
   assert.ok(/Cash equity/.test(n.notes) && n.extraStats[0].label === "Universe", "a NIFTY run's view is unchanged");
+});
+
+section("4o. SAIL_VWAP_ST is market-aware");
+
+// Driven through the pure simulate() (one /backtest run checks the page path):
+// the index candles come from the synthetic market at that market's scale.
+const svBt = require("../src/routes/sailVwapStBacktest");
+const SV_RUNWAY_FROM = "2026-08-01";
+function svCandles(sym, withVolume) {
+  return synthCandles(sym, "5", SV_RUNWAY_FROM, TO).map((c, i) => (withVolume ? Object.assign({}, c, { volume: 1000 + (i % 7) * 150 }) : c));
+}
+check("SAIL_VWAP_ST: SAIL (home), NIFTY, BANKNIFTY, SENSEX and NIFTY futures are enabled; MCX stays coming soon", () => {
+  const sv = page.marketOptions("sailVwapSt");
+  assert.deepStrictEqual(sv.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SAIL", "SENSEX"]);
+  for (const m of sv) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `sailVwapSt ${m.key}`);
+  assert.ok(sv.some((m) => m.key === "CRUDE" && !m.enabled), "SAIL_VWAP_ST on MCX is offered, coming soon");
+});
+check("SAIL_VWAP_ST SAIL: a SAIL market (or none) is the old simulation, byte for byte (volume-weighted VWAP)", () => {
+  const c = svCandles("NSE:SAIL-EQ", true);
+  const a = svBt.simulate(c, { tradeFrom: FROM, tradeTo: TO });
+  const b = svBt.simulate(c, { tradeFrom: FROM, tradeTo: TO, market: "SAIL" });
+  assert.ok(a.trades.length > 0, "no trade — this parity proves nothing");
+  assert.strictEqual(JSON.stringify(b), JSON.stringify(a));
+  assert.ok(a.trades.every((t) => t.market === undefined && t.entryPremium === a.params.bt.SEED_PREMIUM), "a SAIL trade is unchanged");
+  assert.strictEqual(svBt.simulate(svCandles("NSE:SAIL-EQ", false), { tradeFrom: FROM, tradeTo: TO }).trades.length, 0, "SAIL with no volume: no VWAP, no trade — as before");
+});
+const SV_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`SAIL_VWAP_ST ${mk}: its own index, equal-weighted VWAP, its lot, its exchange's charges${mk === "NIFTY_FUT" ? ", futures at the index level" : ""}`, () => {
+    const ctx = bm.context(mk);
+    const r = svBt.simulate(svCandles(ctx.spotSymbol, false), { tradeFrom: FROM, tradeTo: TO, market: mk });
+    SV_RUNS[mk] = r;
+    const lot = require("../src/config/instrument").underlyingOf(ctx.underlying).lotSize;
+    assert.strictEqual(r.params.qty, lot, `${mk}: one lot of ${lot}`);
+    assert.strictEqual(r.params.cfg.VWAP_WEIGHT, "equal", "an index has no volume — the VWAP is equal-weighted");
+    assert.strictEqual(r.params.bt.SEED_PREMIUM, 200, "the index premium model, not SAIL's ₹5 seed");
+    for (const t of r.trades) {
+      assert.strictEqual(t.market, mk);
+      const dir = t.side === "CE" ? 1 : -1;
+      if (ctx.isFutures) {
+        assert.strictEqual(t.isFutures, true);
+        const ch = getCharges({ broker: "fyers", isFutures: true, exchange: ctx.exchange, entryPremium: t.entrySpot, exitPremium: t.exitSpot, qty: t.qty });
+        assert.strictEqual(t.pnl, Math.round(((t.exitSpot - t.entrySpot) * dir * t.qty - ch) * 100) / 100, `${mk} futures P&L ${t.entry}`);
+        assert.ok(!/Profit lock/.test(t.exitDetail), "a futures leg has no profit lock — only the common futures stop");
+      } else {
+        const ch = getCharges({ broker: "fyers", isFutures: false, exchange: ctx.exchange, entryPremium: 200, exitPremium: t.exitPremium, qty: t.qty });
+        assert.strictEqual(t.pnl, Math.round(((t.exitPremium - 200) * t.qty - ch) * 100) / 100, `${mk} option P&L ${t.entry}`);
+      }
+    }
+  });
+}
+check("SAIL_VWAP_ST: the market runs traded; a /backtest run records the market and keeps SAIL's legacy slot", async () => {
+  say(`       SAIL_VWAP_ST trades: SENSEX ${SV_RUNS.SENSEX.trades.length} · BANKNIFTY ${SV_RUNS.BANKNIFTY.trades.length} · NIFTY_FUT ${SV_RUNS.NIFTY_FUT.trades.length}`);
+  assert.ok(SV_RUNS.SENSEX.trades.length && SV_RUNS.BANKNIFTY.trades.length && SV_RUNS.NIFTY_FUT.trades.length, "a SAIL_VWAP_ST market run did not trade");
+  const mark = fetchLog.length;
+  const neu = await runNew({ strategy: "sailVwapSt", market: "BANKNIFTY", settings: "current", from: FROM, to: TO });
+  assert.strictEqual(fetchLog.slice(mark)[0].symbol, "NSE:NIFTYBANK-INDEX", "the candles are BANKNIFTY's own index");
+  assert.strictEqual(neu.result.meta.market, "BANKNIFTY");
+  assert.strictEqual(neu.record.market, "BANKNIFTY");
+  assert.ok(neu.result.trades.length > 0, "the BANKNIFTY page run did not trade");
+  assert.ok(!legacySaves.slice(-1).includes("SAIL_VWAP_ST_BACKTEST"), "a non-SAIL run overwrote SAIL's legacy slot");
+  assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+  const n = svBt.backtestPage.view({ from: FROM, to: TO, trades: [], stats: {}, meta: {} }, {});
+  assert.ok(/<b>Instrument:<\/b>/.test(n.notes) && !/MARKET: /.test(n.notes), "a SAIL run's view is unchanged");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

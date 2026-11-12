@@ -59,6 +59,18 @@
  * values can differ in the second decimal from paper's (which seeds on exactly
  * SAIL_VWAP_ST_WARMUP_DAYS sessions); it converges within a session.
  *
+ * OTHER MARKETS (the unified /backtest page): NIFTY, BANKNIFTY, SENSEX and NIFTY
+ * futures run the same rules on that market's INDEX candles, exactly as its
+ * paper pair does: the session VWAP is EQUAL-WEIGHTED (an index has no traded
+ * volume — engine forPrefix), the size is SAIL_VWAP_ST_LOTS × that market's lot
+ * (its pair settings arrive mapped onto the SAIL_VWAP_ST_* keys), and the
+ * premium is the repo's index model — seed ₹200, δ BACKTEST_DELTA, θ
+ * BACKTEST_THETA_DAY, BACKTEST_SLIPPAGE_PTS of index slippage each way — with
+ * that exchange's charges on the Fyers schedule. NIFTY futures trade the month
+ * future at the index level (δ 1, no theta) and exit on the common futures stop
+ * (the premium stop on a ₹200 base, no profit lock), as paper's futures pair
+ * does. A SAIL run never touches any of this. MCX stays "coming soon".
+ *
  * NOT MARKET-VALIDATED. This strategy has never traded, paper or live.
  */
 
@@ -74,6 +86,7 @@ const { renderBacktestResults, computeBacktestStats } = require("../utils/backte
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
+const backtestMarket = require("../services/backtestMarket");
 
 const ACCENT = "#0e7490";
 const ENDPOINT = "/sail_vwap_st-backtest";
@@ -149,6 +162,36 @@ function _shiftDate(dateStr, days) {
 /** Calendar days of runway fetched before `from` — the same sizing as paper's preload fetch. */
 function runwayCalendarDays() { return engine.warmupDays() * 2 + 7; }
 
+// ── MARKETS ─────────────────────────────────────────────────────────────────
+/** A backtestMarket context for another market, or null for SAIL (the home) / none. */
+function _pairMarket(m) {
+  if (!m) return null;
+  const M = typeof m === "string" ? backtestMarket.context(m) : m;
+  return M && M.key !== "SAIL" ? M : null;
+}
+/** The engine for a market run: the SAIL_VWAP_ST_* keys (the pair's arrive mapped
+ *  onto them), the session VWAP equal-weighted on an index (no volume). */
+function _engineFor(M) {
+  if (!M) return engine;
+  return engine.forPrefix(engine.PREFIX, { equalWeightVwap: true, label: M.shortLabel });
+}
+/** The index premium model on another market (futures: the index level, δ 1, no theta). */
+function _pairBtConfig(M) {
+  const num = (k, d) => { const v = parseFloat(process.env[k]); return Number.isFinite(v) ? v : d; };
+  return {
+    SLIPPAGE_PTS: num("BACKTEST_SLIPPAGE_PTS", 1.5),
+    SEED_PREMIUM: 200,
+    DELTA:        M.isFutures ? 1 : num("BACKTEST_DELTA", 0.55),
+    THETA_DAY:    M.isFutures ? 0 : num("BACKTEST_THETA_DAY", 8),
+  };
+}
+/** Contracts per trade on another market: the lot count (clamped like paper) × its lot. */
+function _pairQty(cfg, M) {
+  let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
+  if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;
+  return Math.max(1, Math.min(cfg.LOTS, maxMult) * instrumentConfig.underlyingOf(M.underlying).lotSize);
+}
+
 /**
  * simulate(candles, opts) — PURE. No broker, no network, no disk. Synchronous
  * and O(n): indicators are computed once, getSignal reads them through its
@@ -163,18 +206,26 @@ function runwayCalendarDays() { return engine.warmupDays() * 2 + 7; }
  *   opts.cfgOverrides — merged over engine.getConfig() (e.g. { BREAKOUT_BARS: 2 }).
  *   opts.bt           — merged over btConfig() (SLIPPAGE_PTS/SEED_PREMIUM/DELTA/THETA_DAY).
  *   opts.guards       — merged over guardConfig() (profit lock).
+ *   opts.market       — another market's backtestMarket context (or key): its
+ *                       index model, lot and charges (see MARKETS). Absent /
+ *                       SAIL = exactly as before.
  *
  * Returns { trades, stats, days, funnel, exitMix, params }.
  */
 function simulate(candles, opts) {
   const o = opts || {};
-  const cfg = Object.assign({}, engine.getConfig(), o.cfgOverrides || {});
-  const bt  = Object.assign({}, btConfig(), o.bt || {});
+  const MKT = _pairMarket(o.market);
+  const E   = _engineFor(MKT);
+  const FUT = !!(MKT && MKT.isFutures);
+  const cfg = Object.assign({}, E.getConfig(), o.cfgOverrides || {});
+  const bt  = Object.assign({}, MKT ? _pairBtConfig(MKT) : btConfig(), o.bt || {});
   const g   = Object.assign({}, guardConfig(), o.guards || {});
   const RES = cfg.TRADE_RES;
-  const QTY = qtyFor(cfg);
+  const QTY = MKT ? _pairQty(cfg, MKT) : qtyFor(cfg);
   const SLIP = bt.SLIPPAGE_PTS, SEED = bt.SEED_PREMIUM, DELTA = bt.DELTA, THETA = bt.THETA_DAY;
-  const lockOpts = { enabled: g.lockEnabled, armPct: g.lockArmPct, floorPct: g.lockFloorPct, trailPct: g.lockTrailPct, tiers: g.lockTiers };
+  // A futures leg has no profit lock: paper's futures pair exits on the common
+  // futures stop only (the premium stop on a ₹200 base, δ 1).
+  const lockOpts = { enabled: FUT ? false : g.lockEnabled, armPct: g.lockArmPct, floorPct: g.lockFloorPct, trailPct: g.lockTrailPct, tiers: g.lockTiers };
 
   const bars = (Array.isArray(candles) ? candles : [])
     .filter(c => c && Number.isFinite(c.time) && Number.isFinite(c.open) && Number.isFinite(c.high) &&
@@ -193,11 +244,11 @@ function simulate(candles, opts) {
   const dayList = [...new Set(dayOf)];
   let fromDay;
   if (o.tradeFrom) fromDay = Math.floor((Date.parse(`${o.tradeFrom}T00:00:00Z`) / 1000) / 86400);
-  else fromDay = dayList.length > engine.warmupDays() ? dayList[engine.warmupDays()] : Infinity;
+  else fromDay = dayList.length > E.warmupDays() ? dayList[E.warmupDays()] : Infinity;
   const toDay = o.tradeTo ? Math.floor((Date.parse(`${o.tradeTo}T00:00:00Z`) / 1000) / 86400) : Infinity;
   for (const k of dayList) { if (k < fromDay) funnel.runwaySessions++; else if (k <= toDay) funnel.sessions++; }
 
-  const series = engine.computeSeries(bars, cfg);
+  const series = E.computeSeries(bars, cfg);
   const pre = { series, endIdx: 0, cfg };
 
   const trades = [];
@@ -227,8 +278,15 @@ function simulate(candles, opts) {
     const dir = pos.side === "CE" ? 1 : -1;
     const exitSpot = _r2(rawSpot - dir * SLIP);            // sell into the adverse side
     const exitPrem = _r2(premAt(exitSpot, t));
-    const charges = getCharges({ isFutures: false, entryPremium: SEED, exitPremium: exitPrem, qty: QTY });
-    const pnl = _r2((exitPrem - SEED) * QTY - charges);
+    const charges = !MKT
+      ? getCharges({ isFutures: false, entryPremium: SEED, exitPremium: exitPrem, qty: QTY })
+      : FUT
+        ? getCharges({ isFutures: true, exchange: MKT.exchange, entryPremium: pos.entrySpot, exitPremium: exitSpot, qty: QTY, broker: "fyers" })
+        : getCharges({ isFutures: false, exchange: MKT.exchange, entryPremium: SEED, exitPremium: exitPrem, qty: QTY, broker: "fyers" });
+    // A futures leg is priced at the index level itself (no premium to round).
+    const pnl = FUT
+      ? _r2((exitSpot - pos.entrySpot) * dir * QTY - charges)
+      : _r2((exitPrem - SEED) * QTY - charges);
     trades.push({
       side: pos.side,
       signalBarTime: pos.signalBarTime, entryBarTime: pos.entryTime, exitBarTime,
@@ -243,6 +301,7 @@ function simulate(candles, opts) {
       ePrice: pos.entrySpot, xPrice: exitSpot, sl: null, target: null,
       reason: `${kind} — ${detail}`, entryReason: pos.entryReason, strength: "STRONG",
       eOpt: SEED, xOpt: exitPrem,
+      ...(MKT ? { market: MKT.key, isFutures: FUT } : {}),
     });
     pos = null;
     // Wait-after-any-exit cooldown — every exit reason, both sides. exitBarTime is
@@ -310,7 +369,7 @@ function simulate(candles, opts) {
     if (pos) continue;
     if (day < fromDay || day > toDay) continue;          // never trade the warm-up runway
     pre.endIdx = i;
-    const sig = engine.getSignal(bars, { precomputed: pre, silent: true });
+    const sig = E.getSignal(bars, { precomputed: pre, silent: true });
     if (sig.signal !== "BUY_CE" && sig.signal !== "BUY_PE") {
       if (sig.skipReason === "window") funnel.skipWindow++;
       else if (sig.skipReason === "st_disagrees") funnel.skipStDisagrees++;
@@ -361,8 +420,9 @@ router.get("/idle", (req, res) => {
 
 function _resultsView(from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
-  const cfg = engine.getConfig();
-  const bt = btConfig();
+  const MKT = _pairMarket(meta && meta.market);
+  const cfg = _engineFor(MKT).getConfig();
+  const bt = MKT ? _pairBtConfig(MKT) : btConfig();
   const f = meta.funnel || {};
   const mix = meta.exitMix || {};
   const u = _u();
@@ -391,8 +451,19 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Skipped — SuperTrend disagreed", value: f.skipStDisagrees || 0 },
       { label: "Exit mix", value: Object.keys(mix).length ? Object.entries(mix).map(([k, v]) => `${escHtml(k)} ${v}`).join(" · ") : "—" },
     ],
-    notes: `<b>Instrument:</b> ${escHtml(u.label)} stock (<code>${escHtml(u.spot)}</code>) ${cfg.TRADE_RES}-min candles with volume; ATM monthly SAIL options, lot ${u.lotSize} × ${cfg.LOTS} lot(s). <b>Entry:</b> a candle closes across the session VWAP (hlc3, volume-weighted, restarts daily), then within ${cfg.BREAKOUT_BARS} candles one closes beyond the cross candle's high (CE) / low (PE) with every close staying on that side of VWAP, and SuperTrend(${cfg.ST_PERIOD},${cfg.ST_MULT}) agrees. Signal-candle close ${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)}; filled at the NEXT bar's open (= paper's first tick after the close). <b>Exit:</b> the profit lock only (on the simulated premium, peak tracked bar by bar); anything still open closes at the day's last candle (paper's session teardown). No stop loss, trail, target, signal exit or daily limit. <b>THE OPTION PREMIUM IS SIMULATED</b> — there is no historical option chain: premium = ₹${bt.SEED_PREMIUM} seed + δ ${bt.DELTA} × spot move − θ ₹${bt.THETA_DAY}/day (<code>SAIL_VWAP_ST_BT_SEED_PREMIUM</code> / <code>_BT_DELTA</code> / <code>_BT_THETA_DAY</code>), and the P&amp;L and the profit lock are both measured on that number, plus ₹${bt.SLIPPAGE_PTS} of SAIL spot slippage EACH way (<code>SAIL_VWAP_ST_BT_SLIPPAGE_PTS</code>). <b>Intra-bar ordering is conservative:</b> the adverse extreme is walked before the favourable one, a bar that opens through a level fills at the open, and a lock armed and given back inside one bar fills at the close. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded, paper or live, and no threshold in it has been fitted.</b>`,
+    notes: MKT ? _pairNotes(MKT, cfg, bt, meta) : `<b>Instrument:</b> ${escHtml(u.label)} stock (<code>${escHtml(u.spot)}</code>) ${cfg.TRADE_RES}-min candles with volume; ATM monthly SAIL options, lot ${u.lotSize} × ${cfg.LOTS} lot(s). <b>Entry:</b> a candle closes across the session VWAP (hlc3, volume-weighted, restarts daily), then within ${cfg.BREAKOUT_BARS} candles one closes beyond the cross candle's high (CE) / low (PE) with every close staying on that side of VWAP, and SuperTrend(${cfg.ST_PERIOD},${cfg.ST_MULT}) agrees. Signal-candle close ${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)}; filled at the NEXT bar's open (= paper's first tick after the close). <b>Exit:</b> the profit lock only (on the simulated premium, peak tracked bar by bar); anything still open closes at the day's last candle (paper's session teardown). No stop loss, trail, target, signal exit or daily limit. <b>THE OPTION PREMIUM IS SIMULATED</b> — there is no historical option chain: premium = ₹${bt.SEED_PREMIUM} seed + δ ${bt.DELTA} × spot move − θ ₹${bt.THETA_DAY}/day (<code>SAIL_VWAP_ST_BT_SEED_PREMIUM</code> / <code>_BT_DELTA</code> / <code>_BT_THETA_DAY</code>), and the P&amp;L and the profit lock are both measured on that number, plus ₹${bt.SLIPPAGE_PTS} of SAIL spot slippage EACH way (<code>SAIL_VWAP_ST_BT_SLIPPAGE_PTS</code>). <b>Intra-bar ordering is conservative:</b> the adverse extreme is walked before the favourable one, a bar that opens through a level fills at the open, and a lock armed and given back inside one bar fills at the close. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded, paper or live, and no threshold in it has been fitted.</b>`,
   };
+}
+
+/** The results notes of another market's run. */
+function _pairNotes(M, cfg, bt, meta) {
+  return `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} ${cfg.TRADE_RES}-min index candles; ` +
+    (M.isFutures
+      ? `the month future traded at the index level (δ 1, no theta), exits on the common futures stop (premium stop on a ₹200 base — no profit lock), futures charges. `
+      : `ATM ${escHtml(M.shortLabel)} options, P&amp;L from the index premium model (seed ₹${bt.SEED_PREMIUM}, δ ${bt.DELTA} <code>BACKTEST_DELTA</code>, θ ₹${bt.THETA_DAY}/day <code>BACKTEST_THETA_DAY</code>), exit on the profit lock. `) +
+    `Qty ${escHtml((meta && meta.qty) || "—")} (${cfg.LOTS} lot(s) × the ${escHtml(M.shortLabel)} lot), ₹${bt.SLIPPAGE_PTS} index slippage each way (<code>BACKTEST_SLIPPAGE_PTS</code>), ${escHtml(M.exchange)} charges on the Fyers schedule. ` +
+    `<b>The session VWAP is equal-weighted</b> (each candle's hlc3 once) — an index has no traded volume, so paper's pair computes it the same way. ` +
+    `Every rule comes from this market's SAIL_VWAP_ST pair settings. <b>This strategy has NEVER traded, paper or live.</b>`;
 }
 
 function _renderResults(res, from, to, trades, stats, meta) {
@@ -406,36 +477,46 @@ function _renderResults(res, from, to, trades, stats, meta) {
  */
 async function _runJob(id, p) {
   const { from, to } = p;
+  // p.market: another market (its index, lot and charges) — see MARKETS.
+  const MKT = _pairMarket(p.market);
   try {
-    const cfg = engine.getConfig();
+    const E = _engineFor(MKT);
+    const cfg = E.getConfig();
     const res_ = String(cfg.TRADE_RES);
-    const runwayFrom = _shiftDate(from, -runwayCalendarDays());
+    const SYM = MKT ? MKT.spotSymbol : SAIL_SPOT_SYMBOL;
+    const runwayFrom = _shiftDate(from, -(MKT ? E.warmupDays() * 2 + 7 : runwayCalendarDays()));
     console.log(`🔍 SAIL_VWAP_ST Backtest job ${id}: ${from} → ${to} (warm-up runway from ${runwayFrom}, never traded)`);
-    console.log(`   └ instrument: ${_u().label} (${SAIL_SPOT_SYMBOL}) ${res_}-min, lot ${_u().lotSize} — premium SIMULATED (seed ₹${btConfig().SEED_PREMIUM}, δ ${btConfig().DELTA}, θ ₹${btConfig().THETA_DAY}/day)`);
-    backtestJobs.updateProgress(id, { phase: `Fetching ${res_}-min ${_u().label} candles (${SAIL_SPOT_SYMBOL})…`, pct: 25 });
+    if (MKT) {
+      const b = _pairBtConfig(MKT);
+      console.log(`   └ market: ${MKT.label} (${SYM}) ${res_}-min, qty ${_pairQty(cfg, MKT)} — ${MKT.isFutures ? "month future at the index level (δ 1)" : `premium SIMULATED (seed ₹${b.SEED_PREMIUM}, δ ${b.DELTA}, θ ₹${b.THETA_DAY}/day)`}, equal-weighted VWAP, ${MKT.exchange} charges`);
+    } else {
+      console.log(`   └ instrument: ${_u().label} (${SAIL_SPOT_SYMBOL}) ${res_}-min, lot ${_u().lotSize} — premium SIMULATED (seed ₹${btConfig().SEED_PREMIUM}, δ ${btConfig().DELTA}, θ ₹${btConfig().THETA_DAY}/day)`);
+    }
+    backtestJobs.updateProgress(id, { phase: `Fetching ${res_}-min ${MKT ? MKT.label : _u().label} candles (${SYM})…`, pct: 25 });
 
     let candles = [];
     try {
-      candles = await fetchCandles(SAIL_SPOT_SYMBOL, res_, runwayFrom, to);
+      candles = await fetchCandles(SYM, res_, runwayFrom, to);
     } catch (err) {
-      backtestJobs.failJob(id, `Fyers refused the request for ${SAIL_SPOT_SYMBOL} ${runwayFrom} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
+      backtestJobs.failJob(id, `Fyers refused the request for ${SYM} ${runwayFrom} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
       return;
     }
     if (!Array.isArray(candles) || candles.length < 50) {
       backtestJobs.failJob(id, (!candles || !candles.length)
-        ? `Fyers returned no historical candles for ${SAIL_SPOT_SYMBOL} ${runwayFrom} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`
+        ? `Fyers returned no historical candles for ${SYM} ${runwayFrom} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`
         : `Only ${candles.length} candle(s) for ${runwayFrom} → ${to} — widen the range.`);
       return;
     }
-    // VWAP is volume-weighted: a series with no volume cannot produce one signal.
-    if (!candles.some(c => Number.isFinite(c.volume) && c.volume > 0)) {
+    // VWAP is volume-weighted on SAIL: a series with no volume cannot produce one
+    // signal. (An index market's VWAP is equal-weighted — it needs no volume.)
+    if (!MKT && !candles.some(c => Number.isFinite(c.volume) && c.volume > 0)) {
       backtestJobs.failJob(id, `The ${SAIL_SPOT_SYMBOL} candles carry no volume, so the session VWAP cannot be computed and this strategy cannot take a single trade.`);
       return;
     }
 
     backtestJobs.updateProgress(id, { phase: `Running SAIL VWAP ST backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
     await new Promise(resolve => setImmediate(resolve));
-    const result = simulate(candles, { tradeFrom: from, tradeTo: to });
+    const result = MKT ? simulate(candles, { tradeFrom: from, tradeTo: to, market: MKT }) : simulate(candles, { tradeFrom: from, tradeTo: to });
     const stats = result.stats;
     stats.optionSim = true;
     stats.delta = result.params.bt.DELTA;
@@ -445,10 +526,16 @@ async function _runJob(id, p) {
                   ` | prem ₹${t.entryPremium} → ₹${t.exitPremium} | ₹${t.pnl} | ${t.exitReason}`);
     }
 
-    try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: res_ } }); }
-    catch (e) { console.warn("[sail_vwap_st-backtest] saveResult failed:", e.message); }
+    // The legacy last-run slot (/all-backtest) is SAIL's; other markets are kept
+    // by the /backtest page's own saved runs.
+    if (!MKT) {
+      try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: res_ } }); }
+      catch (e) { console.warn("[sail_vwap_st-backtest] saveResult failed:", e.message); }
+    }
 
-    backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, funnel: result.funnel, exitMix: result.exitMix } });
+    backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: MKT
+      ? { days: result.days, funnel: result.funnel, exitMix: result.exitMix, market: MKT.key, qty: result.params.qty }
+      : { days: result.days, funnel: result.funnel, exitMix: result.exitMix } });
     console.log(`✅ SAIL_VWAP_ST Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);
   } catch (err) {
     console.error("[sail_vwap_st-backtest] job error:", err);
@@ -504,9 +591,10 @@ a{display:inline-block;margin-top:16px;background:${ACCENT};color:#fff;padding:9
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["SAIL"],
+  // SAIL is home; the index + futures markets run as described under MARKETS.
+  markets: ["SAIL", "NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: null,
-  run: (id, p) => _runJob(id, { from: p.from, to: p.to }),
+  run: (id, p) => (_pairMarket(p.market) ? _runJob(id, { from: p.from, to: p.to, market: p.market }) : _runJob(id, { from: p.from, to: p.to })),
   view: (r, p) => _resultsView(r.from || p.from, r.to || p.to, r.trades, r.stats, r.meta || { days: 0, funnel: {}, exitMix: {} }),
 };
 // Offline / test entry point — pure, no broker or network call.
