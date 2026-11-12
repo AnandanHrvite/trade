@@ -68,7 +68,15 @@ const MARKET_KEYS = Object.keys(markets.MARKET_DEFS);
 
 // Strategies whose paper route is a create(pair) builder — every offered pair of
 // these runs. Add a strategy's id here when its route is converted.
-const RUNS_AS_PAIR = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp"]);
+const RUNS_AS_PAIR = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "rsiPivotSt"]);
+
+// A non-home pair that keeps the identity of the copy strategy it replaces, so
+// that copy's .env keys, trades file, logs and page URL carry on unchanged.
+// RSI PIVOT ST on BANKNIFTY was BN_PIVOT_RSI_ST (/bn-pivot-rsi-st-paper,
+// bn_pivot_rsi_st_paper_trades.json), not the generic BN_RSI_PIVOT_ST.
+const LEGACY_PAIR_IDENTITY = {
+  "rsiPivotSt@BANKNIFTY": { envPrefix: "BN_PIVOT_RSI_ST", modeKey: "bn_pivot_rsi_st", paperPath: "/bn-pivot-rsi-st-paper" },
+};
 
 function marketPrefix(marketKey) {
   const k = String(marketKey || "").toUpperCase();
@@ -112,9 +120,12 @@ function get(strategyId, marketKey) {
     const mp = marketPrefix(mk);
     envPrefix = `${mp}_${s.envPrefix}`;
     modeKey = `${mp.toLowerCase()}_${s.modeKey}`;
+    const legacy = LEGACY_PAIR_IDENTITY[`${s.id}@${mk}`];
+    if (legacy) { envPrefix = legacy.envPrefix; modeKey = legacy.modeKey; }
     enabledKey = `${envPrefix}_MODE_ENABLED`;
     enabledDefault = "false";
   }
+  const legacyPath = home ? null : ((LEGACY_PAIR_IDENTITY[`${s.id}@${mk}`] || {}).paperPath || null);
   const runs = RUNS_AS_PAIR.has(s.id);
   return {
     id: `${s.id}@${mk}`,
@@ -133,8 +144,8 @@ function get(strategyId, marketKey) {
     // Does a route run this pair (RUNS_AS_PAIR)? The identity below is the
     // one it runs under; a home pair's is the registry's own.
     runs,
-    paperPath:  home ? s.paper.path : `/${modeKey}-paper`,
-    replayMode: home ? s.paper.path.slice(1) : `${modeKey}-paper`,
+    paperPath:  home ? s.paper.path : (legacyPath || `/${modeKey}-paper`),
+    replayMode: home ? s.paper.path.slice(1) : (legacyPath ? legacyPath.slice(1) : `${modeKey}-paper`),
     tradesFile: home ? s.tradesFile : `${modeKey}_paper_trades.json`,
     socketMode: home ? s.socket.mode : `${envPrefix}_PAPER`,
     // Upper-case tag for logs / notify ("BN_EMA_RSI_ST_V2"); home = its key.

@@ -407,11 +407,13 @@ section("GROUP 5 — retired books, post-exit join, the page");
 
 check("retired copy books are discovered from disk; unrelated books are not", () => {
   assert.deepStrictEqual(retiredBooks.map((b) => b.mode).sort(),
-    ["BN_PIVOT_RSI_ST", "CMX_GOLD_EMA_RSI_ST", "SAIL_PIVOT_EMA_ST"]);
-  // BN_EMA_RSI_ST_V2 and FUT_EMA_RSI_ST are live pair books now (their routes run
-  // again) — not retired, and their history is still listed while the pair is off.
+    ["CMX_GOLD_EMA_RSI_ST", "SAIL_PIVOT_EMA_ST"]);
+  // BN_EMA_RSI_ST_V2, FUT_EMA_RSI_ST and BN_PIVOT_RSI_ST (RSI PIVOT ST's BANKNIFTY
+  // pair, which kept that copy's identity) are live pair books now (their routes
+  // run again) — not retired, and their history is still listed while the pair is off.
   assert.ok(byMode("BN_EMA_RSI_ST_V2").length && byMode("BN_EMA_RSI_ST_V2").every((t) => !t.retired));
   assert.ok(byMode("FUT_EMA_RSI_ST").length && byMode("FUT_EMA_RSI_ST").every((t) => !t.retired));
+  assert.ok(byMode("BN_PIVOT_RSI_ST").length && byMode("BN_PIVOT_RSI_ST").every((t) => !t.retired));
   assert.ok(!ALL.some((t) => t.pnl === 9999), "straddle book must not be swept in");
   assert.ok(ALL.filter((t) => t.retired).every((t) => retiredBooks.some((b) => b.mode === t.mode)));
 });
