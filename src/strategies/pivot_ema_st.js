@@ -108,15 +108,25 @@ function _parseHHMM(raw, def) {
 function _fmtMins(mins) {
   return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 }
-function _numEnv(key, def, min, max) {
-  const v = parseFloat(process.env[key]);
+// Env read for one key. The NIFTY prefix (PIVOT_EMA_ST) reads process.env
+// exactly as it always did; another market's pair (BN_PIVOT_EMA_ST,
+// SENSEX_PIVOT_EMA_ST ...) reads with pair inheritance: its own key when set,
+// else NIFTY's (config/pairs.js envGet).
+let _pairsMod = null;
+function _rawEnv(key, pairRead) {
+  if (!pairRead) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(key);
+}
+function _numEnv(key, def, min, max, pairRead) {
+  const v = parseFloat(_rawEnv(key, pairRead));
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
   return v;
 }
-function _intEnv(key, def, min, max) {
-  const v = parseInt(process.env[key], 10);
+function _intEnv(key, def, min, max, pairRead) {
+  const v = parseInt(_rawEnv(key, pairRead), 10);
   if (!Number.isFinite(v)) return def;
   if (min != null && v < min) return def;
   if (max != null && v > max) return def;
@@ -133,9 +143,10 @@ function _prefixOf(p) {
  */
 function getConfig(prefix) {
   const P = _prefixOf(prefix);
-  const tf = _intEnv(P + "_TF", 3);
-  const emaFast = _intEnv(P + "_EMA_FAST", 20, 2, 400);
-  let emaSlow = _intEnv(P + "_EMA_SLOW", 50, 2, 400);
+  const pr = P !== DEFAULT_PREFIX;     // a market pair: read through pairs.envGet
+  const tf = _intEnv(P + "_TF", 3, undefined, undefined, pr);
+  const emaFast = _intEnv(P + "_EMA_FAST", 20, 2, 400, pr);
+  let emaSlow = _intEnv(P + "_EMA_SLOW", 50, 2, 400, pr);
   // A "slow" EMA that is not slower than the fast one has no crossover meaning.
   if (!(emaSlow > emaFast)) emaSlow = Math.max(50, emaFast + 1);
   return {
@@ -143,11 +154,11 @@ function getConfig(prefix) {
     TF:           TFS.includes(tf) ? tf : 3,
     EMA_FAST:     emaFast,
     EMA_SLOW:     emaSlow,
-    ST_PERIOD:    _intEnv(P + "_ST_PERIOD", 10, 2, 100),
-    ST_MULT:      _numEnv(P + "_ST_MULT", 3, 0.1, 10),
+    ST_PERIOD:    _intEnv(P + "_ST_PERIOD", 10, 2, 100, pr),
+    ST_MULT:      _numEnv(P + "_ST_MULT", 3, 0.1, 10, pr),
 
-    ENTRY_START:  _parseHHMM(process.env[P + "_ENTRY_START"], 10 * 60),
-    ENTRY_END:    _parseHHMM(process.env[P + "_ENTRY_END"], 14 * 60),
+    ENTRY_START:  _parseHHMM(_rawEnv(P + "_ENTRY_START", pr), 10 * 60),
+    ENTRY_END:    _parseHHMM(_rawEnv(P + "_ENTRY_END", pr), 14 * 60),
   };
 }
 
@@ -169,7 +180,7 @@ function warmupBars(cfg) {
 function warmupDays(prefix) {
   const P = _prefixOf(prefix);
   const need = Math.min(15, Math.ceil(250 * getConfig(P).TF / 375) + 1);
-  return Math.max(_intEnv(P + "_WARMUP_DAYS", 3, 1, 15), need);
+  return Math.max(_intEnv(P + "_WARMUP_DAYS", 3, 1, 15, P !== DEFAULT_PREFIX), need);
 }
 
 /** Entry window on the signal candle's CLOSE time (= the moment the entry fills). */
