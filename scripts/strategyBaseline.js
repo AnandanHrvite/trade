@@ -139,6 +139,10 @@ const SETTINGS = {
 // Every pair ships OFF, so its switch is set in its recording's snapshot; the
 // rest of SETTINGS (paper switch, entry window, profit lock, premium stop …) is
 // inherited from NIFTY's keys exactly as a live pair would.
+// `settings` (optional): the pair's OWN keys for its recording — used where a
+// NIFTY value in index points cannot work on another index (PA's stop-width
+// filter: 8–25 NIFTY pts rejects every SENSEX / BANKNIFTY order block), so the
+// golden also exercises a pair reading its own key over the inherited one.
 const PAIRS = [
   { route: "emaRsiStV2Paper", market: "SENSEX",    mode: "sensex_ema_rsi_st_v2-paper", enabledKey: "SENSEX_EMA_RSI_ST_V2_MODE_ENABLED" },
   { route: "emaRsiStV2Paper", market: "BANKNIFTY", mode: "bn_ema_rsi_st_v2-paper",     enabledKey: "BN_EMA_RSI_ST_V2_MODE_ENABLED" },
@@ -149,6 +153,11 @@ const PAIRS = [
   { route: "bbRsiPaper",      market: "SENSEX",    mode: "sensex_bb_rsi-paper",        enabledKey: "SENSEX_BB_RSI_MODE_ENABLED" },
   { route: "bbRsiPaper",      market: "BANKNIFTY", mode: "bn_bb_rsi-paper",            enabledKey: "BN_BB_RSI_MODE_ENABLED" },
   { route: "bbRsiPaper",      market: "NIFTY_FUT", mode: "fut_bb_rsi-paper",           enabledKey: "FUT_BB_RSI_MODE_ENABLED" },
+  { route: "paPaper",         market: "SENSEX",    mode: "sensex_pa-paper",            enabledKey: "SENSEX_PA_MODE_ENABLED",
+    settings: { SENSEX_PA_MIN_SL_PTS: "25", SENSEX_PA_MAX_SL_PTS: "80" } },
+  { route: "paPaper",         market: "BANKNIFTY", mode: "bn_pa-paper",                enabledKey: "BN_PA_MODE_ENABLED",
+    settings: { BN_PA_MIN_SL_PTS: "18", BN_PA_MAX_SL_PTS: "60" } },
+  { route: "paPaper",         market: "NIFTY_FUT", mode: "fut_pa-paper",               enabledKey: "FUT_PA_MODE_ENABLED" },
 ].map(p => ({ ...p, name: `${p.route}.${p.market}` }));
 
 const RECORDING_SPEC = {

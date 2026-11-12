@@ -87,7 +87,7 @@ function check(name, fn) { _queue.push({ name, fn }); }
 
 // ── HTTP harness: the old pages + the new page on one throwaway server ──────
 const app = express();
-const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp"];
+const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa"];
 for (const id of OLD) {
   const s = registry.byId(id);
   app.use(s.backtest.path, require(registry.srcPath(s.backtest.module)));
@@ -244,8 +244,13 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   assert.deepStrictEqual(bb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of bb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `bbRsi ${m.key}`);
   assert.ok(bb.some((m) => m.key === "CRUDE" && !m.enabled) && bb.some((m) => m.key === "SAIL" && !m.enabled), "BB_RSI MCX / stock backtests are coming soon");
+  // Price Action runs the same four; MCX and the stock stay "coming soon".
+  const pa = page.marketOptions("pa");
+  assert.deepStrictEqual(pa.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
+  for (const m of pa) if (!m.enabled) assert.strictEqual(m.note, "coming soon");
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa"]);
   for (const s of page.strategies()) {
-    if (s.id === "emaRsiStV2" || s.id === "emaRsiSt" || s.id === "bbRsi") continue;
+    if (MARKET_AWARE.has(s.id)) continue;
     const on2 = page.marketOptions(s.id).filter((m) => m.enabled).map((m) => m.key);
     assert.deepStrictEqual(on2, [pairs.homeMarket(s.id)], `${s.id} runs only on its home market today`);
   }
@@ -272,6 +277,7 @@ const PARITY = [
   { id: "ema9vwap",   qs: `from=${FROM}&to=${TO}&resolution=5` },
   { id: "trendPb",    qs: `from=${FROM}&to=${TO}` },
   { id: "haScalp",    qs: `from=${FROM}&to=${TO}` },
+  { id: "pa",         qs: `from=${FROM}&to=${TO}&resolution=5` },
 ];
 const parityNotes = [];
 for (const P of PARITY) {
@@ -601,6 +607,92 @@ check("the old BB_RSI page is untouched by markets: NIFTY run reads NIFTY's cand
   assert.ok(fetchLog.slice(mark).filter((f) => !/VIX/.test(f.symbol)).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
   assert.strictEqual(oldRes.meta, undefined, "a NIFTY result must not grow a market field");
   assert.ok(legacySaves.slice(saves).includes("BB_RSI_BACKTEST"));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("4d. PRICE ACTION is market-aware");
+
+// PA's stop-width filter is in index points (8–25 on NIFTY): on SENSEX /
+// BANKNIFTY the pair's OWN key widens it — which also proves a pair key reaches
+// the engine as its PA_* home key for that run only.
+const PA_OWN = { SENSEX: { SENSEX_PA_MIN_SL_PTS: "25", SENSEX_PA_MAX_SL_PTS: "80" }, BANKNIFTY: { BN_PA_MIN_SL_PTS: "18", BN_PA_MAX_SL_PTS: "60" }, NIFTY_FUT: {} };
+const PA_RUNS = {};
+for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
+  check(`PA ${mk}: its own candles, lot and charges; NIFTY's last-run slot untouched; market recorded`, async () => {
+    Object.assign(process.env, PA_OWN[mk]);
+    try {
+      const mark = fetchLog.length, saves = legacySaves.length;
+      const neu = await runNew({ strategy: "pa", market: mk, settings: "current", from: FROM, to: TO, resolution: "5" });
+      PA_RUNS[mk] = neu;
+      const ctx = bm.context(mk);
+      const asked = fetchLog.slice(mark).map((f) => f.symbol);
+      assert.ok(asked.length && asked.every((sym) => sym === ctx.spotSymbol), `fetched ${asked.join(",")} for ${mk}`);
+      assert.strictEqual(neu.result.meta.market, mk);
+      assert.strictEqual(neu.record.market, mk);
+      assert.ok(!legacySaves.slice(saves).includes("PA_BACKTEST"), "a non-NIFTY PA run overwrote NIFTY's legacy slot");
+      for (const k of Object.keys(PA_OWN[mk])) {
+        const home = k.replace(/^(SENSEX|BN)_/, "");
+        assert.ok(neu.record.overriddenKeys.includes(home), `${k} did not reach the engine as ${home}`);
+        assert.strictEqual(process.env[home], undefined, `${home} leaked into the real env`);
+      }
+      const trades = neu.result.trades;
+      assert.ok(trades.length > 0, `${mk}: the synthetic market produced no PA trade`);
+      for (const t of trades) {
+        if (ctx.isFutures) {
+          // Futures: rupees = index points × futures lot − futures charges.
+          const chg = getCharges({ broker: "fyers", isFutures: true, exitPremium: t.exitPrice, entryPremium: t.entryPrice, qty: ctx.lotQty });
+          assert.strictEqual(t.pnlMode, "futures");
+          assert.ok(Math.abs(t.pnl - (t.spotPnlPts * ctx.lotQty - chg)) < 0.05, `${mk} pnl ${t.pnl} ≠ ${t.spotPnlPts}×${ctx.lotQty}−${chg}`);
+        } else {
+          assert.strictEqual(t.pnlMode, "option sim");
+          assert.ok(t.entryPrice > 40000, `${mk} trade is not on the ${mk} series (${t.entryPrice})`);
+        }
+      }
+      assert.strictEqual(!!neu.result.summary.isFutures, ctx.isFutures);
+      assert.ok(/MARKET: /.test(neu.record.view.notes), "the results notes do not name the market");
+    } finally { for (const k of Object.keys(PA_OWN[mk])) delete process.env[k]; }
+  });
+}
+
+check("PA NIFTY_FUT expiry-day-only uses paper's expiry rule (the month contract's own expiry day)", async () => {
+  // futuresContractAt has already rolled to next month's contract on expiry day,
+  // so matching its expiry found no expiry day at all: the run never traded.
+  const rt = require("../src/utils/pairRuntime").forStrategy("pa", "NIFTY_FUT");
+  const ymd = (ms) => new Date(ms + 19800000).toISOString().slice(0, 10);
+  assert.ok(rt.isExpiryDay(Date.parse("2026-09-29T09:15:00+05:30")), "paper: 29 Sep 2026 is the NIFTY futures expiry");
+  // The synthetic market's PA trades fall on 30 Sep / 16 Oct: make 30 Sep paper's
+  // expiry day, and the backtest must trade it and nothing else.
+  const real = rt.isExpiryDay;
+  rt.isExpiryDay = (ms) => ymd(ms) === "2026-09-30";
+  process.env.FUT_PA_EXPIRY_DAY_ONLY = "true";
+  try {
+    const neu = await runNew({ strategy: "pa", market: "NIFTY_FUT", settings: "current", from: FROM, to: TO, resolution: "5" });
+    const days = neu.result.trades.map((t) => ymd(t.entryTs * 1000));
+    assert.ok(days.length > 0, "an expiry-day-only NIFTY_FUT run found no expiry day");
+    assert.ok(days.every((d) => d === "2026-09-30"), `traded off paper's expiry day: ${days.join(",")}`);
+  } finally { rt.isExpiryDay = real; delete process.env.FUT_PA_EXPIRY_DAY_ONLY; }
+});
+
+check("PA: a SENSEX run is priced with the SENSEX lot and BSE charges (not NIFTY's)", () => {
+  const S = PA_RUNS.SENSEX;
+  assert.ok(S, "SENSEX run missing");
+  const ctx = bm.context("SENSEX");
+  // Same option-sim formula the engine uses, with the market's lot and exchange.
+  const DELTA = S.result.summary.delta, THETA = S.result.summary.thetaPerDay;
+  for (const t of S.result.trades) {
+    const theta = (THETA * t.candlesHeld) / Math.round(390 / 5);
+    const estExit = Math.max(1, 200 + (t.spotPnlPts * DELTA - theta / ctx.lotQty));
+    const chg = getCharges({ broker: "fyers", isFutures: false, exchange: "BSE", exitPremium: estExit, entryPremium: 200, qty: ctx.lotQty });
+    assert.ok(Math.abs(t.pnl - (t.spotPnlPts * DELTA * ctx.lotQty - theta - chg)) < 0.05, `SENSEX pnl ${t.pnl} not priced on lot ${ctx.lotQty} + BSE`);
+  }
+});
+
+check("the old PA page is untouched by markets: NIFTY run reads NIFTY's candles and saves its slot", async () => {
+  const mark = fetchLog.length, saves = legacySaves.length;
+  const oldRes = await runOld("pa", `from=${FROM}&to=${TO}&resolution=5`);
+  assert.ok(fetchLog.slice(mark).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
+  assert.strictEqual(oldRes.meta, undefined, "a NIFTY PA result must not grow a market field");
+  assert.ok(legacySaves.slice(saves).includes("PA_BACKTEST"));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

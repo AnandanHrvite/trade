@@ -7,6 +7,15 @@
  *
  * Routes:
  *   GET /pa-backtest  → Run backtest with query params
+ *
+ * MARKETS. This page is NIFTY; the unified /backtest page runs the SAME loop on
+ * BANKNIFTY, SENSEX and NIFTY futures through `backtestPage` (exported below):
+ * the market's spot candles, lot and exchange charges (BSE for SENSEX) come from
+ * services/backtestMarket.js, NIFTY_FUT is priced 1:1 in index points with the
+ * futures lot and charges (₹, no δ/θ), and the market's pair settings
+ * (config/pairs.js: own key → NIFTY's → default) are mapped onto the PA_* keys
+ * the engine reads, for that run only (utils/scopedEnv.js). With market NIFTY
+ * nothing changes. MCX / stocks: no spot index or rule expiry here yet.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -27,6 +36,7 @@ const { getCharges } = require("../utils/charges");
 const backtestJobs = require("../utils/backtestJobManager");
 const tradeGuards = require("../utils/tradeGuards");
 const backtestCosts = require("../config/backtestCosts");
+const backtestMarket = require("../services/backtestMarket");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -62,17 +72,24 @@ function buildDailyOHLC(candles) {
 }
 
 // ── Price Action Backtest Engine ─────────────────────────────────────────────────────
-async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgress) {
+// `mkt` is a backtestMarket.context() for a non-NIFTY run (its lot, exchange and
+// futures flag); omitted = NIFTY, exactly as before markets existed.
+async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgress, mkt) {
   const trades   = [];
   let position   = null;
   let pendingSignal = null; // queued signal — enters on next candle's open
-  const LOT_SIZE  = getLotQty();
+  const M         = mkt && mkt.key !== "NIFTY" ? mkt : null;
+  const LOT_SIZE  = M ? M.lotQty : getLotQty();
+  // Another market's charges are its own exchange's (BSE for SENSEX).
+  const _chgM     = (o) => (M ? getCharges(Object.assign({ exchange: M.exchange }, o)) : getCharges(o));
+  // NIFTY_FUT: P&L in rupees (index points × lot − futures charges), as paper books it.
+  const FUT_RS    = !!(M && M.isFutures);
 
   // VIX
   const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
 
   // Option sim
-  const isFutures   = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const isFutures   = M ? M.isFutures === true : instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
@@ -266,10 +283,13 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
           const netPremPts = spotPnlPts * DELTA - thetaCost / LOT_SIZE;
           const estEntry   = 200;
           const estExit    = Math.max(1, estEntry + netPremPts);
-          const _chg = getCharges({ broker: "fyers", isFutures, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
+          const _chg = _chgM({ broker: "fyers", isFutures, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
           pnl = parseFloat(((spotPnlPts * DELTA * LOT_SIZE) - thetaCost - _chg).toFixed(2));
+        } else if (FUT_RS) {
+          const _chg = _chgM({ broker: "fyers", isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
+          pnl = parseFloat((spotPnlPts * LOT_SIZE - _chg).toFixed(2));
         } else {
-          const _chg = getCharges({ broker: "fyers", isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
+          const _chg = _chgM({ broker: "fyers", isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
           pnl = parseFloat((spotPnlPts - _chg / LOT_SIZE).toFixed(2));
         }
 
@@ -286,7 +306,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
           candlesHeld:  position.candlesHeld,
           exitReason,
           entryReason:  position.entryReason || "",
-          pnlMode:      OPTION_SIM ? "option sim" : "raw pts",
+          pnlMode:      OPTION_SIM ? "option sim" : (FUT_RS ? "futures" : "raw pts"),
         });
 
         _dailyTradeCount++;
@@ -416,6 +436,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     grossProfit: parseFloat(grossProfit.toFixed(2)),
     grossLoss:   parseFloat(grossLoss.toFixed(2)),
   };
+  if (FUT_RS) summary.isFutures = true;   // ₹ (index pts × lot − charges), not raw pts
 
   // Signal rejection breakdown
   const sortedRejects = Object.entries(_rejectCounts).sort((a, b) => b[1] - a[1]);
@@ -509,7 +530,12 @@ function _jobParams(q) {
  * completeJob / failJob. This page and the unified /backtest page both call it.
  */
 async function _runJob(id, p) {
-  const { from, to, resolution, capital, symbol, skipCache } = p;
+  const { from, to, resolution, capital, skipCache } = p;
+  // Another market (the unified /backtest page): its own spot candles, lot and
+  // charges. NIFTY keeps the symbol the page always used.
+  const M = backtestMarket.context(p.market || "NIFTY");
+  const home = M.key === "NIFTY";
+  const symbol = home ? p.symbol : M.spotSymbol;
   try {
     backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
     const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
@@ -529,15 +555,31 @@ async function _runJob(id, p) {
     if ((process.env.PA_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
       const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
       const expirySet = new Set();
-      for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+      if (home) {
+        for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+      } else {
+        // That market's own rule expiry (weekly / monthly / futures month-end).
+        // Futures: paper's rule (the month contract's own expiry day). contractAt
+        // has already rolled to next month's contract by then, so it never matches.
+        const _futRt = M.isFutures ? require("../utils/pairRuntime").forStrategy("pa", M.key) : null;
+        for (const d of uniqueDates) {
+          const t = Math.floor(Date.parse(`${d}T09:15:00+05:30`) / 1000);
+          if (_futRt) { if (_futRt.isExpiryDay(t * 1000)) expirySet.add(d); continue; }
+          const c = backtestMarket.contractAt(M, M.strikeStep || 100, "CE", t);
+          if (c && c.expiry === d) expirySet.add(d);
+        }
+      }
       _expiryDates = expirySet;
     }
 
     backtestJobs.updateProgress(id, { phase: 'Running PA backtest…', pct: 5, current: 0, total: _candles.length - 30 });
     const _result = await runPABacktest(_candles, capital, _vixCandles, _expiryDates,
-      (p) => backtestJobs.updateProgress(id, p));
+      (p) => backtestJobs.updateProgress(id, p), home ? undefined : M);
     _result.candleCount = _candles.length;
-    saveResult("PA_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
+    // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are
+    // kept by the /backtest page's own saved runs.
+    if (home) saveResult("PA_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
+    else _result.meta = { market: M.key };
     backtestJobs.completeJob(id, _result);
     console.log(`\n ✅ PA backtest job ${id} complete — ${_result.trades.length} trades`);
   } catch (err) {
@@ -2005,14 +2047,24 @@ document.getElementById('btModal').addEventListener('click',function(e){
 module.exports = router;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
-  markets: ["NIFTY"],
+  markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
   resolution: { options: ["3", "5", "15"], default: () => _jobParams({}).resolution },
-  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to }, _jobParams({ resolution: p.resolution }))),
-  view: (r, p) => engineResultView({
-    result: r, rows: _tradeRows(r.trades || []), mode: "PA", accent: "#f59e0b", strategyName: "PRICE ACTION",
-    endpoint: "/pa-backtest", activePage: "paBacktest", from: p.from, to: p.to,
-    extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "risk_pts", label: "Risk (pt)" }, { key: "rr", label: "R:R" }, { key: "held", label: "Held" }],
-  }),
+  run: (id, p) => _runJob(id, Object.assign({ from: p.from, to: p.to, market: p.market }, _jobParams({ resolution: p.resolution }))),
+  view: (r, p) => {
+    const v = engineResultView({
+      result: r, rows: _tradeRows(r.trades || []), mode: "PA", accent: "#f59e0b", strategyName: "PRICE ACTION",
+      endpoint: "/pa-backtest", activePage: "paBacktest", from: p.from, to: p.to,
+      extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "risk_pts", label: "Risk (pt)" }, { key: "rr", label: "R:R" }, { key: "held", label: "Held" }],
+    });
+    const mk = (r && r.meta && r.meta.market) || (p && p.market) || "NIFTY";
+    if (mk !== "NIFTY") {
+      const M = backtestMarket.context(mk);
+      const esc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      v.notes = `<b>MARKET: ${esc(M.label)}</b> — ${esc(M.spotSymbol)} candles, lot ${M.lotQty}, ${esc(M.exchange)} charges. ` +
+        (M.isFutures ? "<b>FUTURES</b> — P&L is index points × lot − futures charges (₹), no δ/θ; a PE is a SHORT. " : "") + v.notes;
+    }
+    return v;
+  },
 };
 // Exposed for /pa-pattern-backtest so it can run the same engine with a single
 // pattern flag enabled at a time (sets PA_PATTERN_* env vars before calling).

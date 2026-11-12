@@ -36,29 +36,40 @@ const DESCRIPTION = "Smart money order-block retest | close break → inducement
 const BULL_LABEL = "Bullish OB";
 const BEAR_LABEL = "Bearish OB";
 
-function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
+// One engine for every market. `prefix` is a (strategy, market) pair's env prefix
+// (config/pairs.js — "BN_PA", "SENSEX_PA", "FUT_PA" …); omitted or "PA" reads the
+// PA_* key exactly as before. A pair reads its own key when set, else the PA_*
+// value (pairs.envGet), so an unset BN_PA_SMC_MIN_RR means PA_SMC_MIN_RR.
+var DEFAULT_PREFIX = "PA";
+var _pairsMod = null;
+function _raw(key, prefix) {
+  if (!prefix || prefix === DEFAULT_PREFIX) return process.env[key];
+  if (!_pairsMod) _pairsMod = require("../config/pairs");
+  return _pairsMod.envGet(prefix + key.slice(DEFAULT_PREFIX.length));
+}
+function cfg(key, fb, prefix) { var v = _raw(key, prefix); return v !== undefined ? v : fb; }
 
 // A bad number from .env falls back to the default: a NaN here would give a trade
 // with no working stop, or a swing check that throws on every candle.
-function num(key, fb, min, max) {
-  var v = parseFloat(cfg(key, fb));
+function num(key, fb, min, max, prefix) {
+  var v = parseFloat(cfg(key, fb, prefix));
   if (!Number.isFinite(v)) v = parseFloat(fb);
   return Math.min(Math.max(v, min), max);
 }
-function int(key, fb, min, max) { return Math.floor(num(key, fb, min, max)); }
+function int(key, fb, min, max, prefix) { return Math.floor(num(key, fb, min, max, prefix)); }
 
 // Candles the setup logic reads. Every route keeps at least 99, and a setup lives at
 // most 45, so its break always has history behind it for finding the swing.
 var TAIL_BARS = 90;
 
 // Stop-distance limits for the entry filters below.
-function stopLimits() {
-  return { min: num("PA_MIN_SL_PTS", "8", 0, Infinity), max: num("PA_MAX_SL_PTS", "25", 0, Infinity) };
+function stopLimits(prefix) {
+  return { min: num("PA_MIN_SL_PTS", "8", 0, Infinity, prefix), max: num("PA_MAX_SL_PTS", "25", 0, Infinity, prefix) };
 }
 
 // ── Trading window ───────────────────────────────────────────────────────────
-function _parseMins(envKey, fallback) {
-  var v = process.env[envKey] || fallback;
+function _parseMins(envKey, fallback, prefix) {
+  var v = _raw(envKey, prefix) || fallback;
   var parts = v.split(":");
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 }
@@ -69,11 +80,11 @@ function _fmtTime(mins) {
   return h12 + ":" + (m < 10 ? "0" : "") + m + " " + suffix;
 }
 
-function isInTradingWindow(unixSec) {
+function isInTradingWindow(unixSec, prefix) {
   var d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  var startMin = _parseMins("PA_ENTRY_START", "09:20");
-  var endMin   = _parseMins("PA_ENTRY_END",   "14:30");
+  var startMin = _parseMins("PA_ENTRY_START", "09:20", prefix);
+  var endMin   = _parseMins("PA_ENTRY_END",   "14:30", prefix);
   if (totalMin < startMin) return { ok: false, reason: "Before " + _fmtTime(startMin) };
   if (totalMin >= endMin)  return { ok: false, reason: "After " + _fmtTime(endMin) };
   return { ok: true, reason: null };
@@ -270,21 +281,22 @@ function _auditFromSetup(s, dir) {
 function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
+  var P = opts.prefix;   // a pair's env prefix; undefined = the PA_* keys (NIFTY)
 
-  var SR_LOOKBACK = int("PA_SR_LOOKBACK", "30", 3, 200);
-  var SL_BUFFER   = num("PA_SL_BUFFER_PTS", "3", 0, Infinity);  // cushion beyond the block
-  var limits      = stopLimits();
+  var SR_LOOKBACK = int("PA_SR_LOOKBACK", "30", 3, 200, P);
+  var SL_BUFFER   = num("PA_SL_BUFFER_PTS", "3", 0, Infinity, P);  // cushion beyond the block
+  var limits      = stopLimits(P);
   var MIN_SL_PTS  = limits.min;                                 // floor on SL distance
   var MAX_SL_PTS  = limits.max;                                 // wider than this = skip
-  var MIN_RR      = num("PA_SMC_MIN_RR", "1.5", 0, Infinity);
+  var MIN_RR      = num("PA_SMC_MIN_RR", "1.5", 0, Infinity, P);
   var params = {
-    swingBars: int("PA_SMC_SWING_BARS", "2", 1, 5),
-    maxAge:    int("PA_SMC_MAX_AGE", "30", 10, 45),            // candles a setup may live after its break
-    reactWait: int("PA_SMC_REACT_WAIT", "3", 0, 10),            // candles after the retest to see an up close
-    blockLiquidity: cfg("PA_SMC_BLOCK_LIQUIDITY", "true") === "true", // block must have taken an earlier low
+    swingBars: int("PA_SMC_SWING_BARS", "2", 1, 5, P),
+    maxAge:    int("PA_SMC_MAX_AGE", "30", 10, 45, P),            // candles a setup may live after its break
+    reactWait: int("PA_SMC_REACT_WAIT", "3", 0, 10, P),            // candles after the retest to see an up close
+    blockLiquidity: cfg("PA_SMC_BLOCK_LIQUIDITY", "true", P) === "true", // block must have taken an earlier low
   };
-  var BULL_ON = cfg("PA_PATTERN_BULL_OB", "true") === "true";
-  var BEAR_ON = cfg("PA_PATTERN_BEAR_OB", "true") === "true";
+  var BULL_ON = cfg("PA_PATTERN_BULL_OB", "true", P) === "true";
+  var BEAR_ON = cfg("PA_PATTERN_BEAR_OB", "true", P) === "true";
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -302,7 +314,7 @@ function getSignal(candles, opts) {
   var sc = candles[candles.length - 1];
 
   if (!opts.skipTimeCheck) {
-    var windowCheck = isInTradingWindow(sc.time);
+    var windowCheck = isInTradingWindow(sc.time, P);
     if (!windowCheck.ok) {
       base.reason = windowCheck.reason;
       return base;
@@ -371,7 +383,7 @@ function getSignal(candles, opts) {
   var level = real(s.ob.high);
   if (!silent) {
     var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
-    console.log("[PA " + _ist + "] " + side + " " + label + " " + dir + " " + level.toFixed(0) + " SL=" + sl + " Target=" + target);
+    console.log("[" + (P && P !== DEFAULT_PREFIX ? P : "PA") + " " + _ist + "] " + side + " " + label + " " + dir + " " + level.toFixed(0) + " SL=" + sl + " Target=" + target);
   }
   return Object.assign({}, base, {
     signal: s.dir > 0 ? "BUY_CE" : "BUY_PE", signalStrength: "STRONG",

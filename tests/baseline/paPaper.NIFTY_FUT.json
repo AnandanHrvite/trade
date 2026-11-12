@@ -1,0 +1,367 @@
+{
+  "baselineVersion": 1,
+  "strategy": "paPaper.NIFTY_FUT",
+  "mode": "fut_pa-paper",
+  "totalTrades": 3,
+  "sessions": [
+    {
+      "date": "2026-09-07",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-28",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-09-30",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 2,
+      "sessionPnl": 2113.31,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": 65,
+          "entryTime": "30/09/2026, 13:45:00",
+          "exitTime": "30/09/2026, 15:30:00",
+          "entrySpot": 24091.95,
+          "exitSpot": 24045.25,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Session stopped",
+          "pnl": 2088.59
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": 65,
+          "entryTime": "30/09/2026, 11:10:00",
+          "exitTime": "30/09/2026, 12:43:48",
+          "entrySpot": 24039,
+          "exitSpot": 24053.95,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈15pt from entry, best 69pt) — futures 24053.95 hit the stop 24054.4 (entry 24039)",
+          "pnl": 24.72
+        }
+      ],
+      "skips": {
+        "total": 26,
+        "dropped": 0,
+        "noSignalCandles": 26,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": "",
+          "expiry": "",
+          "optionType": "PE",
+          "qty": 65,
+          "entry": "30/09/2026, 13:45:00",
+          "exit": "30/09/2026, 15:30:00",
+          "entryBarTime": 1790756100,
+          "exitBarTime": 1790762100,
+          "eSpot": 24091.95,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24045.25,
+          "xOpt": null,
+          "peakOpt": null,
+          "pnl": 2088.59,
+          "pnlMode": "futures",
+          "entryReason": "PE: Bearish OB retest below 24093 | SL=24111.25 | Target=24028.35",
+          "reason": "Session stopped"
+        },
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": "",
+          "expiry": "",
+          "optionType": "CE",
+          "qty": 65,
+          "entry": "30/09/2026, 11:10:00",
+          "exit": "30/09/2026, 12:43:48",
+          "entryBarTime": 1790746800,
+          "exitBarTime": 1790752200,
+          "eSpot": 24039,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24053.95,
+          "xOpt": null,
+          "peakOpt": null,
+          "pnl": 24.72,
+          "pnlMode": "futures",
+          "entryReason": "CE: Bullish OB retest above 24042 | SL=24022.45 | Target=24112.45",
+          "reason": "Stop-loss trail 20% (stop ≈15pt from entry, best 69pt) — futures 24053.95 hit the stop 24054.4 (entry 24039)"
+        }
+      ]
+    },
+    {
+      "date": "2026-10-05",
+      "regime": "trend_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-06",
+      "regime": "v_reversal",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-07",
+      "regime": "trend_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-08",
+      "regime": "chop",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-09",
+      "regime": "gap_up",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-12",
+      "regime": "gap_down",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-13",
+      "regime": "range_breakout",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-14",
+      "regime": "or_retest_whipsaw",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-15",
+      "regime": "volatile_spikes",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 0,
+      "sessionPnl": 0,
+      "warmupBlind": false,
+      "trades": [],
+      "skips": {
+        "total": 48,
+        "dropped": 0,
+        "noSignalCandles": 48,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": []
+    },
+    {
+      "date": "2026-10-16",
+      "regime": "smc_order_block",
+      "ok": true,
+      "error": null,
+      "ticksReplayed": 11250,
+      "tradeCount": 1,
+      "sessionPnl": 578.04,
+      "warmupBlind": false,
+      "trades": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": null,
+          "qty": 65,
+          "entryTime": "16/10/2026, 11:10:00",
+          "exitTime": "16/10/2026, 12:41:54",
+          "entrySpot": 24182.85,
+          "exitSpot": 24206.4,
+          "entryLtp": null,
+          "exitLtp": null,
+          "reason": "Stop-loss trail 20% (stop ≈24pt from entry, best 80pt) — futures 24206.4 hit the stop 24206.45 (entry 24182.85)",
+          "pnl": 578.04
+        }
+      ],
+      "skips": {
+        "total": 29,
+        "dropped": 0,
+        "noSignalCandles": 29,
+        "blockedSignals": 0,
+        "byGate": []
+      },
+      "raw": [
+        {
+          "side": "CE",
+          "symbol": "NSE:NIFTY26OCTFUT",
+          "strike": "",
+          "expiry": "",
+          "optionType": "CE",
+          "qty": 65,
+          "entry": "16/10/2026, 11:10:00",
+          "exit": "16/10/2026, 12:41:54",
+          "entryBarTime": 1792129200,
+          "exitBarTime": 1792134600,
+          "eSpot": 24182.85,
+          "eOpt": null,
+          "eSl": null,
+          "xSpot": 24206.4,
+          "xOpt": null,
+          "peakOpt": null,
+          "pnl": 578.04,
+          "pnlMode": "futures",
+          "entryReason": "CE: Bullish OB retest above 24188 | SL=24165.7 | Target=24260.5",
+          "reason": "Stop-loss trail 20% (stop ≈24pt from entry, best 80pt) — futures 24206.4 hit the stop 24206.45 (entry 24182.85)"
+        }
+      ]
+    }
+  ]
+}
