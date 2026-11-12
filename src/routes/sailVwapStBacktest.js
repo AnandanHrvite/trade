@@ -281,7 +281,7 @@ function simulate(candles, opts) {
     const charges = !MKT
       ? getCharges({ isFutures: false, entryPremium: SEED, exitPremium: exitPrem, qty: QTY })
       : FUT
-        ? getCharges({ isFutures: true, exchange: MKT.exchange, entryPremium: pos.entrySpot, exitPremium: exitSpot, qty: QTY, broker: "fyers" })
+        ? getCharges({ isFutures: FUT, exchange: MKT.exchange, entryPremium: pos.entrySpot, exitPremium: exitSpot, qty: QTY, broker: "fyers" })
         : getCharges({ isFutures: false, exchange: MKT.exchange, entryPremium: SEED, exitPremium: exitPrem, qty: QTY, broker: "fyers" });
     // A futures leg is priced at the index level itself (no premium to round).
     const pnl = FUT
