@@ -1381,6 +1381,9 @@ router.get("/start", async (req, res) => {
       const isExpiry = rt.isExpiryDay();
       if (!isExpiry) state._expiryDayBlocked = true;
       log(`📅 ${LOG_TAG} Expiry-only mode (${rt.market().label}): ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not this market's expiry day — no watchlist, no entries"}`);
+      // Say so as the day's reason, rather than letting the 09:35 window close
+      // report "no leg cleared the trigger" for a watchlist that was never built.
+      if (!isExpiry) _closeDay(`Not ${rt.market().label}'s expiry day (${pair.expiryDayOnlyKey}) — no trade today`);
     }
   }
 
