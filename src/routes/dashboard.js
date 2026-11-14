@@ -80,6 +80,13 @@ function renderDashboard() {
   const dashboardUI    = require("../utils/dashboardUI");
   const _dashRows    = dashboardModel.enabledRows();
   const _dashMarkets = dashboardModel.marketsOf(_dashRows);
+  // Weekend / NSE holiday: "Today" has nothing to chart, so the range opens on
+  // "This month" instead. Calendar unreadable → treat as a trading day.
+  let _leaveDay = false;
+  try {
+    const ist = new Date(Date.now() + 19800000);
+    _leaveDay = require("../utils/nseHolidays").isNonTradingDaySync(new Date(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  } catch (_) { _leaveDay = false; }
 
   // True when ANY strategy is currently running. While active we
   // hide the dashboard's control buttons (Start All), broker
@@ -483,6 +490,13 @@ function renderDashboard() {
     /* Soak up the leftover row width here so the Save button sits next to the
        fields instead of being flung to the far right edge of the strip. */
     .brk-cfg-spacer { flex:1 1 0; min-width:0; }
+    /* Desktop: keep each expiry box on one line (a long label like "NIFTY BANK
+       EXPIRY" wraps inside itself instead of pushing Save to a second row and
+       making that box taller than its neighbours). Phones keep wrapping. */
+    @media (min-width:641px) {
+      .brk-cfg { flex-wrap:nowrap; }
+      .brk-cfg-label { flex:0 1 auto; white-space:normal; line-height:1.25; }
+    }
     .brk-cfg-input {
       width:100%; min-width:0; color-scheme:dark;
       background:#0a0f18; border:1px solid #243049; color:#c8d8f0;
@@ -851,7 +865,7 @@ ${buildSidebar('dashboard', false)}
     </div>
     <div class="dash-range" id="dashRange" title="Date range for all charts">
       <label for="dashRangeSel">Chart range</label>
-      <select id="dashRangeSel">${dateRangeOptionsHTML('td')}</select>
+      <select id="dashRangeSel">${dateRangeOptionsHTML(_leaveDay ? 'tm' : 'td')}</select>
       <span class="drg-custom" id="dashRangeCustom" style="display:none;">
         <input type="date" id="dashRangeFrom" title="From date (inclusive)"/>
         <input type="date" id="dashRangeTo" title="To date (inclusive)"/>
@@ -1905,14 +1919,13 @@ var _daRerender = null;
     });
   }
   function renderLive(data) {
-    var out = dhSummary(liveRows(data), DASH_MARKETS, { market: dhMarket() });
+    var out = dhSummary(liveRows(data), DASH_MARKETS, { market: dhMarket(), split: true, hideQuiet: true });
     // The hero is every market regardless of the filter.
     var allOut = dhMarket() === 'ALL' ? out : dhSummary(liveRows(data), DASH_MARKETS, {});
     var hb = {};
     Object.keys(allOut.byMarket).forEach(function(m){ hb[m] = allOut.byMarket[m].open + allOut.byMarket[m].closed; });
     _heroLive = { byMarket: hb, sub: allOut.total.trades + ' trade' + (allOut.total.trades === 1 ? '' : 's') + ' today · market open' };
     _paintHero();
-    if (!out.html) return '<div class="da-empty">No strategy is enabled for this market.</div>';
     if (!out.total.trades && !out.total.open) {
       return '<div class="da-empty">No strategy has taken a trade yet today.</div>' + out.html;
     }
@@ -1975,7 +1988,7 @@ var _daRerender = null;
       return { key:t.key, label:t.label, market:t.market, accent:t.accent, href:tileHref(t),
                closed: b ? b.net : 0, trades: b ? b.t : 0, w: b ? b.w : 0, l: b ? b.l : 0, quiet: !(b && b.t > 0) };
     });
-    var out = dhSummary(rows, DASH_MARKETS, { market: dhMarket(), closedOnly: true, quietText: 'no trade that day', split: true });
+    var out = dhSummary(rows, DASH_MARKETS, { market: dhMarket(), closedOnly: true, split: true, hideQuiet: true });
     var head = '<div class="da-day">' + (lastDay ? 'Last trading day · ' + lastDay + ' · WR ' + pctWR(out.total.w, out.total.l) + '%' : '') + '</div>';
     return head + (out.html || '<div class="da-empty">Nothing traded in this market that day.</div>');
   }

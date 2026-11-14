@@ -296,12 +296,12 @@ check("Today and Yesterday are closed single-day IST windows", () => {
   assert.ok(yd.to < today, `Yesterday (${yd.to}) must precede today (${today})`);
 });
 
-check("the Dashboard's range select offers Today and Yesterday, and opens on Today", () => {
+check("the Dashboard's range select offers Today and Yesterday, and opens on Today (This month on a leave day)", () => {
   const html = sharedNav.dateRangeOptionsHTML("td");
   assert.ok(/<option value="td" selected>Today<\/option>/.test(html), "Today missing or not selectable");
   assert.ok(/<option value="yd">Yesterday<\/option>/.test(html), "Yesterday missing");
-  assert.ok(/dateRangeOptionsHTML\('td'\)/.test(decomment(read("routes/dashboard.js"))),
-    "the Dashboard no longer opens on Today");
+  assert.ok(/dateRangeOptionsHTML\(_leaveDay \? 'tm' : 'td'\)/.test(decomment(read("routes/dashboard.js"))),
+    "the Dashboard no longer opens on Today (or This month on a weekend/holiday)");
 });
 
 check("no surface reads a session date by slicing it", () => {
