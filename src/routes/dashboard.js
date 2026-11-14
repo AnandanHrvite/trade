@@ -138,8 +138,6 @@ function renderDashboard() {
   // it again on click (/api/start-all-roster) so a strategy enabled after this
   // page was rendered still starts without a reload.
   const startAllModes = startAllRoster();
-  // Button-state poll: same roster, /start → /status/data on each wired route.
-  const startAllPollTargets = startAllModes.map((m) => ({ url: m.paper.replace('/start', '/status/data'), kind: 'paper' }));
   // Endpoint → display name, for the Start-All failure list.
   // Built from the roster so it cannot drift from the endpoints actually called.
   const startAllEndpointLabels = {};
@@ -1038,18 +1036,16 @@ var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
 function _applyRoster(modes){
   if(!Array.isArray(modes) || !modes.length) return false;
   var paper = [];
-  var labels = [], names = {}, poll = [];
+  var labels = [], names = {};
   modes.forEach(function(m){
     if(!m || !m.paper) return;
     if(!m.paperOff){ paper.push(m.paper); labels.push(m.label); }
     names[m.paper] = m.label + ' Paper';
-    poll.push({ url: m.paper.replace('/start','/status/data'), kind: 'paper' });
   });
   if(!paper.length) return false;
   PAPER_ENDPOINTS = paper;
   ALL_MODE_LABELS = labels;
   ENDPOINT_LABELS = names;
-  ALL_BTN_POLL = poll;
   return true;
 }
 
@@ -1175,7 +1171,7 @@ var VERIFY_ATTEMPTS = 4;
 var VERIFY_GAP_MS   = 800;
 
 // Every wired start route ends in \`/start\` and exposes \`/status/data\` on the
-// same router — the same derivation the server uses to build ALL_BTN_POLL.
+// same router.
 function _statusUrlFor(startEndpoint){
   return startEndpoint.replace('/start', '/status/data');
 }
@@ -1321,8 +1317,6 @@ function startAll(btn){
 // ── Quick-Action button state ───────────────────────────────────────────────
 var _allBtnState = { paperOn:false };
 var _marketsClosed = false;        // set by checkTradingStatus(): weekend / NSE holiday / pre- or post-market
-// Derived from the same enabled-strategy roster as the Start-All endpoint lists.
-var ALL_BTN_POLL = ${JSON.stringify(startAllPollTargets)};
 
 function _applyAllBtnState(paperOn){
   // _marketsClosed wins: this poll runs every few seconds and would
@@ -1342,18 +1336,17 @@ function _applyAllBtnState(paperOn){
   }
 }
 
+// One call, not one per strategy: with every market's pairs enabled that was
+// ~200 /status/data fetches on load and every 10s, and the browser runs only
+// ~6 at a time, so the Today panel and charts queued ~4s behind them.
+// Every running paper engine holds its sharedSocketState slot, so "any slot
+// active" is the same answer the per-strategy \`running\` flags gave.
 async function pollAllBtnsStatus(){
   if(!document.getElementById('btn-all-start')) return;
   try {
-    var results = await Promise.all(ALL_BTN_POLL.map(function(p){
-      return fetch(p.url,{cache:'no-store'})
-        .then(function(r){ return r.ok ? r.json() : {running:false}; })
-        .catch(function(){ return {running:false}; });
-    }));
-    var paperOn=false;
-    for(var i=0;i<results.length;i++){
-      if(results[i] && results[i].running) paperOn=true;
-    }
+    var r = await fetch('/api/session-active', { cache:'no-store' });
+    var j = r.ok ? await r.json() : null;
+    var paperOn = !!(j && j.active === true);
     _allBtnState.paperOn = paperOn;
     _applyAllBtnState(paperOn);
   } catch(_){}
