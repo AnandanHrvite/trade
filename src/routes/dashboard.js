@@ -871,6 +871,14 @@ ${buildSidebar('dashboard', false)}
         <input type="date" id="dashRangeTo" title="To date (inclusive)"/>
       </span>
     </div>
+    ${demoMode.isDemo() ? '' : (() => {
+      const cur = String(process.env.UI_THEME || 'dark').toLowerCase();
+      const opt = (v, l) => `<option value="${v}"${cur === v ? ' selected' : ''}>${l}</option>`;
+      return `<div class="dash-range" title="Colour theme for every page (same as Settings → UI_THEME)">
+      <label for="dashThemeSel">Theme</label>
+      <select id="dashThemeSel" onchange="saveDashTheme(this)">${opt('dark', 'Dark')}${opt('light', 'Light')}${opt('auto', 'Auto')}</select>
+    </div>`;
+    })()}
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
@@ -2145,6 +2153,26 @@ async function pollSessionActiveSwap(){
 setInterval(function(){ if (!document.hidden) pollSessionActiveSwap(); }, 10000);
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollSessionActiveSwap(); });
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Theme quick-switch: saves UI_THEME through POST /settings/save, then reloads
+async function saveDashTheme(sel){
+  var prevOpt = sel.querySelector('option[selected]');
+  var prev = prevOpt ? prevOpt.value : null;
+  sel.disabled = true;
+  try {
+    var res = await secretFetch('/settings/save', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ updates: { UI_THEME: sel.value }, note: 'dashboard: theme quick-switch' })
+    });
+    var d = res ? await res.json() : null;
+    if (d && d.success) { location.reload(); return; }
+    if (d) await showAlert({ icon:'⚠️', title:'Theme not saved', message:(d.error || 'unknown error'), btnClass:'modal-btn-danger' });
+  } catch (e) {
+    await showAlert({ icon:'⚠️', title:'Theme not saved', message:String(e && e.message || e), btnClass:'modal-btn-danger' });
+  }
+  if (prev) sel.value = prev;
+  sel.disabled = false;
+}
 
 // ── Option expiry quick-save (dashboard mirror of the Settings fields) ───────
 // Writes ONE index's override + type pair (OPTION_EXPIRY_* for NIFTY 50,

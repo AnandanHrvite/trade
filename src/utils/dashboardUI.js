@@ -158,6 +158,7 @@ function quickLinksHTML({ env = process.env, skip = [], demo = false } = {}) {
     { id: "backtest",      href: "/backtest",      icon: "🧪", label: "Backtest",          show: on("UI_SHOW_BACKTEST_PAGE", "true") },
     // A demo session cannot open Settings — a link there only leads to a refusal.
     { id: "settings",      href: "/settings",      icon: "⚙️", label: "Settings",          show: !demo },
+    { id: "pnlHistory",    href: "/pnl-history",   icon: "💰", label: "P&L History",       show: on("UI_SHOW_PNL_HISTORY", "true") },
   ].filter((l) => l.show && !skip.includes(l.id));
   if (!links.length) return "";
   return `<nav class="dh-links" aria-label="Quick links">`

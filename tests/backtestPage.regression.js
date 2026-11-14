@@ -1500,15 +1500,8 @@ check("the old pages render byte-for-byte as before (no new option leaks into a 
 // ─────────────────────────────────────────────────────────────────────────────
 section("Wiring: sidebar, Settings toggle, app mount");
 
-check("sidebar: one Backtest item under Dashboard, default on, hidden by UI_SHOW_BACKTEST_PAGE=false", () => {
-  delete process.env.UI_SHOW_BACKTEST_PAGE;
-  const on = nav.buildSidebar("backtest", false);
-  assert.strictEqual((on.match(/href="\/backtest"/g) || []).length, 1);
-  const dash = on.match(/<div class="sb-group-items[^"]*" id="nav-dashboard">([\s\S]*?)<\/div>/);
-  assert.ok(dash && dash[1].includes('href="/backtest"'), "the Backtest item is not in the Dashboard group");
-  process.env.UI_SHOW_BACKTEST_PAGE = "false";
-  try { assert.ok(!nav.buildSidebar("x", false).includes('href="/backtest"')); }
-  finally { delete process.env.UI_SHOW_BACKTEST_PAGE; }
+check("sidebar: no Backtest item (it lives on the Dashboard quick links)", () => {
+  assert.ok(!nav.buildSidebar("backtest", false).includes('href="/backtest"'));
 });
 
 check("Settings has the UI_SHOW_BACKTEST_PAGE toggle (default true) and the BSE charge keys", () => {

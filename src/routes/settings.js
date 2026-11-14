@@ -1148,7 +1148,8 @@ const SETTINGS_SCHEMA = [
     group: "System",
     fields: [
       { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Dashboard menu.", default: "false", subheader: "Top-level menu items" },
-      { key: "UI_SHOW_BACKTEST_PAGE",  label: "Show Backtest",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Backtest menu — the one backtest page: pick any strategy and market, a date range and current or custom settings.", default: "true" },
+      { key: "UI_SHOW_BACKTEST_PAGE",  label: "Show Backtest",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Backtest button on the Dashboard — the one backtest page: pick any strategy and market, a date range and current or custom settings.", default: "true" },
+      { key: "UI_SHOW_PNL_HISTORY",    label: "Show P&L History",          type: "toggle", effect: EFFECT.INSTANT, desc: "Show the P&L History button on the Dashboard, after Settings.", default: "true" },
       { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the all-strategy Backtest menu.", default: "false" },
       { key: "UI_SHOW_REALTIME",       label: "Real-Time on Dashboard",    type: "toggle", effect: EFFECT.INSTANT, desc: "Auto-show the Real-Time monitor while a session runs.", default: "true" },
       { key: "UI_DASHBOARD_ANALYTICS_PANEL", label: "Dashboard analytics panel", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the analytics panel on the Dashboard.", default: "true" },
