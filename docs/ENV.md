@@ -839,7 +839,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `UI_DISABLE_RIGHT_CLICK` | toggle | `` | Block the browser right-click menu on every page. Text boxes keep their menu so copy and paste still work. |
-| `UI_THEME` | select | — | Switch between dark and light mode. auto = light during the day (06:00–18:00 IST) and dark at night; each page picks its theme when it loads. |
+| `UI_THEME` | select | `dark` | Switch between dark and light mode. auto = light during the day (06:00–18:00 IST) and dark at night; each page picks its theme when it loads. |
 
 ## Not exposed in Settings
 
