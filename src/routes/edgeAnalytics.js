@@ -38,6 +38,7 @@ const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
         multiSelectCSS, multiSelectHTML, multiSelectJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 const { istDayFromAny } = require("../utils/tradeUtils");
+const { marketOf } = require("../utils/consolidationCore");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -46,13 +47,21 @@ const DATA_DIR = path.join(_HOME, "trading-data");
 // One { mode, file } row per registry entry — mode = group key, file = its
 // paper trades file — in the report pages' historic order (ORDERS.reports).
 const PAPER_SOURCES = require("../config/strategyRegistry").inOrder("reports")
-  .map(s => ({ mode: s.key, file: s.tradesFile }));
+  .map(s => ({ mode: s.key, file: s.tradesFile }))
+  // Running (strategy, market) pairs — each its own book under its env prefix.
+  .concat(require("../config/pairs").runnable().map(p => ({ mode: p.envPrefix, file: p.tradesFile })));
 
 // Which market a strategy trades — the same split the Consolidation Report tables use.
+const _BOOK_KEY = Object.fromEntries(PAPER_SOURCES.map((s) => [s.mode, s.file.replace(/_paper_trades\.json$/, "")]));
 function groupOf(mode) {
-  return "NIFTY";
+  return marketOf(_BOOK_KEY[mode] || String(mode).toLowerCase(), {});
 }
-const MARKETS = ["NIFTY"];
+// Button order; any other market follows in name order.
+const GROUP_ORDER = ["NIFTY", "NIFTY_FUT", "BANKNIFTY", "SENSEX", "CRUDE", "GOLD", "SILVER", "SAIL", "STOCKS"];
+function marketsOf(modes) {
+  const present = new Set(modes.map(groupOf));
+  return [...GROUP_ORDER.filter((g) => present.has(g)), ...[...present].filter((g) => !GROUP_ORDER.includes(g)).sort()];
+}
 
 // Exit reasons carry the fill price ("Trail SL hit @ ₹22484.08"), so the raw text
 // makes one filter option per trade. Numbers become "#" so the picker and the
@@ -185,13 +194,14 @@ router.get("/", (req, res) => {
   // hidden from the sidebar, so it must not appear in the Strategy dropdown, the
   // per-strategy table, or the "All" totals. Filtered per-request, never cached:
   // Settings saves mutate process.env while the process is running.
-  const enabled    = enabledStrategies().map(x => ({ mode: x.mode, label: x.label }));
+  const enabled    = enabledStrategies().map(x => ({ mode: x.mode, label: x.label }))
+    .concat(require("../config/pairs").runnable({ enabledOnly: true }).map(p => ({ mode: p.envPrefix, label: p.envPrefix })));
   const enabledSet = new Set(enabled.map(x => x.mode));
   const trades     = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const modePicker = multiSelectHTML('fMode', enabled.map(x => ({ value: x.mode, label: x.label })), 'All');
   // Market buttons list only markets that have an enabled strategy, so a
   // market with no enabled strategy shows no button that can never match.
-  const marketButtons = MARKETS.filter(g => enabled.some(x => groupOf(x.mode) === g))
+  const marketButtons = marketsOf(enabled.map(x => x.mode))
     .map(g => `<button data-mkt="${g}">${g}</button>`).join('');
 
   // Exit-reason and entry-hour options are built in the browser from the trades
