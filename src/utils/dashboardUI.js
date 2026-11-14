@@ -147,8 +147,8 @@ function filterHTML(marketGroups) {
 }
 
 /**
- * Quick links to the other pages the day needs, each behind the same menu toggle
- * as its sidebar entry. `skip` drops the page you are on.
+ * Quick links to the other pages the day needs, each behind its own Settings
+ * → Menu Visibility toggle. `skip` drops the page you are on.
  */
 function quickLinksHTML({ env = process.env, skip = [], demo = false } = {}) {
   const on = (k, d) => String(env[k] || d).toLowerCase() === "true";
