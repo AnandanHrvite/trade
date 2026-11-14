@@ -1004,7 +1004,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
  * Drop-in replacement for fetchCandles in backtest routes.
  */
 async function fetchCandlesCachedBT(symbol, resolution, from, to, skipCache = false, onProgress) {
-  return fetchCandlesSmartCache(symbol, resolution, from, to, fetchCandles, skipCache, onProgress);
+  // waitForSlot: a backtest's candles do not go stale, so queue behind live
+  // calls for a free Fyers slot instead of failing after 15s.
+  const raw = (s, r, f, t) => fetchCandles(s, r, f, t, { waitForSlot: true });
+  return fetchCandlesSmartCache(symbol, resolution, from, to, raw, skipCache, onProgress);
 }
 
 module.exports = { fetchCandles, fetchCandlesCachedBT, runBacktest };

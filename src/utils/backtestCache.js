@@ -211,6 +211,7 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
   const seen = new Set(); // deduplicate as we go — avoids full-array pass at end
   let cachedCount = 0, fetchedCount = 0;
   let planTrimmedFrom = null; // set when Fyers' plan limit cut off the START of the range
+  let planCutoff = null;      // oldest day Fyers will serve, once a month was refused
 
   for (let i = 0; i < months.length; i++) {
     const { from: mFrom, to: mTo } = months[i];
@@ -226,6 +227,10 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
         if (onProgress) onProgress({ phase: `Cached ${cachedCount} months, fetching ${fetchedCount}… (${i + 1}/${months.length})`, pct: Math.round(((i + 1) / months.length) * 4) });
       }
     }
+
+    // Fyers already told us (earlier month) it serves nothing before this date —
+    // don't ask again for every older month; that burns the rate limit.
+    if (!monthCandles && planCutoff && mTo < planCutoff) monthCandles = [];
 
     if (!monthCandles) {
       // Cache miss — fetch from API
@@ -248,7 +253,10 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
         }
       }
       fetchedCount++;
-      if (monthCandles && monthCandles.planTrimmedFrom && !allCandles.length) planTrimmedFrom = monthCandles.planTrimmedFrom;
+      if (monthCandles && monthCandles.planTrimmedFrom) {
+        planCutoff = monthCandles.planTrimmedFrom;
+        if (!allCandles.length) planTrimmedFrom = planCutoff;
+      }
 
       // Cache historical months (fire-and-forget write — don't block the loop)
       if (monthCandles && monthCandles.length > 0 && !touchesToday) {
