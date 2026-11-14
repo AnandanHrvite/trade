@@ -1475,13 +1475,14 @@ check("profit factor ∞ survives the save (JSON has no Infinity)", () => {
   assert.strictEqual(resultStore.loadRun("../etc/passwd"), null, "a malformed id must not reach the disk");
 });
 
-check("a saved run re-opens: HTML results (cards on a phone, panels open) and JSON", async () => {
+check("a saved run re-opens: HTML results (cards on a phone, panels closed until clicked) and JSON", async () => {
   const id = MKT_RUNS.SENSEX.id;
   const r = await get(`/backtest/result/${id}`);
   assert.strictEqual(r.status, 200);
   assert.ok(r.body.includes("EMA_RSI_ST_V2") && r.body.includes("SENSEX"));
   assert.ok(r.body.includes('class="tw bt-cards"') && r.body.includes("labelCells(tbody)"), "trade table is not a phone card list");
-  assert.ok(r.body.includes("toggleDayWise(); toggleAnalytics();"), "per-day P&L / equity curve not opened");
+  assert.ok(!r.body.includes("toggleDayWise(); toggleAnalytics();"), "Day P&L / Analytics should stay hidden until the button is clicked");
+  assert.ok(r.body.includes('id="dwToggle"') && r.body.includes('id="anaToggle"'), "Day P&L / Analytics buttons missing");
   assert.ok(r.body.includes("var ENDPOINT_Q = \"strategy=emaRsiStV2&market=SENSEX&settings=current&\""), "Run Again would lose the strategy/market");
   for (const sc of [...r.body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])) new Function(sc);
   const j = await get(`/backtest/result/${id}.json`);

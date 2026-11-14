@@ -660,7 +660,6 @@ function renderResult(rec) {
     activePage: "backtest",
     preface,
     mobileCards: true,
-    openPanels: true,
   });
 }
 
