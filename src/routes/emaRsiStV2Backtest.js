@@ -592,6 +592,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
     notes:
+      `${meta.planTrimmedFrom ? `<b>⚠ DATA STARTS ${_escHtml(meta.planTrimmedFrom)}, NOT ${_escHtml(from)}</b> — your Fyers plan refuses intraday history older than that, so earlier dates were skipped. ` : ""}` +
       `${M.key !== "NIFTY" ? `<b>MARKET: ${_escHtml(M.label)}</b> — ${_escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${_escHtml(M.exchange)} charges. ` : ""}` +
       `${futMode ? "<b>FUTURES MODE</b> — P&L is index points × lot with futures charges, no δ/θ; a PE is a SHORT. " : ""}` +
       `<b>Rules come from the engine</b> (<code>src/strategies/ema_rsi_st_v2.js</code>) — this page re-implements only the exit sequencing, because Paper is canonical. ` +
@@ -652,6 +653,9 @@ async function _runJob(id, p) {
       return;
     }
 
+    if (candles.planTrimmedFrom) {
+      backtestJobs.updateProgress(id, { phase: `⚠ Fyers plan only allows history from ${candles.planTrimmedFrom} — older dates skipped`, pct: 60 });
+    }
     backtestJobs.updateProgress(id, { phase: `Running ${LABEL} backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
     const result = await runEmaRsiStV2Backtest(candles, activeFromTs, M);
 
@@ -678,6 +682,7 @@ async function _runJob(id, p) {
       warmupViolations: result.warmupViolations,
       warmupBars: result.warmupBars,
     };
+    if (candles.planTrimmedFrom) meta.planTrimmedFrom = candles.planTrimmedFrom;
     if (!home) meta.market = M.key;
     backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta });
     console.log(`✅ ${LABEL} Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions`);

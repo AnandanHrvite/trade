@@ -14,6 +14,8 @@ const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards   = require("../utils/tradeGuards");
 
 
+const _isIntradayRes = (resolution) => /^\d+$/.test(String(resolution));
+
 function maxDaysForResolution(resolution) {
   // Fyers rejects a day/week/month request wider than 366 days with
   // {code:-50, message:"Invalid input", data:{range_to:"Date range cannot exceed
@@ -88,7 +90,27 @@ async function fetchCandles(symbol, resolution, from, to, opts = {}) {
     const chunkEnd = new Date(cursor);
     chunkEnd.setDate(chunkEnd.getDate() + maxDays - 1);
     if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
-    const candles = await fetchChunk(symbol, resolution, cursor.toISOString().split("T")[0], chunkEnd.toISOString().split("T")[0], opts);
+    let candles;
+    try {
+      candles = await fetchChunk(symbol, resolution, cursor.toISOString().split("T")[0], chunkEnd.toISOString().split("T")[0], opts);
+    } catch (err) {
+      // Fyers plans cap how far back history goes (Standard: 1 year intraday,
+      // 5 years daily) and refuse a WHOLE chunk whose start is older. Jump the
+      // cursor to the oldest allowed day (parsed from the message) and carry on,
+      // so the run covers what the plan allows instead of failing outright.
+      const msg = (err && err.message) || "";
+      if (!/historical data limit/i.test(msg)) throw err;
+      const m = msg.match(_isIntradayRes(resolution) ? /(\d+)\s*years?\s*for\s*intraday/i : /(\d+)\s*years?\s*for\s*daily/i);
+      const oldest = new Date(todayIST());
+      if (m) oldest.setFullYear(oldest.getFullYear() - Number(m[1]));
+      oldest.setDate(oldest.getDate() + 1);
+      const next = new Date(chunkEnd); next.setDate(next.getDate() + 1);
+      const jumpTo = m && oldest > cursor ? oldest : next;
+      console.warn(`   ⚠️ Fyers plan history limit — skipping ${cursor.toISOString().split("T")[0]} → ${new Date(jumpTo.getTime() - 86400000).toISOString().split("T")[0]} (older than the plan allows)`);
+      unique.planTrimmedFrom = jumpTo.toISOString().split("T")[0];
+      cursor = jumpTo;
+      continue;
+    }
     for (const c of candles) {
       if (!seen.has(c.time)) { seen.add(c.time); unique.push(c); }
     }
@@ -114,6 +136,7 @@ async function fetchCandles(symbol, resolution, from, to, opts = {}) {
   const sessionOnly = _isIntraday
     ? unique.filter(c => { const m = getISTHHMM(c.time); return m >= _MKT_OPEN && m < _MKT_CLOSE; })
     : unique;
+  if (unique.planTrimmedFrom) sessionOnly.planTrimmedFrom = unique.planTrimmedFrom;
   const _dropped = unique.length - sessionOnly.length;
   console.log(`   ✅ Total candles fetched: ${sessionOnly.length}${_dropped ? ` (dropped ${_dropped} pre-open/post-close)` : ""}`);
   return sessionOnly;
