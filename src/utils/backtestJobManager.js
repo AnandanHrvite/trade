@@ -501,11 +501,28 @@ function buildProgressPage(jobId, basePath, title) {
         if (d.status === "error") {
           document.getElementById("phase").textContent = "Failed";
           document.getElementById("err").style.display = "block";
-          document.getElementById("err").innerHTML = "❌ " + (d.error || "Unknown error") +
-            '<br><br><a href="' + BASE + '">← Try again</a>';
+          document.getElementById("err").textContent = "❌ " + (d.error || "Unknown error");
           document.querySelector(".spinner").style.display = "none";
-          // Nothing left to cancel — the button would only 409 over this message.
-          document.getElementById("actions").style.display = "none";
+          // Nothing left to cancel — swap the Cancel button for Back + Try again.
+          // Drop ?jobId= so Try again (or a refresh) starts a fresh run.
+          const again = new URL(window.location.href);
+          again.searchParams.delete("jobId");
+          history.replaceState(null, "", again.toString());
+          const acts = document.getElementById("actions");
+          acts.innerHTML =
+            '<a class="btn neutral" id="backBtn" href="/backtest">← Back</a>' +
+            '<a class="btn neutral" href="' + again.toString() + '">↻ Try again</a>';
+          // Back = the page the run was started from (the form, with its fields),
+          // falling back to /backtest when opened directly.
+          document.getElementById("backBtn").addEventListener("click", function (e) {
+            if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) {
+              e.preventDefault(); history.back();
+            }
+          });
+          acts.style.display = "";
+          document.getElementById("err").after(acts);       // buttons right under the error
+          document.getElementById("head").textContent = "❌ Backtest Failed";
+          document.getElementById("warn").style.display = "none";
           return;
         }
 
