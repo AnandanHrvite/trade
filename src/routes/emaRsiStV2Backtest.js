@@ -640,6 +640,10 @@ async function _runJob(id, p) {
       backtestJobs.failJob(id, `Fyers refused the candle request for ${fetchFrom} → ${to}: ${fyersErrText(err).slice(0, 300)}`);
       return;
     }
+    if (Array.isArray(candles) && !candles.length && candles.planTrimmedFrom) {
+      backtestJobs.failJob(id, `Your Fyers plan has no intraday history before ${candles.planTrimmedFrom}, and this whole range is older than that. Pick a start date on or after ${candles.planTrimmedFrom}.`);
+      return;
+    }
     if (!Array.isArray(candles) || !candles.length) {
       backtestJobs.failJob(id,
         `Fyers returned no historical candles for ${fetchFrom} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (NOT an auth error). Log in to Fyers again, then retry.`);
