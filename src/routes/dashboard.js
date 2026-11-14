@@ -932,7 +932,7 @@ ${buildSidebar('dashboard', false)}
           ? `<a href="/auth/zerodha/login" class="brk-action login zerodha">🔐 Login with Zerodha</a>`
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>
-    <div class="brk-cfg-strip">
+    ${_leaveDay ? '' : `<div class="brk-cfg-strip">
     ${dashExpiryRows.map((r) => `
     <div class="brk-cfg" data-underlying="${r.key}">
       <span class="brk-cfg-label" title="${r.overrideKey} / ${r.typeKey} — the same keys as Settings. One common expiry for every ${r.label} strategy. Blank = auto-detect.">⏱ ${r.label} Expiry</span>
@@ -951,12 +951,14 @@ ${buildSidebar('dashboard', false)}
       <span class="brk-cfg-spacer"></span>
       <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this,'${r.key}','${r.overrideKey}','${r.typeKey}')" title="Save ${r.overrideKey} + ${r.typeKey} to .env (same as a Settings save)">Save</button>
     </div>`).join('')}
-    </div>
+    </div>`}
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : 'expiring'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>`}
 
   <!-- ① TODAY'S P&L — big total, one chip per market (tap = filter to it). -->
-  ${dashboardUI.heroHTML(_dashMarkets, { sub: 'Loading…' })}
+  <!-- Leave day (weekend / NSE holiday): no expiry quick-edit and no ₹0 hero —
+       nothing trades today. Expiry is still editable in Settings. -->
+  ${_leaveDay ? '' : dashboardUI.heroHTML(_dashMarkets, { sub: 'Loading…' })}
 
   ${analyticsPanelOn ? `
   <!-- ② TODAY SO FAR (market open) / LAST SESSION (closed) — every strategy,

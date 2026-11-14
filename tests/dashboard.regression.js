@@ -108,7 +108,14 @@ section("2. Both pages render, grouped by market");
 
 const rtRoute = require(path.join(SRC, "routes/realtime"));
 const rtHtml = quiet(() => rtRoute.renderRealtimePage({ sidebarKey: "realtime" }));
+// Pin a trading day: on a weekend/holiday the page hides the hero and expiry strip.
+const nseHolidays = require(path.join(SRC, "utils/nseHolidays"));
+const _realNonTrading = nseHolidays.isNonTradingDaySync;
+nseHolidays.isNonTradingDaySync = () => false;
 const dashHtml = quiet(() => require(path.join(SRC, "routes/dashboard")).renderDashboard());
+nseHolidays.isNonTradingDaySync = () => true;
+const dashLeaveHtml = quiet(() => require(path.join(SRC, "routes/dashboard")).renderDashboard());
+nseHolidays.isNonTradingDaySync = _realNonTrading;
 
 for (const [name, html] of [["Real-Time Monitor", rtHtml], ["Dashboard", dashHtml]]) {
   check(`${name}: viewport meta (device width, safe-area aware)`, () => {
@@ -163,6 +170,13 @@ check("Dashboard: today panel, broker strip and Start All are still there", () =
   const at = (s) => { const i = dashHtml.indexOf(s); assert.ok(i > 0, s); return i; };
   const seq = ['id="dh-filter"', 'class="dh-links"', 'class="brokers"', 'class="dh-hero"', 'id="dashAnalytics"', 'id="dashCumCard"', 'class="mm-mkt"'].map(at);
   assert.deepStrictEqual(seq, seq.slice().sort((a, b) => a - b), "sections out of order");
+});
+
+check("Dashboard: a leave day hides the hero and the expiry strip, keeps the rest", () => {
+  assert.ok(!dashLeaveHtml.includes('class="dh-hero"'), "hero shown on a leave day");
+  assert.ok(!dashLeaveHtml.includes("brk-cfg-strip\">"), "expiry strip shown on a leave day");
+  assert.ok(dashLeaveHtml.includes('id="dashAnalytics"') && dashLeaveHtml.includes('class="brokers"'));
+  assert.ok(/<option value="tm" selected>/.test(dashLeaveHtml), "leave day must open on This month");
 });
 
 check("no retired copy-strategy tiles (BN_/FUT_/CMX_/SAIL_PIVOT) unless they are real running pairs", () => {

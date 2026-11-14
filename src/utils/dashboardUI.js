@@ -306,9 +306,11 @@ function dhSummary(rows, markets, opts){
     + (closedOnly ? '' : '<th>Today total</th>') + '</tr></thead>';
   var grandLabel = only ? 'TOTAL · ' + _dhEsc((markets.filter(function(m){ return m.key === only; })[0] || {}).label || only) : 'TOTAL';
   if (opts.split) {
-    // One table per market (each with its own header) in a grid, TOTAL full-width below.
+    // One table per market in a grid, TOTAL full-width below. A past day
+    // (closedOnly) needs no column header — Net P&L · Trades · W/L read plainly.
+    var tHead = closedOnly ? '' : head;
     var tables = body.split('</tbody>').filter(function(t){ return t; })
-      .map(function(t){ return '<table class="dh-sum">' + head + t + '</tbody></table>'; }).join('');
+      .map(function(t){ return '<table class="dh-sum">' + tHead + t + '</tbody></table>'; }).join('');
     return { html:'<div class="dh-sum-grid' + (closedOnly ? '' : ' dh-sum-grid-wide') + '">' + tables + '<table class="dh-sum dh-sum-total"><tbody class="dh-grand-body">' + line(grandLabel, stOf(total), total, 'dh-grand') + '</tbody></table></div>', byMarket:byMarket, total:total };
   }
   var grand = '<tbody class="dh-grand-body">' + line(grandLabel, stOf(total), total, 'dh-grand') + '</tbody>';
