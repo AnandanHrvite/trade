@@ -44,7 +44,7 @@ const VIEW_MAX_BYTES = 1024 * 1024; // 1 MB cap on the View modal
 // Each group = one base directory. flat:true lists only files directly in the
 // base (used for the trading-data root so the grouped sub-folders aren't doubled).
 const GROUPS = [
-  { key: "backtest_cache", label: "Backtest Cache",      icon: "📊", cls: "mode-ema_rsi_st",    base: path.join(DATA_DIR, "backtest_cache"),     flat: false, desc: "Cached historical OHLC pulls used by backtests (auto-pruned)." },
+  { key: "backtest_cache", label: "Backtest Cache",      icon: "📊", cls: "mode-ema_rsi_st",    base: path.join(DATA_DIR, "backtest_cache"),     flat: false, desc: "Historical OHLC shared by every backtest — never auto-deleted (Fyers serves only ~1 year back)." },
   { key: "candle_cache",   label: "Candle Cache",        icon: "🕯", cls: "mode-bb_rsi",    base: path.join(DATA_DIR, "candle_cache"),       flat: false, desc: "Cached intraday candle series." },
   { key: "ticks",          label: "Recorded Ticks",      icon: "📡", cls: "mode-orb",      base: TICKS_DIR,                                 flat: false, desc: "Recorded spot / option / VIX ticks per IST date — source of truth for Replay. (Replay outputs/cache under the same root are listed separately below.)" },
   { key: "replay",         label: "Replay Trades",       icon: "📼", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_trades"),     flat: false, tagged: true, desc: "Replay outputs in snapshot mode (recorded session-start settings)." },
@@ -444,6 +444,9 @@ router.post("/delete", (req, res) => {
   const rel = String(req.query.path || req.body?.path || "");
   const abs = resolveInGroup(GROUP_BY_KEY[key], rel);
   if (!abs) return res.status(400).json({ success: false, error: "bad path" });
+  if (key === "backtest_cache" && backtestCache.isIrreplaceable(path.basename(abs))) {
+    return res.status(403).json({ success: false, error: "Kept: this history is older than Fyers serves (~1 year), so it could never be downloaded again." });
+  }
   try {
     fs.unlinkSync(abs);
     _tagCache.delete(abs);
@@ -467,6 +470,8 @@ router.post("/delete-all", safeAsync(async (req, res) => {
   if (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) {
     files = await _filterByTag(group, files, tagFilter);
   }
+  // Backtest history older than Fyers serves is never deleted — it is gone for good.
+  if (key === "backtest_cache") files = files.filter(f => !backtestCache.isIrreplaceable(path.basename(f.rel)));
   const deleted = [];
   const failed = [];
   for (const f of files) {
@@ -480,7 +485,8 @@ router.post("/delete-all", safeAsync(async (req, res) => {
 }));
 
 // ── POST /cache-files/clear-candles — wipe both historical-candle caches ────
-// The one-click version of "delete-all" on the two candle groups, called by the
+// The one-click version of "delete-all" on the two candle groups (backtest
+// history older than Fyers serves is kept — see backtestCache.isIrreplaceable), called by the
 // 🧹 Clear Cache button every backtest page shows. Write op: it is not in
 // app.js OPEN_PATHS, so it needs API_SECRET. Refused while a backtest is
 // running, because that job is reading the very files we would delete.

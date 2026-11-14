@@ -953,7 +953,6 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "DISK_AUTO_CLEANUP_ENABLED", label: "Daily Disk Clean-up", type: "toggle", effect: EFFECT.INSTANT, desc: "Once a day after 16:30 IST, delete files older than the keep-days below. It never runs between 09:00 and 15:30 IST on weekdays, never in the first 30 minutes after a restart, and never touches trade logs, paper trade books, post-exit data, backups, tokens or anything from today. See sizes and delete by hand on the Monitor page.", default: "true", subheader: "Automatic clean-up" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings — keep (days)", type: "number", min: 7, max: 365, step: 1, effect: EFFECT.INSTANT, desc: "How many days of recorded market ticks to keep for /replay. Older days are deleted and can never be replayed again. Example: 30 on 11 Nov keeps 12 Oct onwards. Roughly 5–10 MB per day.", default: "30", subheader: "Keep-days per folder" },
-      { key: "BACKTEST_CACHE_KEEP_DAYS", label: "Backtest Cache — keep (days)", type: "number", min: 7, max: 3650, step: 1, effect: EFFECT.INSTANT, desc: "Delete downloaded backtest history not used for this many days. Safe: the next backtest that needs it downloads it again from Fyers (slower first run). Using a file resets its clock.", default: "90" },
       { key: "CANDLE_CACHE_KEEP_DAYS", label: "Candle Cache — keep (days)", type: "number", min: 0, max: 3650, step: 1, effect: EFFECT.INSTANT, desc: "Delete cached candle files not updated for this many days (for example a symbol you no longer trade). 0 = never delete. Safe: they are re-downloaded when needed.", default: "0" },
       { key: "REPLAY_OUTPUT_KEEP_DAYS", label: "Replay Outputs — keep (days)", type: "number", min: 0, max: 3650, step: 1, effect: EFFECT.INSTANT, desc: "Delete results of past /replay runs older than this. 0 = never delete. Safe: re-run the replay to get them back (as long as that day's ticks are still kept).", default: "0" },
       { key: "SERVER_LOG_RETAIN_DAYS", label: "Server Logs — keep (days)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "Days of the daily server-console copy (Logs → Server Logs) to keep, counting today. Example: 7 keeps today and the six days before.", default: "7" },
@@ -2290,9 +2289,12 @@ router.post("/reset-data", (req, res) => {
     catch (e) { errors.push(`ticks: ${e.message}`); }
   }
 
-  // Cache — always full (range ignored; backtest/candle caches self-heal on demand).
+  // Cache — range ignored. candle_cache is wiped; backtest_cache keeps history
+  // older than Fyers serves (backtestCache.clearAllCache) — it cannot come back.
   if (b.cache) {
-    for (const name of ["backtest_cache", "candle_cache"]) {
+    try { require("../utils/backtestCache").clearAllCache(); results.cacheDirs += 1; }
+    catch (e) { errors.push(`cache backtest_cache: ${e.message}`); }
+    for (const name of ["candle_cache"]) {
       const dir = path.join(TRADING_DATA_DIR, name);
       try {
         if (fs.existsSync(dir)) { fs.rmSync(dir, { recursive: true, force: true }); results.cacheDirs += 1; }

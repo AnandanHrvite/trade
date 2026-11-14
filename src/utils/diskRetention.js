@@ -28,7 +28,6 @@
  *
  * Keep-days settings (0 = never auto-delete that folder):
  *   TICK_RECORDER_RETAIN_DAYS  30   (min 7 — ticks are the source of truth for /replay)
- *   BACKTEST_CACHE_KEEP_DAYS   90   (same as backtestCache's own built-in prune)
  *   CANDLE_CACHE_KEEP_DAYS     0
  *   REPLAY_OUTPUT_KEEP_DAYS    0
  *   SERVER_LOG_RETAIN_DAYS     7    (logArchive prunes on its own as well)
@@ -104,8 +103,8 @@ function folders(ctx) {
       keepKey: "TICK_RECORDER_RETAIN_DAYS", keepDefault: 30, minKeep: 7,
       note: "Recorded market data — what /replay plays back. Deleted days cannot be replayed again." },
     { key: "backtest_cache", label: "Backtest cache", bases: [path.join(d, "backtest_cache")], unit: "file",
-      keepKey: "BACKTEST_CACHE_KEEP_DAYS", keepDefault: 90, minKeep: 1, busyOnBacktest: true,
-      note: "Downloaded history for backtests. Safe to delete — a backtest re-downloads it from Fyers." },
+      protected: true,
+      note: "Downloaded history shared by every backtest. Protected — never deleted here: Fyers only serves ~1 year back, so older months cannot be downloaded again." },
     { key: "candle_cache", label: "Candle cache", bases: [path.join(d, "candle_cache")], unit: "file",
       keepKey: "CANDLE_CACHE_KEEP_DAYS", keepDefault: 0, minKeep: 1, busyOnBacktest: true,
       note: "Cached intraday candles. Safe to delete — re-downloaded when needed." },

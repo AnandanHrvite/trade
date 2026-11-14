@@ -3526,7 +3526,7 @@ document.querySelectorAll('.clear-cache-btn').forEach(function(btn){
     var ok = await showConfirm({
       icon:'\\ud83e\\uddf9',
       title:'Clear backtest cache?',
-      message:'Deletes the cached historical candles (backtest_cache + candle_cache).\\nNo trades or settings are touched \\u2014 the next run just re-downloads from Fyers, which takes longer.',
+      message:'Deletes the cached historical candles Fyers can still give back (the last ~1 year).\\nOlder history is always kept \\u2014 Fyers will not serve it again. No trades or settings are touched.',
       confirmText:'Clear cache',
       confirmClass:'modal-btn-danger'
     });

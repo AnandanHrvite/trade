@@ -75,7 +75,7 @@ function _futStopMsg(entry, px, peak) {
   if (lvl == null || px > lvl) return null;
   return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
-const { fetchCandles }   = require("../services/backtestEngine");
+const { fetchCandlesCachedBT: fetchCandles } = require("../services/backtestEngine");
 const { fyersErrText }   = require("../utils/fyersErr");
 const { faviconLink }    = require("../utils/sharedNav");
 const { getCharges }     = require("../utils/charges");

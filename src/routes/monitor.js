@@ -324,8 +324,7 @@ ${buildSidebar("monitor", false)}
   <div class="action-title">Reduce Resource Usage</div>
   <div class="action-buttons">
     <button class="act-btn act-blue"   onclick="doAction('gc','Force GC','Force Node.js garbage collection?',false)"              title="Trigger V8 garbage collection — reclaims heap held by finished backtests">♻ Force GC</button>
-    <button class="act-btn act-amber"  onclick="doAction('prune-cache','Prune cache (90d)','Prune backtest cache files older than 90 days?',true)" title="Delete cached candle files older than 90 days">🧹 Prune Cache (90d)</button>
-    <button class="act-btn act-amber"  onclick="doAction('clear-cache-all','Clear ALL cache','Delete ALL backtest cache files? Next backtest will refetch from Fyers API.',true)" title="Delete every cached candle file — backtests will refetch from API">🗑 Clear All Cache</button>
+    <button class="act-btn act-amber"  onclick="doAction('clear-cache-all','Clear ALL cache','Delete backtest cache files from the last ~1 year? Older history is always kept (Fyers will not serve it again).',true)" title="Delete cached candles from the last ~1 year — older history is always kept">🗑 Clear All Cache</button>
     <button class="act-btn act-purple" onclick="doAction('clear-jobs','Clear finished jobs','Clear finished backtest jobs from memory?',true)" title="Drop stored backtest trade arrays from memory">📦 Clear Finished Jobs</button>
     <button class="act-btn act-red"    onclick="doAction('restart','Restart Node','Restart the Node.js process? Any running backtest will be killed.',true)" title="Restart the bot via PM2 — blocked when LIVE mode is active">⟳ Restart Node</button>
   </div>
@@ -700,21 +699,6 @@ router.post("/action/gc", (_req, res) => {
       before: { heapUsed: +(before.heapUsed/1048576).toFixed(1), rss: +(before.rss/1048576).toFixed(1) },
       after:  { heapUsed: +(after.heapUsed/1048576).toFixed(1),  rss: +(after.rss/1048576).toFixed(1)  },
     });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-router.post("/action/prune-cache", (_req, res) => {
-  try {
-    const before = backtestCache.getCacheStats();
-    // Force prune by calling the exposed function (reuses internal 90-day cutoff)
-    if (typeof backtestCache.pruneOldCacheFiles === "function") {
-      backtestCache.pruneOldCacheFiles();
-    }
-    const after = backtestCache.getCacheStats();
-    const freedMB = +(parseFloat(before.sizeMB) - parseFloat(after.sizeMB)).toFixed(2);
-    res.json({ ok: true, message: `Pruned backtest cache: ${freedMB} MB freed (${before.files}→${after.files} files)`, before, after });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }

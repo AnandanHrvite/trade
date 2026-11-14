@@ -11,7 +11,9 @@
  *   <repo>/data/ticks/     (recorded tick feed for /replay)                 → archive path "data/ticks/…"
  *
  * Excluded (regenerated or disposable):
- *   trading-data/backtest_cache  trading-data/candle_cache   — disk caches
+ *   trading-data/candle_cache    — disk cache (re-downloadable)
+ *   (backtest_cache IS included: Fyers serves only ~1 year of intraday history,
+ *    so older backtest months cannot be downloaded again once lost.)
  *   trading-data/.fyers_token    trading-data/.zerodha_token — daily OAuth tokens
  *   trading-data/.google_drive.json                          — Drive credentials
  *   trading-data/_backups        — the snapshot store itself (no self-nesting)
@@ -52,7 +54,6 @@ const BACKUP_DIR = path.join(DATA_DIR, "_backups");
 const STATE_FILE = path.join(BACKUP_DIR, ".backup-state.json");
 
 const TAR_EXCLUDES = [
-  "trading-data/backtest_cache",
   "trading-data/candle_cache",
   "trading-data/_backups",
   "trading-data/.fyers_token",

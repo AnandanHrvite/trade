@@ -4,6 +4,7 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-14 — `emaRsiStV2Backtest.js` reads candles through the shared month cache (`fetchCandlesCachedBT`) like the other backtests, so every strategy reuses one download; the cache is never auto-deleted and is now in the Settings backup.
 - 2026-11-14 — `emaRsiStV2Backtest.js` (via `backtestEngine.fetchCandles`): history older than the Fyers plan allows (Standard: 1 year intraday) is skipped instead of failing the run; the live log + results notes say where the data really starts, and a range that is wholly too old fails with "pick a start on/after X" instead of the re-login hint.
 
 - 2026-11-11 — `emaRsiStV2Paper.js` journal: an option entry with no premium yet records `entry.fill` / `slippagePts` as null (was the spot, e.g. +23862 "slippage" when the first poll never landed); `_jEntryPremium` fills both when it lands. Observer only.

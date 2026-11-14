@@ -44,7 +44,7 @@
 const express = require("express");
 const router  = express.Router();
 const rsiPivotStrategy = require("../strategies/rsi_pivot_st");
-const { fetchCandles } = require("../services/backtestEngine");
+const { fetchCandlesCachedBT: fetchCandles } = require("../services/backtestEngine");
 const { fyersErrText } = require("../utils/fyersErr");
 const { faviconLink } = require("../utils/sharedNav");
 const { getCharges } = require("../utils/charges");

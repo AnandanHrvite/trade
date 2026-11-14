@@ -10,8 +10,9 @@
  *   - Cache key = symbol + resolution + from + to  (exact match)
  *   - Atomic writes (tmp → rename) to prevent corruption
  *   - Optional skipCache flag for forced fresh fetch
- *   - Cache auto-prunes files unused for 90 days (a hit refreshes mtime, so
- *     this is LRU-ish) and evicts least-recently-used files past a 500 MB cap
+ *   - NEVER auto-deleted: Fyers only serves ~1 year of intraday history, so a
+ *     deleted older month can never be downloaded again. Every strategy's
+ *     backtest shares these files (keyed by symbol + resolution + month).
  */
 
 const fs   = require("fs");
@@ -19,15 +20,6 @@ const path = require("path");
 const os   = require("os");
 
 const CACHE_DIR = path.join(os.homedir(), "trading-data", "backtest_cache");
-// Auto-prune cache files not used for this long. Read live so the Settings
-// "Backtest cache keep-days" value (also applied by the /monitor daily clean-up)
-// governs this built-in prune too.
-function maxAgeDays() {
-  const n = parseInt(process.env.BACKTEST_CACHE_KEEP_DAYS || "90", 10);
-  return Number.isFinite(n) && n >= 1 ? n : 90;
-}
-const MAX_TOTAL_BYTES = 500 * 1024 * 1024; // evict oldest-mtime first above this
-
 function ensureDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
@@ -116,75 +108,6 @@ async function fetchCandlesWithCache(symbol, resolution, from, to, rawFetcher, s
   return candles;
 }
 
-/**
- * Pick the files to delete: anything unused for maxAgeDays(), then the
- * least-recently-used of the rest until the total fits under MAX_TOTAL_BYTES.
- * entries: [{ fp, size, mtimeMs }]
- */
-function _selectEvictions(entries, now = Date.now()) {
-  const cutoff = now - maxAgeDays() * 24 * 60 * 60 * 1000;
-  const evict = [];
-  const keep = [];
-  for (const e of entries) (e.mtimeMs < cutoff ? evict : keep).push(e);
-  let total = keep.reduce((s, e) => s + e.size, 0);
-  if (total > MAX_TOTAL_BYTES) {
-    keep.sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
-    for (const e of keep) {
-      if (total <= MAX_TOTAL_BYTES) break;
-      evict.push(e);
-      total -= e.size;
-    }
-  }
-  return evict;
-}
-
-function _logPruned(n) {
-  if (n > 0) console.log(`[backtestCache] 🧹 Pruned ${n} cache files (age > ${maxAgeDays()}d or over ${MAX_TOTAL_BYTES / (1024 * 1024)} MB cap)`);
-}
-
-/**
- * Synchronous prune — kept for the Monitor page's "Prune cache" action, which
- * reads stats immediately after the call. Boot uses pruneCacheAsync().
- */
-function pruneOldCacheFiles() {
-  try {
-    ensureDir();
-    const entries = [];
-    for (const f of fs.readdirSync(CACHE_DIR)) {
-      if (!f.endsWith(".json")) continue;
-      const fp = path.join(CACHE_DIR, f);
-      try { const st = fs.statSync(fp); entries.push({ fp, size: st.size, mtimeMs: st.mtimeMs }); } catch (_) {}
-    }
-    let pruned = 0;
-    for (const e of _selectEvictions(entries)) {
-      try { fs.unlinkSync(e.fp); pruned++; } catch (_) {}
-    }
-    _logPruned(pruned);
-  } catch (e) {
-    console.warn("[backtestCache] Prune failed:", e.message);
-  }
-}
-
-/** Same policy as pruneOldCacheFiles(), without blocking the event loop. */
-async function pruneCacheAsync() {
-  try {
-    await fs.promises.mkdir(CACHE_DIR, { recursive: true });
-    const names = (await fs.promises.readdir(CACHE_DIR)).filter(f => f.endsWith(".json"));
-    const entries = [];
-    for (const f of names) {
-      const fp = path.join(CACHE_DIR, f);
-      try { const st = await fs.promises.stat(fp); entries.push({ fp, size: st.size, mtimeMs: st.mtimeMs }); } catch (_) {}
-    }
-    let pruned = 0;
-    for (const e of _selectEvictions(entries)) {
-      try { await fs.promises.unlink(e.fp); pruned++; } catch (_) {}
-    }
-    _logPruned(pruned);
-  } catch (e) {
-    console.warn("[backtestCache] Prune failed:", e.message);
-  }
-}
-
 /** Get cache stats for diagnostics */
 function getCacheStats() {
   try {
@@ -205,10 +128,26 @@ function getCacheStats() {
 }
 
 /** Clear all backtest cache files */
+/**
+ * True when a cache file holds history Fyers will no longer serve (its range
+ * starts more than a year ago — the Standard plan's intraday limit). Such a
+ * file can never be downloaded again, so nothing in the app deletes it.
+ * Name format: <symbol>_<res>_<from>_<to>.json
+ */
+function isIrreplaceable(fileName) {
+  const m = String(fileName).match(/_(\d{4}-\d{2}-\d{2})_\d{4}-\d{2}-\d{2}\.json$/);
+  if (!m) return false;
+  const cutoff = new Date(todayIST());
+  cutoff.setFullYear(cutoff.getFullYear() - 1);
+  return m[1] < cutoff.toISOString().slice(0, 10);
+}
+
+/** Clear the backtest cache — only files Fyers can still give back. Older
+ *  history is kept (see isIrreplaceable). Returns the number deleted. */
 function clearAllCache() {
   try {
     ensureDir();
-    const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith(".json"));
+    const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith(".json") && !isIrreplaceable(f));
     for (const f of files) fs.unlinkSync(path.join(CACHE_DIR, f));
     return files.length;
   } catch (_) {
@@ -216,8 +155,6 @@ function clearAllCache() {
   }
 }
 
-// Prune on first load — async so boot never stalls on a big cache dir.
-pruneCacheAsync();
 
 /**
  * Split a date range into full calendar months for granular caching.
@@ -273,6 +210,7 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
   const allCandles = [];
   const seen = new Set(); // deduplicate as we go — avoids full-array pass at end
   let cachedCount = 0, fetchedCount = 0;
+  let planTrimmedFrom = null; // set when Fyers' plan limit cut off the START of the range
 
   for (let i = 0; i < months.length; i++) {
     const { from: mFrom, to: mTo } = months[i];
@@ -310,6 +248,7 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
         }
       }
       fetchedCount++;
+      if (monthCandles && monthCandles.planTrimmedFrom && !allCandles.length) planTrimmedFrom = monthCandles.planTrimmedFrom;
 
       // Cache historical months (fire-and-forget write — don't block the loop)
       if (monthCandles && monthCandles.length > 0 && !touchesToday) {
@@ -332,7 +271,8 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
 
   // Months are fetched in order, so sort is only needed if there's overlap
   allCandles.sort((a, b) => a.time - b.time);
+  if (planTrimmedFrom) allCandles.planTrimmedFrom = planTrimmedFrom;
   return allCandles;
 }
 
-module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, pruneOldCacheFiles, pruneCacheAsync, _selectEvictions, CACHE_DIR };
+module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, isIrreplaceable, CACHE_DIR };

@@ -120,11 +120,10 @@ check("ticks keep 30: today and exactly-30-days kept; 31 days and older listed",
   assert.strictEqual(plan.files, 2);
 });
 
-check("backtest cache keep 90 (mtime): 90 days kept, 91 and 200 listed, today kept", async () => {
+check("candle cache keep 90 (mtime): a 400-day-old file is listed", async () => {
   const { ctx, f } = fixture();
-  const plan = await dr.planCleanup("backtest_cache", 90, ctx);
-  const paths = plan.items.map(i => i.path).sort();
-  assert.deepStrictEqual(paths, [f.bt91, f.bt200].sort());
+  const plan = await dr.planCleanup("candle_cache", 90, ctx);
+  assert.deepStrictEqual(plan.items.map(i => i.path), [f.candleOld]);
 });
 
 check("server logs keep 7 (by file name): 7 days kept, 8 listed", async () => {
@@ -135,7 +134,7 @@ check("server logs keep 7 (by file name): 7 days kept, 8 listed", async () => {
 
 check("keep 1 still never lists anything dated today", async () => {
   const { ctx, f } = fixture();
-  for (const key of ["backtest_cache", "server_logs", "replay", "pm2_logs"]) {
+  for (const key of ["candle_cache", "server_logs", "replay", "pm2_logs"]) {
     const plan = await dr.planCleanup(key, 1, ctx);
     for (const p of [f.btToday, f.logToday, f.pm2Err, f.replayNew]) {
       assert(!covers(plan, p), `${key} keep 1 listed a file from today/yesterday: ${p}`);
@@ -147,7 +146,7 @@ check("keep 1 still never lists anything dated today", async () => {
 
 check("bad keep-days are refused: 0, negative, fractional, ticks below 7", async () => {
   const { ctx } = fixture();
-  for (const [key, d] of [["backtest_cache", 0], ["backtest_cache", -3], ["backtest_cache", 1.5], ["ticks", 6], ["ticks", NaN]]) {
+  for (const [key, d] of [["candle_cache", 0], ["candle_cache", -3], ["candle_cache", 1.5], ["ticks", 6], ["ticks", NaN]]) {
     await assert.rejects(() => dr.planCleanup(key, d, ctx), undefined, `${key} keep ${d} should be refused`);
   }
 });
@@ -157,7 +156,7 @@ section("GROUP 2 — protected data is never touched");
 // ─────────────────────────────────────────────────────────────────────────────
 check("protected folders cannot even be planned", async () => {
   const { ctx } = fixture();
-  for (const key of ["trade_logs", "post_exit", "backups"]) {
+  for (const key of ["trade_logs", "post_exit", "backups", "backtest_cache"]) {
     await assert.rejects(() => dr.planCleanup(key, 1, ctx), /protected/);
   }
 });
@@ -165,7 +164,7 @@ check("protected folders cannot even be planned", async () => {
 check("a forged plan pointing at trades / post_exit / books / tokens deletes nothing", async () => {
   const { ctx, f } = fixture();
   const targets = [f.trades, f.postExit, f.backup, f.book, f.token, path.join(ctx.dataDir, "trades")];
-  const plan = { key: "backtest_cache", cutoffDate: "9999-12-31", items: targets.map(p => ({ path: p, isDir: false, action: "delete", bytes: 1, files: 1 })) };
+  const plan = { key: "candle_cache", cutoffDate: "9999-12-31", items: targets.map(p => ({ path: p, isDir: false, action: "delete", bytes: 1, files: 1 })) };
   const r = await dr.applyPlan(plan, ctx);
   assert.strictEqual(r.deleted.length, 0);
   for (const p of targets) assert(ex(p), `protected path was removed: ${p}`);
@@ -176,12 +175,12 @@ check("a forged plan pointing at trades / post_exit / books / tokens deletes not
 });
 
 check("the most aggressive auto-clean-up leaves every protected file in place", async () => {
-  const env = { TICK_RECORDER_RETAIN_DAYS: "1", BACKTEST_CACHE_KEEP_DAYS: "1", CANDLE_CACHE_KEEP_DAYS: "1",
+  const env = { TICK_RECORDER_RETAIN_DAYS: "1", CANDLE_CACHE_KEEP_DAYS: "1",
     REPLAY_OUTPUT_KEEP_DAYS: "1", SERVER_LOG_RETAIN_DAYS: "1", PM2_LOG_MAX_MB: "1" };
   const { ctx, f } = fixture(env);
   const r = await dr.runAutoCleanup({ ctx });
   assert.strictEqual(r.ran, true);
-  for (const p of [f.trades, f.postExit, f.backup, f.book, f.token]) assert(ex(p), `protected file deleted: ${p}`);
+  for (const p of [f.trades, f.postExit, f.backup, f.book, f.token, f.bt91, f.bt200]) assert(ex(p), `protected file deleted: ${p}`);
   for (const p of [f.tickToday, f.btToday, f.logToday, f.pm2Err]) assert(ex(p), `today's file deleted: ${p}`);
 });
 
@@ -192,9 +191,9 @@ check("ticks keep-days below 7 is clamped to 7 by the daily job", () => {
 
 check("symlinks inside a cleanable folder are never followed or deleted", async () => {
   const { ctx, f } = fixture();
-  const link = path.join(ctx.dataDir, "backtest_cache", "link-to-trades");
+  const link = path.join(ctx.dataDir, "candle_cache", "link-to-trades");
   fs.symlinkSync(path.join(ctx.dataDir, "trades"), link);
-  const plan = await dr.planCleanup("backtest_cache", 1, ctx);
+  const plan = await dr.planCleanup("candle_cache", 1, ctx);
   assert(!plan.items.some(i => i.path.startsWith(link)), "symlink was listed");
   await dr.applyPlan(plan, ctx);
   assert(ex(f.trades) && fs.lstatSync(link).isSymbolicLink());
@@ -214,12 +213,12 @@ check("09:00–15:30 IST on a weekday is blocked; edges and weekends are not", (
 
 check("a manual delete during market hours removes nothing", async () => {
   const { ctx, f } = fixture();
-  const plan = await dr.planCleanup("backtest_cache", 90, ctx);
+  const plan = await dr.planCleanup("candle_cache", 90, ctx);
   assert(plan.items.length > 0);
   const r = await dr.applyPlan(plan, Object.assign({}, ctx, { now: () => IST(2026, 11, 11, 10, 30) }));
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.blocked, true);
-  assert(ex(f.bt91) && ex(f.bt200), "files were deleted during market hours");
+  assert(ex(f.candleOld), "files were deleted during market hours");
 });
 
 check("the daily job does not run during market hours", async () => {
@@ -251,7 +250,7 @@ check("scheduler: only after 16:30 IST, never in the first 30 min after boot, on
 // ─────────────────────────────────────────────────────────────────────────────
 section("GROUP 4 — the dry run is exactly what gets deleted");
 // ─────────────────────────────────────────────────────────────────────────────
-for (const [key, days] of [["ticks", 30], ["backtest_cache", 90], ["server_logs", 7], ["replay", 30], ["candle_cache", 30], ["pm2_logs", 30]]) {
+for (const [key, days] of [["ticks", 30], ["server_logs", 7], ["replay", 30], ["candle_cache", 30], ["pm2_logs", 30]]) {
   check(`${key} keep ${days}: deleted set == preview set, every other file untouched`, async () => {
     const { ctx, root } = fixture();
     const before = allFiles(root);
@@ -271,11 +270,10 @@ for (const [key, days] of [["ticks", 30], ["backtest_cache", 90], ["server_logs"
 
 check("a file touched after the preview is skipped, not deleted", async () => {
   const { ctx, f } = fixture();
-  const plan = await dr.planCleanup("backtest_cache", 90, ctx);
-  fs.utimesSync(f.bt91, new Date(NOW), new Date(NOW));    // a backtest just used it
+  const plan = await dr.planCleanup("candle_cache", 90, ctx);
+  fs.utimesSync(f.candleOld, new Date(NOW), new Date(NOW));    // a backtest just used it
   const r = await dr.applyPlan(plan, ctx);
-  assert(ex(f.bt91), "touched file was deleted");
-  assert(!ex(f.bt200));
+  assert(ex(f.candleOld), "touched file was deleted");
   assert.strictEqual(r.skipped.length, 1);
 });
 
@@ -303,10 +301,10 @@ check("PM2 size cap keeps the newest whole lines and stays under the cap", async
 // ─────────────────────────────────────────────────────────────────────────────
 section("GROUP 5 — defaults and the usage report");
 // ─────────────────────────────────────────────────────────────────────────────
-check("defaults: ticks 30, backtest 90, server logs 7; candle cache, replay and PM2 size off", () => {
+check("defaults: ticks 30, server logs 7; backtest history protected; candle cache, replay and PM2 size off", () => {
   const k = (key) => dr.keepDaysFor(dr.folderByKey(key, {}), { env: {} });
   assert.strictEqual(k("ticks"), 30);
-  assert.strictEqual(k("backtest_cache"), 90);
+  assert.strictEqual(dr.folderByKey("backtest_cache", {}).protected, true);
   assert.strictEqual(k("server_logs"), 7);
   assert.strictEqual(k("candle_cache"), 0);
   assert.strictEqual(k("replay"), 0);
@@ -317,16 +315,16 @@ check("defaults: ticks 30, backtest 90, server logs 7; candle cache, replay and 
 check("auto-clean-up with default settings removes only what the app already pruned", async () => {
   const { ctx, f } = fixture({});
   await dr.runAutoCleanup({ ctx });
-  for (const p of [f.tick31, f.tickOld, f.bt91, f.bt200, f.log8]) assert(!ex(p), `${p} should be pruned by defaults`);
-  for (const p of [f.tick30, f.tickToday, f.bt90, f.btToday, f.log7, f.candleOld, f.replayOld, f.pm2Live, f.pm2Rotated])
+  for (const p of [f.tick31, f.tickOld, f.log8]) assert(!ex(p), `${p} should be pruned by defaults`);
+  for (const p of [f.tick30, f.tickToday, f.bt90, f.bt91, f.bt200, f.btToday, f.log7, f.candleOld, f.replayOld, f.pm2Live, f.pm2Rotated])
     assert(ex(p), `${p} must survive default settings`);
 });
 
-check("a running backtest makes the daily job skip both candle caches", async () => {
+check("a running backtest makes the daily job skip the candle cache", async () => {
   const { ctx, f } = fixture({ CANDLE_CACHE_KEEP_DAYS: "30" });
   const r = await dr.runAutoCleanup({ ctx, isBacktestBusy: () => true });
   assert(ex(f.bt91) && ex(f.candleOld));
-  assert(r.results.some(x => x.key === "backtest_cache" && x.skipped));
+  assert(r.results.some(x => x.key === "candle_cache" && x.skipped));
 });
 
 check("report: per-folder size, count and date range; ticks exclude replay outputs", async () => {
@@ -376,7 +374,7 @@ check("Settings exposes every retention key in a System section", () => {
   assert(start > 0, "Disk & Retention section missing");
   const block = s.slice(start, s.indexOf("fields: [", start) + 6000);
   assert(/group: "System"/.test(block.slice(0, 200)));
-  for (const k of ["DISK_AUTO_CLEANUP_ENABLED", "TICK_RECORDER_RETAIN_DAYS", "BACKTEST_CACHE_KEEP_DAYS",
+  for (const k of ["DISK_AUTO_CLEANUP_ENABLED", "TICK_RECORDER_RETAIN_DAYS",
                    "CANDLE_CACHE_KEEP_DAYS", "REPLAY_OUTPUT_KEEP_DAYS", "SERVER_LOG_RETAIN_DAYS", "PM2_LOG_MAX_MB"]) {
     assert(block.includes(`key: "${k}"`), `${k} missing from the Disk & Retention section`);
     assert.strictEqual(s.split(`key: "${k}"`).length - 1, 1, `${k} must appear exactly once in the schema`);
