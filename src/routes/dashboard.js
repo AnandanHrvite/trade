@@ -1031,8 +1031,8 @@ var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.filter((m) => !m.paperOff
 var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
 
 // Replaces every roster-derived list in one place, so the endpoints, the button
-// labels, the failure-list names and the button-state poll can never disagree
-// about which strategies are in play.
+// labels and the failure-list names can never disagree about which strategies
+// are in play.
 function _applyRoster(modes){
   if(!Array.isArray(modes) || !modes.length) return false;
   var paper = [];
