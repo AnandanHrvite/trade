@@ -455,6 +455,22 @@ check("the stop only moves up — a peak below entry leaves it at the first stop
   assert.strictEqual(guards.premiumStopLtp(100, 200), 180);
 }));
 
+check("first stop 5% + trail gap 10%: buy 100 → 95; peak 104 → 95; peak 110 → 99; peak 150 → 135", () => withSl({ PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "5", PREMIUM_SL_TRAIL_PCT: "10" }, () => {
+  assert.strictEqual(guards.premiumStopLtp(100, 100), 95);
+  assert.strictEqual(guards.premiumStopLtp(100, 104), 95);
+  assert.strictEqual(guards.premiumStopLtp(100, 110), 99);
+  assert.strictEqual(guards.premiumStopLtp(100, 150), 135);
+  assert.ok(/^Stop-loss -5%/.test(guards.checkProfitLock(100, 94, 104)));
+  assert.ok(/^Stop-loss trail 10%/.test(guards.checkProfitLock(100, 134, 150)));
+  assert.strictEqual(guards.futuresStopLevel("CE", 24000, 0), 23990);    // 5% of ₹200
+  assert.strictEqual(guards.futuresStopLevel("CE", 24000, 50), 24025);   // 250 × 0.9 − 200
+}));
+
+check("blank trail gap = same as the first stop %", () => withSl({ PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "20", PREMIUM_SL_TRAIL_PCT: "" }, () => {
+  assert.strictEqual(guards.premiumStopLtp(100, 100), 80);
+  assert.strictEqual(guards.premiumStopLtp(100, 150), 120);
+}));
+
 check("bad config never becomes a stop", () => {
   for (const env of [{ PREMIUM_SL_PCT: "0" }, { PREMIUM_SL_PCT: "100" }, { PREMIUM_SL_PCT: "x" }]) {
     withSl({ PREMIUM_SL_ENABLED: "true", ...env }, () => {

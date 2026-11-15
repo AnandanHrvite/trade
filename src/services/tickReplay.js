@@ -216,8 +216,9 @@ function requestCancel() {
 //      Trend_PB VWAP is equal-weighted, ORB hunts a fresh breakout after an RSI/ST
 //      block, PREV_ORB_SCALP spends a setup broken before the entry start.
 // v24: EMA_RSI_ST fresh-signal gate; ORB entry cut-off no longer forced to 14:00.
-const REPLAY_CACHE_VERSION = 26;   // 25: INSTRUMENT no longer pinned/keyed (global toggle removed)
+const REPLAY_CACHE_VERSION = 27;   // 25: INSTRUMENT no longer pinned/keyed (global toggle removed)
                                    // 26: premium stop is one trailing % (PREMIUM_SL_BE_PCT / _TRAIL_PTS removed)
+                                   // 27: premium stop gets a separate trail gap (PREMIUM_SL_TRAIL_PCT)
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -2376,6 +2377,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // before it shipped, which ran without it — keep it off in snapshot mode.
       if (!("PREMIUM_SL_ENABLED" in _snapSettings)) {
         _snapSettings.PREMIUM_SL_ENABLED = "false";
+      }
+      // Separate trail gap (blank = same as PREMIUM_SL_PCT): an absent key is a
+      // recording made before it shipped, which trailed at PREMIUM_SL_PCT.
+      if (!("PREMIUM_SL_TRAIL_PCT" in _snapSettings)) {
+        _snapSettings.PREMIUM_SL_TRAIL_PCT = "";
       }
       // Wait-after-any-exit cooldown (default 2): same rule — an absent key is a
       // recording made before it shipped, which re-entered with no wait.

@@ -174,13 +174,22 @@ function _lockFloorLtp(entryLtp, bestLtp, { armPct, floorPct, enabled, trailPct,
 // ── Premium stop-loss (all strategies) ──────────────────────────────────────
 // One trailing stop for every strategy, on the option premium, checked in the
 // same per-tick call as the profit lock (checkProfitLock), so every engine that
-// runs the lock runs this too. ONE number, PREMIUM_SL_PCT: sell if premium falls
-// that % below the best premium since entry (at entry that is the first stop).
-// It only ever moves up.
-// Example (20): buy 100 → stop 80. Peak 150 → stop 120. Peak 200 → stop 160.
+// runs the lock runs this too. Two numbers:
+//   PREMIUM_SL_PCT       — the first stop: sell if premium falls this % below entry.
+//   PREMIUM_SL_TRAIL_PCT — the trail: sell if premium falls this % below the best
+//                          premium since entry. Blank = same as PREMIUM_SL_PCT.
+// The stop is the HIGHER of the two, so it only ever moves up.
+// Example (20, blank): buy 100 → stop 80. Peak 150 → stop 120. Peak 200 → stop 160.
+// Example (5 / 10): buy 100 → stop 95. Peak 104 → still 95 (93.6 is lower).
+//   Peak 110 → stop 99. Peak 150 → stop 135.
 // Default OFF: unset = no strategy uses it. Turn it on from Settings → Common Rules.
 function livePremiumSlEnabled()  { return String(process.env.PREMIUM_SL_ENABLED ?? "false").toLowerCase() === "true"; }
 function livePremiumSlPct()      { return parseFloat(process.env.PREMIUM_SL_PCT ?? "20"); }
+function livePremiumSlTrailPct() {
+  // Blank or bad (0, ≥100, not a number) = same as the first stop %.
+  const v = parseFloat(String(process.env.PREMIUM_SL_TRAIL_PCT ?? "").trim());
+  return Number.isFinite(v) && v > 0 && v < 100 ? v : livePremiumSlPct();
+}
 
 // The stop premium for a position, or null when off or misconfigured.
 //   base — the premium the % is taken of (default the entry). Futures pass a
@@ -190,6 +199,7 @@ function livePremiumSlPct()      { return parseFloat(process.env.PREMIUM_SL_PCT 
 function premiumStopLtp(entryLtp, bestLtp, {
   enabled = livePremiumSlEnabled(),
   slPct   = livePremiumSlPct(),
+  trailPct,
   base,
   bePct,
   trailPts,
@@ -206,10 +216,16 @@ function premiumStopLtp(entryLtp, bestLtp, {
     }
     return parseFloat(stop.toFixed(2));
   }
-  const b    = Number.isFinite(base) && base > 0 ? base : entryLtp;
-  const gain = Number.isFinite(bestLtp) && bestLtp > entryLtp ? bestLtp - entryLtp : 0;
-  const stop = entryLtp - b + (b + gain) * (1 - slPct / 100);
-  return parseFloat(stop.toFixed(2));
+  // Trail % — the caller's, else the live key (which itself falls back to slPct).
+  // A bad trail % (0, ≥100, not a number) falls back to slPct rather than
+  // turning the whole stop off.
+  let tp = trailPct === undefined ? livePremiumSlTrailPct() : trailPct;
+  if (!Number.isFinite(tp) || tp <= 0 || tp >= 100) tp = slPct;
+  const b       = Number.isFinite(base) && base > 0 ? base : entryLtp;
+  const gain    = Number.isFinite(bestLtp) && bestLtp > entryLtp ? bestLtp - entryLtp : 0;
+  const initial = entryLtp - b * (slPct / 100);
+  const trail   = entryLtp - b + (b + gain) * (1 - tp / 100);
+  return parseFloat(Math.max(initial, trail).toFixed(2));
 }
 
 // The premium stop in SPOT points for the backtests that have no live premium
@@ -226,11 +242,15 @@ function premiumStopSpotPts(bestFavPts, delta, seed = 200) {
 }
 
 // Exit reason for a spot-point premium stop (see premiumStopSpotPts).
+// With a separate trail % the label names both, since spot points alone cannot
+// tell whether the first stop or the trail is the one in force.
 function premiumStopSpotReason(stopPts, bestFavPts) {
   const pct  = livePremiumSlPct();
+  const tp   = livePremiumSlTrailPct();
   const best = Number.isFinite(bestFavPts) && bestFavPts > 0 ? bestFavPts : 0;
   if (best <= 0) return `Stop-loss -${pct}% (≈${Math.abs(stopPts).toFixed(0)}pt spot against entry)`;
-  return `Stop-loss trail ${pct}% (stop ≈${stopPts.toFixed(0)}pt from entry, best ${best.toFixed(0)}pt)`;
+  const label = tp === pct || !Number.isFinite(tp) ? `trail ${pct}%` : `-${pct}% / trail ${tp}%`;
+  return `Stop-loss ${label} (stop ≈${stopPts.toFixed(0)}pt from entry, best ${best.toFixed(0)}pt)`;
 }
 
 // ── Futures stop (all strategies) ───────────────────────────────────────────
@@ -285,7 +305,7 @@ function stockStopOpts(entryPrice) {
 }
 
 function _premiumStopOpts(o) {
-  return { enabled: o.slEnabled, slPct: o.slPct, base: o.slBase, bePct: o.slBePct, trailPts: o.slTrailPts };
+  return { enabled: o.slEnabled, slPct: o.slPct, trailPct: o.slTrailPct, base: o.slBase, bePct: o.slBePct, trailPts: o.slTrailPts };
 }
 
 function _lockOpts(o) {
@@ -337,12 +357,16 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, opts = {}) {
   }
 
   if (currentLtp > stopLtp) return null;             // still above the stop
-  if (so.bePct === undefined && so.trailPts === undefined) {   // one trailing %
+  if (so.bePct === undefined && so.trailPts === undefined) {   // first stop % + trail %
     const pct = Number.isFinite(so.slPct) ? so.slPct : livePremiumSlPct();
-    if (!(Number.isFinite(bestLtp) && bestLtp > entryLtp)) {
+    let tp = so.trailPct === undefined ? livePremiumSlTrailPct() : so.trailPct;
+    if (!Number.isFinite(tp) || tp <= 0 || tp >= 100) tp = pct;
+    const b = Number.isFinite(so.base) && so.base > 0 ? so.base : entryLtp;
+    const firstStop = parseFloat((entryLtp - b * (pct / 100)).toFixed(2));
+    if (!(Number.isFinite(bestLtp) && bestLtp > entryLtp) || stopLtp <= firstStop) {
       return `Stop-loss -${pct}% — premium Rs${currentLtp} fell to the stop Rs${stopLtp} (entry Rs${entryR})`;
     }
-    return `Stop-loss trail ${pct}% — premium Rs${currentLtp} fell to the trailed stop Rs${stopLtp} (peak Rs${peakR}, entry Rs${entryR})`;
+    return `Stop-loss trail ${tp}% — premium Rs${currentLtp} fell to the trailed stop Rs${stopLtp} (peak Rs${peakR}, entry Rs${entryR})`;
   }
   // Stock legs (stockStopOpts): the three-step stop.
   if (stopLtp < entryLtp) {
@@ -409,5 +433,6 @@ module.exports = {
   get PROFIT_LOCK_TRAIL_TIERS()    { return liveProfitLockTrailTiers(); },
   get PREMIUM_SL_ENABLED()         { return livePremiumSlEnabled(); },
   get PREMIUM_SL_PCT()             { return livePremiumSlPct(); },
+  get PREMIUM_SL_TRAIL_PCT()       { return livePremiumSlTrailPct(); },
   get EXIT_REENTRY_COOLDOWN_CANDLES() { return liveReentryCooldownCandles(); },
 };

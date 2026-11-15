@@ -89,7 +89,7 @@ Every Start-All run ends in a **confirmation modal that lists each strategy by n
 This list is the current truth. Where an older strategy section below talks about its own stop, target, trail or signal exit, that text is history — those exits were removed on 2026-11-07.
 
 **Exit — the same for every strategy.** No strategy has its own exit any more. A trade closes only by:
-- **Stop-loss & trail** (Settings → Common Rules, `PREMIUM_SL_*`): one trailing %: sell if the option premium falls `PREMIUM_SL_PCT` (20%) below the highest premium since entry. It only moves up. Example: buy 100 → stop 80; best 150 → stop 120; best 200 → stop 160.
+- **Stop-loss & trail** (Settings → Common Rules, `PREMIUM_SL_*`): first stop `PREMIUM_SL_PCT` (20%) below entry, then trail `PREMIUM_SL_TRAIL_PCT` (blank = same %) below the highest premium since entry; the higher wins, so it only moves up. Example 5 / 10: buy 100 → stop 95; best 110 → stop 99; best 150 → stop 135.
   - **Futures mode**: the same stop in index points — 40 pts against you, moved to entry at +40 pts, then 15 pts behind the best. Example: long at 24000 → stop 23960.
   - **Stock trades** (EarlyBird stock, Gap Runaway stock): own sizes `STOCK_SL_*` — 1% against you, moved to entry at +1%, then 0.5% of entry behind the best. Example: buy ₹1000 → stop ₹990.
 - **Profit lock** (`PROFIT_LOCK_*`, when on): once premium is up the arm %, never sell below the floor %. When both are on, the higher level wins.
