@@ -84,11 +84,11 @@ The engine falls back to one value; a status panel or log banner prints another.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `COMMON_TRADE_WINDOW_ENABLED` | toggle | `true` | Every NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle). Overrides each strategy's own Entry Start / Entry End (ORB keeps its own, earlier Latest Entry Time); the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up. |
+| `COMMON_TRADE_WINDOW_ENABLED` | toggle | `true` | Every strategy on every market takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle). Overrides each strategy's own Entry Start / Entry End (ORB keeps its own, earlier Latest Entry Time); the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up. |
 | `EXIT_REENTRY_COOLDOWN_CANDLES` | number | `2` | One rule for EVERY strategy: after a trade closes for any reason (stop, target, breakeven, profit lock, signal), take no new trade on either side for this many of the strategy's own candles. Example on 5-min candles with 2: exit at 10:48 → no new trade until 10:58. Manual entries are not blocked. 0 = off. |
 | `EXIT_REENTRY_COOLDOWN_ENABLED` | toggle | `true` | After a trade closes, take no new trade for the number of candles set in "Wait after any exit (candles)". Off = a new trade can start on the very next signal. |
 | `FYERS_INV_AMOUNT` | number | `100000` | Paper money pool shared by every Fyers strategy (₹). |
-| `LOT_MULTIPLIER` | number | `1` | Lots per trade for EVERY NIFTY strategy — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL keeps its own lots (a different contract). |
+| `LOT_MULTIPLIER` | number | `1` | Lots per trade for EVERY strategy on every market — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL keeps its own lots (a different contract). |
 | `MAX_BID_ASK_SPREAD_ENABLED` | toggle | `true` | Skip an entry when the option's bid-ask gap is wider than "Max Bid-Ask Spread (pts)". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap. |
 | `MAX_BID_ASK_SPREAD_PTS` | number | `2` | Reject entries when the spread is wider than this. |
 | `PAPER_CAPITAL_EST_PREMIUM` | number | `200` | EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide before their option quote arrives — this premium is assumed for the check, then corrected to the real one a second later. |
