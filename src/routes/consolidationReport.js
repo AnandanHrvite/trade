@@ -663,7 +663,7 @@ function dayTable(title, gModes, gArr, showVix){
   }
   // The colour lives on an inner span: the light-theme .cnt rule is !important,
   // so a colour set on .cnt itself would be greyed out in light mode.
-  foot+='<td class="fz fz-trades"><b>'+tN+'</b> ·<span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> · '+tWR.toFixed(0)+'%'
+  foot+='<td class="fz fz-trades"><b>'+tN+'</b> · <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> · '+tWR.toFixed(0)+'%'
     +'<br><span class="cnt">won <span style="color:#10b981">'+inr(tWP)+'</span> · lost <span style="color:#ef4444">'+inr(Math.abs(tLP))+'</span></span></td>'
     +'<td class="fz fz-pnl" style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
 
