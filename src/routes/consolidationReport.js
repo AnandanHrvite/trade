@@ -342,6 +342,31 @@ ${multiSelectCSS()}
     .tbl td.skip-col label{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:28px;cursor:pointer;}
     .tbl tr.skipped td{opacity:0.38;text-decoration:line-through;}
     .tbl tr.skipped td.skip-col{opacity:1;text-decoration:none;}
+    /* Frozen columns — Skip + Date stay on the left, Trades + Day P&L on the right
+       while the strategy columns scroll. Offsets (--fz-l2 / --fz-r2) are measured
+       after each render. Frozen cells need a solid fill so scrolled cells don't
+       show through, and a skipped row dims the inner .fzc span, not the cell
+       (opacity on the cell would make its fill see-through too). */
+    .tbl .fz{position:sticky;z-index:2;background:#07111f;}
+    .tbl thead .fz,.tbl tfoot .fz{background:#04090f;}
+    .tbl tr:hover td.fz{background:#0a1a2c;}
+    .tbl tfoot tr:hover td.fz{background:#04090f;}
+    .tbl .fz-skip{left:0;}
+    .tbl .fz-date{left:var(--fz-l2,60px);box-shadow:inset -1px 0 0 #17324f;}
+    .tbl .fz-pnl{right:0;}
+    .tbl .fz-trades{right:var(--fz-r2,110px);box-shadow:inset 1px 0 0 #17324f;}
+    .tbl tr.skipped td.fz{opacity:1;}
+    .tbl tr.skipped td.fz .fzc{opacity:0.38;}
+    :root[data-theme="light"] .tbl td.fz{background:#fff;}
+    :root[data-theme="light"] .tbl tr:hover td.fz{background:#f3f9fd;}
+    :root[data-theme="light"] .tbl .fz-date{box-shadow:inset -1px 0 0 #cbd5e1;}
+    :root[data-theme="light"] .tbl .fz-trades{box-shadow:inset 1px 0 0 #cbd5e1;}
+    /* Phone: four frozen columns would fill the screen — keep just Date + Day P&L. */
+    @media (max-width:600px){
+      .tbl .fz-skip,.tbl .fz-trades{position:static;box-shadow:none;}
+      .tbl .fz-date{left:0;}
+    }
+    @media print{ .tbl .fz{position:static;box-shadow:none;} .tbl tbody td.fz{background:#fff!important;} }
     .mkt-split{font-size:0.7rem;color:var(--muted-1,#8ba1c2);font-family:'IBM Plex Mono',monospace;margin:-6px 0 16px;display:flex;flex-wrap:wrap;gap:4px 0;}
     .mkt-split i{font-style:normal;opacity:0.5;margin:0 10px;}
     :root[data-theme="light"] .mkt-split{color:#4b5769!important;}
@@ -584,7 +609,7 @@ function dayTable(title, gModes, gArr, showVix){
   };
   const tradesTh = ' title="Trades taken · winners · losers · share of trades that won">Trades · W / L · Win %</th>';
 
-  let thead='<tr><th class="skip-col"'+span+' title="Tick a day to leave it out of the totals">Skip</th><th'+span+'>Date</th>'+(showVix?'<th'+span+'>VIX</th>':'');
+  let thead='<tr><th class="skip-col fz fz-skip"'+span+' title="Tick a day to leave it out of the totals">Skip</th><th class="fz fz-date"'+span+'>Date</th>'+(showVix?'<th'+span+'>VIX</th>':'');
   if(grouped){
     for(let i=0;i<gModes.length;){
       const grp=COL_GROUP[gModes[i]]||''; let n=0;
@@ -592,21 +617,21 @@ function dayTable(title, gModes, gArr, showVix){
       thead+='<th class="grp" colspan="'+n+'">'+esc(grp)+'</th>';
       i+=n;
     }
-    thead+='<th'+span+tradesTh+'<th'+span+'>Day P&amp;L</th></tr><tr>';
+    thead+='<th class="fz fz-trades"'+span+tradesTh+'<th class="fz fz-pnl"'+span+'>Day P&amp;L</th></tr><tr>';
     for(const mo of gModes) thead+='<th'+gc(mo)+modeTip(mo)+'>'+esc(COL_LABEL[mo]||MODE_LABEL[mo]||mo)+'</th>';
     thead+='</tr>';
   } else {
     for(const mo of gModes) thead+='<th'+modeTip(mo)+'>'+esc(MODE_LABEL[mo]||mo)+'</th>';
-    thead+='<th'+tradesTh+'<th>Day P&amp;L</th></tr>';
+    thead+='<th class="fz fz-trades"'+tradesTh+'<th class="fz fz-pnl">Day P&amp;L</th></tr>';
   }
 
   let body='';
   for(const g of days){
     const dayVix = (VIX_BY_DATE[g.date]!=null) ? VIX_BY_DATE[g.date] : null;
     const off = SKIP.has(g.date);
-    let row='<td class="skip-col"><label><input type="checkbox" data-skip="'+esc(g.date)+'"'+(off?' checked':'')
+    let row='<td class="skip-col fz fz-skip"><label><input type="checkbox" data-skip="'+esc(g.date)+'"'+(off?' checked':'')
       +' aria-label="Skip '+esc(prettyDate(g.date))+'"/></label></td>'
-      +'<td>'+esc(prettyDate(g.date))+'</td>'+(showVix?'<td>'+fmtVix(dayVix)+'</td>':'');
+      +'<td class="fz fz-date"><span class="fzc">'+esc(prettyDate(g.date))+'</span></td>'+(showVix?'<td>'+fmtVix(dayVix)+'</td>':'');
     for(const mo of gModes){
       const c=g.modes[mo];
       if(!c || !c.n){ row+='<td class="muted'+(firstOf[mo]?' grp-first':'')+'">—</td>'; continue; }
@@ -621,15 +646,15 @@ function dayTable(title, gModes, gArr, showVix){
         : '<td'+gc(mo)+tipAttr+'>'+cell+'</td>';
     }
     const wr=g.n?(g.wins/g.n*100):0;
-    row+='<td>'+g.n+' · <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> · '+wr.toFixed(0)+'%</td>'
-      +'<td style="font-weight:700"><span style="color:'+pc(g.net)+'">'+inr2(g.net)+'</span></td>';
+    row+='<td class="fz fz-trades"><span class="fzc">'+g.n+' · <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> · '+wr.toFixed(0)+'%</span></td>'
+      +'<td class="fz fz-pnl" style="font-weight:700"><span class="fzc" style="color:'+pc(g.net)+'">'+inr2(g.net)+'</span></td>';
     body+='<tr'+(off?' class="skipped"':'')+'>'+row+'</tr>';
   }
 
   // totals footer — VIX averaged across this table's kept days that have a reading
   const vixVals = days.filter(g=>!SKIP.has(g.date)).map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
   const avgVix  = vixVals.length ? vixVals.reduce((s,v)=>s+v,0)/vixVals.length : null;
-  let foot='<tr><td class="skip-col"></td><td><b>TOTAL</b></td>'+(showVix?'<td>'+fmtVix(avgVix)+'</td>':'');
+  let foot='<tr><td class="skip-col fz fz-skip"></td><td class="fz fz-date"><b>TOTAL</b></td>'+(showVix?'<td>'+fmtVix(avgVix)+'</td>':'');
   for(const mo of gModes){
     const c=totByMode[mo];
     if(!c || !c.n){ foot+='<td class="muted'+(firstOf[mo]?' grp-first':'')+'">—</td>'; continue; }
@@ -638,9 +663,9 @@ function dayTable(title, gModes, gArr, showVix){
   }
   // The colour lives on an inner span: the light-theme .cnt rule is !important,
   // so a colour set on .cnt itself would be greyed out in light mode.
-  foot+='<td><b>'+tN+'</b> · <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> · '+tWR.toFixed(0)+'%'
+  foot+='<td class="fz fz-trades"><b>'+tN+'</b> ·<span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> · '+tWR.toFixed(0)+'%'
     +'<br><span class="cnt">won <span style="color:#10b981">'+inr(tWP)+'</span> · lost <span style="color:#ef4444">'+inr(Math.abs(tLP))+'</span></span></td>'
-    +'<td style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
+    +'<td class="fz fz-pnl" style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
 
   return '<div class="panel"><h3>'+esc(title)+' — day by day'
     +'<span class="h3-sub">One row per trading day, one column per strategy'+(hasLinks?' — click a P&amp;L to open the trades behind it':'')+'. TOTAL covers this market only.</span></h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
@@ -738,7 +763,19 @@ function render(){
   C.querySelectorAll('input[data-skip]').forEach(cb=>cb.addEventListener('change',()=>toggleSkip(cb.dataset.skip, cb.checked)));
   const cs=document.getElementById('clearSkip');
   if(cs) cs.addEventListener('click',clearSkip);
+  measureFrozen();
 }
+
+// Date sticks just right of Skip, Trades just left of Day P&L — so each
+// needs its neighbour's real width as its offset.
+function measureFrozen(){
+  document.querySelectorAll('.tbl').forEach(t=>{
+    const sk=t.querySelector('thead .fz-skip'), pn=t.querySelector('thead .fz-pnl');
+    if(sk) t.style.setProperty('--fz-l2', sk.getBoundingClientRect().width+'px');
+    if(pn) t.style.setProperty('--fz-r2', pn.getBoundingClientRect().width+'px');
+  });
+}
+let _fzT; window.addEventListener('resize',()=>{ clearTimeout(_fzT); _fzT=setTimeout(measureFrozen,120); });
 
 // wire controls
 document.querySelectorAll('#segMkt button').forEach(b=>b.addEventListener('click',()=>{
