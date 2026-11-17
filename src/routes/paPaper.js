@@ -3206,7 +3206,7 @@ router.post("/simulate/start", async (req, res) => {
       log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
       sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
       optionLtp: null, optionSymbol: null,
-      _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),
+      _reentryBlockUntil: 0,
       _expiryDayBlocked: false,
       _simMode: true, _simScenario: label,
       _simSession: true,   // sticky — survives onSimDone clearing _simMode
