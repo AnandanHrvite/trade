@@ -540,6 +540,11 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     secsToMAE:      0,
     entryReason:    sigSnapshot.reason,
   };
+  // ORB's own spot stop + target (ORB_STOP_MODE / ORB_TARGET_RR, both off by
+  // default) — planned once here, checked per tick in orbExits.evaluateTickExits.
+  // Another market reads its own <PAIR>_ORB_* value first, then NIFTY's.
+  Object.assign(pos, orbExits.planSpotExits(pos, (k) => PV(k.slice(4)) || process.env[k]));
+  if (pos.stopSpot != null) log(`🎯 ${TAG} ORB stop ${pos.stopSpot} (risk ${pos.riskPts}pt)${pos.rrTargetSpot != null ? ` · target ${pos.rrTargetSpot} (1:${pos.targetRR})` : ""}`);
   // Other markets: the position names its market and instrument, and how its
   // option leg was filled. NIFTY's position is exactly as above.
   state.optionQuote = null;
@@ -601,7 +606,9 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
 }
 
 // `kind` (sl / trail / manual / eod) only labels the trade journal's exit.
-function simulateSell(reason, kind) {
+// `aim` (optional) = the level this exit aimed at, for the journal; omitted = the
+// lock / premium stop level for sl/trail exits, as before.
+function simulateSell(reason, kind, aim) {
   if (!state.position) return;
   const pos = state.position;
   let exitOptLtp   = state.optionLtp || pos.optionEntryLtp;
@@ -628,7 +635,7 @@ function simulateSell(reason, kind) {
   // Trade journal exit — before the trade object is built (observer only).
   // A stop / lock exit aimed at the level it sits at (the journal's last stop);
   // anything else at the price it was taken at.
-  const _aim = (kind === "sl" || kind === "trail") ? _stopLevelOf(pos) : null;
+  const _aim = aim !== undefined ? aim : ((kind === "sl" || kind === "trail") ? _stopLevelOf(pos) : null);
   tradeJournal.onExit(pos, {
     reason, kind: kind || null,
     spot: exitSpot, optionLtp: pos.isFutures ? null : exitOptLtp,
@@ -660,6 +667,8 @@ function simulateSell(reason, kind) {
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
     exitReason:     reason,
     entryReason:    pos.entryReason,
+    stopSpot:       pos.stopSpot != null ? pos.stopSpot : null,          // ORB_STOP_MODE level (null = off)
+    rrTargetSpot:   pos.rrTargetSpot != null ? pos.rrTargetSpot : null,  // ORB_TARGET_RR level (null = off)
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
@@ -742,8 +751,8 @@ function simulateSell(reason, kind) {
 }
 
 // ── In-position management ──────────────────────────────────────────────────
-// The RULE lives in src/strategies/orbExits.js (the global profit lock — the only
-// automatic exit). This function is just the paper EXECUTION of that decision:
+// The RULE lives in src/strategies/orbExits.js (ORB's optional spot stop / target,
+// then the global profit lock). This function is just the paper EXECUTION of that decision:
 // simulate the fill, log, persist.
 
 // The level the automatic exit sits at right now — the profit lock floor or the
@@ -796,7 +805,11 @@ function _checkExits(spotPrice) {
   }
 
   const d = orbExits.evaluateTickExits(pos, { spotPrice, optionLtp: optLtp, guards: tradeGuards });
-  if (d.exit) simulateSell(d.reason, pos.isFutures || /^Stop-loss/.test(d.reason) ? "sl" : "trail");
+  if (!d.exit) return;
+  // ORB spot stop / target: on a future the spot level IS the price aimed at; on an
+  // option the premium at that spot is unknown, so the journal uses the fill.
+  if (d.kind) simulateSell(d.reason, d.kind === "stop" ? "sl" : "target", pos.isFutures ? d.level : null);
+  else simulateSell(d.reason, pos.isFutures || /^Stop-loss/.test(d.reason) ? "sl" : "trail");
 }
 
 // ── Candle close handler ────────────────────────────────────────────────────
@@ -807,8 +820,8 @@ async function onCandleClose(bar) {
   // The OI gate reads NIFTY's option chain — NIFTY only (pairRuntime.oiApplies).
   if (rt.oiApplies) await oiFilter.recordOiSample(bar && bar.close);
 
-  // Already in position? Nothing to do on the close — the only automatic exit
-  // (the profit lock) runs per tick in _checkExits.
+  // Already in position? Nothing to do on the close — the automatic exits (ORB's
+  // spot stop / target when set, then the profit lock) run per tick in _checkExits.
   if (state.position) return;
 
   const _spot = bar && bar.close;

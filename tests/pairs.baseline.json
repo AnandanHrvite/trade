@@ -97,6 +97,7 @@
    "group": "NIFTY",
    "tabs": [
     "Mode &amp; Entry",
+    "ORB Exits",
     "Option Selection",
     "Risk &amp; Regime",
     "Debug"
@@ -125,6 +126,8 @@
     "ORB_ST_MULT",
     "ORB_BREAKOUT_RESCAN",
     "ORB_RETEST_MAX_WAIT",
+    "ORB_STOP_MODE",
+    "ORB_TARGET_RR",
     "ORB_ITM_STEPS",
     "ORB_PREMIUM_GATE_ENABLED",
     "ORB_PREMIUM_MIN",

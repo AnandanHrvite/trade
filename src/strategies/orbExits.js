@@ -11,6 +11,11 @@
  * What still closes a position besides the lock: the manual exit, /stop and the
  * global TRADE_STOP_TIME session teardown — all owned by the routes.
  *
+ * 2026-11-18 (owner order): the classic ORB spot exits are back as OPTIONS, both
+ * shipping OFF — a stop on the opening range (ORB_STOP_MODE) and a reward:risk
+ * target (ORB_TARGET_RR). Planned once at entry (planSpotExits), checked per tick
+ * before the lock (spotExitAt). Paper and backtest both call these two functions.
+ *
  * DECISIONS ARE RETURNED, NOT EXECUTED. Paper simulates a fill, Live places a
  * broker order. Those are execution concerns; this module only decides.
  */
@@ -60,14 +65,73 @@ function trackExcursion(pos, spotPrice, optionLtp, nowMs) {
   trackPath(pos, favPts, nowMs);
 }
 
+const STOP_MODES = Object.freeze({
+  or_edge:     "range edge",        // the edge it broke: back inside the range = failed breakout
+  or_mid:      "range middle",
+  or_opposite: "far side of range",
+});
+const _r2 = (x) => Math.round(x * 100) / 100;
+
 /**
- * Tick-level exit: the global profit lock, and nothing else.
+ * ORB's own spot stop + target for a new position, from the opening range.
+ *   ORB_STOP_MODE  off | or_edge | or_mid | or_opposite   (default off)
+ *   ORB_TARGET_RR  target = entry ± RR × risk, risk = entry → stop (0 = no target;
+ *                  a target needs a stop, since the risk is measured to it)
+ * Example (or_edge, RR 2): ORH 24100, CE bought at 24120 → stop 24100 (risk 20pt),
+ * target 24160. An entry that is not beyond its own stop gets neither.
  *
- * @returns {{exit:boolean, reason:string|null}}
+ * @param {{side:string, entrySpot:number, orh:number, orl:number}} p
+ * @param {(key:string)=>string|undefined} [get] key reader (a market pair passes its own)
+ * @returns {{stopSpot:number|null, rrTargetSpot:number|null, riskPts:number|null, stopMode:string|null, targetRR:number|null}}
+ */
+function planSpotExits({ side, entrySpot, orh, orl }, get = (k) => process.env[k]) {
+  const none = { stopSpot: null, rrTargetSpot: null, riskPts: null, stopMode: null, targetRR: null };
+  const mode = String(get("ORB_STOP_MODE") || "off").trim().toLowerCase();
+  if (!STOP_MODES[mode]) return none;
+  if (![entrySpot, orh, orl].every(Number.isFinite) || !(orh > orl)) return none;
+  const isCE = side === "CE";
+  const stop = mode === "or_edge" ? (isCE ? orh : orl)
+             : mode === "or_mid"  ? (orh + orl) / 2
+             :                      (isCE ? orl : orh);
+  const risk = isCE ? entrySpot - stop : stop - entrySpot;
+  if (!(risk > 0)) return none;
+  const rr = parseFloat(get("ORB_TARGET_RR") || "0");
+  const hasTarget = Number.isFinite(rr) && rr > 0;
+  const target = hasTarget ? (isCE ? entrySpot + rr * risk : entrySpot - rr * risk) : null;
+  return {
+    stopSpot: _r2(stop), rrTargetSpot: target == null ? null : _r2(target),
+    riskPts: _r2(risk), stopMode: mode, targetRR: hasTarget ? rr : null,
+  };
+}
+
+/**
+ * Does spot price `px` hit the position's ORB stop or target? Stop first.
+ * @returns {{kind:"stop"|"target", level:number, reason:string}|null}
+ */
+function spotExitAt(pos, px) {
+  if (!pos || !Number.isFinite(px)) return null;
+  const isCE = pos.side === "CE";
+  if (pos.stopSpot != null && (isCE ? px <= pos.stopSpot : px >= pos.stopSpot)) {
+    return { kind: "stop", level: pos.stopSpot,
+      reason: `Stop-loss (ORB ${STOP_MODES[pos.stopMode] || "stop"}) — spot crossed ${pos.stopSpot} (risk ${pos.riskPts}pt)` };
+  }
+  if (pos.rrTargetSpot != null && (isCE ? px >= pos.rrTargetSpot : px <= pos.rrTargetSpot)) {
+    return { kind: "target", level: pos.rrTargetSpot,
+      reason: `Target 1:${pos.targetRR} — spot reached ${pos.rrTargetSpot} (risk ${pos.riskPts}pt)` };
+  }
+  return null;
+}
+
+/**
+ * Tick-level exit: ORB's spot stop / target (when set), then the global profit lock.
+ *
+ * @returns {{exit:boolean, reason:string|null, kind?:string, level?:number}}
  */
 // guards: the caller's tradeGuards (ORB's own Common Rules when its toggle is ON); default = common.
 function evaluateTickExits(pos, { spotPrice, optionLtp, guards }) {
   if (!pos) return { exit: false, reason: null };
+  const sx = spotExitAt(pos, spotPrice);
+  if (sx) return { exit: true, reason: sx.reason, kind: sx.kind, level: sx.level };
   const tg = guards || require("../utils/tradeGuards");
   // Global profit lock (shared across every strategy — see tradeGuards). Options
   // only: it is defined on option premium, and in futures mode optionLtp mirrors
@@ -102,6 +166,8 @@ function isLtpStale(updatedAtMs, nowMs) {
 
 module.exports = {
   trackExcursion,
+  planSpotExits,
+  spotExitAt,
   evaluateTickExits,
   isLtpStale,
 };

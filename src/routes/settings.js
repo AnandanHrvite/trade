@@ -201,6 +201,10 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_BREAKOUT_RESCAN", label: "Breakout — Skip Weak Poke, Keep Hunting", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF = the first close beyond the range is final, even if it fails the body filter (old behaviour).", default: "true" },
       { key: "ORB_RETEST_MAX_WAIT", label: "Retest / Resume Window (candles)", type: "number", min: 0, max: 12, step: 1, effect: EFFECT.INSTANT, desc: "Candles to wait for a retest or resume (0 = off).", default: "6" },
 
+      // ── ORB's own exits: stop on the opening range + reward:risk target ──
+      { key: "ORB_STOP_MODE", label: "ORB Stop-Loss (spot)", type: "select", options: ["off", "or_edge", "or_mid", "or_opposite"], effect: EFFECT.INSTANT, desc: "Classic ORB stop on NIFTY spot. or_edge = the range edge it broke (back inside = failed breakout, smallest risk). or_mid = middle of the range. or_opposite = the other side of the range. off = no ORB stop (only the Common Rules exits). For pure ORB exits turn ON ORB's 'Own Common Rules' and switch ORB's profit lock / premium stop off there.", default: "off", subheader: "ORB Exits" },
+      { key: "ORB_TARGET_RR", label: "ORB Target — Reward : Risk (0 = off)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Target = entry + this × risk, where risk = entry to the ORB stop. 2 = 1:2 (CE bought 24120, stop 24100 → target 24160). Needs an ORB stop.", default: "0" },
+
       // ── Option selection + tradability gates (paper only — the
       //    backtest has no option chain) ───────────────────────────────────
       { key: "ORB_ITM_STEPS", label: "Slightly-ITM Strike Steps", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Strikes in-the-money to trade (0 = ATM).", default: "1", subheader: "Option Selection" },

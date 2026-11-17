@@ -104,10 +104,33 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   // ── Profit lock is the ONLY automatic exit (2026-11-07) ──────────────────
   console.log("Profit lock is the only exit");
 
-  check("the shared exit engine exposes no exit but the profit lock", () => {
+  check("the shared exit engine exposes only the lock + ORB's optional spot stop/target", () => {
     const orbExits = require("../src/strategies/orbExits");
-    assert.deepStrictEqual(Object.keys(orbExits).sort(), ["evaluateTickExits", "isLtpStale", "trackExcursion"],
-      "orbExits grew a second exit rule (or a stop/trail helper) again");
+    assert.deepStrictEqual(Object.keys(orbExits).sort(), ["evaluateTickExits", "isLtpStale", "planSpotExits", "spotExitAt", "trackExcursion"],
+      "orbExits grew another exit rule (or a stop/trail helper)");
+  });
+
+  // 2026-11-18 (owner order): ORB's own spot stop + reward:risk target, both OFF by default.
+  check("ORB spot stop / target: off by default, planned from the range, stop before target", () => {
+    const orbExits = require("../src/strategies/orbExits");
+    const env = (o) => (k) => o[k];
+    const ce = { side: "CE", entrySpot: 24120, orh: 24100, orl: 24000 };
+    const pe = { side: "PE", entrySpot: 23980, orh: 24100, orl: 24000 };
+    assert.strictEqual(orbExits.planSpotExits(ce, env({})).stopSpot, null, "a stop is planned with ORB_STOP_MODE unset");
+    const e = orbExits.planSpotExits(ce, env({ ORB_STOP_MODE: "or_edge", ORB_TARGET_RR: "2" }));
+    assert.deepStrictEqual([e.stopSpot, e.riskPts, e.rrTargetSpot], [24100, 20, 24160], `or_edge CE 1:2: ${JSON.stringify(e)}`);
+    const m = orbExits.planSpotExits(pe, env({ ORB_STOP_MODE: "or_mid", ORB_TARGET_RR: "1.5" }));
+    assert.deepStrictEqual([m.stopSpot, m.riskPts, m.rrTargetSpot], [24050, 70, 23875], `or_mid PE 1:1.5: ${JSON.stringify(m)}`);
+    const o = orbExits.planSpotExits(ce, env({ ORB_STOP_MODE: "or_opposite", ORB_TARGET_RR: "0" }));
+    assert.deepStrictEqual([o.stopSpot, o.rrTargetSpot], [24000, null], "RR 0 must mean no target");
+    // An entry not beyond its own stop gets neither.
+    assert.strictEqual(orbExits.planSpotExits({ ...ce, entrySpot: 24090 }, env({ ORB_STOP_MODE: "or_edge", ORB_TARGET_RR: "2" })).stopSpot, null);
+    const pos = { ...ce, ...e, isFutures: false, optionEntryLtp: 200, peakPremium: 200, qty: 65 };
+    assert.strictEqual(orbExits.evaluateTickExits(pos, { spotPrice: 24110, optionLtp: 195 }).exit, false, "exited between stop and target");
+    const st = orbExits.evaluateTickExits(pos, { spotPrice: 24099, optionLtp: 190 });
+    assert.ok(st.exit && st.kind === "stop" && /^Stop-loss/.test(st.reason), `stop did not fire: ${JSON.stringify(st)}`);
+    const tg = orbExits.evaluateTickExits(pos, { spotPrice: 24161, optionLtp: 225 });
+    assert.ok(tg.exit && tg.kind === "target" && tg.level === 24160, `target did not fire: ${JSON.stringify(tg)}`);
   });
 
   check("evaluateTickExits fires on the profit lock, and on nothing else", () => {
