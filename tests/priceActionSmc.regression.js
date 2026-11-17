@@ -271,14 +271,14 @@ async function backtestAfter(extraRows, env) {
 // The lock in spot points: arm 4% of a 200 premium at delta 0.55 ≈ 14.5 pts, floor 2% ≈ 7.27 pts.
 const LOCK_ENV = { PROFIT_LOCK_ENABLED: "true", PROFIT_LOCK_ARM_PCT: "4", PROFIT_LOCK_FLOOR_PCT: "2", BACKTEST_DELTA: "0.55", PROFIT_LOCK_TRAIL_PCT: "0", PROFIT_LOCK_TRAIL_TIERS: "" };
 
-check("backtest: fills at the NEXT open and, with no lock armed, closes at the day's last bar", async () => {
-  // bullBars ends on bar 98 of day 1 (bars 75-149). Entry on bar 99, then flat to the
+check("backtest: fills at the signal close (like paper) and, with no lock armed, closes at the day's last bar", async () => {
+  // bullBars ends on bar 98 of day 1 (bars 75-149). Entry at bar 98's close (1007), then flat to the
   // day's last bar 149, then one bar of the next day.
   const flat = Array.from({ length: 50 }, () => [1018, 1019, 1017, 1018]);
   const { trades } = await backtestAfter([[1008, 1020, 1006, 1018], ...flat, [1030, 1031, 1029, 1030]]);
   assert.strictEqual(trades.length, 1, JSON.stringify(trades));
   assert.strictEqual(trades[0].side, "CE");
-  assert.strictEqual(trades[0].entryPrice, 1008, "entry = next candle's open, not the signal close");
+  assert.strictEqual(trades[0].entryPrice, 1007, "entry = the signal candle's close, as paper fills");
   assert.strictEqual(trades[0].exitReason, "Session end");
   assert.strictEqual(trades[0].exitPrice, 1018, "closed at the day's last close, not the next day's");
 });
@@ -293,13 +293,13 @@ check("backtest: no stop — a candle far below entry does not close the trade",
 check("backtest: an armed lock fills at its floor, not at the candle's low", async () => {
   const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 980, 985]], LOCK_ENV);
   assert.ok(/Profit lock/.test(trades[0].exitReason), trades[0].exitReason);
-  assert.strictEqual(trades[0].exitPrice, 1015.27);
+  assert.strictEqual(trades[0].exitPrice, 1014.27);
 });
 
 check("backtest: slippage works against the entry and the lock fill", async () => {
   const { trades } = await backtestAfter([[1008, 1038, 1010, 1030], [1030, 1032, 980, 985]], Object.assign({ BACKTEST_SLIPPAGE_PTS: "2" }, LOCK_ENV));
-  assert.strictEqual(trades[0].entryPrice, 1010);
-  assert.strictEqual(trades[0].exitPrice, 1015.27, "floor 1017.27 less 2 pts");
+  assert.strictEqual(trades[0].entryPrice, 1009);
+  assert.strictEqual(trades[0].exitPrice, 1014.27, "floor 1016.27 less 2 pts");
 });
 
 check("backtest: a candle gapping through the lock floor fills at the open", async () => {

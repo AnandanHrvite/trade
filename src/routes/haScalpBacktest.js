@@ -10,7 +10,7 @@
  *   for each closed 15-min spot bar:
  *     getSignal(bars up to here, { ha, ma })   → BUY_CE / BUY_PE / NONE
  *   fill: the NEXT raw bar's OPEN (the signal fires on a closed bar)
- *   exit: the global profit lock on the simulated premium, else the day's last bar
+ *   exit: the global profit lock on the simulated premium, else the TRADE_STOP_TIME bar
  *
  * ONE INSTRUMENT. Unlike the futures strategies there is no contract roll and no
  * second symbol: NSE:NIFTY50-INDEX is perpetual, so the whole range is one fetch
@@ -31,7 +31,7 @@
  * simulated premium. Each bar is walked open → adverse extreme → favourable
  * extreme → close: the peak only rises on the open and the favourable leg, so a
  * bar can never lock in a gain it had not yet printed. A trade still open at the
- * day's last bar is closed there (paper's session teardown).
+ * TRADE_STOP_TIME bar (paper's auto-stop) is closed at its close.
  *
  * There is NO historical option chain, so premium is δ+θ simulated. Treat ₹ as
  * DIRECTIONAL, not exact. A spread/slippage haircut of BACKTEST_SLIPPAGE_PTS
@@ -111,7 +111,8 @@ function escHtml(x) {
  */
 function _warmupDays() {
   const v = parseInt(process.env.HA_SCALP_WARMUP_DAYS, 10);
-  return Number.isFinite(v) && v >= 0 ? v : 15;
+  // Same bounds as paper's _warmupDays(): 3–120, else the default.
+  return Number.isFinite(v) && v >= 3 && v <= 120 ? v : 15;
 }
 
 /** "YYYY-MM-DD" shifted back by `days` calendar days. */
@@ -174,9 +175,15 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const RES          = cfg.resolutionMins;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
-  // Paper measures it from the exit's clock time: an exit INSIDE the bar
-  // (≈ bar open here), or one at the bar's CLOSE.
+  // Paper's exit is a tick INSIDE bar k (even the "given back by the close" leg)
+  // and it checks the block at the signal bar's CLOSE. Measuring the block from
+  // bar k's OPEN and checking it against the signal bar's OPEN gives the same
+  // answer: with N=2, the k+1 close is refused and the k+2 close allowed.
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
+  // Paper's session auto-stop: NIFTY TRADE_STOP_TIME; another market its own
+  // session end (rt.stopTimeLabel(): MCX 23:30, NSE / BSE TRADE_STOP_TIME). It
+  // sells an open trade and ends the session, so no bar closing after it is walked.
+  const STOP_MIN = _pairRt ? _pairRt.stopMins() : haStrategy._parseHHMM(process.env.TRADE_STOP_TIME || "15:30", 15 * 60 + 30);
 
   // The engine's own warm-up requirement, restated here only so the log can say
   // WHY a day was mute. The decision itself stays inside getSignal().
@@ -211,16 +218,20 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
     // Yield once per session so live ticks/orders sharing this process are not
     // starved while a long backtest runs.
     await new Promise(resolve => setImmediate(resolve));
-    const idxs = byDay.get(k);
-    if (!idxs || !idxs.length) continue;
-    const dayTs = sorted[idxs[0]].time;
+    const allIdxs = byDay.get(k);
+    if (!allIdxs || !allIdxs.length) continue;
+    const dayTs = sorted[allIdxs[0]].time;
     const dayStr = haStrategy._istDateStr(dayTs);
 
     // Warm-up days are fed to the series above but never traded.
     if (rangeFrom && dayStr < rangeFrom) {
-      funnel.warmupBars += idxs.length;
+      funnel.warmupBars += allIdxs.length;
       continue;
     }
+    // The day's bars up to paper's auto-stop (TRADE_STOP_TIME). The HA/MA series
+    // above still run over every bar.
+    const idxs = allIdxs.filter(gi => haStrategy._utcSecToIstMins(sorted[gi].time) + RES <= STOP_MIN);
+    if (!idxs.length) { skipped.push({ date: istDateOf(dayTs), reason: "no bar closes before TRADE_STOP_TIME" }); continue; }
     days++;
     if (EXPIRY_ONLY && !_pairRt.isExpiryDay(Date.parse(`${dayStr}T09:15:00+05:30`))) {
       skipped.push({ date: istDateOf(dayTs), reason: `not a ${M.label} expiry day — expiry-day-only` });
@@ -257,8 +268,9 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
       };
     }
 
-    function close(exitPx, exitTime, reason, reasonCode, atBarClose) {
-      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
+    function close(exitPx, exitTime, reason, reasonCode) {
+      // exitTime is the exit bar's open — see REENTRY_COOLDOWN_SECS above.
+      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + REENTRY_COOLDOWN_SECS;
       // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
       // entry for the rest of the IST day once N trades have closed. Per-day state.
       dayClosedTrades++;
@@ -313,7 +325,7 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
       const pFav = premiumAt(isCE ? c.high : c.low, c.time);
       if (pFav > pos.peakPremium) pos.peakPremium = pFav;
       msg = lockAt(entry, premiumAt(c.close, c.time), pos.peakPremium);
-      if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, "PROFIT_LOCK", true);
+      if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, "PROFIT_LOCK");
     }
 
     for (let j = 0; j < idxs.length; j++) {
@@ -392,11 +404,11 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
       }
     }
 
-    // A position still open at the last bar of the day is closed there — the
-    // backtest's stand-in for paper's session teardown.
+    // A position still open at the last bar up to TRADE_STOP_TIME is closed at
+    // its close — paper's auto-stop sells it ("Session stopped").
     if (pos) {
       const last = sorted[idxs[idxs.length - 1]];
-      close(last.close, last.time, "Session end (last candle of the day)", "SESSION_END", true);
+      close(last.close, last.time, "Session end (TRADE_STOP_TIME auto-stop)", "SESSION_END");
     }
     pendingEntry = null;
 
@@ -508,7 +520,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Exit mix", value: exitMix },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${home ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${escHtml(M.exchange)} charges. `}${(home ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true) ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> ${home ? "NIFTY 50" : escHtml(M.label)} <b>INDEX spot</b> (<code>${escHtml(home ? SPOT_SYMBOL : M.spotSymbol)}</code>) ${cfg.resolutionMins}-min — not futures, and no volume is read anywhere in this strategy. Heikin Ashi is built ${cfg.haContinuous ? "CONTINUOUSLY across days (TradingView's own behaviour)" : "reseeded each IST day"}. <b>Warm-up:</b> ${escHtml(String(meta.warmupDays))} calendar day(s) of history were fetched BEFORE ${escHtml(from)} so the first requested session could already decide — the engine refuses to signal until it holds ${Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1} bars (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the recursive HA seed decay); those runway bars never open a trade. <b>Trend gate:</b> raw close above the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} → CE only, below → PE only. A with-trend candle on the wrong side of the MA is skipped on purpose. <b>Entry candle:</b> a Heikin Ashi candle of the trend's colour with NO ${cfg.maxWickPct > 0 ? `wick beyond ${cfg.maxWickPct}% of its range` : "wick at all (exact zero — strict by the user's choice, so low frequency is expected)"} on the trend side, body ≥ ${cfg.minBodyPts}pt. <b>Fill:</b> the NEXT raw candle's OPEN — the signal fires on a closed bar and is filled on the bar that follows, which is what Paper and Live do on the first tick after the close. <b>Exit:</b> the global profit lock is the ONLY automatic exit — no stop, trail, target or candle exit; a trade still open at the day's last candle is closed there. Each bar is walked open → adverse extreme → favourable extreme → close. A doji (HA body ≤ ${cfg.dojiBodyPct}% of range) is never an entry. The entry window is ${haStrategy._fmtMins(cfg.entryStartMin)}–${haStrategy._fmtMins(cfg.entryEndMin)}. Option premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}, θ ₹${escHtml(process.env.BACKTEST_THETA_DAY || "8")}/day) seeded at ₹${escHtml(backtestCosts.seedPremium())}, PLUS ${escHtml(backtestCosts.slippagePts())}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the no-wick frequency has never been measured.</b>`,
+    notes: `${home ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${escHtml(M.exchange)} charges. `}${(home ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true) ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no profit lock (it is defined on option premium); a PE is a SHORT. " : ""}<b>Chart:</b> ${home ? "NIFTY 50" : escHtml(M.label)} <b>INDEX spot</b> (<code>${escHtml(home ? SPOT_SYMBOL : M.spotSymbol)}</code>) ${cfg.resolutionMins}-min — not futures, and no volume is read anywhere in this strategy. Heikin Ashi is built ${cfg.haContinuous ? "CONTINUOUSLY across days (TradingView's own behaviour)" : "reseeded each IST day"}. <b>Warm-up:</b> ${escHtml(String(meta.warmupDays))} calendar day(s) of history were fetched BEFORE ${escHtml(from)} so the first requested session could already decide — the engine refuses to signal until it holds ${Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1} bars (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the recursive HA seed decay); those runway bars never open a trade. <b>Trend gate:</b> raw close above the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} → CE only, below → PE only. A with-trend candle on the wrong side of the MA is skipped on purpose. <b>Entry candle:</b> a Heikin Ashi candle of the trend's colour with NO ${cfg.maxWickPct > 0 ? `wick beyond ${cfg.maxWickPct}% of its range` : "wick at all (exact zero — strict by the user's choice, so low frequency is expected)"} on the trend side, body ≥ ${cfg.minBodyPts}pt. <b>Fill:</b> the NEXT raw candle's OPEN — the signal fires on a closed bar and is filled on the bar that follows, which is what Paper and Live do on the first tick after the close. <b>Exit:</b> the global profit lock is the ONLY automatic exit — no stop, trail, target or candle exit; a trade still open at TRADE_STOP_TIME is closed on the bar that ends there (paper's auto-stop), and no bar after it is walked. Each bar is walked open → adverse extreme → favourable extreme → close. A doji (HA body ≤ ${cfg.dojiBodyPct}% of range) is never an entry. The entry window is ${haStrategy._fmtMins(cfg.entryStartMin)}–${haStrategy._fmtMins(cfg.entryEndMin)}. Option premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}, θ ₹${escHtml(process.env.BACKTEST_THETA_DAY || "8")}/day) seeded at ₹${escHtml(backtestCosts.seedPremium())}, PLUS ${escHtml(backtestCosts.slippagePts())}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the no-wick frequency has never been measured.</b>`,
   };
 }
 

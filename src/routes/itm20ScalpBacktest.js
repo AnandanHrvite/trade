@@ -134,7 +134,15 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
   const SEED_PREMIUM = backtestCosts.seedPremium();
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const STEP         = home ? instrumentConfig.underlyingOf().strikeStep : M.strikeStep;
+  // Wait-after-any-exit cooldown. Paper's exit is a tick INSIDE bar k and it
+  // checks the block at the signal bar's CLOSE; measuring from bar k's OPEN and
+  // checking the signal bar's OPEN gives the same answer (N=2: k+1 refused, k+2 ok).
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
+  // Paper's session auto-stop (TRADE_STOP_TIME; another market rt.stopTimeLabel())
+  // sells an open trade and ends the session. The earlier of it and the
+  // strategy's own square-off closes the trade; no bar closing after it is walked.
+  const STOP_MIN = home ? strat._parseHHMM(process.env.TRADE_STOP_TIME || "15:30", 15 * 60 + 30) : _pairRt.stopMins();
+  const EXIT_MIN = Math.min(cfg.squareOffMin, STOP_MIN);
   const lock = o.lock || {
     enabled: tradeGuards.PROFIT_LOCK_ENABLED,
     armPct: tradeGuards.PROFIT_LOCK_ARM_PCT,
@@ -190,6 +198,7 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
     let dayClosed = false;
     let dayNote = null;
     let sawBreakout = false;
+    let lastBar = null;       // last bar walked (up to TRADE_STOP_TIME)
 
     function premAt(spotPx, t) {
       const barsHeld = Math.max(0, (t - pos.entryTime) / 60 / RES);
@@ -215,6 +224,9 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
         ? getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE })
         : getCharges({ broker: "fyers", isFutures: IS_FUT, exchange: M.exchange, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
       const pnl = _r2(gross - charges);
+      // Paper's day limits / stop-after-win / daily-loss stop read the RAW LTP
+      // points (no slippage haircut); the reported P&L above keeps the slippage.
+      const rawPoints = _r2(rawPrem - pos.optionEntryLtp);
       exitReasons[code] = (exitReasons[code] || 0) + 1;
       const exitSec = exitTime + (atBarClose ? RES * 60 : 0);
       trades.push({
@@ -235,10 +247,13 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
         eOpt: pos.optionEntryLtp, xOpt: exitPrem,
         held: Math.round(Math.max(0, (exitSec - pos.entryTime) / 60 / RES)),
       });
-      dayTrades.push({ points });
-      lastExitSec = exitSec;
+      dayTrades.push({ points: rawPoints });
+      // Paper's exit is a tick inside this bar, so the engine still scans this
+      // bar's close (resumeAfterSec) and the wait runs from inside it: use the
+      // bar's open, not its close.
+      lastExitSec = exitTime;
       pos = null;
-      if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitSec + _REENTRY_COOLDOWN_SECS;
+      if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + _REENTRY_COOLDOWN_SECS;
       // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
       // entry for the rest of the IST day once N trades have closed. dayTrades is per day.
       if (tradeGuards.dayCapReached(dayTrades.length)) reentryBlockUntil = Infinity;
@@ -275,19 +290,24 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
       if (msg) { close(pClose, c.time, `${msg} (given back inside the bar — filled at the close)`, "PROFIT_LOCK", true); return; }
 
       const closeMin = strat._utcSecToIstMins(c.time) + RES;
-      if (closeMin >= cfg.squareOffMin) close(pClose, c.time, `Square-off ${strat._fmtMins(cfg.squareOffMin)}`, "SQUARE_OFF", true);
+      if (closeMin >= EXIT_MIN) {
+        if (cfg.squareOffMin <= STOP_MIN) close(pClose, c.time, `Square-off ${strat._fmtMins(cfg.squareOffMin)}`, "SQUARE_OFF", true);
+        else close(pClose, c.time, `Session stopped (TRADE_STOP_TIME ${strat._fmtMins(STOP_MIN)})`, "SESSION_END", true);
+      }
     }
 
     for (let j = 0; j < idxs.length; j++) {
       const gi = idxs[j];
       const c = sorted[gi];
       const startMin = strat._utcSecToIstMins(c.time);
+      if (startMin + RES > STOP_MIN) break;   // paper has auto-stopped (TRADE_STOP_TIME)
+      lastBar = c;
 
       // 1. Fill a pending entry at THIS bar's open.
       if (pending && !pos) {
         const sig = pending;
         pending = null;
-        if (typeof c.open === "number" && Number.isFinite(c.open) && startMin < cfg.squareOffMin) {
+        if (typeof c.open === "number" && Number.isFinite(c.open) && startMin < EXIT_MIN) {
           const gate = strat.dayRiskGate(dayTrades, cfg);
           // NIFTY_FUT: the entry "premium" is the future at the index level, so
           // the levels are its points in the trade's favour.
@@ -329,7 +349,8 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
     }
 
     if (pos) {
-      const last = sorted[idxs[idxs.length - 1]];
+      // The last bar walked: the day's last, or the last one up to TRADE_STOP_TIME.
+      const last = lastBar;
       close(premAt(last.close, last.time), last.time, "Session end (last candle of the day)", "SESSION_END", true);
     }
     if (sawBreakout) funnel.breakouts++;

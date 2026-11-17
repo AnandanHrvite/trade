@@ -446,7 +446,7 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
       process.env.OI_FILTER_ENABLED = "true"; process.env.ORB_OI_ENABLED = "true"; process.env.ORB_VIX_ENABLED = "true";
       const on = _paperOnlyGates().join(" | ");
       assert.ok(/OI buildup/.test(on), `OI gate enabled but not disclosed: ${on}`);
-      assert.ok(/VIX/.test(on),        `VIX gate enabled but not disclosed: ${on}`);
+      assert.ok(!/VIX/.test(on),       `VIX is modelled by the backtest, must not be listed as paper-only: ${on}`);
 
       process.env.OI_FILTER_ENABLED = "false"; process.env.ORB_OI_ENABLED = "false"; process.env.ORB_VIX_ENABLED = "false";
       const off = _paperOnlyGates().join(" | ");

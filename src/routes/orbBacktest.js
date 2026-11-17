@@ -49,8 +49,9 @@ const RESULT_KEY = "ORB_BACKTEST";
 
 /**
  * Names the entry gates that paper/live apply but this backtest CANNOT, because
- * they need a live option chain (premium, bid-ask spread, futures OI) or a live
- * VIX quote — none of which exist in historical 5-min spot candles.
+ * they need a live option chain (premium, bid-ask spread, futures OI) — none of
+ * which exist in historical 5-min spot candles. (The VIX gate IS modelled, from
+ * daily VIX candles, so it is not listed.)
  *
  * Built from the CURRENT env rather than hard-coded, because a hard-coded sentence
  * silently goes stale the moment someone flips a toggle. Any gate listed here makes
@@ -78,7 +79,6 @@ function _paperOnlyGates() {
     ? `bid-ask spread ≤ ${_maxSpread}pt`
     : `bid-ask spread — threshold "${_rawSpread}" is not a positive number, so paper/live reject EVERY quote that has a spread`);
   if (on("OI_FILTER_ENABLED") && on("ORB_OI_ENABLED")) g.push("OI buildup filter");
-  if (on("ORB_VIX_ENABLED")) g.push(`VIX ≤ ${process.env.ORB_VIX_MAX_ENTRY || "22"}`);
   return g;
 }
 function _paperOnlyGatesNote() {
@@ -159,8 +159,10 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
   const SEED_PREMIUM    = backtestCosts.seedPremium();   // slightly-ITM ≈ ATM + one strike intrinsic
   const SLIPPAGE_PREM   = backtestCosts.slippagePts();   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
-  // Paper measures it from the exit's clock time: a tick exit inside the bar is
-  // stamped at the bar open here, one given back by the close at the bar's CLOSE.
+  // Paper measures it from the exit's clock time — every ORB exit is a tick INSIDE
+  // the bar (just after its open, or just before its close for one given back by the
+  // close) — and checks it at the next candle close, where it fills. So an exit in
+  // bar k with N candles first allows the signal on bar k+N.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(5) / 1000;
   // Confirmation and the retest/resume fallback both live INSIDE the engine, so the
   // backtest has no entry logic of its own — it polls getSignal each candle. The old
@@ -222,7 +224,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
       // ── Futures: no premium lock (paper/live skip it), but the common stop in
       //    index points (tradeGuards.futuresStopLevel), same open → adverse →
       //    favourable → close walk. bestFavPts = best favourable index move so far.
-      if (position && IS_FUT) {
+      futExit: if (position && IS_FUT) {
         const isCE = position.side === "CE";
         const _fav = (px) => (px - position.entrySpot) * (isCE ? 1 : -1);
         const _lvl = () => tradeGuards.futuresStopLevel(position.side, position.entrySpot, position.bestFavPts);
@@ -232,17 +234,17 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
         let lvl = _lvl();
         if (_hit(c.open, lvl)) {
           closePos(position, c.open, c.time, `${_why(lvl)} (bar opened through it — filled at the open)`);
-          _book(position, c.time); position = null; continue;
+          _book(position, c.time + 1); position = null; break futExit;
         }
         if (_hit(isCE ? c.low : c.high, lvl)) {
           closePos(position, lvl, c.time, _why(lvl));
-          _book(position, c.time); position = null; continue;
+          _book(position, c.time + 1); position = null; break futExit;
         }
         position.bestFavPts = Math.max(position.bestFavPts, _fav(isCE ? c.high : c.low));
         lvl = _lvl();
         if (_hit(c.close, lvl)) {
           closePos(position, c.close, c.time, `${_why(lvl)} (trailed and given back inside the bar — filled at the close)`);
-          _book(position, c.time + 5 * 60); position = null; continue;
+          _book(position, c.time + 5 * 60 - 1); position = null; break futExit;
         }
       }
 
@@ -252,7 +254,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
       //    tripped on the way down fills at the spot level of its floor (never
       //    better than the open); one armed and given back inside the bar fills at
       //    the close. Futures legs never carry the premium lock (paper/live skip it).
-      if (position && !IS_FUT) {
+      lockExit: if (position && !IS_FUT) {
         const isCE = position.side === "CE";
         const _lock = (prem) => tradeGuards.checkProfitLock(position.optionEntryLtp, prem, position.peakPremium);
         // a) the open
@@ -261,7 +263,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
         let hit = _lock(pOpen);
         if (hit) {
           closePos(position, c.open, c.time, hit);
-          _book(position, c.time); position = null; continue;
+          _book(position, c.time + 1); position = null; break lockExit;
         }
         // b) open → adverse extreme
         hit = _lock(_premAt(position, isCE ? c.low : c.high));
@@ -270,7 +272,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
           const raw = _spotForPrem(position, floor);
           const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
           closePos(position, fill, c.time, hit);
-          _book(position, c.time); position = null; continue;
+          _book(position, c.time + 1); position = null; break lockExit;
         }
         // c) adverse → favourable extreme: the peak rises, nothing exits
         const pFav = _premAt(position, isCE ? c.high : c.low);
@@ -279,7 +281,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
         hit = _lock(_premAt(position, c.close));
         if (hit) {
           closePos(position, c.close, c.time, hit);
-          _book(position, c.time + 5 * 60); position = null; continue;
+          _book(position, c.time + 5 * 60 - 1); position = null; break lockExit;
         }
       }
 
@@ -293,7 +295,8 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
         break;
       }
 
-      // Flat → eval ORB signal.
+      // Flat → eval ORB signal. Also on a bar that just exited: paper's onCandleClose
+      // runs getSignal once flat on that same close (cooldown / day cap still apply).
       if (!position && istMin < ENTRY_END_MIN) {
         // Open the position at candle `oc` from signal `s`. Closes over `position`
         // from the day loop.
@@ -338,8 +341,9 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
         // VIX gate — paper runs it only AFTER a signal exists, so keep that order.
         const _vixOk = sig.signal === "NONE" || !sig.side
           || vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength, { mode: "orb" }).allowed;
-        // Wait-after-any-exit cooldown: both sides (paper rejects in simulateBuy, after VIX).
-        const _reentryBlocked = _reentryBlockUntilTs > 0 && c.time < _reentryBlockUntilTs;
+        // Wait-after-any-exit cooldown: both sides (paper rejects in simulateBuy, after VIX),
+        // checked at this signal bar's CLOSE — the clock paper fills at.
+        const _reentryBlocked = _reentryBlockUntilTs > 0 && c.time + 5 * 60 < _reentryBlockUntilTs;
         if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk && _vixOk && !_reentryBlocked) _open(sig, c);
       }
     }
@@ -447,7 +451,7 @@ function _resultsView(from, to, trades, stats, market) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `${M ? `<b>MARKET: ${M.label}</b> — ${M.spotSymbol} candles, lot ${M.lotQty}, ${M.exchange} charges; the seeded premium and the OR / point thresholds are NIFTY-calibrated unless this market sets its own. ` : ""}${futMode ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "10:15"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
+    notes: `${M ? `<b>MARKET: ${M.label}</b> — ${M.spotSymbol} candles, lot ${M.lotQty}, ${M.exchange} charges; the seeded premium and the OR / point thresholds are NIFTY-calibrated unless this market sets its own. ` : ""}${futMode ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "0"}×ATR15 (0 = off)${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "0"}×OR (0 = off)), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "10:15"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
   };
 }
 

@@ -162,6 +162,8 @@ function getGuardConfig() {
     // Session teardown — the same global key paper's auto-stop reads. Entries
     // stop 10 min before it (paper's _ENTRY_STOP_MINS).
     sessionStopMin: _parseMins("TRADE_STOP_TIME", "15:30"),
+    // Paper's isMarketHours() — no entry on any path before TRADE_START_TIME.
+    tradeStartMin:  _parseMins("TRADE_START_TIME", "09:15"),
     warmupDays:     _int("EMA_RSI_ST_V2_WARMUP_DAYS", "5"),
     slippagePts:    backtestCosts.slippagePts(),
     seedPremium:    backtestCosts.seedPremium(),
@@ -183,7 +185,7 @@ function getGuardConfig() {
  * non-zero count is a bug in this file, surfaced on the results page rather than
  * swallowed.
  */
-async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = null) {
+async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = null, expiryDates = null) {
   const empty = {
     trades: [], days: 0, warmupViolations: 0, warmupBars: 0,
     gateStats: { setups: 0, confirmArmed: 0, confirmFilled: 0, confirmExpired: 0,
@@ -358,6 +360,9 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = nu
       // would. `warmupViolations` in openPosition is the belt-and-braces assertion
       // that this gate actually holds.
       if (barTime < activeFromTs) return "blockedWarmup";
+      // Expiry-day-only (paper's _expiryDayBlocked): a non-expiry day never arms
+      // or enters, so no entry path can open a trade on it.
+      if (expiryDates && !expiryDates.has(_istDateOf(barTime))) return "blockedExpiry";
       // The engine already refuses outside its own window, but the SIGNAL bar's
       // close is what arms — re-checking here keeps the funnel counters honest.
       if (istMin < g.entryStartMin || istMin >= g.entryEndMin || istMin >= ENTRY_CUTOFF_MIN) return "blockedWindow";
@@ -453,7 +458,8 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = nu
           const fill = confirmCandle.barCrossFill(armed.side, c, armed.triggerLevel);
           // The entry window is honoured on the CONFIRMATION bar too — a trigger
           // armed at 12:59 must not fill at 13:04.
-          const inWindow = istMin >= g.entryStartMin && istMin < g.entryEndMin && istMin < ENTRY_CUTOFF_MIN;
+          const inWindow = istMin >= g.entryStartMin && istMin < g.entryEndMin && istMin < ENTRY_CUTOFF_MIN
+                        && istMin >= g.tradeStartMin;
           const reentryBlocked = c.time < reentryBlockUntilTs;
           const vixNow = VIX_ON ? lookupVix(c.time) : null;
           const vixBlocked = VIX_ON && vixNow != null && vixNow > vixFilter.VIX_MAX_ENTRY;
@@ -492,6 +498,9 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = nu
             signal: sig,
           };
           gateStats.confirmArmed++;
+        } else if (istMin < g.tradeStartMin) {
+          // Confirmation off — paper's candle-close entry is gated on isMarketHours().
+          gateStats.blockedWindow++;
         } else if (c.time < reentryBlockUntilTs) {
           // Confirmation off — paper's simulateBuy rejects inside the wait-after-exit window.
           gateStats.blockedReentry++;
@@ -688,7 +697,20 @@ async function _runJob(id, p) {
       try { vixCandles = await fetchCandles(vixFilter.VIX_SYMBOL, "D", fetchFrom, to); }
       catch (err) { console.warn(`⚠️ ${LABEL} backtest: VIX fetch failed — ${fyersErrText(err).slice(0, 200)}`); vixCandles = []; }
     }
-    const result = await runEmaRsiStV2Backtest(candles, activeFromTs, M, vixCandles);
+    // Expiry-day-only — paper's /start check. NIFTY keeps the shared
+    // TRADE_EXPIRY_DAY_ONLY; another market reads its own <PAIR>_EXPIRY_DAY_ONLY
+    // against THAT market's expiry calendar (rt.expiryDayOnly / rt.isExpiryDay).
+    let expiryDates = null;
+    const _pairRt = home ? null : require("../utils/pairRuntime").forStrategy("emaRsiStV2", M.key);
+    if (home ? (process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true"
+             : !!(_pairRt && _pairRt.expiryDayOnly())) {
+      const { isExpiryDate } = require("../utils/nseHolidays");
+      expiryDates = new Set();
+      for (const d of new Set(candles.map(c => _istDateOf(c.time)))) {
+        if (home ? await isExpiryDate(d) : _pairRt.isExpiryDay(Date.parse(`${d}T09:15:00+05:30`))) expiryDates.add(d);
+      }
+    }
+    const result = await runEmaRsiStV2Backtest(candles, activeFromTs, M, vixCandles, expiryDates);
 
     const stats = computeBacktestStats(result.trades);
     stats.optionSim   = !M.isFutures;

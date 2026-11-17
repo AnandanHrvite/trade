@@ -361,6 +361,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // close of the bar that ends at/after TRADE_STOP_TIME, or the day's last bar.
   const _stopMins     = (() => { const v = (process.env.TRADE_STOP_TIME || "15:30").split(":"); return parseInt(v[0], 10) * 60 + (parseInt(v[1], 10) || 0); })();
   const _entryStopMin = _stopMins - 10;
+  // Entry start — emaRsiStPaper's isMarketHours() blocks every entry path before
+  // TRADE_START_TIME (default 09:15), keyed on the bar's start like the cutoff above.
+  const _startMins    = (() => { const v = (process.env.TRADE_START_TIME || "09:15").split(":"); return parseInt(v[0], 10) * 60 + (parseInt(v[1], 10) || 0); })();
   const _stopLabel    = String(Math.floor(_stopMins / 60)).padStart(2, "0") + ":" + String(_stopMins % 60).padStart(2, "0");
 
   for (let i = 30; i < candles.length; i++) {
@@ -423,7 +426,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     const candleMin      = getISTHHMM(candle.time);
     const isSessionEnd   = isLastCandleOfDay || candleMin + candleResolutionMins >= _stopMins;
     // A bar that squares off at session end can never open a trade either.
-    const isEntryBlocked = isSessionEnd || candleMin >= _entryStopMin;
+    const isEntryBlocked = isSessionEnd || candleMin >= _entryStopMin || candleMin < _startMins;
 
     // ── Get signal from current window (entry candle included) ────────────────
     // window already contains candles[0..i] — no slice needed.
@@ -727,10 +730,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // path used to skip it entirely (the check below sits under `if (_sigSide)`,
         // which the fill never reaches), so with VIX filtering ON the backtest took
         // confirmation entries paper would have blocked.
-        const _fillVixCheck = checkBacktestVix(lookupVix(candle.time), _a.strength);
-        if (!_fillVixCheck.allowed) {
+        // Paper's confirm path blocks only when the cached VIX is KNOWN and above
+        // VIX_MAX_ENTRY — a missing VIX passes (no fail-closed, no strong-only).
+        const _fillVix = lookupVix(candle.time);
+        if (vixFilter.VIX_ENABLED && _fillVix != null && _fillVix > vixFilter.VIX_MAX_ENTRY) {
           _vixBlockCount++;
-          if (_verbose && _vixBlockCount <= 5) console.log(`  🌡️ VIX BLOCK (confirm fill): ${_fillVixCheck.reason} | ${_a.side} at ${toIST(candle.time)}`);
+          if (_verbose && _vixBlockCount <= 5) console.log(`  🌡️ VIX BLOCK (confirm fill): VIX ${_fillVix.toFixed(1)} > ${vixFilter.VIX_MAX_ENTRY} | ${_a.side} at ${toIST(candle.time)}`);
           continue;
         }
         // ── Entry-window enforcement on the CONFIRMATION candle ────────────────

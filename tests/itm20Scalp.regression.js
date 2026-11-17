@@ -354,7 +354,7 @@ test("backtest: after one loss a second setup trades, with the tightened day-cap
     bar(10, 5, 24050, 24075, 24049, 24070),                          // confirm
   ]));
   assert.strictEqual(r.trades.length, 2, JSON.stringify(r.trades.map(t => t.exitCode)));
-  assert.strictEqual(r.trades[1].sl, 193, "200 − (20 − 13)");
+  assert.strictEqual(r.trades[1].sl, 190, "200 − (20 − 10): day cap counts raw points, as paper");
   assert.ok(r.trades.reduce((a, t) => a + t.points, 0) >= -20 - 3 - 1e-9, "day loss stays at the cap (+ slippage)");
 });
 test("backtest: expiry day skipped by default, traded when enabled", async () => {

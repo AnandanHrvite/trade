@@ -78,7 +78,6 @@ function buildDailyOHLC(candles) {
 async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgress, mkt) {
   const trades   = [];
   let position   = null;
-  let pendingSignal = null; // queued signal — enters on next candle's open
   const M         = mkt && mkt.key !== "NIFTY" ? mkt : null;
   const LOT_SIZE  = M ? M.lotQty : getLotQty();
   // Another market's charges are its own exchange's (BSE for SENSEX).
@@ -210,7 +209,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     if (_prevDate && candleDate !== _prevDate) {
       _dailyTradeCount = 0;
       _reentryBlockUntilTs = 0;
-      pendingSignal = null; // discard overnight pending signals
     }
     _prevDate = candleDate;
 
@@ -221,21 +219,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     // closes any position still open, so the backtest closes it at this bar's close.
     const isSessionEnd = i === candles.length - 1 || getISTDateStr(candles[i + 1].time) !== candleDate
       || candleMin + _barMins >= _stopMins;
-
-    // ── EXECUTE PENDING SIGNAL on this candle's open ────────────────────────
-    if (pendingSignal && !position) {
-      const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
-      position = {
-        side:           pendingSignal.side,
-        entryPrice:     entryPrice,
-        entryTs:        candle.time,
-        entryReason:    pendingSignal.reason || "",
-        candlesHeld:    0,
-      };
-      pendingSignal = null;
-    } else if (pendingSignal && position) {
-      pendingSignal = null; // can't enter, discard
-    }
 
     // ── EXIT LOGIC ──────────────────────────────────────────────────────────
     if (position) {
@@ -332,7 +315,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         }
         // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
         // entry for the rest of the IST day once N trades have closed. The new-day
-        // reset above clears it. A queued signal is only ever made after this check.
+        // reset above clears it. An entry is only ever made after this check.
         if (tradeGuards.dayCapReached(_dailyTradeCount)) _reentryBlockUntilTs = Infinity;
         position = null;
       }
@@ -342,12 +325,12 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     }
 
     // ── ENTRY LOGIC ─────────────────────────────────────────────────────────
-    // A signal on the session's last bar would fill on the next day's open.
+    // No entry on the session's last bar — paper's session is closing.
     if (isSessionEnd) continue;
     // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
     if (expiryDates && !expiryDates.has(candleDate)) continue;
     // Wait-after-any-exit cooldown: skip both sides. Checked on the SIGNAL bar —
-    // paper would enter at its close (the backtest fills at the next open).
+    // paper (and the backtest) enter at its close.
     if (_reentryBlockUntilTs > 0 && candle.time < _reentryBlockUntilTs) continue;
 
     const result = paStrategy.getSignal(window, {
@@ -388,12 +371,16 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       continue;
     }
 
-    // Queue signal — will enter on NEXT candle's open (eliminates look-ahead bias)
+    // Enter at the SIGNAL bar's CLOSE — matches paper, which takes the signal on
+    // candle close and enters at bar.close (paPaper.onCandleClose → resolveAndEnter).
+    // Entry time = that close; exits are evaluated from the NEXT bar on.
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
-    pendingSignal = {
+    position = {
       side,
-      signalTs: candle.time,
-      reason:   result.reason || `${side} signal`,
+      entryPrice:  parseFloat((candle.close + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2)),
+      entryTs:     candle.time + _barMins * 60,
+      entryReason: result.reason || `${side} signal`,
+      candlesHeld: 0,
     };
   }
 

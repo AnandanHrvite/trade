@@ -126,8 +126,11 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const RES          = cfg.resolutionMins;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
-  // Paper measures it from the exit's clock time: an exit INSIDE the bar
-  // (≈ bar open here), or one at the bar's CLOSE.
+  // Paper measures it from the exit's clock time — every exit is a tick INSIDE
+  // bar k, even one filled near its close — and tests it at the entry fill
+  // (a bar's CLOSE). Here both ends sit one bar earlier: the wait runs from the
+  // exit bar's OPEN and is tested against the signal bar's OPEN, so N=2 refuses
+  // the k+1 close and allows the k+2 close, exactly as paper.
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
   // Paper's session auto-stop (TRADE_STOP_TIME, NSE / BSE for every market here):
   // it closes an open trade and ends the day, so no bar closing after it is walked.
@@ -211,8 +214,9 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
       };
     }
 
-    function close(exitPx, exitTime, reason, atBarClose) {
-      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
+    function close(exitPx, exitTime, reason) {
+      // From the exit BAR's open (`exitTime` is that open on every call here).
+      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + REENTRY_COOLDOWN_SECS;
       // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
       // entry for the rest of the IST day once N trades have closed.
       if (tradeGuards.dayCapReached(++closedToday)) reentryBlockUntil = Infinity;
@@ -262,7 +266,7 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
       const pFav = premiumAt(isCE ? c.high : c.low, c.time);
       if (pFav > pos.peakPremium) pos.peakPremium = pFav;
       msg = lockAt(entry, premiumAt(c.close, c.time), pos.peakPremium);
-      if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, true);
+      if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`);
     }
 
     for (let i = 0; i < bars.length; i++) {
@@ -311,7 +315,7 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
 
     if (pos) {
       const last = bars[bars.length - 1];
-      close(last.close, last.time, "Session end (last candle of the day)", true);
+      close(last.close, last.time, "Session end (last candle of the day)");
     }
     if (!sawSetup) {
       skipped.push({ date: istDateOf(dayTs), reason: `no RSI+pivot cross all session (R1 ${pivots.r1}, S1 ${pivots.s1})` });

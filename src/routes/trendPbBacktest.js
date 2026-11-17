@@ -105,6 +105,18 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
 
   const ENTRY_START_MIN = _parseMin("TREND_PB_ENTRY_START", "09:45");
   const ENTRY_END_MIN   = _parseMin("TREND_PB_ENTRY_END",   "14:30");
+  // Paper's session auto-stop (TRADE_STOP_TIME, NSE / BSE for every market here):
+  // it squares off an open trade and ends the day, so no bar closing after it is walked.
+  const STOP_MIN = _parseMin("TRADE_STOP_TIME", "15:30");
+  // Paper's premium band (simulateBuy), same keys + defaults; the backtest's entry
+  // premium is the seed. Futures trade at the index — paper skips the band there.
+  const PREM_MIN     = parseFloat(process.env.TREND_PB_PREMIUM_MIN || "120");
+  const PREM_MAX     = parseFloat(process.env.TREND_PB_PREMIUM_MAX || "400");
+  const PREM_GATE_ON = !IS_FUT && (process.env.TREND_PB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
+  // Another market's <PAIR>_EXPIRY_DAY_ONLY (paper: rt.expiryDayOnly() at /start,
+  // checked against THAT market's expiry calendar). NIFTY has no expiry-day rule.
+  const _pairRt = M.key === "NIFTY" ? null : require("../utils/pairRuntime").forStrategy("trendPb", M.key);
+  const EXPIRY_ONLY = !!(_pairRt && _pairRt.expiryDayOnly());
 
   // Group candles by IST date; keep a global index so getSignal gets a multi-day window.
   const byDate = new Map();
@@ -118,8 +130,11 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
   const trades = [];
   let globalBase = 0;
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
-  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
-  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  // Paper measures it from the exit's clock time — every exit is a tick INSIDE
+  // bar k, even one given back near its close — and tests it at the entry fill
+  // (a bar's CLOSE). Here both ends sit one bar earlier: from the exit bar's OPEN,
+  // tested against the signal bar's OPEN, so N=2 refuses the k+1 close and allows
+  // the k+2 close, exactly as paper.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(5) / 1000;
   let _reentryBlockUntilTs = 0;
   // MAX_TRADES_PER_DAY — trades closed this IST day (reset with the block each day).
@@ -150,10 +165,11 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     return { pnl, exitPrem: parseFloat(exitPrem.toFixed(2)), heldCandles: Math.round(candlesHeld) };
   }
 
-  function closeAndPush(pos, exitSpot, exitTime, reason, atClose = false) {
+  function closeAndPush(pos, exitSpot, exitTime, reason) {
     const p = priceExit(pos, exitSpot, exitTime);
-    // Wait-after-any-exit cooldown — every exit reason, both sides.
-    if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitTime + (atClose ? 5 * 60 : 0) + _REENTRY_COOLDOWN_SECS;
+    // Wait-after-any-exit cooldown — every exit reason, both sides. `exitTime` is
+    // the exit bar's open on every call.
+    if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitTime + _REENTRY_COOLDOWN_SECS;
     // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
     // entry for the rest of the IST day once N trades have closed. The day reset clears it.
     _closedToday++;
@@ -169,13 +185,15 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     });
   }
 
-  for (const [, dayCandles] of byDate) {
+  for (const [dayKey, dayCandles] of byDate) {
     // Yield once per session so live ticks/orders sharing this process are not
     // starved while a long backtest runs.
     await new Promise(resolve => setImmediate(resolve));
     const _dayLen = dayCandles.length;
     if (dayCandles.length < 5) { globalBase += _dayLen; continue; }
+    if (EXPIRY_ONLY && !_pairRt.isExpiryDay(Date.parse(`${dayKey}T09:15:00+05:30`))) { globalBase += _dayLen; continue; }
     let position = null;
+    let lastBar = null;   // the last bar walked before paper's auto-stop
     let baselineDone = false;
     _reentryBlockUntilTs = 0;
     _closedToday = 0;
@@ -184,6 +202,8 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
       const c = dayCandles[i];
       const istMin = _utcSecToIstMins(c.time);
       const gIdx = globalBase + i;
+      if (istMin + 5 > STOP_MIN) break;   // paper has auto-stopped
+      lastBar = c;
 
       // ── In-position management (mirrors paper _checkExits): the global profit
       //    lock on the simulated premium is the only automatic exit. Intra-bar
@@ -219,7 +239,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
           // d) favourable → close: a lock armed by THIS peak and given back.
           const pClose = premAt(pos, c.close, barEnd);
           lock = lockAt(pos.optionEntryLtp, pClose, pos.peak);
-          if (lock) { closeAndPush(pos, c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close)`, true); position = null; break walk; }
+          if (lock) { closeAndPush(pos, c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close)`); position = null; break walk; }
         }
         // Still open → this candle is handled. Closed by a tick exit → fall through
         // to the entry question on this bar's close, as paper's onCandleClose does
@@ -268,6 +288,8 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
       if (c.time < _reentryBlockUntilTs) continue;
 
       const _entryPrem = IS_FUT ? c.close : SEED_PREMIUM;
+      // Premium gate (paper: simulateBuy) — entry skipped outside [MIN, MAX].
+      if (PREM_GATE_ON && (_entryPrem < PREM_MIN || _entryPrem > PREM_MAX)) continue;
       position = {
         side, entryTime: c.time, entrySpot: c.close,
         optionEntryLtp: _entryPrem, peak: _entryPrem,
@@ -276,11 +298,11 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
       };
     }
 
-    // Session teardown: close any open position at the last candle of the day
-    // (mirrors paper's TRADE_STOP_TIME auto-stop) so every trade's P&L is defined.
+    // Session teardown: paper's TRADE_STOP_TIME auto-stop squares off any open
+    // position — at the close of the last bar walked before it.
     if (position) {
-      const last = dayCandles[dayCandles.length - 1];
-      closeAndPush(position, last.close, last.time, "Session end (last candle of the day)");
+      const last = lastBar;
+      closeAndPush(position, last.close, last.time, "Session end — squared off at TRADE_STOP_TIME (last bar before paper's auto-stop)");
       position = null;
     }
     globalBase += _dayLen;

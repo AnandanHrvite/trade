@@ -252,8 +252,12 @@ function simulateDay(day, cfg, qty, mkt) {
   void _reentryCooldownSecs;
 
   // ── Entry: walk the window minute by minute, both legs together ──
+  // Paper cannot enter before the watchlist exists (runSelection at
+  // SELECTION_TIME; evaluateEntry needs state.selection), so an ENTRY_START set
+  // earlier than the selection starts at the selection minute.
+  const entryFromMin = Math.max(cfg.entryStartMin, cfg.selectionMin);
   let fill = null;
-  for (let m = cfg.entryStartMin; m <= cfg.entryEndMin && !fill; m++) {
+  for (let m = entryFromMin; m <= cfg.entryEndMin && !fill; m++) {
     const cands = [];
     for (const side of ["CE", "PE"]) {
       const leg = legs[side];
@@ -283,7 +287,7 @@ function simulateDay(day, cfg, qty, mkt) {
       const leg = legs[side];
       if (!leg) continue;
       let hi = null;
-      for (let m = cfg.entryStartMin; m <= cfg.entryEndMin; m++) {
+      for (let m = entryFromMin; m <= cfg.entryEndMin; m++) {
         const b = barAtMinute(leg.bars, m);
         if (b && strategy._px(b.high) && (hi == null || b.high > hi)) hi = b.high;
       }
@@ -498,7 +502,15 @@ async function runJob(id, from, to, mkt) {
 
   const plans = [];              // per-day { dateStr, spotBars, atm, expiry, rungs }
   const needed = new Map();      // symbol → { strike, side, steps, moneyness }
+  // Another market's <PAIR>_EXPIRY_DAY_ONLY (paper: rt.expiryDayOnly() at /start,
+  // checked against THAT market's expiry calendar). NIFTY has no expiry-day rule.
+  const _pairRt = home ? null : require("../utils/pairRuntime").forStrategy("simple930", M.key);
+  const EXPIRY_ONLY = !!(_pairRt && _pairRt.expiryDayOnly());
   for (const dateStr of days) {
+    if (EXPIRY_ONLY && !_pairRt.isExpiryDay(Date.parse(`${dateStr}T09:15:00+05:30`))) {
+      plans.push({ dateStr, spotBars: null, skip: `not a ${M.label} expiry day — expiry-day-only` });
+      continue;
+    }
     const spotBars = spotByDay.get(dateStr);
     if (!spotBars || !spotBars.length) { plans.push({ dateStr, spotBars: null, skip: "no index candles (market holiday, or outside the served window)" }); continue; }
     const selBar = barAtMinute(spotBars, cfg.selectionMin);

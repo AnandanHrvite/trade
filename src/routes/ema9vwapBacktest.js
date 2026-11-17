@@ -80,6 +80,17 @@ function _tradeRows(trades) {
 }
 
 /** The run parameters a request asks for — this page and /backtest share these defaults. */
+// Paper rules this candle backtest does NOT model — told to the user, never faked.
+// EMA9VWAP_INTRACANDLE_ENTRY (confirmation off): paper enters on the FORMING bar the
+// tick the EMA9/VWAP-band cross appears; OHLC cannot say if/when that cross printed
+// inside the bar, so the backtest only enters at the candle close.
+function _notModelledNote() {
+  const on = (k) => (process.env[k] || "false").toLowerCase() === "true";
+  if (!on("EMA9VWAP_INTRACANDLE_ENTRY") || on("EMA9VWAP_CONFIRM_CANDLE_ENABLED")) return "";
+  return "⚠️ NOT modelled here: EMA9VWAP_INTRACANDLE_ENTRY is ON — paper enters intra-candle on the forming bar; " +
+    "this backtest enters only at the candle close, so entry timing/prices differ from paper. ";
+}
+
 function _jobParams(q) {
   return {
     resolution: q.resolution
@@ -123,7 +134,9 @@ async function _runJob(id, p) {
 
     const [_candles, _vixCandles] = await Promise.all([
       fetchCandlesCachedBT(symbol, resolution, warmupFrom, to, skipCache, _onFetchProgress),
-      vixFilter.VIX_ENABLED
+      // The engine gates on the EMA9_VWAP VIX mode (three-state EMA9VWAP_VIX_ENABLED,
+      // blank = global) — fetch VIX whenever THAT gate is on, not only the global one.
+      vixFilter.getVixEnabled("ema9vwap")
         ? fetchCandlesCachedBT(VIX_SYMBOL, "D", warmupFrom, to, skipCache).catch(err => {
             console.warn(`[Backtest] VIX candle fetch failed: ${err.message}`);
             return [];
@@ -417,6 +430,7 @@ ${buildSidebar('ema9vwapBacktest', false)}
   }
   </script>
 
+  ${_notModelledNote() ? `<div style="background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:10px 16px;margin:10px 0 14px;font-size:0.72rem;color:#b8a040;">${_notModelledNote()}</div>` : ""}
   <!-- Summary -->
   <div class="stat-grid">
     <div class="sc blue"><div class="sc-label">Total Trades</div><div class="sc-val">${s.totalTrades}</div><div class="sc-sub">${s.wins}W \u00b7 ${s.losses}L</div></div>
@@ -1681,6 +1695,7 @@ module.exports.backtestPage = {
       endpoint: "/ema9vwap-backtest", activePage: "ema9vwapBacktest", from: p.from, to: p.to,
       extraTradeColumns: [{ key: "spotPts", label: "Spot (pt)" }, { key: "held", label: "Held" }],
     });
+    v.notes = _notModelledNote() + (v.notes || "");
     const mk = (r.meta && r.meta.market) || (p.market && p.market !== "NIFTY" ? p.market : null);
     if (mk) {
       const M = backtestMarket.context(mk);

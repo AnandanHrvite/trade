@@ -100,8 +100,11 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
   const RES          = _resMin();
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper takes EVERY TDS exit on a tick (onCandleClose returns while in a
-  // position): an exit at the open or on the adverse leg is measured from the
-  // exit bar's open (≈ c.time here), one given back at the close from its close.
+  // position): every exit is a tick INSIDE bar k (even one given back near the
+  // close), and paper tests the wait at the entry fill (a bar's CLOSE). Here both
+  // ends sit one bar earlier — measured from the exit bar's OPEN (c.time) and
+  // tested against the signal bar's OPEN — so N=2 refuses the k+1 close and
+  // allows the k+2 close, exactly as paper.
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
   // Paper's session auto-stop (TRADE_STOP_TIME, NSE / BSE for every market here):
   // it closes an open trade and ends the day, so no bar closing after it is walked.
@@ -264,7 +267,7 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
             if (pFav > pos.peak) pos.peak = pFav;
             // d) favourable → close: a lock armed by THIS peak and given back.
             hit = lockHit(premiumAt(c.close, barEnd));
-            if (hit) close(c.close, barEnd, `${hit} (armed and given back inside the bar — filled at the close ${c.close})`);
+            if (hit) close(c.close, barEnd, `${hit} (armed and given back inside the bar — filled at the close ${c.close})`, c.time);
           }
         }
       }

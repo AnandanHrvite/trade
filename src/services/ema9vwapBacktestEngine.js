@@ -180,6 +180,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // spot falls). `_priceAt` and `_spotFor` are inverses of each other.
   // Settings' BACKTEST_SEED_PREMIUM — the seed every option backtest shares.
   const SEED_PREMIUM = require("../config/backtestCosts").seedPremium();
+  const LOCK_ON = !isFutures;
   function _priceBase() { return OPTION_SIM ? SEED_PREMIUM : position.entryPrice; }
   function _priceSlope() { return OPTION_SIM ? DELTA : 1; }
   function _thetaNow() {
@@ -303,8 +304,11 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
           && (!expiryOnly || expiryDates.has(_istDateStr(candle.time)))) {
         const fill = _confirmCandle.barCrossFill(a.side, candle, a.triggerLevel);
         if (fill != null && !(candle.time < reentryBlockUntilTs)) {
-          const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: _vixMode });
-          if (_vc.allowed) {
+          // Paper's confirm consume (onTick) blocks only on a KNOWN VIX above the
+          // max — a missing VIX passes (no VIX_FAIL_MODE on this path).
+          const _fv = vixLookup(candle.time);
+          const _fillVixBlocked = vixFilter.getVixEnabled(_vixMode) && _fv != null && _fv > vixFilter.getVixMaxEntry(_vixMode);
+          if (!_fillVixBlocked) {
             let entryPrice = fill;
             if (SLIPPAGE_PTS > 0) entryPrice = a.side === "CE" ? entryPrice + SLIPPAGE_PTS : entryPrice - SLIPPAGE_PTS;
             position = {
@@ -350,7 +354,9 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       const _fsBest = isFutures ? position.peak - position.entryPrice : 0;
       const _fsLvl  = isFutures ? _tradeGuards.futuresStopLevel(position.side, position.entryPrice, _fsBest) : null;
       const _fsWhy  = () => _tradeGuards.premiumStopSpotReason((_fsLvl - position.entryPrice) * (isCE ? 1 : -1), _fsBest);
-      const lockOpen = _tradeGuards.checkProfitLock(_priceBase(), pOpen, position.peak);
+      // Futures: paper never runs the profit lock (no option premium is polled),
+      // only the common futures stop below — so LOCK_ON is off for futures.
+      const lockOpen = LOCK_ON ? _tradeGuards.checkProfitLock(_priceBase(), pOpen, position.peak) : null;
       if (lockOpen) {
         exitReason = `${lockOpen} (bar opened through it — filled at the open)`;
         exitLevel  = candle.open;
@@ -359,7 +365,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         exitLevel  = candle.open;
       } else {
         const pAdv = _priceAt(isCE ? candle.low : candle.high);
-        const lockAdv = _tradeGuards.checkProfitLock(_priceBase(), pAdv, position.peak);
+        const lockAdv = LOCK_ON ? _tradeGuards.checkProfitLock(_priceBase(), pAdv, position.peak) : null;
         const fsHit = _fsLvl != null && (isCE ? candle.low <= _fsLvl : candle.high >= _fsLvl);
         if (lockAdv) {
           const g = _tradeGuards;

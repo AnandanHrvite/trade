@@ -19,9 +19,6 @@ The engine falls back to one value; a status panel or log banner prints another.
 
 | Key | Engine uses | UI shows | Where |
 |---|---|---|---|
-| `ORB_BODY_ATR_MULT` | `0` | `0.6` | `src/routes/orbBacktest.js` |
-| `ORB_GAP_OR_MULT` | `0` | `3` | `src/routes/orbBacktest.js` |
-| `ORB_OR_ATR_MAX` | `0` | `2.5` | `src/routes/orbBacktest.js` |
 | `VIX_FILTER_ENABLED` | `true` | `false` | `src/routes/emaRsiStPaper.js`, `src/routes/emaRsiStV2Paper.js` |
 
 ## Backup & Restore
@@ -521,7 +518,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `ORB_ST_MULT` | number | `3` | SuperTrend ATR multiplier. |
 | `ORB_ST_PERIOD` | number | `10` | SuperTrend ATR period. |
 | `ORB_VIX_ENABLED` | toggle | `false` | Block entries when VIX is high. |
-| `ORB_VIX_MAX_ENTRY` | number | `22` | Block entries above this VIX. |
+| `ORB_VIX_MAX_ENTRY` | number | falls back to `VIX_MAX_ENTRY` | Block entries above this VIX. |
 | `ORB_VIX_STRONG_ONLY` | number | falls back to `VIX_STRONG_ONLY` | Above this VIX, allow only strong signals. |
 | `ORB_VWAP_FILTER_ENABLED` | toggle | `false` | Measured worthless here: it removed 0 of 36 breakouts on the Mar–Apr 2026 sample. Off costs nothing and skips the VWAP maths. |
 
@@ -881,7 +878,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `TREND_PB_EMA_FAST` | number | `20` | _used in 1 file_ |
 | `TREND_PB_EMA_SLOW` | number | `50` | _used in 1 file_ |
 | `TREND_PB_EMA5_PERIOD` | number | `20` | _used in 2 files_ |
-| `TREND_PB_PREMIUM_GATE_ENABLED` | text | `true` | _used in 1 file_ |
+| `TREND_PB_PREMIUM_GATE_ENABLED` | text | `true` | _used in 2 files_ |
 | `TREND_PB_PULLBACK_TOUCH_ATR` | number | `0.25` | _used in 1 file_ |
 | `TREND_PB_SIG_WINDOW` | number | `300` | _used in 1 file_ |
 | `TREND_PB_VIX_STRONG_ONLY` | text | falls back to `VIX_STRONG_ONLY` | _used in 1 file_ |
