@@ -331,7 +331,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
   console.log(`   EMA_RSI_ST(redefined): EMA+RSI+SuperTrend entries | exit = profit lock only`);
 
-  // Per-day tallies — for the verbose DAY CLOSE log only, never an entry gate.
+  // Per-day tallies — the DAY CLOSE log, and the trade count for MAX_TRADES_PER_DAY.
   let _dailyPnl        = 0;
   let _dailyTradeCount = 0;
   // ── Entry guards (non-loss filters only) ────────────────────────────────────
@@ -643,6 +643,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         if (_REENTRY_COOLDOWN_SECS > 0) {
           _reentryBlockUntilTs = candle.time + (_exitedOnTick ? 0 : candleResolutionMins * 60) + _REENTRY_COOLDOWN_SECS;
         }
+        // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+        // entry for the rest of the IST day once N trades have closed. The new-day
+        // reset above clears it.
+        const _dayCap = tradeGuards.MAX_TRADES_PER_DAY;
+        if (_dayCap > 0 && _dailyTradeCount >= _dayCap) _reentryBlockUntilTs = Infinity;
 
         // ── Notify strategy: optional exit callback
         position = null;
