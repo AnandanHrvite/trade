@@ -259,6 +259,8 @@ function simulate(candles, opts) {
   // bar (≈ bar open here).
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
   let _reentryBlockUntilTs = 0;
+  // MAX_TRADES_PER_DAY — trades closed this IST day (reset with the block each day).
+  let _closedToday = 0;
 
   /** Simulated MARKET premium at a raw spot and time (no slippage). */
   function premAt(spot, t) {
@@ -307,6 +309,10 @@ function simulate(candles, opts) {
     // Wait-after-any-exit cooldown — every exit reason, both sides. exitBarTime is
     // the bar's open for a profit-lock exit.
     if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitBarTime + _REENTRY_COOLDOWN_SECS;
+    // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+    // entry for the rest of the IST day once N trades have closed. The day reset clears it.
+    _closedToday++;
+    if (tradeGuards.dayCapReached(_closedToday)) _reentryBlockUntilTs = Infinity;
   }
 
   /** The profit lock on one simulated tick. Returns { kind, detail } or null. */
@@ -323,7 +329,7 @@ function simulate(candles, opts) {
   for (let i = 0; i < n; i++) {
     const c = bars[i];
     const day = dayOf[i];
-    if (day !== curDay) { curDay = day; _reentryBlockUntilTs = 0; }
+    if (day !== curDay) { curDay = day; _reentryBlockUntilTs = 0; _closedToday = 0; }
     const barEnd = c.time + RES * 60;
 
     // ── 1. The profit lock inside this bar (the position may have opened at its open). ──

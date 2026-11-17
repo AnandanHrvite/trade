@@ -25,7 +25,7 @@
  * model, not a measurement, and is deliberately left coarse rather than dressed
  * up as precision:
  *
- *   • Entry premium is assumed flat at ₹200. Paper buys one strike ITM and the
+ *   • Entry premium is assumed flat at BACKTEST_SEED_PREMIUM (Settings). Paper buys one strike ITM and the
  *     real premiums observed in live paper ranged ₹51–₹208 — a 4× spread. So a
  *     backtest ₹ figure is NOT comparable to a paper ₹ figure; only the sign,
  *     the trade count and the spot-points column are.
@@ -35,8 +35,8 @@
  *     accelerates into expiry and is not linear intraday.
  *   • IV is not modelled at all: no IV crush, no vol expansion on a break.
  *   • The profit lock is a % of the entry premium, so it runs on the simulated
- *     ₹200-seed premium above — an approximation whose error grows as the true
- *     premium departs from ₹200.
+ *     seed premium above — an approximation whose error grows as the true
+ *     premium departs from the seed.
  *
  * Fixing any of these requires a historical option-chain data source. Until one
  * exists, treat backtest ₹ P&L as an ordinal signal (better/worse), never as a
@@ -153,15 +153,33 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // fires INSIDE the bar (≈ bar open here), a candle-close exit at the bar's CLOSE.
   const _REENTRY_COOLDOWN_SECS = _tradeGuards.reentryCooldownMs(resMins) / 1000;
   let reentryBlockUntilTs = 0;
+  // MAX_TRADES_PER_DAY — paper's reentryCooldownUntil(…, MODE) blocks every new
+  // entry for the rest of the IST day once N trades have closed that day. Counted
+  // per IST day here (reset with the cooldown at the day change); 0 = off.
+  let closedToday = 0;
+  const _afterClose = () => { closedToday += 1; if (_tradeGuards.dayCapReached(closedToday)) reentryBlockUntilTs = Infinity; };
+  // Session teardown at TRADE_STOP_TIME (paper's _STOP_MINS, default 15:30): paper
+  // squares off on the close of the candle that ends at/after it and the engine
+  // stops for the day. At 15:30 this is the day's last bar, as before.
+  const _stopRaw = String(process.env.TRADE_STOP_TIME || "15:30").split(":").map(Number);
+  const STOP_MINS = _stopRaw[0] * 60 + (isNaN(_stopRaw[1]) ? 0 : _stopRaw[1]);
+  const _istMins = (sec) => Math.floor((sec + 19800) / 60) % 1440;
+  // Confirmation candle (EMA9VWAP_CONFIRM_CANDLE_ENABLED, default off — paper's
+  // _confirmEnabled): the signal candle ARMS; entry fires intra-bar on the NEXT
+  // candle once price crosses the signal candle's close (confirmCandle helpers).
+  const _confirmCandle = require("../utils/confirmCandle");
+  const CONFIRM_ON = (require("../config/pairs").envGet(`${opts.prefix || "EMA9VWAP"}_CONFIRM_CANDLE_ENABLED`) || "false").toLowerCase() === "true";
+  let armed = null;
   const reportEvery = Math.max(1, Math.floor(total / 50));
 
   // ── Profit-lock price model ─────────────────────────────────────────────────
   // The global profit lock (tradeGuards.checkProfitLock) is the ONLY automatic exit,
   // exactly as in paper. It is applied to the price this engine computes P&L on:
-  // the simulated option premium under OPTION_SIM (₹200 seed + spot move × δ − θ),
+  // the simulated option premium under OPTION_SIM (seed + spot move × δ − θ),
   // otherwise the traded instrument itself (long-equivalent, so a PE/short gains as
   // spot falls). `_priceAt` and `_spotFor` are inverses of each other.
-  const SEED_PREMIUM = 200;
+  // Settings' BACKTEST_SEED_PREMIUM — the seed every option backtest shares.
+  const SEED_PREMIUM = require("../config/backtestCosts").seedPremium();
   function _priceBase() { return OPTION_SIM ? SEED_PREMIUM : position.entryPrice; }
   function _priceSlope() { return OPTION_SIM ? DELTA : 1; }
   function _thetaNow() {
@@ -251,9 +269,12 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       curDay = day;
       // Per-session state resets each trading day (paper starts each session fresh).
       reentryBlockUntilTs = 0;
+      closedToday = 0;
     }
-    // Last bar of this day's session in the data → paper's session teardown.
-    const isSessionEnd = i === total - 1 || _istDay(candles[i + 1].time) !== day;
+    // Last bar of this day's session in the data, or the bar that closes at/after
+    // TRADE_STOP_TIME → paper's session teardown (no entries after it that day).
+    const isSessionEnd = i === total - 1 || _istDay(candles[i + 1].time) !== day
+      || _istMins(candle.time) + resMins >= STOP_MINS;
     // Paper's profit lock fires inside onTick, which returns from the TICK handler
     // only — the bar still closes and onCandleClose's entry section runs, so a new
     // entry is possible on the same bar. Only the session close blocks the bar.
@@ -266,12 +287,58 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     if (window.length > 200) window.shift();
     const sig = _strat.getSignal(window, { silent: true });
 
+    // ── Confirmation-candle fill (CONFIRM_ON only) — paper's onTick consume: the
+    //    armed signal is good for exactly this one candle; it needs ≥30 closed
+    //    candles, the entry window open at the fill moment (≈ this bar's open, i.e.
+    //    the window rule applied to the bar that closes now), the session still
+    //    running, no cooldown / day cap, the expiry-day switch, then VIX.
+    let freshFill = false;
+    if (armed) {
+      const a = armed;
+      armed = null;   // consumed (or expired) on this candle either way, as paper
+      if (!position && _confirmCandle.isNextBar(candle.time, a.armedBarTime, resMins)
+          && window.length - 1 >= 30 && candle.time >= activeFromTs
+          && _istMins(candle.time) < STOP_MINS
+          && _strat.isEntryWindowOpen(candle.time - resMins * 60, resMins)
+          && (!expiryOnly || expiryDates.has(_istDateStr(candle.time)))) {
+        const fill = _confirmCandle.barCrossFill(a.side, candle, a.triggerLevel);
+        if (fill != null && !(candle.time < reentryBlockUntilTs)) {
+          const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: _vixMode });
+          if (_vc.allowed) {
+            let entryPrice = fill;
+            if (SLIPPAGE_PTS > 0) entryPrice = a.side === "CE" ? entryPrice + SLIPPAGE_PTS : entryPrice - SLIPPAGE_PTS;
+            position = {
+              side: a.side, entryPrice: _q(entryPrice, 2), entryTime: candle.time,
+              candlesHeld: 0, signalStrength: "STRONG",
+              entryReason: `${a.reason} | CONFIRM ${a.side} x-over @${a.triggerLevel}`,
+              bestPrice: _q(entryPrice, 2),
+            };
+            position.peak = _priceBase();
+            freshFill = true;
+          } else {
+            vixBlocked += 1;
+          }
+        }
+      }
+    }
+
     // ── EXIT: global profit lock (intrabar) ──
     // Path model inside one bar: open → adverse extreme → favourable extreme. The
     // peak only rises at the open and at the favourable extreme, so the lock can
     // arm on an earlier bar and fire on a later give-back, never arm and fire on the
     // same unknown-order high/low pair.
-    if (position) {
+    if (position && freshFill) {
+      // Filled intra-bar on this candle: the bar's path after the fill is unknown,
+      // so no lock check here — only paper's close-of-bar candle count and the
+      // session teardown if this is the last bar.
+      position.candlesHeld = 1;
+      if (isSessionEnd) {
+        _closeTrade(candle, "EOD session close");
+        blockEntryThisCandle = true;
+        if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = candle.time + resMins * 60 + _REENTRY_COOLDOWN_SECS;
+        _afterClose();
+      }
+    } else if (position) {
       position.candlesHeld = (position.candlesHeld || 0) + 1;
       const isCE = position.side === "CE";
       let exitReason = null, exitLevel;
@@ -320,16 +387,25 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         // Wait-after-any-exit cooldown — every exit reason, both sides. A tick
         // exit is measured from inside the bar (≈ its open).
         if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = candle.time + _REENTRY_COOLDOWN_SECS;
+        _afterClose();
       } else if (isSessionEnd) {
         // Session teardown: paper closes anything still open when the engine stops.
         _closeTrade(candle, "EOD session close");
         blockEntryThisCandle = true;
         if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = candle.time + resMins * 60 + _REENTRY_COOLDOWN_SECS;
+        _afterClose();
       }
     }
 
+    // Confirmation candle ON: a signal candle closing flat ARMS for the next candle
+    // (paper arms regardless of window/cooldown; those gate the fill) and the
+    // candle-close entry below is skipped, as in paper.
+    if (CONFIRM_ON && !position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")) {
+      armed = { side: sig.signal === "BUY_CE" ? "CE" : "PE", triggerLevel: candle.close, armedBarTime: candle.time, reason: sig.reason };
+    }
+
     // ── ENTRY (candle close, inside the entry window, entry guards) ──
-    if (!position && !blockEntryThisCandle && !isSessionEnd && candle.time >= activeFromTs
+    if (!CONFIRM_ON && !position && !blockEntryThisCandle && !isSessionEnd && candle.time >= activeFromTs
         && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
         && _strat.isEntryWindowOpen(candle.time, resMins)
         && (!expiryOnly || expiryDates.has(_istDateStr(candle.time)))) {

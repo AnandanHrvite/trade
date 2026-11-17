@@ -384,7 +384,9 @@ const MKT_RUNS = {};
 for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
   check(`${mk}: fetches its own candles, prices with its lot + exchange charges, records the market`, async () => {
     const mark = fetchLog.length;
-    const neu = await runNew({ strategy: "emaRsiStV2", market: mk, settings: "current", from: FROM, to: TO });
+    // VIX off: the stub answers the India VIX symbol with an index-scaled series,
+    // so the V2 VIX gate (on by default, like paper) would block every entry.
+    const neu = await withVixOff(() => runNew({ strategy: "emaRsiStV2", market: mk, settings: "current", from: FROM, to: TO }));
     MKT_RUNS[mk] = neu;
     const ctx = bm.context(mk);
     const asked = fetchLog.slice(mark).map((f) => f.symbol);
@@ -442,16 +444,29 @@ check("pair settings: a SENSEX-own key reaches the engine (as its home key) for 
 
 check("the old V2 page is untouched by markets: NIFTY run reads NIFTY's candles and lot", async () => {
   const mark = fetchLog.length;
-  const oldRes = await runOld("emaRsiStV2", `from=${FROM}&to=${TO}`);
+  const oldRes = await withVixOff(() => runOld("emaRsiStV2", `from=${FROM}&to=${TO}`));
   assert.ok(fetchLog.slice(mark).every((f) => f.symbol === "NSE:NIFTY50-INDEX"));
   assert.strictEqual(oldRes.meta.market, undefined, "a NIFTY result must not grow a market field");
+});
+
+check("EMA_RSI_ST_V2 honours paper's VIX gate: VIX above VIX_MAX_ENTRY blocks every entry", async () => {
+  // The stub's VIX series is index-scaled (≈ 24,000) — far above any VIX_MAX_ENTRY.
+  const had = process.env.VIX_FILTER_ENABLED;
+  process.env.VIX_FILTER_ENABLED = "true";
+  try {
+    const mark = fetchLog.length;
+    const neu = await runNew({ strategy: "emaRsiStV2", market: "NIFTY", settings: "current", from: FROM, to: TO });
+    assert.ok(fetchLog.slice(mark).some((f) => f.symbol === "NSE:INDIAVIX-INDEX"), "VIX was not fetched");
+    assert.strictEqual(neu.result.trades.length, 0, "an entry got past a VIX far above the max");
+    assert.ok(neu.result.meta.gateStats.blockedVix > 0, "no entry was recorded as blocked by VIX");
+  } finally { if (had === undefined) delete process.env.VIX_FILTER_ENABLED; else process.env.VIX_FILTER_ENABLED = had; }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 section("4b. EMA_RSI_ST is market-aware");
 
 // The engine's option-sim P&L (services/backtestEngine): net premium pts × lot −
-// charges on a ₹200 seed premium; futures = index pts × lot − futures charges.
+// charges on the BACKTEST_SEED_PREMIUM seed; futures = index pts × lot − futures charges.
 // pnlMode spells the δ-move and θ it used on a non-EOD exit.
 // The stub answers the India VIX symbol with the NIFTY-scaled series, so the
 // EMA_RSI_ST VIX gate (on by default) would block every entry: these runs turn
@@ -491,7 +506,8 @@ for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
         if (!m) { assert.strictEqual(t.pnlMode, "opt_sim", t.pnlMode); continue; }
         assert.strictEqual(Number(m[2]), ctx.lotQty, `${mk}: priced with lot ${m[2]}`);
         const net = t.spotPnlPts * 0.55 - Number(m[1]);
-        const chg = getCharges({ isFutures: false, exitPremium: Math.max(1, 200 + net), entryPremium: 200, qty: ctx.lotQty, exchange: ctx.exchange });
+        const seed = require("../src/config/backtestCosts").seedPremium();
+        const chg = getCharges({ isFutures: false, exitPremium: Math.max(1, seed + net), entryPremium: seed, qty: ctx.lotQty, exchange: ctx.exchange });
         assert.ok(Math.abs(t.pnl - (net * ctx.lotQty - chg)) <= 0.02, `${mk} ${t.entryTime}: pnl ${t.pnl} ≠ ${net}×${ctx.lotQty}−${chg}`);
         exact++;
       }
@@ -847,7 +863,8 @@ for (const mk of ["SENSEX", "BANKNIFTY", "NIFTY_FUT"]) {
       } else {
         const theta = Math.round((THETA / CPD) * (t.candlesHeld || 1) * 100) / 100;
         const net = t.spotPnlPts * DELTA - theta;
-        const chg = getCharges({ isFutures: false, exchange: ctx.exchange, exitPremium: Math.max(1, 200 + net), entryPremium: 200, qty: ctx.lotQty });
+        const seed = require("../src/config/backtestCosts").seedPremium();
+        const chg = getCharges({ isFutures: false, exchange: ctx.exchange, exitPremium: Math.max(1, seed + net), entryPremium: seed, qty: ctx.lotQty });
         want = net * ctx.lotQty - chg;
       }
       assert.ok(Math.abs(t.pnl - want) <= 0.02, `${mk} trade ${t.entryTime}: pnl ${t.pnl} ≠ ${want.toFixed(2)}`);

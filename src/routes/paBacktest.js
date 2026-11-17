@@ -35,6 +35,7 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const backtestJobs = require("../utils/backtestJobManager");
 const tradeGuards = require("../utils/tradeGuards");
+const { parseTimeToMinutes } = require("../utils/tradeUtils");
 const backtestCosts = require("../config/backtestCosts");
 const backtestMarket = require("../services/backtestMarket");
 
@@ -174,8 +175,22 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   let _prevDate = null;
   let _loggedReason = null;
   const _rejectCounts = {};
-  const _btStartMin = (() => { const v = process.env.PA_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
-  const _btEndMin   = (() => { const v = process.env.PA_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
+  // Same parser + defaults as paPaper._refreshConfig().
+  const _btStartMin = parseTimeToMinutes(process.env.PA_ENTRY_START || "09:21");
+  const _btEndMin   = parseTimeToMinutes(process.env.PA_ENTRY_END   || "14:30");
+  // Paper's session auto-stop (TRADE_STOP_TIME, default 15:30) closes any open
+  // position and ends the session — the close of the bar that ends at/after it.
+  const _stopMins   = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+  // This run's bar size: the SMALLEST gap in the opening stretch (the first gap alone
+  // can straddle an overnight break), config only as the fallback.
+  const _barMins = (() => {
+    let min = Infinity;
+    for (let k = 1; k < candles.length && k <= 50; k++) {
+      const gap = candles[k].time - candles[k - 1].time;
+      if (gap > 0 && gap < min) min = gap;
+    }
+    return Number.isFinite(min) ? Math.max(1, Math.round(min / 60)) : PA_RES;
+  })();
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
@@ -204,7 +219,8 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
 
     // Last bar of this day's session: paper's session auto-stop (TRADE_STOP_TIME)
     // closes any position still open, so the backtest closes it at this bar's close.
-    const isSessionEnd = i === candles.length - 1 || getISTDateStr(candles[i + 1].time) !== candleDate;
+    const isSessionEnd = i === candles.length - 1 || getISTDateStr(candles[i + 1].time) !== candleDate
+      || candleMin + _barMins >= _stopMins;
 
     // ── EXECUTE PENDING SIGNAL on this candle's open ────────────────────────
     if (pendingSignal && !position) {
@@ -314,6 +330,10 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         if (_REENTRY_COOLDOWN_SECS > 0) {
           _reentryBlockUntilTs = candle.time + (_exitAtClose ? PA_RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
         }
+        // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+        // entry for the rest of the IST day once N trades have closed. The new-day
+        // reset above clears it. A queued signal is only ever made after this check.
+        if (tradeGuards.dayCapReached(_dailyTradeCount)) _reentryBlockUntilTs = Infinity;
         position = null;
       }
       // Still holding: no entry check. Flat again: paper checks at this candle's close,
@@ -335,6 +355,14 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       // prevDayOHLC not needed for price action
 
     });
+
+    // Paper's isMarketHours(): the signal is taken at this candle's CLOSE, so the
+    // clock there must be inside [PA_ENTRY_START, PA_ENTRY_END) — the 14:25 5-min
+    // bar (closes 14:30) cannot enter.
+    if (result.signal !== "NONE") {
+      const _closeMin = candleMin + _barMins;
+      if (_closeMin < _btStartMin || _closeMin >= _btEndMin) continue;
+    }
 
     // VIX check — post-strategy with pattern strength (PA_VIX_MAX_ENTRY + PA_VIX_STRONG_ONLY)
     if (result.signal !== "NONE" && process.env.PA_VIX_ENABLED === "true") {

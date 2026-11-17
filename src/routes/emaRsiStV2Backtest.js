@@ -66,6 +66,7 @@ const router  = express.Router();
 const engine             = require("../strategies/ema_rsi_st_v2");
 const confirmCandle      = require("../utils/confirmCandle");
 const tradeGuards        = require("../utils/tradeGuards");
+const vixFilter          = require("../services/vixFilter");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
@@ -182,16 +183,23 @@ function getGuardConfig() {
  * non-zero count is a bug in this file, surfaced on the results page rather than
  * swallowed.
  */
-async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt) {
+async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = null) {
   const empty = {
     trades: [], days: 0, warmupViolations: 0, warmupBars: 0,
     gateStats: { setups: 0, confirmArmed: 0, confirmFilled: 0, confirmExpired: 0,
                  blockedWarmup: 0, blockedWindow: 0,
-                 blockedReentry: 0 },
+                 blockedReentry: 0, blockedVix: 0 },
   };
   if (!Array.isArray(candles) || !candles.length) return empty;
 
   const g = getGuardConfig();
+  // VIX gate — paper's global VIX filter (VIX_FILTER_ENABLED / VIX_MAX_ENTRY).
+  // Backtest VIX is the PRIOR day's India VIX close (no look-ahead). Paper:
+  //   confirmation fill → blocked only when a known VIX is above the max;
+  //   candle-close entry (confirmation off) → checkLiveVix("STRONG"), which
+  //   also applies VIX_FAIL_MODE when the VIX is missing.
+  const VIX_ON   = vixFilter.VIX_ENABLED;
+  const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
   const stratCfg = engine.getConfig();
   const M = mkt || backtestMarket.context("NIFTY");
 
@@ -266,6 +274,7 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt) {
     if (bars[bars.length - 1].time >= activeFromTs) days++;
 
     let reentryBlockUntilTs = 0;   // wait-after-any-exit — no entry on a bar opening before this
+    let dayClosedTrades = 0;       // trades closed this IST day — MAX_TRADES_PER_DAY
     let pos = null;
     let armed = null;              // { side, triggerLevel, barTime, signal }
 
@@ -329,6 +338,10 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt) {
       if (REENTRY_COOLDOWN_SECS > 0) {
         reentryBlockUntilTs = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
       }
+      // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+      // entry for the rest of the IST day once N trades have closed. Per-day state.
+      dayClosedTrades++;
+      if (tradeGuards.dayCapReached(dayClosedTrades)) reentryBlockUntilTs = Infinity;
       pos = null;
       armed = null;
     }
@@ -442,12 +455,15 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt) {
           // armed at 12:59 must not fill at 13:04.
           const inWindow = istMin >= g.entryStartMin && istMin < g.entryEndMin && istMin < ENTRY_CUTOFF_MIN;
           const reentryBlocked = c.time < reentryBlockUntilTs;
-          if (fill != null && inWindow && !reentryBlocked) {
+          const vixNow = VIX_ON ? lookupVix(c.time) : null;
+          const vixBlocked = VIX_ON && vixNow != null && vixNow > vixFilter.VIX_MAX_ENTRY;
+          if (fill != null && inWindow && !reentryBlocked && !vixBlocked) {
             openPosition(armed.side, fill, c.time, armed.signal, gIdx);
             gateStats.confirmFilled++;
           } else {
             if (fill != null && !inWindow) gateStats.blockedWindow++;
             else if (fill != null && reentryBlocked) gateStats.blockedReentry++;
+            else if (fill != null && vixBlocked) gateStats.blockedVix++;
             gateStats.confirmExpired++;
           }
           armed = null;
@@ -479,6 +495,9 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt) {
         } else if (c.time < reentryBlockUntilTs) {
           // Confirmation off — paper's simulateBuy rejects inside the wait-after-exit window.
           gateStats.blockedReentry++;
+        } else if (VIX_ON && !vixFilter.checkBacktestVix(lookupVix(c.time), "STRONG").allowed) {
+          // Confirmation off — paper's candle-close entry runs checkLiveVix("STRONG").
+          gateStats.blockedVix++;
         } else {
           // Confirmation off — paper enters at the signal bar's close.
           openPosition(sigSide, c.close, c.time, sig, gIdx);
@@ -583,6 +602,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Confirmations expired", value: gs.confirmExpired || 0 },
       { label: "Blocked — warm-up runway", value: gs.blockedWarmup || 0 },
       { label: "Blocked — entry window", value: gs.blockedWindow || 0 },
+      { label: "Blocked — VIX", value: gs.blockedVix || 0 },
       { label: "Warm-up bars fetched",    value: meta.warmupBars || 0 },
       {
         label: "Warm-up leak", value: wv === 0 ? "none ✓" : `${wv} ⚠`,
@@ -661,7 +681,14 @@ async function _runJob(id, p) {
       backtestJobs.updateProgress(id, { phase: `⚠ Fyers plan only allows history from ${candles.planTrimmedFrom} — older dates skipped`, pct: 60 });
     }
     backtestJobs.updateProgress(id, { phase: `Running ${LABEL} backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
-    const result = await runEmaRsiStV2Backtest(candles, activeFromTs, M);
+    // India VIX daily closes for the VIX gate — only when paper's filter is on.
+    // A failed fetch leaves VIX unknown, which paper treats per path (see the run).
+    let vixCandles = [];
+    if (vixFilter.VIX_ENABLED) {
+      try { vixCandles = await fetchCandles(vixFilter.VIX_SYMBOL, "D", fetchFrom, to); }
+      catch (err) { console.warn(`⚠️ ${LABEL} backtest: VIX fetch failed — ${fyersErrText(err).slice(0, 200)}`); vixCandles = []; }
+    }
+    const result = await runEmaRsiStV2Backtest(candles, activeFromTs, M, vixCandles);
 
     const stats = computeBacktestStats(result.trades);
     stats.optionSim   = !M.isFutures;

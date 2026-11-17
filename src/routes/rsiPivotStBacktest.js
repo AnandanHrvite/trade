@@ -129,6 +129,13 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
   // Paper measures it from the exit's clock time: an exit INSIDE the bar
   // (≈ bar open here), or one at the bar's CLOSE.
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
+  // Paper's session auto-stop (TRADE_STOP_TIME, NSE / BSE for every market here):
+  // it closes an open trade and ends the day, so no bar closing after it is walked.
+  const STOP_MIN = rsiPivotStrategy._parseHHMM(process.env.TRADE_STOP_TIME || "15:30", 15 * 60 + 30);
+  // Another market's <PAIR>_EXPIRY_DAY_ONLY (paper: rt.expiryDayOnly() at /start,
+  // checked against THAT market's expiry calendar). NIFTY has no expiry-day rule.
+  const _pairRt = HOME ? null : require("../utils/pairRuntime").forStrategy("rsiPivotSt", M.key);
+  const EXPIRY_ONLY = !!(_pairRt && _pairRt.expiryDayOnly());
 
   const sorted = intraday.slice().sort((a, b) => a.time - b.time);
   const dailySorted = Array.isArray(daily) ? daily.slice().sort((a, b) => a.time - b.time) : [];
@@ -154,10 +161,16 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
     // Yield once per session so live ticks/orders sharing this process are not
     // starved while a long backtest runs.
     await new Promise(resolve => setImmediate(resolve));
-    const bars = byDay.get(k);
+    // The day's bars up to paper's auto-stop. Truncating the END never changes an
+    // earlier bar's RSI / SuperTrend (each call reads bars 0..i only).
+    const bars = (byDay.get(k) || []).filter(c => _utcSecToIstMins(c.time) + RES <= STOP_MIN);
     if (!bars || bars.length < 3) continue;
     days++;
     const dayTs = bars[0].time;
+    if (EXPIRY_ONLY && !_pairRt.isExpiryDay(Date.parse(`${istDateOf(dayTs)}T09:15:00+05:30`))) {
+      skipped.push({ date: istDateOf(dayTs), reason: `not a ${M.label} expiry day — expiry-day-only` });
+      continue;
+    }
 
     // The day's levels, from the newest daily bar strictly BEFORE this day. This
     // is the no-lookahead guarantee: the engine is handed the day key and picks
@@ -173,6 +186,7 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
     let pos = null;
     let sawSetup = false;
     let reentryBlockUntil = 0;   // wait-after-any-exit cooldown (unix secs)
+    let closedToday = 0;         // MAX_TRADES_PER_DAY count — this day's closed trades
 
     /**
      * Simulated premium at a given spot, with theta decay. This is also what the
@@ -199,6 +213,9 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
 
     function close(exitPx, exitTime, reason, atBarClose) {
       if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
+      // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+      // entry for the rest of the IST day once N trades have closed.
+      if (tradeGuards.dayCapReached(++closedToday)) reentryBlockUntil = Infinity;
       const p = priceAt(exitPx, exitTime);
       trades.push({
         side: pos.side,

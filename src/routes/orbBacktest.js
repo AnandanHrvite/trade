@@ -153,6 +153,9 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
   // sized to the indicators, not a tuning dial.
   const SIG_WINDOW      = parseInt(process.env.ORB_SIG_WINDOW || "260", 10);
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "10:15");
+  // Paper's session auto-stop (orbPaper.scheduleAutoStop, TRADE_STOP_TIME default
+  // 15:30) closes anything still open at the close of the bar ending at/after it.
+  const STOP_MIN        = _parseMin("TRADE_STOP_TIME", "15:30");
   const SEED_PREMIUM    = backtestCosts.seedPremium();   // slightly-ITM ≈ ATM + one strike intrinsic
   const SLIPPAGE_PREM   = backtestCosts.slippagePts();   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
@@ -197,11 +200,16 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
     if (EXPIRY_ONLY && expirySet && !expirySet.has(_dateStr)) { globalBase += _dayLen; continue; }
     let position = null;
     let _reentryBlockUntilTs = 0;   // wait-after-any-exit cooldown, reset per day like paper's /start
+    let _closedToday = 0;           // trades closed this IST day (MAX_TRADES_PER_DAY)
     // Book a closed position. `exitClockTs` = when paper's clock sees the exit —
     // the start of the wait-after-exit cooldown.
     const _book = (pos, exitClockTs) => {
       trades.push(buildTradeRecord(pos));
+      _closedToday++;
       if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitClockTs + _REENTRY_COOLDOWN_SECS;
+      // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+      // entry for the rest of the IST day once N trades have closed. Both reset per day.
+      if (tradeGuards.dayCapReached(_closedToday)) _reentryBlockUntilTs = Infinity;
     };
 
     for (let i = 0; i < dayCandles.length; i++) {
@@ -273,6 +281,16 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
           closePos(position, c.close, c.time, hit);
           _book(position, c.time + 5 * 60); position = null; continue;
         }
+      }
+
+      // Session teardown at TRADE_STOP_TIME (paper's auto-stop): close at this bar's
+      // close; the session is over, so nothing after it trades.
+      if (istMin + 5 >= STOP_MIN) {
+        if (position) {
+          closePos(position, c.close, c.time, `Session stopped (TRADE_STOP_TIME ${process.env.TRADE_STOP_TIME || "15:30"})`);
+          _book(position, c.time + 5 * 60); position = null;
+        }
+        break;
       }
 
       // Flat → eval ORB signal.

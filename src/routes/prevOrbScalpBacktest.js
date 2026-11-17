@@ -134,6 +134,13 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   // bar's close from its close. Can only bite if a second
   // entry per day is ever allowed — today the first break settles the day.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
+  // Paper's session auto-stop (TRADE_STOP_TIME, NSE / BSE for every market here):
+  // it closes an open trade and ends the day, so no bar closing after it is walked.
+  const STOP_MIN = strat._parseHHMM(process.env.TRADE_STOP_TIME || "15:30", 15 * 60 + 30);
+  // Another market's <PAIR>_EXPIRY_DAY_ONLY (paper: rt.expiryDayOnly() at /start,
+  // checked against THAT market's expiry calendar). NIFTY has no expiry-day rule.
+  const _pairRt = HOME ? null : require("../utils/pairRuntime").forStrategy("prevOrbScalp", M.key);
+  const EXPIRY_ONLY = !!(_pairRt && _pairRt.expiryDayOnly());
   const lock = o.lock || {
     enabled: tradeGuards.PROFIT_LOCK_ENABLED,
     armPct: tradeGuards.PROFIT_LOCK_ARM_PCT,
@@ -169,6 +176,10 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
     const dayStr = strat._istDateStr(dayTs);
     if (rangeFrom && dayStr < rangeFrom) continue;
     funnel.days++;
+    if (EXPIRY_ONLY && !_pairRt.isExpiryDay(Date.parse(`${dayStr}T09:15:00+05:30`))) {
+      skipped.push({ date: istDateOf(dayTs), reason: `not a ${M.label} expiry day — expiry-day-only` });
+      continue;
+    }
 
     // The window starts at the previous day that has bars (the engine picks
     // "yesterday" as the latest earlier day present, same as paper).
@@ -182,6 +193,9 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
     let daySpent = false;
     let dayNote = null;
     let reentryBlockUntil = 0;   // wait-after-any-exit cooldown, reset per day like paper's /start
+    let closedToday = 0;         // MAX_TRADES_PER_DAY count — this day's closed trades
+    // The day's bars up to paper's auto-stop (yesterday's levels still read the full day).
+    const sess = idxs.filter(gi => strat._utcSecToIstMins(sorted[gi].time) + RES <= STOP_MIN);
 
     const barsPerDay = Math.max(1, Math.round(375 / RES));
     function premAt(spotPx, t) {
@@ -213,6 +227,9 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
       });
       pos = null;
       if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
+      // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+      // entry for the rest of the IST day once N trades have closed.
+      if (tradeGuards.dayCapReached(++closedToday)) reentryBlockUntil = Infinity;
     }
 
     /** The global profit lock on one bar — options only (futures mirror spot). */
@@ -241,14 +258,16 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
       if (msg) close(c.close, c.time, `${msg} (armed and given back inside the bar — filled at the close)`, "PROFIT_LOCK", true);
     }
 
-    for (let j = 0; j < idxs.length; j++) {
-      const gi = idxs[j];
+    for (let j = 0; j < sess.length; j++) {
+      const gi = sess[j];
       const c = sorted[gi];
 
       // ── 1. Fill a pending entry at THIS bar's open. ─────────────────────────
       if (pending && !pos) {
         const sig = pending;
         pending = null;
+        // Wait-after-exit / day cap: paper's _retryPendingEntry drops a blocked setup.
+        if (c.time < reentryBlockUntil) continue;
         if (typeof c.open === "number" && Number.isFinite(c.open)) {
           pos = {
             side: sig.side, entryTime: c.time, entrySpot: _r2(c.open),
@@ -274,7 +293,7 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
           funnel.breaks++;
           dayBreak = true;
           candleSizes.push(sig.candleSize);
-          if (j === idxs.length - 1) dayNote = "break on the day's last bar — nothing to fill on";
+          if (j === sess.length - 1) dayNote = "break on the day's last bar — nothing to fill on";
           else pending = sig;
           // Only the FIRST break can ever trade, so the day is settled here.
           settled = true;
@@ -298,7 +317,7 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
     // A position still open at the last bar is closed there — the backtest's
     // stand-in for paper's session teardown.
     if (pos) {
-      const last = sorted[idxs[idxs.length - 1]];
+      const last = sorted[sess[sess.length - 1]];
       close(last.close, last.time, "Session end (last candle of the day)", "SESSION_END", true);
     }
 

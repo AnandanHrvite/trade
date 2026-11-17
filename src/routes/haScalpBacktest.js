@@ -157,6 +157,10 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
 
   const cfg = haStrategy.getConfig();
   const M = mkt || backtestMarket.context("NIFTY");
+  // Another market: <PAIR>_EXPIRY_DAY_ONLY (as its paper pair reads it) trades only
+  // that market's expiry days — paper's _expiryDayBlocked. NIFTY has no such rule.
+  const _pairRt = M.key === "NIFTY" ? null : require("../utils/pairRuntime").forStrategy("haScalp", M.key);
+  const EXPIRY_ONLY = !!_pairRt && _pairRt.expiryDayOnly();
   // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
   // "premium" the sim carries IS the spot level (see instrumentMode.js). NIFTY:
   // the global instrument switch, as always; another market: its own kind.
@@ -218,12 +222,17 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
       continue;
     }
     days++;
+    if (EXPIRY_ONLY && !_pairRt.isExpiryDay(Date.parse(`${dayStr}T09:15:00+05:30`))) {
+      skipped.push({ date: istDateOf(dayTs), reason: `not a ${M.label} expiry day — expiry-day-only` });
+      continue;
+    }
 
     let daySetups = 0, dayEntries = 0, dayWarmupBars = 0;
     let dayTrendUp = 0, dayTrendDown = 0;
     let pos = null;
     let pendingEntry = null;   // signal fired on a closed bar → fill on the NEXT bar's open
     let reentryBlockUntil = 0; // wait-after-any-exit cooldown (unix secs)
+    let dayClosedTrades = 0;   // trades closed this IST day — MAX_TRADES_PER_DAY
     const dayExits = [];
     let firstSkip = null;
 
@@ -250,6 +259,10 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
 
     function close(exitPx, exitTime, reason, reasonCode, atBarClose) {
       if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
+      // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+      // entry for the rest of the IST day once N trades have closed. Per-day state.
+      dayClosedTrades++;
+      if (tradeGuards.dayCapReached(dayClosedTrades)) reentryBlockUntil = Infinity;
       const p = priceAt(exitPx, exitTime);
       exitReasons[reasonCode] = (exitReasons[reasonCode] || 0) + 1;
       dayExits.push(`${istHHMMSS(exitTime)} ${pos.side} → ${reasonCode} @ ${parseFloat(exitPx.toFixed(2))} (${p.held} bar(s), ₹${p.pnl})`);
@@ -372,7 +385,7 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
           console.log(`${LOG} ${dayStr} ${istHHMMSS(c.time)} setup NOT taken — it is the day's last bar, there is no next candle to open on`);
         } else if (c.time < reentryBlockUntil) {
           // Paper's simulateBuy runs at this bar's close and rejects the setup.
-          console.log(`${LOG} ${dayStr} ${istHHMMSS(c.time)} setup NOT taken — wait-after-exit cooldown until ${istHHMMSS(reentryBlockUntil)}`);
+          console.log(`${LOG} ${dayStr} ${istHHMMSS(c.time)} setup NOT taken — ${reentryBlockUntil === Infinity ? "MAX_TRADES_PER_DAY reached" : `wait-after-exit cooldown until ${istHHMMSS(reentryBlockUntil)}`}`);
         } else {
           pendingEntry = sig;
         }

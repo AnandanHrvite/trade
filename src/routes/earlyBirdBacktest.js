@@ -149,6 +149,12 @@ function escHtml(x) {
 }
 
 function istMinutes(unixSec) { return Math.floor((unixSec + IST_OFFSET_SEC) / 60) % 1440; }
+// TRADE_STOP_TIME in IST minutes — paper's scheduleAutoStop (MCX is not backtestable).
+function _stopMin() {
+  const [h, m] = String(process.env.TRADE_STOP_TIME || "15:30").split(":").map(Number);
+  const v = h * 60 + (isNaN(m) ? 0 : m);
+  return Number.isFinite(v) ? v : MKT_CLOSE_MIN;
+}
 function istDayKey(unixSec)  { return Math.floor((unixSec + IST_OFFSET_SEC) / 86400); }
 
 function istDateStr(unixSec) {
@@ -779,6 +785,13 @@ function _lockExitOnBar(ls, pos, bar, held, isEntryBar, lock) {
  * slippage NOT applied — the caller applies it to the fills).
  */
 function _walkLeg(setup, bars, cfg, ctx) {
+  // Paper's session auto-stops at TRADE_STOP_TIME (default 15:30) and squares off
+  // whatever is open: drop the bars that START at/after it, so the session-end
+  // close below lands on the bar that ends there. At 15:30 nothing is dropped.
+  const _stop = _stopMin();
+  if (bars.some(b => b && _num(b.time) && istMinutes(b.time) >= _stop)) {
+    bars = bars.filter(b => !(b && _num(b.time) && istMinutes(b.time) >= _stop));
+  }
   let pos = null, ls = null, entryIdx = -1;
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
@@ -830,20 +843,26 @@ function _legTimes(setup, bars, cfg, ctx) {
   if (!r.exit) return { trig: r.pos.entryTime, exitTs: bars[bars.length - 1].time + resSec };
   return { trig: r.pos.entryTime, exitTs: r.exit.atClose ? r.exit.bar.time + resSec : r.exit.bar.time };
 }
-/** The setups (by reference) the cooldown drops on this day. */
+// MAX_TRADES_PER_DAY rides the same block: paper's _armReentryBlock calls
+// reentryCooldownUntil(…, MODE) — which counts toward the day cap — only when the
+// book goes FLAT, so the day's count is the number of book-flat events, not of
+// closed legs. Once it reaches the cap the block runs to the end of the day.
+/** The setups (by reference) the cooldown / day cap drops on this day. */
 function _reentryDropSet(legs, cfg, cooldownSecs, ctxFor) {
   const dropped = new Set();
-  if (!(cooldownSecs > 0)) return dropped;
+  if (!(cooldownSecs > 0) && !(tradeGuards.MAX_TRADES_PER_DAY > 0)) return dropped;
   const timed = legs.map(l => ({ setup: l.setup, t: _legTimes(l.setup, l.bars, cfg, ctxFor) }))
     .filter(x => x.t).sort((a, b) => a.t.trig - b.t.trig);
   const accepted = [];
+  let flats = 0;   // book-flat events counted so far today (paper's day-cap count)
   for (const x of timed) {
     // Every accepted leg triggered at or before this one; the book is flat when
     // all of them have exited, and went flat at the latest of those exits.
     const open = accepted.some(a => a.exitTs > x.t.trig);
-    if (!open && accepted.length && x.t.trig < Math.max(...accepted.map(a => a.exitTs)) + cooldownSecs) {
-      dropped.add(x.setup);
-      continue;
+    if (!open && accepted.length) {
+      if (tradeGuards.dayCapReached(flats + 1)) { dropped.add(x.setup); continue; }
+      if (x.t.trig < Math.max(...accepted.map(a => a.exitTs)) + cooldownSecs) { dropped.add(x.setup); continue; }
+      flats += 1;   // that flat event is behind us; this leg opens a new book
     }
     accepted.push(x.t);
   }
@@ -869,6 +888,9 @@ async function runEarlyBirdBacktest(data, onProgress) {
   const cfg  = MKT ? _btCfg(MKT) : earlyBird.getConfig();
   const SLIP = slippagePts();
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(cfg.resolutionMins) / 1000;
+  // Another market's pair runtime — its EXPIRY_DAY_ONLY switch + expiry calendar.
+  let PAIR_RT = null;
+  if (MKT) { try { PAIR_RT = require("../utils/pairRuntime").forStrategy("earlyBird", MKT.key); } catch (_) { PAIR_RT = null; } }
 
   // ── BOTH LEGS ARE BACKTESTED ────────────────────────────────────────────
   // The entry level is a NIFTY SPOT level on both legs, so the option leg's
@@ -948,6 +970,21 @@ async function runEarlyBirdBacktest(data, onProgress) {
 
     const dayStr = istDateStr(niftyBars[0].time);
     const dayDMY = istDMY(niftyBars[0].time);
+
+    // Another market's trade days: paper's /start closes the day when
+    // <PAIR>_EXPIRY_DAY_ONLY is on and today is not that market's expiry.
+    if (PAIR_RT && PAIR_RT.expiryDayOnly() && !PAIR_RT.isExpiryDay(Date.parse(`${dayStr}T09:20:00+05:30`))) {
+      const row = {
+        dayKey, date: dayDMY, dateISO: dayStr, niftyCandle: null, verdict: "NOT EXPIRY DAY",
+        reason: `not ${MKT.label}'s expiry day (EXPIRY_DAY_ONLY) — no trade today`,
+        scanned: 0, confirmed: 0, taken: 0, triggered: 0, untriggered: 0, pnl: 0, trades: 0,
+      };
+      dayRows.push(row);
+      noTrade.push({ date: row.date, reason: row.reason });
+      funnel.noSignalDays++;
+      if (onProgress) onProgress(di + 1, dayKeys.length);
+      continue;
+    }
 
     // ── Assemble the engine's inputs for this day. Each stock contributes its
     //    own 09:15 bar (via its grouped series) and its previous DAILY close.

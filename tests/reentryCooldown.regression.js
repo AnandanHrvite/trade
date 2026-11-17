@@ -165,8 +165,7 @@ check("every paper engine passes its MODE so its exits count", () => {
 });
 check("EMA_RSI_ST backtest honours the cap like paper (blocks to end of day, reset next day)", () => {
   const src = decomment(read("services/backtestEngine.js"));
-  assert.ok(/tradeGuards\.MAX_TRADES_PER_DAY/.test(src), "backtestEngine does not read MAX_TRADES_PER_DAY");
-  assert.ok(/_dailyTradeCount >= _dayCap\) _reentryBlockUntilTs = Infinity/.test(src), "cap does not block the rest of the day");
+  assert.ok(/tradeGuards\.dayCapReached\(_dailyTradeCount\)\) _reentryBlockUntilTs = Infinity/.test(src), "cap does not block the rest of the day");
   assert.ok(/_dailyTradeCount\s*=\s*0;[\s\S]{0,200}_reentryBlockUntilTs\s*=\s*0;/.test(src), "new day must clear the block");
 });
 

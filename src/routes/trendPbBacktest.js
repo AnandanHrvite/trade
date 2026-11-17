@@ -122,6 +122,8 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
   // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(5) / 1000;
   let _reentryBlockUntilTs = 0;
+  // MAX_TRADES_PER_DAY — trades closed this IST day (reset with the block each day).
+  let _closedToday = 0;
 
   // Simulated MARKET premium (δ+θ, no slippage) at a raw spot and time — the
   // price the profit lock reads, exactly as paper reads the live option LTP.
@@ -152,6 +154,10 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     const p = priceExit(pos, exitSpot, exitTime);
     // Wait-after-any-exit cooldown — every exit reason, both sides.
     if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitTime + (atClose ? 5 * 60 : 0) + _REENTRY_COOLDOWN_SECS;
+    // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+    // entry for the rest of the IST day once N trades have closed. The day reset clears it.
+    _closedToday++;
+    if (tradeGuards.dayCapReached(_closedToday)) _reentryBlockUntilTs = Infinity;
     trades.push({
       side: pos.side,
       entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),
@@ -172,6 +178,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     let position = null;
     let baselineDone = false;
     _reentryBlockUntilTs = 0;
+    _closedToday = 0;
 
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
@@ -188,14 +195,14 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
         // The "premium" here IS the futures price (DELTA 1, no theta), same walk.
         const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
         const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
-        {
+        walk: {
           const isCE = pos.side === "CE";
           const barEnd = c.time + 5 * 60;
           // a) the open
           const pOpen = premAt(pos, c.open, c.time);
           if (pOpen > pos.peak) pos.peak = pOpen;
           let lock = lockAt(pos.optionEntryLtp, pOpen, pos.peak);
-          if (lock) { closeAndPush(pos, c.open, c.time, `${lock} (bar opened through it — filled at the open)`); position = null; continue; }
+          if (lock) { closeAndPush(pos, c.open, c.time, `${lock} (bar opened through it — filled at the open)`); position = null; break walk; }
           // b) open → adverse extreme: the floor is crossed on the way down.
           const pAdv = premAt(pos, isCE ? c.low : c.high, barEnd);
           lock = lockAt(pos.optionEntryLtp, pAdv, pos.peak);
@@ -204,7 +211,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
             const raw = spotForPrem(pos, lvl, barEnd);
             // Never better than the open (the open did not trigger, so the level lies past it).
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
-            closeAndPush(pos, fill, c.time, lock); position = null; continue;
+            closeAndPush(pos, fill, c.time, lock); position = null; break walk;
           }
           // c) adverse → favourable extreme: the peak rises, nothing exits.
           const pFav = premAt(pos, isCE ? c.high : c.low, c.time);
@@ -212,9 +219,12 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
           // d) favourable → close: a lock armed by THIS peak and given back.
           const pClose = premAt(pos, c.close, barEnd);
           lock = lockAt(pos.optionEntryLtp, pClose, pos.peak);
-          if (lock) { closeAndPush(pos, c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close)`, true); position = null; continue; }
+          if (lock) { closeAndPush(pos, c.close, c.time, `${lock} (armed and given back inside the bar — filled at the close)`, true); position = null; break walk; }
         }
-        continue;   // in-position candle handled
+        // Still open → this candle is handled. Closed by a tick exit → fall through
+        // to the entry question on this bar's close, as paper's onCandleClose does
+        // once the position is gone (the wait-after-exit / day cap still apply).
+        if (position) continue;
       }
 
       // ── Flat → look for an entry ──

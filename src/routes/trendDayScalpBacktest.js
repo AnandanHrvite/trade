@@ -100,8 +100,16 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
   const RES          = _resMin();
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper takes EVERY TDS exit on a tick (onCandleClose returns while in a
-  // position), so each one is measured from the exit bar's open (≈ c.time here).
+  // position): an exit at the open or on the adverse leg is measured from the
+  // exit bar's open (≈ c.time here), one given back at the close from its close.
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
+  // Paper's session auto-stop (TRADE_STOP_TIME, NSE / BSE for every market here):
+  // it closes an open trade and ends the day, so no bar closing after it is walked.
+  const STOP_MIN = tdsStrategy._parseHHMM(process.env.TRADE_STOP_TIME || "15:30", 15 * 60 + 30);
+  // Another market's <PAIR>_EXPIRY_DAY_ONLY (paper: rt.expiryDayOnly() at /start,
+  // checked against THAT market's expiry calendar). NIFTY has no expiry-day rule.
+  const _pairRt = M.key === "NIFTY" ? null : require("../utils/pairRuntime").forStrategy("trendDayScalp", M.key);
+  const EXPIRY_ONLY = !!(_pairRt && _pairRt.expiryDayOnly());
 
   const sorted = intraday.slice().sort((a, b) => a.time - b.time);
 
@@ -135,6 +143,13 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
     if (!idxs.length) continue;
     days++;
     const dayTs = sorted[idxs[0]].time;
+    if (EXPIRY_ONLY) {
+      const d = new Date((dayTs + 19800) * 1000).toISOString().slice(0, 10);
+      if (!_pairRt.isExpiryDay(Date.parse(`${d}T09:15:00+05:30`))) {
+        skipped.push({ date: istDateOf(dayTs), reason: `not a ${M.label} expiry day — expiry-day-only` });
+        continue;
+      }
+    }
 
     // ── The day gate: evaluated once on the bar that closes at TDS_GATE_TIME. ──
     const gateStartMin = cfg.gateMin - RES;
@@ -150,6 +165,8 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
 
     // ── Hunt entries on later closed bars. ────────────────────────────────────
     let reentryBlockUntilTs = 0;   // wait-after-any-exit cooldown, per day like paper's session
+    let closedToday = 0;           // MAX_TRADES_PER_DAY count — this day's closed trades
+    let lastBar = null;            // the last bar walked before paper's auto-stop
     let pos = null;
 
     function priceAt(exitSpot, exitTime) {
@@ -189,7 +206,9 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
       if (IS_FUT) return _futStopMsg(pos.optionEntryLtp, prem, pos.peak);
       return tradeGuards.checkProfitLock(pos.optionEntryLtp, prem, pos.peak);
     }
-    function close(exitSpot, exitTime, reason) {
+    // `cooldownFrom`: the exit's clock time for the wait — a tick exit inside the
+    // bar is measured from the bar's open (default: exitTime).
+    function close(exitSpot, exitTime, reason, cooldownFrom) {
       const p = priceAt(exitSpot, exitTime);
       trades.push({
         side: pos.side,
@@ -206,13 +225,18 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
       });
       pos = null;
       // Wait-after-any-exit cooldown — every exit reason, both sides.
-      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = exitTime + REENTRY_COOLDOWN_SECS;
+      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = (cooldownFrom != null ? cooldownFrom : exitTime) + REENTRY_COOLDOWN_SECS;
+      // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+      // entry for the rest of the IST day once N trades have closed.
+      if (tradeGuards.dayCapReached(++closedToday)) reentryBlockUntilTs = Infinity;
     }
 
     for (let p = gateIdxPos + 1; p < idxs.length; p++) {
       const i = idxs[p];
       const c = sorted[i];
       const istMin = _utcSecToIstMins(c.time);
+      if (istMin + RES > STOP_MIN) break;   // paper has auto-stopped
+      lastBar = c;
 
       // ── Manage an open position on THIS bar (profit lock only). ───────────
       if (pos) {
@@ -233,7 +257,7 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
             const raw = spotForPrem(lvl, barEnd);
             // Never better than the open (the open did not trigger, so the level lies past it).
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);
-            close(fill, barEnd, `${hit} — level premium ₹${lvl} ≈ spot ${parseFloat(raw.toFixed(2))}`);
+            close(fill, barEnd, `${hit} — level premium ₹${lvl} ≈ spot ${parseFloat(raw.toFixed(2))}`, c.time);
           } else {
             // c) adverse → favourable extreme: the peak rises, nothing exits.
             const pFav = premiumAt(isCE ? c.high : c.low, c.time);
@@ -270,7 +294,7 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
     }
 
     if (pos) {
-      const last = sorted[idxs[idxs.length - 1]];
+      const last = lastBar;
       close(last.close, last.time + RES * 60, "Session end — closed at the day's last bar (paper's TRADE_STOP_TIME teardown)");
     }
   }

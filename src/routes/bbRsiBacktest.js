@@ -28,6 +28,7 @@ const { getCharges: _getCharges } = require("../utils/charges");
 const backtestMarket = require("../services/backtestMarket");
 const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards = require("../utils/tradeGuards");
+const { parseTimeToMinutes } = require("../utils/tradeUtils");
 
 // Signal strength for bb_rsi — delegated to the engine so paper, live and backtest
 // cannot drift apart on it (the comparison inverted with the V8 mean-reversion flip).
@@ -199,12 +200,20 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   // fires INSIDE the bar (≈ bar open here), the session close at the bar's CLOSE.
   const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(BB_RSI_RES) / 1000;
   let _reentryBlockUntilTs = 0;
-  let _dailyTradeCount = 0;   // first-rejection-per-day debug log only
+  let _dailyTradeCount = 0;   // trades closed this IST day (MAX_TRADES_PER_DAY + first-rejection log)
   let _prevDate = null;
   let _loggedReason = null;
   const _rejectCounts = {};
-  const _btStartMin = (() => { const v = process.env.BB_RSI_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
-  const _btEndMin   = (() => { const v = process.env.BB_RSI_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
+  // Same parser + defaults as bbRsiPaper._refreshConfig().
+  const _btStartMin = parseTimeToMinutes(process.env.BB_RSI_ENTRY_START || "09:21");
+  const _btEndMin   = parseTimeToMinutes(process.env.BB_RSI_ENTRY_END   || "14:30");
+  // Paper's session auto-stop (TRADE_STOP_TIME, default 15:30) closes any open
+  // position and ends the session — the close of the bar that ends at/after it.
+  const _stopMins   = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+  // Paper's isMarketHours(): an entry needs the CLOCK inside [ENTRY_START, ENTRY_END).
+  // A candle-close decision runs at the bar's close (open + BB_RSI_RES), so the
+  // 14:25 5-min bar (closes 14:30) cannot enter; an intra-bar cross needs the bar open inside.
+  const _clockOk    = (mins) => mins >= _btStartMin && mins < _btEndMin;
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
@@ -232,7 +241,8 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (window.length > 100) window.shift();
 
     // Last bar of this day's session in the data → paper's session teardown.
-    const isSessionEnd = i === candles.length - 1 || getISTDateStr(candles[i + 1].time) !== candleDate;
+    const isSessionEnd = i === candles.length - 1 || getISTDateStr(candles[i + 1].time) !== candleDate
+      || candleMin + BB_RSI_RES >= _stopMins;
 
     // Get prev day OHLC (reference)
     const dateIdx = _dateIdx[candleDate] ?? -1;
@@ -362,9 +372,15 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         if (_REENTRY_COOLDOWN_SECS > 0) {
           _reentryBlockUntilTs = candle.time + (_exitAtClose ? BB_RSI_RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
         }
+        // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+        // entry for the rest of the IST day once N trades have closed. The new-day
+        // reset above clears it.
+        if (tradeGuards.dayCapReached(_dailyTradeCount)) _reentryBlockUntilTs = Infinity;
         position = null;
       }
-      continue; // skip entry eval when in position
+      // Still holding: no entry check. Flat again after a tick exit: paper evaluates
+      // this candle's close as usual (the cooldown gate below still applies).
+      if (position) continue;
     }
 
     // ── ENTRY LOGIC ─────────────────────────────────────────────────────────
@@ -384,14 +400,15 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (_confirmBbRsi && _armed) {
       const _a = _armed;
       _armed = null; // armed signal is good for exactly one candle — consume it
+      const _onClose = confirmCandle.onCloseEnabled("BB_RSI");
       if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, BB_RSI_RES)
-          && !_reentryBlocked) {
+          && _clockOk(_onClose ? candleMin + BB_RSI_RES : candleMin)) {
         // Two confirmation modes (must match paper):
         //  • ON_CLOSE ON  → confirm at this candle's CLOSE: it must have closed beyond
         //    the signal close; entry at the close.
         //  • ON_CLOSE OFF → intra-bar cross proxy (barCrossFill); entry at the cross fill.
         let _fill = null, _confTag = null;
-        if (confirmCandle.onCloseEnabled("BB_RSI")) {
+        if (_onClose) {
           if (confirmCandle.crossed(_a.side, candle.close, _a.triggerLevel)) {
             _fill = candle.close;
             _confTag = `CONFIRM ${_a.side} close ${candle.close}`;
@@ -400,7 +417,12 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           _fill = confirmCandle.barCrossFill(_a.side, candle, _a.triggerLevel);
           if (_fill != null) _confTag = `CONFIRM ${_a.side} x-over @${_a.triggerLevel}`;
         }
-        if (_fill != null) {
+        // Cooldown / day cap: paper rejects the fill in simulateBuy. On close it then
+        // returns (this candle is not re-evaluated); an intra-bar reject leaves the
+        // candle's close to be evaluated as usual.
+        if (_fill != null && _reentryBlocked) {
+          if (_onClose) continue;
+        } else if (_fill != null) {
           const side = _a.side;
           const entryPrice = parseFloat((_fill + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
           position = {
@@ -423,6 +445,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       prevDayOHLC: prevDayOHLC,
       prevPrevDayOHLC: prevPrevDayOHLC,
     });
+
+    // Paper's isMarketHours() at this candle's close — no entry, no arm, outside it.
+    if (result.signal !== "NONE" && !_clockOk(candleMin + BB_RSI_RES)) continue;
 
     // VIX check — post-strategy with derived strength (bb_rsi: BB_RSI_VIX_MAX_ENTRY + BB_RSI_VIX_STRONG_ONLY)
     if (result.signal !== "NONE" && process.env.BB_RSI_VIX_ENABLED === "true") {

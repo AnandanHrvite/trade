@@ -239,6 +239,9 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
       lastExitSec = exitSec;
       pos = null;
       if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitSec + _REENTRY_COOLDOWN_SECS;
+      // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
+      // entry for the rest of the IST day once N trades have closed. dayTrades is per day.
+      if (tradeGuards.dayCapReached(dayTrades.length)) reentryBlockUntil = Infinity;
       const g = strat.dayRiskGate(dayTrades, cfg);
       if (!g.allowed) { dayClosed = true; dayStops[g.status] = (dayStops[g.status] || 0) + 1; dayNote = g.reason; }
     }

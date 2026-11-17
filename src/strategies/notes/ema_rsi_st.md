@@ -4,6 +4,8 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-17 — Backtests follow Settings like paper: `backtestEngine.js` (EMA_RSI_ST) prices the simulated premium on `BACKTEST_SEED_PREMIUM` instead of a fixed ₹200 (moves the % stop/lock in spot points), and `emaRsiStV2Backtest.js` applies paper's VIX gate (`VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY`, prior-day India VIX close).
+- 2026-11-17 — `emaRsiStV2Backtest.js` honours `MAX_TRADES_PER_DAY` like paper: once N trades close in an IST day, every entry path (confirmation fill and candle-close) is blocked for the rest of that day (count resets per day).
 - 2026-11-14 — `emaRsiStV2Backtest.js` reads candles through the shared month cache (`fetchCandlesCachedBT`) like the other backtests, so every strategy reuses one download; the cache is never auto-deleted and is now in the Settings backup.
 - 2026-11-14 — `emaRsiStV2Backtest.js` (via `backtestEngine.fetchCandles`): history older than the Fyers plan allows (Standard: 1 year intraday) is skipped instead of failing the run; the live log + results notes say where the data really starts, and a range that is wholly too old fails with "pick a start on/after X" instead of the re-login hint.
 

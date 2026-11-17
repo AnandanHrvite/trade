@@ -12,6 +12,7 @@ const { getCharges } = require("../utils/charges");
 const { fetchCandlesWithCache, fetchCandlesSmartCache } = require("../utils/backtestCache");
 const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards   = require("../utils/tradeGuards");
+const backtestCosts = require("../config/backtestCosts");
 
 
 const _isIntradayRes = (resolution) => /^\d+$/.test(String(resolution));
@@ -272,14 +273,18 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
   // ── Global profit lock, in spot-point terms — the ONLY automatic exit ─────
   // The lock is defined on option premium, and this engine has no live LTP — it
-  // models premium as 200 (the estimated entry premium the P&L sim uses) +
-  // spot × DELTA − theta. So convert both thresholds against that same 200 seed
+  // models premium as _SEED (the entry premium the P&L sim uses) +
+  // spot × DELTA − theta. So convert both thresholds against that same seed
   // via DELTA, and the backtest stays internally consistent with its own P&L model.
   //
   // This is an APPROXIMATION of what paper does per tick: paper arms on the real
   // premium, which also moves with IV and theta, not with spot alone. It is far
   // closer to paper than having no lock at all (which would leave every backtest
   // reporting exits paper would never take).
+  // Simulated entry premium: Settings' BACKTEST_SEED_PREMIUM (config/backtestCosts,
+  // the same seed every other option backtest uses). Futures keep the fixed ₹200
+  // base the common futures stop is defined on (tradeGuards.futuresStopOpts).
+  const _SEED = isFutures ? 200 : backtestCosts.seedPremium();
   const _PL_ENABLED   = !isFutures && tradeGuards.PROFIT_LOCK_ENABLED;
   const _PL_ARM_PCT   = tradeGuards.PROFIT_LOCK_ARM_PCT;
   const _PL_FLOOR_PCT = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
@@ -288,8 +293,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _PL_VALID     = _PL_ENABLED && DELTA > 0
                      && Number.isFinite(_PL_ARM_PCT) && Number.isFinite(_PL_FLOOR_PCT)
                      && _PL_ARM_PCT > 0 && _PL_FLOOR_PCT >= 0 && _PL_FLOOR_PCT < _PL_ARM_PCT;
-  const _PL_ARM_SPOT_PTS   = _PL_VALID ? (_PL_ARM_PCT   / 100 * 200) / DELTA : 0;
-  const _PL_FLOOR_SPOT_PTS = _PL_VALID ? (_PL_FLOOR_PCT / 100 * 200) / DELTA : 0;
+  const _PL_ARM_SPOT_PTS   = _PL_VALID ? (_PL_ARM_PCT   / 100 * _SEED) / DELTA : 0;
+  const _PL_FLOOR_SPOT_PTS = _PL_VALID ? (_PL_FLOOR_PCT / 100 * _SEED) / DELTA : 0;
 
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
@@ -513,9 +518,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         const armed = bestFav >= _PL_ARM_SPOT_PTS;
         if (armed) {
           // The trail raises the floor to the tiered keep % of the best gain
-          // (premium gain ≈ delta × spot gain on the 200 seed, so the same share
+          // (premium gain ≈ delta × spot gain on the seed, so the same share
           // applies to spot points).
-          const _bestPremPct = bestFav * DELTA / 200 * 100;
+          const _bestPremPct = bestFav * DELTA / _SEED * 100;
           const _trailPts = bestFav * tradeGuards.profitLockTrailKeepPct(_bestPremPct, _PL_TRAIL_PCT, _PL_TIERS) / 100;
           _lvlPts = Math.max(_PL_FLOOR_SPOT_PTS, _trailPts);
           _lvlWhy = _lvlPts > _PL_FLOOR_SPOT_PTS
@@ -528,7 +533,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       // Futures too: DELTA is 1.0 there, so this is tradeGuards.futuresStopLevel.
       if (!entryBar) {
         const _bestFavPrev = position.bestPricePrevBar != null ? (position.bestPricePrevBar - position.entryPrice) * _dir : 0;
-        const _stopPts = tradeGuards.premiumStopSpotPts(_bestFavPrev, DELTA);
+        const _stopPts = tradeGuards.premiumStopSpotPts(_bestFavPrev, DELTA, _SEED);
         if (_stopPts != null && (_lvlPts == null || _stopPts > _lvlPts)) {
           _lvlPts = _stopPts;
           _lvlWhy = tradeGuards.premiumStopSpotReason(_stopPts, _bestFavPrev);
@@ -594,8 +599,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           const thetaDecay     = quantize((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld, 2);
           // Net option PnL per unit
           const netPremiumPts  = premiumMovePts - thetaDecay;
-          // Estimate option premium for charges calc (rough: entry ~200, exit = entry + move)
-          const estEntryPrem = 200;
+          // Estimate option premium for charges calc (entry = the seed, exit = entry + move)
+          const estEntryPrem = _SEED;
           const estExitPrem  = Math.max(1, estEntryPrem + netPremiumPts);
           const _chg = getCharges({ isFutures: false, exitPremium: estExitPrem, entryPremium: estEntryPrem, qty: LOT_SIZE, ..._btExch });
           // Total rupees = net premium pts × lot size − charges
@@ -646,8 +651,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // MAX_TRADES_PER_DAY — paper (reentryCooldownUntil(…, MODE)) blocks every new
         // entry for the rest of the IST day once N trades have closed. The new-day
         // reset above clears it.
-        const _dayCap = tradeGuards.MAX_TRADES_PER_DAY;
-        if (_dayCap > 0 && _dailyTradeCount >= _dayCap) _reentryBlockUntilTs = Infinity;
+        if (tradeGuards.dayCapReached(_dailyTradeCount)) _reentryBlockUntilTs = Infinity;
 
         // ── Notify strategy: optional exit callback
         position = null;
@@ -861,7 +865,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       const candlesHeld    = position.candlesHeld || 1;
       const thetaDecay     = quantize((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld, 2);
       const netPremPts     = premiumMovePts - thetaDecay;
-      const estEntry       = 200;
+      const estEntry       = _SEED;
       const estExit        = Math.max(1, estEntry + netPremPts);
       const _chgEod = getCharges({ isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE, ..._btExch });
       pnlRupees = quantize((netPremPts * LOT_SIZE) - _chgEod, 2);

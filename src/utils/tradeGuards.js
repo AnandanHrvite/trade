@@ -435,6 +435,12 @@ function dayCapUntil(mode, nowMs = Date.now()) {
   const day = _istDay(nowMs);
   return (_dayTrades.get(`${mode}|${day}`) || 0) >= cap ? (day + 1) * _DAY_MS - _IST_MS - 1 : 0;
 }
+// Backtests count their own trades per IST day: true once `closedToday` trades
+// have closed and the cap is reached — block entries for the rest of that day.
+function dayCapReached(closedToday) {
+  const cap = liveMaxTradesPerDay();
+  return cap > 0 && Number.isFinite(closedToday) && closedToday >= cap;
+}
 // Replay harness: run with its own empty count, then put the live one back.
 function _swapDayTradeCounts(next) { const prev = _dayTrades; _dayTrades = next || new Map(); return prev; }
 
@@ -463,6 +469,7 @@ module.exports = {
   reentryCooldownMs,
   reentryCooldownUntil,
   dayCapUntil,
+  dayCapReached,
   _swapDayTradeCounts,
   INDICATOR_HISTORY_CANDLES,
   // Live getters (kept under the old names for callers that read them for display).

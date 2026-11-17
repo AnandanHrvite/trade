@@ -245,6 +245,9 @@ function simulateDay(day, cfg, qty, mkt) {
   // can ever follow an exit (paper's one-trade-a-day rule closes the day too).
   // Read only so the rule's reach stays universal; if a second trade is ever
   // modelled, refuse entry bars with time < exitTs + this, on these 1-min bars.
+  // MAX_TRADES_PER_DAY is a no-op for the same reason: paper counts it through
+  // reentryCooldownUntil(…, MODE), but its hard TRADES_PER_DAY = 1 closes the day
+  // first, so any cap ≥ 1 can never block an entry this page would take.
   const _reentryCooldownSecs = tradeGuards.reentryCooldownMs(RES) / 1000;
   void _reentryCooldownSecs;
 
@@ -294,9 +297,13 @@ function simulateDay(day, cfg, qty, mkt) {
   const leg       = fill.leg;
   const entryBar  = fill.bar;
   const entryPx   = strategy._r2(fill.px + slip);          // slippage paid UP on a buy
+  // Paper's lock / premium stop is measured from the fill LTP itself
+  // (pos.optionEntryLtp), so the exit DECISIONS here key off the raw fill too;
+  // the slippage is a cost and lands only in the P&L below.
+  const lockRef   = strategy._r2(fill.px);
 
-  let peak     = entryPx;
-  let trough   = entryPx;
+  let peak     = lockRef;
+  let trough   = lockRef;
 
   // The global profit lock — paper's ONLY exit — read live from tradeGuards.
   const lockOpts = {
@@ -306,8 +313,8 @@ function simulateDay(day, cfg, qty, mkt) {
     trailPct: tradeGuards.PROFIT_LOCK_TRAIL_PCT,
     tiers:    tradeGuards.PROFIT_LOCK_TRAIL_TIERS,
   };
-  const lockAt = (px) => (strategy._px(px) ? tradeGuards.checkProfitLock(entryPx, px, peak, lockOpts) : null);
-  const lockFloor = () => tradeGuards.exitLevelLtp(entryPx, peak, lockOpts);
+  const lockAt = (px) => (strategy._px(px) ? tradeGuards.checkProfitLock(lockRef, px, peak, lockOpts) : null);
+  const lockFloor = () => tradeGuards.exitLevelLtp(lockRef, peak, lockOpts);
   const sessionEndMin = _sessionEndMin();
 
   const bars = leg.bars.filter(b => b.time >= entryBar.time).sort((a, b) => a.time - b.time);
