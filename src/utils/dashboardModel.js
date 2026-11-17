@@ -53,7 +53,7 @@ const ACCENT = {
   HA_SCALP: "#f97316", PREV_ORB_SCALP: "#e879f9", ITM20_SCALP: "#22d3ee",
   RSI_PIVOT_ST: "#facc15", ST_RSI_PIV_BB: "#a3e635", SAIL_VWAP_ST: "#fda4af",
   PIVOT_EMA_ST: "#38bdf8", GAP_RUNAWAY: "#a78bfa", GAP_RUNAWAY_STK: "#c084fc",
-  SIMPLE930: "#fb923c", EARLYBIRD: "#14b8a6",
+  SIMPLE930: "#fb923c", EARLYBIRD: "#14b8a6", EMA9_CROSS: "#fbbf24",
 };
 const PAIR_ACCENT = "#2dd4bf";
 

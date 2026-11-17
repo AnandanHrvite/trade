@@ -70,6 +70,8 @@ function renderDashboard() {
   const gapRunawayModeOn     = (process.env.GAP_RUNAWAY_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const gapRunawayStkMode    = sharedSocketState.getGapRunawayStkMode ? sharedSocketState.getGapRunawayStkMode() : null;
   const gapRunawayStkModeOn  = (process.env.GAP_RUNAWAY_STK_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const ema9CrossMode        = sharedSocketState.getEma9CrossMode ? sharedSocketState.getEma9CrossMode() : null;
+  const ema9CrossModeOn      = (process.env.EMA9_CROSS_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   // Every strategy and running (strategy, market) pair switched ON, market by
   // market (utils/dashboardModel.js — registry × pairs, never hand-typed). Each
@@ -111,6 +113,7 @@ function renderDashboard() {
     || (pivotEmaStModeOn && pivotEmaStMode)
     || (gapRunawayModeOn && gapRunawayMode)
     || (gapRunawayStkModeOn && gapRunawayStkMode)
+    || (ema9CrossModeOn && ema9CrossMode)
     || (sharedSocketState.heldSlots ? sharedSocketState.heldSlots().length > 0 : false);
   // The mode-specific top-bar badge below only covers ORB_PAPER. When some
   // OTHER mode is active we still want a running indicator visible — show a

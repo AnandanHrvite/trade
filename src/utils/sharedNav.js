@@ -81,6 +81,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   let _pivotEmaStMode = null;
   let _gapRunawayMode = null, _gapRunawayStkMode = null;
   let _simple930Mode = null;
+  let _ema9CrossMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -103,6 +104,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     _gapRunawayMode = sss.getGapRunawayMode ? sss.getGapRunawayMode() : null;
     _gapRunawayStkMode = sss.getGapRunawayStkMode ? sss.getGapRunawayStkMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
+    _ema9CrossMode = sss.getEma9CrossMode ? sss.getEma9CrossMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -173,6 +175,8 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const stRsiPivBbModeOn = (process.env.ST_RSI_PIV_BB_MODE_ENABLED || 'false').toLowerCase() === 'true';
   // SAIL_VWAP_ST — SAIL stock options; defaults OFF, hidden until switched on.
   const sailVwapStModeOn = (process.env.SAIL_VWAP_ST_MODE_ENABLED || 'false').toLowerCase() === 'true';
+  // EMA9_CROSS — defaults ON (the user wants it in the menu and in Start All).
+  const ema9CrossModeOn = (process.env.EMA9_CROSS_MODE_ENABLED || 'true').toLowerCase() === 'true';
   // PIVOT_EMA_ST — defaults ON.
   const pivotEmaStModeOn     = (process.env.PIVOT_EMA_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   // GAP_RUNAWAY (NIFTY) + its stock scanner — default ON.
@@ -248,6 +252,10 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const showEmaRsiStV2Backtest    = (process.env.UI_SHOW_EMA_RSI_ST_V2_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showEmaRsiStV2Paper       = (process.env.UI_SHOW_EMA_RSI_ST_V2_PAPER        || 'true').toLowerCase()  === 'true';
   const showEmaRsiStV2History     = (process.env.UI_SHOW_EMA_RSI_ST_V2_HISTORY      || 'true').toLowerCase()  === 'true';
+  // EMA9_CROSS — whole group gated by EMA9_CROSS_MODE_ENABLED above.
+  const showEma9CrossBacktest = (process.env.UI_SHOW_EMA9_CROSS_BACKTEST || 'true').toLowerCase() === 'true';
+  const showEma9CrossPaper    = (process.env.UI_SHOW_EMA9_CROSS_PAPER    || 'true').toLowerCase() === 'true';
+  const showEma9CrossHistory  = (process.env.UI_SHOW_EMA9_CROSS_HISTORY  || 'true').toLowerCase() === 'true';
   // ST_RSI_PIV_BB — whole group gated by ST_RSI_PIV_BB_MODE_ENABLED (default
   // off) above; these only pick which of its pages show once the group is on.
   const showStRsiPivBbPaper       = (process.env.UI_SHOW_ST_RSI_PIV_BB_PAPER        || 'true').toLowerCase()  === 'true';
@@ -299,6 +307,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const gapRunawayStkKeys = ['gapRunawayStkPaper', 'gapRunawayStkHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930History'];
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdHistory'];
+  const ema9CrossKeys = ['ema9CrossBacktest', 'ema9CrossPaper', 'ema9CrossHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
   // sidebar behaves the same way — one accordion, no ungrouped stragglers.
   const dashboardKeys = ['dashboard', 'backtest', 'allBacktest', 'replay', 'consolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
@@ -323,6 +332,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const isGapRunawayStkOpen = gapRunawayStkKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
+  const isEma9CrossOpen = ema9CrossKeys.includes(activePage);
   const isSystemOpen    = systemKeys.includes(activePage);
   // Pages that live outside every group (Real-Time monitor, docs, …) used to see
   // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
@@ -335,6 +345,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     || isPivotEmaStOpen
     || isGapRunawayOpen || isGapRunawayStkOpen
     || isItm20ScalpOpen
+    || isEma9CrossOpen
     || isEarlyBirdOpen || isSystemOpen;
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
 
@@ -426,6 +437,12 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     ...(showEmaRsiStV2Backtest ? [{ key: 'emaRsiStV2Backtest', href: '/ema_rsi_st_v2-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showEmaRsiStV2Paper    ? [{ key: 'emaRsiStV2Paper',    href: '/ema_rsi_st_v2-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showEmaRsiStV2History  ? [{ key: 'emaRsiStV2History',  href: '/ema_rsi_st_v2-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
+  const ema9CrossItems = [
+    ...(showEma9CrossBacktest ? [{ key: 'ema9CrossBacktest', href: '/ema9_cross-backtest',       icon: '🔍', label: 'Backtest' }] : []),
+    ...(showEma9CrossPaper    ? [{ key: 'ema9CrossPaper',    href: '/ema9_cross-paper/status',   icon: '📋', label: 'Paper'    }] : []),
+    ...(showEma9CrossHistory  ? [{ key: 'ema9CrossHistory',  href: '/ema9_cross-paper/history',  icon: '📜', label: 'History'  }] : []),
   ];
 
   const stRsiPivBbItems = [
@@ -610,6 +627,13 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       parent: 'stocks',
       items: gapRunawayStkItems,
     }] : []),
+    // ── EMA9_CROSS — a NIFTY strategy, nested under the NIFTY parent ──
+    ...(ema9CrossModeOn ? [{
+      header: 'EMA9_CROSS', collapsible: true, collapsed: !isEma9CrossOpen,
+      groupId: 'nav-ema9_cross',
+      parent: 'nifty',
+      items: ema9CrossItems,
+    }] : []),
     // The underlying parents render here — after Dashboard, before
     // System. Every section carrying a `parent` is nested inside one of them.
     { parentsAnchor: true },
@@ -693,13 +717,17 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
       try { if (require('./sharedSocketState').slotHeld(p.pairSocketMode)) pairPaperBadge = `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`; } catch (_) {}
     }
 
+    const ema9CrossPaperBadge = p.key === 'ema9CrossPaper' && _ema9CrossMode === 'EMA9_CROSS_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     const simple930PaperBadge = p.key === 'simple930Paper' && _simple930Mode === 'SIMPLE930_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${runningBadge}${bbRsiPaperBadge}${paPaperBadge}${orbPaperBadge}${tdsPaperBadge}${haScalpPaperBadge}${prevOrbScalpPaperBadge}${rsiPivotStPaperBadge}${emaRsiStV2PaperBadge}${pairPaperBadge}${simple930PaperBadge}
+      ${runningBadge}${bbRsiPaperBadge}${paPaperBadge}${orbPaperBadge}${tdsPaperBadge}${haScalpPaperBadge}${prevOrbScalpPaperBadge}${rsiPivotStPaperBadge}${emaRsiStV2PaperBadge}${pairPaperBadge}${simple930PaperBadge}${ema9CrossPaperBadge}
       ${stRsiPivBbPaperBadge}
       ${sailVwapStPaperBadge}
       ${pivotEmaStBadges}
@@ -2376,6 +2404,7 @@ window.__ltInit = true;
     '.mode-gap_runaway{color:#7c3aed!important;}',
     '.mode-gap_runaway_stk{color:#9333ea!important;}',
     '.mode-simple930{color:#c2410c!important;}',
+    '.mode-ema9_cross{color:#a16207!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',
     '#da-mode-badge{color:#1d4ed8!important;}',

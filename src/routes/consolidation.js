@@ -59,6 +59,7 @@ const SOURCES = [
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_paper_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
   // EarlyBird is cash equity (share counts, real intraday shorts), not options.
   { mode: "EARLYBIRD", file: path.join(DATA_DIR, "early_bird_paper_trades.json"), label: "EarlyBird", color: "#14b8a6" },
+  { mode: "EMA9_CROSS", file: path.join(DATA_DIR, "ema9_cross_paper_trades.json"), label: "EMA9_CROSS", color: "#fbbf24" },
   // Running (strategy, market) pairs (config/pairs.js runnable) — each its own
   // trades file under its env prefix (BN_EMA_RSI_ST_V2 …). Generated.
   ...require("../config/pairs").runnable().map(p => ({
@@ -516,6 +517,7 @@ router.get("/", (req, res) => {
     .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;background:rgba(148,163,184,0.12);color:#a5b4c8;border:0.5px solid rgba(148,163,184,0.3);}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
+    .badge-EMA9_CROSS{background:rgba(251,191,36,0.12);color:#fbbf24;border:0.5px solid rgba(251,191,36,0.3);}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
     .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;border:0.5px solid rgba(253,164,175,0.3);}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
@@ -2003,6 +2005,7 @@ _MODE_COLOR.SAIL_VWAP_ST = '#fda4af';
 _MODE_COLOR.PIVOT_EMA_ST = '#38bdf8';
 _MODE_COLOR.GAP_RUNAWAY = '#a78bfa'; _MODE_COLOR.GAP_RUNAWAY_STK = '#c084fc';
 _MODE_COLOR.ITM20_SCALP = '#22d3ee';
+_MODE_COLOR.EMA9_CROSS = '#fbbf24';
 // Retired copy books (and any mode added later without a colour) — neutral slate.
 ENABLED_MODES.forEach(m => { if (!_MODE_COLOR[m]) _MODE_COLOR[m] = '#94a3b8'; });
 // NIFTY FUTURES twins — one amber futures accent.

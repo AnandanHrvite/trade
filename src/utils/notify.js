@@ -149,6 +149,8 @@ function modeGroup(mode) {
   // it is the default return — so without this line every V2 mode string would
   // fall through and fire on V1's toggles.
   if (m === "EMA_RSI_ST_V2" || m.startsWith("EMA_RSI_ST_V2-") || m.startsWith("EMA_RSI_ST_V2_")) return "EMA_RSI_ST_V2";
+  // EMA9_CROSS — anchored; no earlier branch matches "EMA9_" (EMA9VWAP has no underscore).
+  if (m === "EMA9_CROSS" || m.startsWith("EMA9_CROSS-") || m.startsWith("EMA9_CROSS_")) return "EMA9_CROSS";
   return "EMA_RSI_ST";
 }
 
@@ -466,6 +468,7 @@ function modeLabel(mode) {
   if (m.startsWith("SIMPLE930-PAPER")) return "🎯 SIMPLE 9:30 PAPER" + m.slice("SIMPLE930-PAPER".length);
   if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
   if (m.startsWith("EMA_RSI_ST_V2-PAPER")) return "📄 EMA_RSI_ST_V2 PAPER" + m.slice("EMA_RSI_ST_V2-PAPER".length);
+  if (m.startsWith("EMA9_CROSS-PAPER")) return "📈 EMA9_CROSS PAPER" + m.slice("EMA9_CROSS-PAPER".length);
   if (m.startsWith("ST_RSI_PIV_BB-PAPER")) return "📄 ST_RSI_PIV_BB PAPER" + m.slice("ST_RSI_PIV_BB-PAPER".length);
   if (m.startsWith("SAIL_VWAP_ST-PAPER")) return "📄 VWAP_ST PAPER" + m.slice("SAIL_VWAP_ST-PAPER".length);
   if (m.startsWith("PIVOT_EMA_ST-PAPER")) return "📄 PIVOT_EMA_ST PAPER" + m.slice("PIVOT_EMA_ST-PAPER".length);
@@ -790,6 +793,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (isModeEnabled("PIVOT_EMA_ST")) groups.push("PIVOT_EMA_ST");
   for (const g of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) if (isModeEnabled(g)) groups.push(g);
   if (isModeEnabled("ITM20_SCALP")) groups.push("ITM20_SCALP");
+  if (isModeEnabled("EMA9_CROSS")) groups.push("EMA9_CROSS");
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

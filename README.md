@@ -43,6 +43,8 @@ All strategies run **in parallel** on the same WebSocket — different candle re
 | **Prev ORB Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering, profit lock simulated) | 3-min historical | Historical | `/prev-orb-scalp-backtest` |
 | **ITM20 Scalp Paper** | 09:15–09:30 range break (close beyond + VWAP + EMA9 agreeing) → retest within 3 candles → confirmation close; 1 strike ITM, +20 / −10 premium points, max 2 trades/day | 5-min | Simulated | `/itm20-scalp-paper` |
 | **ITM20 Scalp Backtest** | Same engine over a date range (stop before target inside a bar, next-bar-open fills, CSV export) | 5-min historical | Historical | `/itm20-scalp-backtest` |
+| **EMA9_CROSS Paper** | A 5-min candle **closes across EMA9** (above → ATM CE, below → ATM PE); exits when a close comes back across EMA9 and flips on a fresh opposite cross; first stop = the common premium stop | 5-min | Simulated | `/ema9_cross-paper` |
+| **EMA9_CROSS Backtest** | Same engine over a date range (stop tested intra-bar before the close, slippage both ways) | 5-min historical | Historical | `/ema9_cross-backtest` |
 | **EarlyBird Paper** | The day's **first 15-min candle** on NIFTY sets the side. `stock` mode buys/shorts the **cash equity** of any F&O stock printing the same shape (up to 5 at once); `option` mode buys ONE **NIFTY CE/PE** off NIFTY's own candle with **no stock check**; `both` runs the two independently | 15-min (first bar) | Simulated | `/early-bird-paper` |
 | **EarlyBird Backtest** | Same engine over a date range (conservative intra-bar ordering, equity-intraday charges) | 15-min historical | Historical | `/early-bird-backtest` |
 | **OI Monitor** | Read-only per-strike OI ladder, walls, band PCR — no position, no order | live OI ladder | — | `/oi-monitor` |
@@ -303,6 +305,15 @@ Engine: [src/strategies/itm20_scalp.js](src/strategies/itm20_scalp.js). **Never 
 - **Day limits**: entries until 11:30, max 2 trades, stop after a win, after 2 losses or at −20 points (the second stop is tightened to keep the day inside −20). Weekly expiry day skipped by default.
 - **Not here on purpose**: no volume rule, VIX, OI, ATR, trailing stop, partial exit or averaging. The common 10:00–14:00 trade window is not applied — the 09:30–11:30 window is part of the rules. Options only: futures instrument mode is refused.
 
+### Strategy 8d: EMA9_CROSS — 5-min close crossing EMA9, exit + flip on the opposite close (paper + backtest only, Zerodha)
+
+Engine: [src/strategies/ema9_cross.js](src/strategies/ema9_cross.js). **Never traded on paper or live.** Paper and Backtest only — there is no live route.
+
+- **Entry**: only on a finished 5-min candle whose close crosses EMA9 (`EMA9_CROSS_EMA_PERIOD`): previous close at/below EMA9 and this close above → ATM CE; the mirror → ATM PE. Entries 10:30–14:00 (the Common Trade Window replaces this while it is on).
+- **Exit**: a candle close back across EMA9 (CE: close below, PE: close above). When that close is a fresh opposite cross the trade flips to the other side on the same close — unless the common wait-after-exit or max-trades rule blocks it. Plus the common premium stop / profit lock per tick and the session end.
+- **Re-entry**: only on a fresh cross. A stop-out while price stays on the same side of EMA9 waits for the next cross.
+- **Not here on purpose**: no RSI, SuperTrend, EMA20/50, confirmation candle, EMA21 trail, candle stop, target or volume/ADX/VWAP filter.
+
 ### Strategy 9: RSI PIVOT ST — RSI extreme + a Standard Pivot R1/S1 break, SuperTrend-stopped (single-leg OTM CE/PE, Zerodha)
 
 **Never traded, and no backtest has been run against it.** Zero paper sessions, zero live orders. Every threshold below is the user's stated rule or a repo convention, not a fitted value. Collect clean paper days and diff them against `/replay` before touching any live gate.
@@ -463,6 +474,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   ha_scalp_paper_trades.json      # HA Scalp paper sessions
   prev_orb_scalp_paper_trades.json # Prev ORB Scalp paper sessions
   itm20_scalp_paper_trades.json   # ITM20 Scalp paper sessions
+  ema9_cross_paper_trades.json    # EMA9_CROSS paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
   sail_vwap_st_paper_trades.json  # SAIL_VWAP_ST (SAIL stock options) paper sessions
@@ -481,6 +493,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_ha_scalp_position.json  # Crash recovery — HA Scalp position
   .active_prev_orb_scalp_position.json # Crash recovery — Prev ORB Scalp position
   .active_itm20_scalp_position.json # Crash recovery — ITM20 Scalp position
+  .active_ema9_cross_position.json # Crash recovery — EMA9_CROSS position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
   .active_sail_vwap_st_position.json # Crash recovery — SAIL_VWAP_ST position (carries the SuperTrend trail; Zerodha group)
@@ -599,6 +612,13 @@ log, so each session's trades carry the exact config that produced them.
 | `/itm20-scalp-backtest` | ITM20 Scalp date-range backtest (5-min bars, next-bar-open fills, CE/PE, month and time tables, CSV export) |
 | `/itm20-scalp-paper/status` | Paper trade — BUY CE / BUY PE / NO TRADE light, range, VWAP, EMA9, breakout/retest status, ITM strike, entry/target/stop, day risk |
 | `/itm20-scalp-paper/history` | Sessions (per-session delete + view modal) |
+
+### EMA9_CROSS
+| URL | Description |
+|-----|-------------|
+| `/ema9_cross-backtest` | EMA9_CROSS date-range backtest (5-min bars, entry at the cross close, EMA9 exit + flip, common stop intra-bar) |
+| `/ema9_cross-paper/status` | Paper trade — chart with EMA9, position, option premium, session trades |
+| `/ema9_cross-paper/history` | Sessions (per-session delete + view modal) |
 
 ### RSI Pivot ST
 | URL | Description |

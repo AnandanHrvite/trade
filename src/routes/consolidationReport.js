@@ -330,6 +330,7 @@ ${multiSelectCSS()}
 .badge-HA_SCALP{background:rgba(249,115,22,0.12);color:#f97316;}
     .badge-PREV_ORB_SCALP{background:rgba(232,121,249,0.12);color:#e879f9;}
     .badge-ITM20_SCALP{background:rgba(34,211,238,0.12);color:#22d3ee;}
+    .badge-EMA9_CROSS{background:rgba(251,191,36,0.12);color:#fbbf24;}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;}
     .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;}

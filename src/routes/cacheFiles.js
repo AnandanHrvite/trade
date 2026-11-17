@@ -76,6 +76,7 @@ const STRATEGY_BADGE = {
   gap_runaway: { label: "GAP_runAway__Kirubakaran", cls: "mode-gap_runaway" },
   gap_runaway_stk: { label: "GAP_runAway Stocks", cls: "mode-gap_runaway_stk" },
   itm20_scalp: { label: "ITM20 SCALP", cls: "mode-itm20_scalp" },
+  ema9_cross: { label: "EMA9_CROSS", cls: "mode-ema9_cross" },
   bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
@@ -207,6 +208,8 @@ async function detectMeta(group, rel, abs, mtimeMs) {
   if (_grName) return { strat: _grName[1].toLowerCase(), date: null };
   // ITM20_SCALP — not in the generic list below.
   if (/^itm20_scalp\b/i.test(path.basename(rel))) return { strat: "itm20_scalp", date: null };
+  // EMA9_CROSS — not in the generic list below.
+  if (/^ema9_cross\b/i.test(path.basename(rel))) return { strat: "ema9_cross", date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
   const nameMatch = path.basename(rel).match(/^(ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|prev_orb_scalp|rsi_pivot_st|simple930|early_bird)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
@@ -225,6 +228,7 @@ async function detectMeta(group, rel, abs, mtimeMs) {
     const _grMode = !meta.strat && String(obj && obj.mode || "").match(/^(gap_runaway(?:_stk)?)(?![a-z0-9])/i);
     if (_grMode) meta.strat = _grMode[1].toLowerCase();
     if (!meta.strat && /^itm20[-_]scalp/i.test(String(obj && obj.mode || ""))) meta.strat = "itm20_scalp";
+    if (!meta.strat && /^ema9[-_]cross/i.test(String(obj && obj.mode || ""))) meta.strat = "ema9_cross";
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
     else if (typeof obj.sessionId === "number") meta.date = _istDateFromMs(obj.sessionId);
@@ -557,6 +561,7 @@ router.get("/", (req, res) => {
     .mode-gap_runaway { color:#c4b5fd; }
     .mode-gap_runaway_stk { color:#d8b4fe; }
     .mode-itm20_scalp { color:#67e8f9; }
+    .mode-ema9_cross { color:#fcd34d; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -703,6 +708,7 @@ ${embed ? '' : buildSidebar('tradeLogs', false)}
     gap_runaway: { label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
     gap_runaway_stk: { label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
     itm20_scalp: { label: 'ITM20 SCALP', cls: 'mode-itm20_scalp' },
+    ema9_cross: { label: 'EMA9_CROSS', cls: 'mode-ema9_cross' },
     bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },

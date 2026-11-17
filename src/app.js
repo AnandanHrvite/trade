@@ -787,6 +787,14 @@ const OPEN_PATHS = [
   "/ema_rsi_st_v2-paper/debug",           // read-only debug
   "/ema_rsi_st_v2-paper/client.js",       // static asset
   "/ema_rsi_st_v2-paper/simulate",        // read-only simulate page (its /simulate/start still needs the secret)
+  // EMA9_CROSS — same reason: the dashboard tile polls status/data unsecured.
+  "/ema9_cross-paper/status",
+  "/ema9_cross-paper/status/data",
+  "/ema9_cross-paper/status/chart-data",
+  "/ema9_cross-paper/history",
+  "/ema9_cross-paper/debug",
+  "/ema9_cross-paper/client.js",
+  "/ema9_cross-paper/simulate",
   // ST_RSI_PIV_BB — same reason: the dashboard tile polls status/data unsecured,
   // and a missing entry here is a raw 403 on the page once API_SECRET is set.
   "/st_rsi_piv_bb-paper/status",          // read-only status page
@@ -1001,6 +1009,9 @@ const OPEN_PATHS = [
   "/ema_rsi_st_v2-backtest",
   "/ema_rsi_st_v2-backtest/status",
   "/ema_rsi_st_v2-backtest/idle",
+  "/ema9_cross-backtest",
+  "/ema9_cross-backtest/status",
+  "/ema9_cross-backtest/idle",
   "/sail_vwap_st-backtest",
   "/sail_vwap_st-backtest/status",
   "/sail_vwap_st-backtest/idle",
@@ -1079,6 +1090,8 @@ const OPEN_PREFIXES = [
   "/ema_rsi_st-paper/download/",
   "/ema_rsi_st_v2-paper/view/",
   "/ema_rsi_st_v2-paper/download/",
+  "/ema9_cross-paper/view/",
+  "/ema9_cross-paper/download/",
   "/st_rsi_piv_bb-paper/view/",
   "/st_rsi_piv_bb-paper/download/",
   "/sail_vwap_st-paper/view/",
@@ -1309,6 +1322,10 @@ app.use("/simple930-paper",    require("./routes/simple930Paper"));      // ← 
 app.use("/simple930-backtest", lazyRouter(() => require("./routes/simple930Backtest")));   // ← same signal engine, paper's exits, REAL option candles
 app.use("/rsi-pivot-st-paper",    require("./routes/rsiPivotStPaper"));       // ← canonical engine
 app.use("/rsi-pivot-st-backtest", lazyRouter(() => require("./routes/rsiPivotStBacktest")));    // ← same signal engine, paper's exits
+
+// ── EMA9_CROSS routes (5-min close crosses EMA9 → CE/PE, exit + flip on the opposite close, Zerodha) ─
+app.use("/ema9_cross-paper",    require("./routes/ema9CrossPaper"));        // ← canonical engine
+app.use("/ema9_cross-backtest", lazyRouter(() => require("./routes/ema9CrossBacktest")));     // ← same signal engine, paper's exits
 
 
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
@@ -1930,6 +1947,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getSimple930Mode && sharedSocketState.getSimple930Mode()) activeModes.push(sharedSocketState.getSimple930Mode());
     if (sharedSocketState.getRsiPivotStMode && sharedSocketState.getRsiPivotStMode()) activeModes.push(sharedSocketState.getRsiPivotStMode());
     if (sharedSocketState.getEmaRsiStV2Mode && sharedSocketState.getEmaRsiStV2Mode()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode());
+    if (sharedSocketState.getEma9CrossMode && sharedSocketState.getEma9CrossMode()) activeModes.push(sharedSocketState.getEma9CrossMode());
     if (sharedSocketState.getStRsiPivBbMode && sharedSocketState.getStRsiPivBbMode()) activeModes.push(sharedSocketState.getStRsiPivBbMode());
     if (sharedSocketState.getSailVwapStMode && sharedSocketState.getSailVwapStMode()) activeModes.push(sharedSocketState.getSailVwapStMode());
     if (sharedSocketState.getPivotEmaStMode && sharedSocketState.getPivotEmaStMode()) activeModes.push(sharedSocketState.getPivotEmaStMode());

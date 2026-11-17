@@ -459,6 +459,42 @@
     "GAP_RUNAWAY_STK_TRADE_AMOUNT",
     "GAP_RUNAWAY_STK_MAX_TRADES"
    ]
+  },
+  "ema9-cross": {
+   "group": "NIFTY",
+   "tabs": [
+    "Mode",
+    "Signal",
+    "Session window",
+    "Trade days",
+    "Own Common Rules"
+   ],
+   "keys": [
+    "EMA9_CROSS_PAPER_ENABLED",
+    "EMA9_CROSS_EMA_PERIOD",
+    "EMA9_CROSS_ENTRY_START",
+    "EMA9_CROSS_ENTRY_END",
+    "EMA9_CROSS_WARMUP_DAYS",
+    "EMA9_CROSS_EXPIRY_DAY_ONLY",
+    "EMA9_CROSS_OWN_COMMON_RULES",
+    "EMA9_CROSS_PROFIT_LOCK_ENABLED",
+    "EMA9_CROSS_PREMIUM_SL_ENABLED",
+    "EMA9_CROSS_EXIT_REENTRY_COOLDOWN_ENABLED",
+    "EMA9_CROSS_MAX_BID_ASK_SPREAD_ENABLED",
+    "EMA9_CROSS_COMMON_TRADE_WINDOW_ENABLED",
+    "EMA9_CROSS_PAPER_CAPITAL_GATE_ENABLED",
+    "EMA9_CROSS_LOT_MULTIPLIER",
+    "EMA9_CROSS_PAPER_CAPITAL_EST_PREMIUM",
+    "EMA9_CROSS_PROFIT_LOCK_ARM_PCT",
+    "EMA9_CROSS_PROFIT_LOCK_FLOOR_PCT",
+    "EMA9_CROSS_PROFIT_LOCK_TRAIL_PCT",
+    "EMA9_CROSS_PROFIT_LOCK_TRAIL_TIERS",
+    "EMA9_CROSS_PREMIUM_SL_PCT",
+    "EMA9_CROSS_PREMIUM_SL_TRAIL_PCT",
+    "EMA9_CROSS_EXIT_REENTRY_COOLDOWN_CANDLES",
+    "EMA9_CROSS_MAX_TRADES_PER_DAY",
+    "EMA9_CROSS_MAX_BID_ASK_SPREAD_PTS"
+   ]
   }
  },
  "sidebar": {
@@ -723,6 +759,29 @@
       ],
       [
        "/gap_runaway-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-ema9_cross",
+     "header": "EMA9_CROSS",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ema9_cross-backtest",
+       "Backtest",
+       false
+      ],
+      [
+       "/ema9_cross-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/ema9_cross-paper/history",
        "History",
        false
       ]
@@ -1009,6 +1068,29 @@
       ],
       [
        "/gap_runaway-paper/history",
+       "History",
+       false
+      ]
+     ]
+    },
+    {
+     "gid": "nav-ema9_cross",
+     "header": "EMA9_CROSS",
+     "parent": "nav-parent-nifty",
+     "collapsed": true,
+     "items": [
+      [
+       "/ema9_cross-backtest",
+       "Backtest",
+       false
+      ],
+      [
+       "/ema9_cross-paper/status",
+       "Paper",
+       false
+      ],
+      [
+       "/ema9_cross-paper/history",
        "History",
        false
       ]

@@ -68,6 +68,10 @@ let sailVwapStMode = null;
 // PIVOT_EMA_ST mode: "PIVOT_EMA_ST_PAPER" | null. Its OWN slot (own settings +
 // position file), so it runs side by side with every other strategy.
 let pivotEmaStMode = null;
+
+// EMA9_CROSS mode: "EMA9_CROSS_PAPER" | null. Its OWN slot (own settings +
+// position file), so it runs side by side with every other strategy.
+let ema9CrossMode = null;
 // GAP_RUNAWAY (GAP_runAway__Kirubakaran, NIFTY options) and GAP_RUNAWAY_STK (its
 // stock scanner, paper only): "<P>_PAPER" | null. Each its OWN slot,
 // parallel with every other strategy.
@@ -316,6 +320,24 @@ function getEmaRsiStV2Mode() {
   return emaRsiStV2Mode;
 }
 
+// ── EMA9_CROSS mode ─────────────────────────────────────────────────────────
+
+function setEma9CrossMode(mode) {
+  ema9CrossMode = mode;
+}
+
+function clearEma9CrossMode() {
+  ema9CrossMode = null;
+}
+
+function isEma9CrossActive() {
+  return ema9CrossMode !== null;
+}
+
+function getEma9CrossMode() {
+  return ema9CrossMode;
+}
+
 // ── ST_RSI_PIV_BB mode ──────────────────────────────────────────────────────
 
 function setStRsiPivBbMode(mode) {
@@ -424,7 +446,8 @@ function isAnyActive() {
          sailVwapStMode !== null ||
          pivotEmaStMode !== null ||
          gapRunawayMode !== null || gapRunawayStkMode !== null ||
-         simple930Mode !== null;
+         simple930Mode !== null ||
+         ema9CrossMode !== null;
 }
 
 /** Raw mutex check (no reservation). Returns { allowed, reason } */
@@ -471,6 +494,10 @@ function _canStartRaw(mode) {
     // run at the same time.
     case "EMA_RSI_ST_V2_PAPER":
       if (emaRsiStV2Mode === "EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "EMA_RSI_ST_V2 Paper is already running" };
+      return { allowed: true };
+    // EMA9_CROSS is a separate strategy, checked ONLY against its own sibling.
+    case "EMA9_CROSS_PAPER":
+      if (ema9CrossMode === "EMA9_CROSS_PAPER") return { allowed: false, reason: "EMA9_CROSS Paper is already running" };
       return { allowed: true };
     // ST_RSI_PIV_BB is a separate strategy, checked ONLY against its own sibling.
     case "ST_RSI_PIV_BB_PAPER":
@@ -561,6 +588,8 @@ module.exports = {
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
   // EMA_RSI_ST_V2
   setEmaRsiStV2Mode, clearEmaRsiStV2Mode, isEmaRsiStV2Active, getEmaRsiStV2Mode,
+  // EMA9_CROSS
+  setEma9CrossMode, clearEma9CrossMode, isEma9CrossActive, getEma9CrossMode,
   // ST_RSI_PIV_BB
   setStRsiPivBbMode, clearStRsiPivBbMode, isStRsiPivBbActive, getStRsiPivBbMode,
   // SAIL_VWAP_ST

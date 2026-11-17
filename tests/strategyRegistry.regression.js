@@ -37,8 +37,8 @@ const ids = (list) => list.map(e => e.id);
 // ─────────────────────────────────────────────────────────────────────────────
 section("Shape");
 
-check("18 strategies + the GAP_RUNAWAY stock scanner tool", () => {
-  assert.strictEqual(reg.strategies().length, 18);
+check("19 strategies + the GAP_RUNAWAY stock scanner tool", () => {
+  assert.strictEqual(reg.strategies().length, 19);
   assert.deepStrictEqual(ids(ALL.filter(e => e.kind === "tool")), ["gapRunawayStk"]);
   for (const e of ALL) assert.ok(["strategy", "tool"].includes(e.kind), `${e.id}: kind ${e.kind}`);
 });

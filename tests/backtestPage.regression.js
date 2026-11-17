@@ -87,7 +87,7 @@ function check(name, fn) { _queue.push({ name, fn }); }
 
 // ── HTTP harness: the old pages + the new page on one throwaway server ──────
 const app = express();
-const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp", "rsiPivotSt", "itm20Scalp", "simple930"];
+const OLD = ["emaRsiStV2", "orb", "emaRsiSt", "bbRsi", "ema9vwap", "trendPb", "haScalp", "pa", "trendDayScalp", "rsiPivotSt", "itm20Scalp", "simple930", "ema9Cross"];
 
 for (const id of OLD) {
   const s = registry.byId(id);
@@ -274,7 +274,10 @@ check("enabled = the engine runs there; everything else is 'coming soon'", () =>
   const s930 = page.marketOptions("simple930");
   assert.deepStrictEqual(s930.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "SENSEX"], "SIMPLE 9:30 is premium-only: no futures backtest");
   for (const m of s930) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `simple930 ${m.key}`);
-  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp", "simple930", "earlyBird", "sailVwapSt"]);
+  const e9x = page.marketOptions("ema9Cross");
+  assert.deepStrictEqual(e9x.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"], "EMA9_CROSS backtests the index + futures pairs");
+  for (const m of e9x) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `ema9Cross ${m.key}`);
+  const MARKET_AWARE = new Set(["emaRsiStV2", "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp", "rsiPivotSt", "prevOrbScalp", "itm20Scalp", "simple930", "earlyBird", "sailVwapSt", "ema9Cross"]);
   const orb = page.marketOptions("orb");
   assert.deepStrictEqual(orb.filter((m) => m.enabled).map((m) => m.key).sort(), ["BANKNIFTY", "NIFTY", "NIFTY_FUT", "SENSEX"]);
   for (const m of orb) if (!m.enabled) assert.strictEqual(m.note, "coming soon", `orb ${m.key}: stocks stay coming soon`);
@@ -311,6 +314,7 @@ const PARITY = [
   { id: "rsiPivotSt", qs: `from=${FROM}&to=${TO}` },
   { id: "itm20Scalp", qs: `from=${FROM}&to=${TO}` },
   { id: "simple930",  qs: `from=${FROM}&to=${TO}` },
+  { id: "ema9Cross",  qs: `from=${FROM}&to=${TO}` },
 ];
 const parityNotes = [];
 for (const P of PARITY) {

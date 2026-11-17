@@ -80,6 +80,7 @@ function collectTodayStats(istDate) {
     GAP_RUNAWAY:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
     GAP_RUNAWAY_STK:   { trades: 0, wins: 0, losses: 0, pnl: 0 },
     SIMPLE930:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    EMA9_CROSS:      { trades: 0, wins: 0, losses: 0, pnl: 0 },
     // Futures twins — bucket keys = their consolidation mode / notify group.
   };
 

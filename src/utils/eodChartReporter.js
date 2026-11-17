@@ -76,6 +76,8 @@ const STRATEGIES = [
   // SIMPLE_9:30 draws the OPTION PREMIUM of the leg it held, not a spot chart —
   // that is the only chart any of its rules read.
   { group: "SIMPLE930",    label: "SIMPLE 9:30",       module: "../routes/simple930Paper" },
+  // EMA9_CROSS — 5-min close crossing EMA9.
+  { group: "EMA9_CROSS",   label: "EMA9_CROSS",        module: "../routes/ema9CrossPaper" },
   // Futures twins (same rules on NIFTY futures) — each its own paper route/chart.
 ];
 

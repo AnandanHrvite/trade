@@ -1146,6 +1146,9 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // it needs its own pair here — and its mutators are named …Mode, not …Active.
     ss_setEmaRsiStV2Mode:      sharedSocketState.setEmaRsiStV2Mode,
     ss_clearEmaRsiStV2Mode:    sharedSocketState.clearEmaRsiStV2Mode,
+    // EMA9_CROSS — its own mutex slot, mutators named …Mode.
+    ss_setEma9CrossMode:       sharedSocketState.setEma9CrossMode,
+    ss_clearEma9CrossMode:     sharedSocketState.clearEma9CrossMode,
     // ST_RSI_PIV_BB is not replayable (paper only), but a replay must
     // still never touch its REAL mutex slot.
     ss_setStRsiPivBbMode:      sharedSocketState.setStRsiPivBbMode,
@@ -1715,6 +1718,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearRsiPivotSt        = () => {};
     sharedSocketState.setEmaRsiStV2Mode      = () => {};
     sharedSocketState.clearEmaRsiStV2Mode    = () => {};
+    sharedSocketState.setEma9CrossMode       = () => {};
+    sharedSocketState.clearEma9CrossMode     = () => {};
     sharedSocketState.setStRsiPivBbMode      = () => {};
     sharedSocketState.clearStRsiPivBbMode    = () => {};
     sharedSocketState.setSailVwapStMode      = () => {};
@@ -2004,6 +2009,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearRsiPivotSt        = orig.ss_clearRsiPivotSt;
     sharedSocketState.setEmaRsiStV2Mode      = orig.ss_setEmaRsiStV2Mode;
     sharedSocketState.clearEmaRsiStV2Mode    = orig.ss_clearEmaRsiStV2Mode;
+    sharedSocketState.setEma9CrossMode       = orig.ss_setEma9CrossMode;
+    sharedSocketState.clearEma9CrossMode     = orig.ss_clearEma9CrossMode;
     sharedSocketState.setStRsiPivBbMode      = orig.ss_setStRsiPivBbMode;
     sharedSocketState.clearStRsiPivBbMode    = orig.ss_clearStRsiPivBbMode;
     sharedSocketState.setSailVwapStMode      = orig.ss_setSailVwapStMode;
@@ -2119,6 +2126,7 @@ const MODE_TO_LOT_MULT_KEY = {
 // records `candles` as the warm-up — see _replaySpotSeries.
 const _WARMUP_PRESLICED_MODES = new Set([
   "ema_rsi_st-paper", "ema_rsi_st_v2-paper", "ema9vwap-paper",
+  "ema9_cross-paper",
 ]);
 
 // Builds the env patch that pins a replay run to `lots` lots. Returns {} when no
@@ -2893,6 +2901,7 @@ function replayPreflight() {
   if (sharedSocketState.isEarlyBirdActive && sharedSocketState.isEarlyBirdActive()) activeModes.push(sharedSocketState.getEarlyBirdMode() || "early_bird");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isEmaRsiStV2Active && sharedSocketState.isEmaRsiStV2Active()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode() || "ema_rsi_st_v2");
+  if (sharedSocketState.isEma9CrossActive && sharedSocketState.isEma9CrossActive()) activeModes.push(sharedSocketState.getEma9CrossMode() || "ema9_cross");
   if (sharedSocketState.isStRsiPivBbActive && sharedSocketState.isStRsiPivBbActive()) activeModes.push(sharedSocketState.getStRsiPivBbMode() || "st_rsi_piv_bb");
   if (sharedSocketState.isSailVwapStActive && sharedSocketState.isSailVwapStActive()) activeModes.push(sharedSocketState.getSailVwapStMode() || "sail_vwap_st");
   if (sharedSocketState.isPivotEmaStActive && sharedSocketState.isPivotEmaStActive()) activeModes.push(sharedSocketState.getPivotEmaStMode() || "pivot_ema_st");
@@ -2964,6 +2973,7 @@ function forceClearSharedState() {
     early_bird: sharedSocketState.getEarlyBirdMode ? sharedSocketState.getEarlyBirdMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     ema_rsi_st_v2: sharedSocketState.getEmaRsiStV2Mode ? sharedSocketState.getEmaRsiStV2Mode() : null,
+    ema9_cross: sharedSocketState.getEma9CrossMode ? sharedSocketState.getEma9CrossMode() : null,
     st_rsi_piv_bb: sharedSocketState.getStRsiPivBbMode ? sharedSocketState.getStRsiPivBbMode() : null,
     sail_vwap_st: sharedSocketState.getSailVwapStMode ? sharedSocketState.getSailVwapStMode() : null,
     pivot_ema_st: sharedSocketState.getPivotEmaStMode ? sharedSocketState.getPivotEmaStMode() : null,
@@ -2990,6 +3000,7 @@ function forceClearSharedState() {
   if (sharedSocketState.clearEarlyBird) sharedSocketState.clearEarlyBird();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearEmaRsiStV2Mode) sharedSocketState.clearEmaRsiStV2Mode();
+  if (sharedSocketState.clearEma9CrossMode) sharedSocketState.clearEma9CrossMode();
   if (sharedSocketState.clearStRsiPivBbMode) sharedSocketState.clearStRsiPivBbMode();
   if (sharedSocketState.clearSailVwapStMode) sharedSocketState.clearSailVwapStMode();
   if (sharedSocketState.clearPivotEmaStMode) sharedSocketState.clearPivotEmaStMode();

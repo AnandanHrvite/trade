@@ -310,6 +310,8 @@ const STRATEGY_OPTIONS = [
   { mode: "simple930-paper", label: "SIMPLE_9:30 Paper", envKey: "UI_SHOW_SIMPLE930_PAPER", modeKey: "SIMPLE930_MODE_ENABLED" },
   // The mode string MUST match tickReplay MODE_TO_MODULE: "early-bird-paper".
   { mode: "early-bird-paper", label: "EarlyBird Paper", envKey: "UI_SHOW_EARLYBIRD_PAPER", modeKey: "EARLYBIRD_MODE_ENABLED" },
+  // The mode string MUST match tickReplay MODE_TO_MODULE: "ema9_cross-paper".
+  { mode: "ema9_cross-paper", label: "EMA9_CROSS Paper", envKey: "UI_SHOW_EMA9_CROSS_PAPER", modeKey: "EMA9_CROSS_MODE_ENABLED" },
   // Running (strategy, market) pairs (config/pairs.js runnable) — replayed through
   // their own router instance on their own index (tickReplay pair support),
   // listed only while the pair's <PAIR>_MODE_ENABLED is on. Generated.
@@ -363,6 +365,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; }
 .tag.ema_rsi_st    { background:rgba(59,130,246,0.15);  color:#60a5fa; }
 .tag.emarsistv2 { background:rgba(56,189,248,0.15); color:#7dd3fc; }
+.tag.ema9cross { background:rgba(251,191,36,0.15); color:#fcd34d; }
 .tag.bb_rsi    { background:rgba(245,158,11,0.15);  color:#fbbf24; }
 .tag.pa       { background:rgba(168,85,247,0.15);  color:#c084fc; }
 .tag.orb      { background:rgba(16,185,129,0.15);  color:#34d399; }
@@ -719,6 +722,7 @@ function modeTag(mode) {
   // A (strategy, market) pair's mode is <market>_<strategy mode>-paper.
   if (/^[a-z]+_ema_rsi_st_v2-paper$/.test(mode)) return 'emarsistv2';
   if (mode.startsWith('ema_rsi_st'))    return 'ema_rsi_st';
+  if (mode.startsWith('ema9_cross'))    return 'ema9cross';
   if (mode.startsWith('bb_rsi'))    return 'bb_rsi';
   if (mode.startsWith('itm20-scalp')) return 'itm20scalp';
   // Anchored on the FULL prefix and tested before 'orb': the name contains "orb",
@@ -1841,6 +1845,7 @@ function _modeLabel(mode) {
        : mode === 'sail_vwap_st-paper' ? 'VWAP_ST Paper (SAIL stock)'
        : mode === 'simple930-paper' ? 'SIMPLE_9:30 Paper'
        : mode === 'early-bird-paper' ? 'EarlyBird Paper'
+       : mode === 'ema9_cross-paper' ? 'EMA9_CROSS Paper'
        : mode;
 }
 
@@ -2860,6 +2865,7 @@ var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
   if (m==='sail_vwap_st-paper') return 'VWAP_ST Paper (SAIL stock)';
   if (m==='itm20-scalp-paper') return 'ITM20 Scalp Paper';
+  if (m==='ema9_cross-paper') return 'EMA9_CROSS Paper';
   return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='ema_rsi_st_v2-paper'?'EMA_RSI_ST_V2 Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='ha-scalp-paper'?'HA Scalp Paper':m==='prev-orb-scalp-paper'?'Prev ORB Scalp Paper':m==='rsi-pivot-st-paper'?'RSI Pivot ST Paper':m==='simple930-paper'?'SIMPLE_9:30 Paper':m==='early-bird-paper'?'EarlyBird Paper':(m||'Replay');
 }
 function openReplayReportAll(){

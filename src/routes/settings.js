@@ -549,6 +549,26 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "EMA9_CROSS STRATEGY (5-min close crosses EMA9, exit + flip) — Zerodha",
+    icon: "\u{1F4C8}",
+    nav: "EMA9_CROSS",
+    group: "NIFTY",
+    fields: [
+      // EMA9 only (src/strategies/ema9_cross.js). Entry: a 5-min candle CLOSES
+      // across EMA9. Exit: a close back across EMA9 (flips on a fresh opposite
+      // cross). The first stop + trail is the COMMON premium stop / profit lock —
+      // there is deliberately no stop key of its own here. The master
+      // EMA9_CROSS_MODE_ENABLED toggle lives in MENU VISIBILITY.
+      { key: "EMA9_CROSS_PAPER_ENABLED", label: "EMA9_CROSS Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EMA9_CROSS paper sessions to start (also from the dashboard's Start All). OFF blocks Start without hiding the strategy.", default: "true", subheader: "Mode" },
+
+      { key: "EMA9_CROSS_EMA_PERIOD", label: "EMA Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.SESSION, desc: "The EMA on 5-min closes. Entry when a candle closes across it (above → CE, below → PE); exit when a candle closes back across it. Example 9: previous close 24,480 under EMA 24,490, this close 24,520 over EMA 24,500 → buy CE.", default: "9", subheader: "Signal" },
+
+      { key: "EMA9_CROSS_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entry from a candle that starts before this time (IST). The Common Trade Window (10:00–14:00) replaces this while it is ON.", default: "10:30", subheader: "Session window" },
+      { key: "EMA9_CROSS_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entry (or flip) from a candle that starts at/after this time (IST). An open trade still exits on its EMA cross, the common stop or the session end.", default: "14:00" },
+      { key: "EMA9_CROSS_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Calendar days of earlier candles loaded on Start (and before a backtest's start date) so the EMA matches the chart from the first candle.", default: "5" },
+    ],
+  },
+  {
     section: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F9EA}",
     nav: "EMA_RSI_ST_V2",
@@ -1000,6 +1020,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_STARTED", label: "EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST_V2 session starts.", default: "true" },
+      { key: "TG_EMA9_CROSS_STARTED", label: "EMA9_CROSS — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA9_CROSS session starts.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_STARTED", label: "ST_RSI_PIV_BB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ST_RSI_PIV_BB session starts.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_STARTED", label: "SAIL_VWAP_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_VWAP_ST session starts.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_STARTED", label: "PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a PIVOT_EMA_ST session starts.", default: "true" },
@@ -1020,6 +1041,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_ENTRY", label: "EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 entry.", default: "true" },
+      { key: "TG_EMA9_CROSS_ENTRY", label: "EMA9_CROSS — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9_CROSS entry.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_ENTRY", label: "ST_RSI_PIV_BB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB entry.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_ENTRY", label: "SAIL_VWAP_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST entry.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_ENTRY", label: "PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST entry.", default: "true" },
@@ -1040,6 +1062,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_EXIT", label: "EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 exit.", default: "true" },
+      { key: "TG_EMA9_CROSS_EXIT", label: "EMA9_CROSS — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9_CROSS exit.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_EXIT", label: "ST_RSI_PIV_BB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB exit.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_EXIT", label: "SAIL_VWAP_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST exit.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_EXIT", label: "PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST exit.", default: "true" },
@@ -1065,6 +1088,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_DAYREPORT", label: "EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST_V2 day summary on stop.", default: "true" },
+      { key: "TG_EMA9_CROSS_DAYREPORT", label: "EMA9_CROSS — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA9_CROSS day summary on stop.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_DAYREPORT", label: "ST_RSI_PIV_BB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an ST_RSI_PIV_BB day summary on stop.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_DAYREPORT", label: "SAIL_VWAP_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_VWAP_ST day summary on stop.", default: "true" },
       { key: "TG_PIVOT_EMA_ST_DAYREPORT", label: "PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a PIVOT_EMA_ST day summary on stop.", default: "true" },
@@ -1180,6 +1204,7 @@ const SETTINGS_SCHEMA = [
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
       { key: "EMA_RSI_ST_V2_MODE_ENABLED", label: "EMA_RSI_ST_V2 Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST_V2 menu and settings. A separate strategy from EMA_RSI_ST, not a mode of it. Ships OFF because V2 is unproven — turn it on to paper-trade it.", default: "false" },
+      { key: "EMA9_CROSS_MODE_ENABLED", label: "EMA9_CROSS Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA9_CROSS menu and settings, and include it in the dashboard's Start All.", default: "true" },
       { key: "ST_RSI_PIV_BB_MODE_ENABLED", label: "ST_RSI_PIV_BB Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ST_RSI_PIV_BB menu and settings — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle. Ships OFF because it is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "SAIL_VWAP_ST_MODE_ENABLED", label: "SAIL_VWAP_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven — turn it on to backtest and paper-trade it.", default: "false" },
       { key: "PIVOT_EMA_ST_MODE_ENABLED", label: "PIVOT_EMA_ST Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper only. On by default; unproven — never traded.", default: "true" },
@@ -1255,6 +1280,10 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_EMA_RSI_ST_V2_BACKTEST", label: "EMA_RSI_ST_V2 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA_RSI_ST_V2.", default: "false", subheader: "EMA_RSI_ST_V2 sub-menus" },
       { key: "UI_SHOW_EMA_RSI_ST_V2_PAPER",    label: "EMA_RSI_ST_V2 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA_RSI_ST_V2.", default: "false" },
       { key: "UI_SHOW_EMA_RSI_ST_V2_HISTORY",  label: "EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA_RSI_ST_V2.", default: "false" },
+      // ── EMA9_CROSS submenu ──
+      { key: "UI_SHOW_EMA9_CROSS_BACKTEST", label: "EMA9_CROSS → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA9_CROSS.", default: "true", subheader: "EMA9_CROSS sub-menu" },
+      { key: "UI_SHOW_EMA9_CROSS_PAPER",    label: "EMA9_CROSS → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA9_CROSS.", default: "true" },
+      { key: "UI_SHOW_EMA9_CROSS_HISTORY",  label: "EMA9_CROSS → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA9_CROSS.", default: "true" },
       // ── ST_RSI_PIV_BB submenu ── defaults match what sharedNav falls back to
       // (Paper/History on); the whole group stays hidden
       // until ST_RSI_PIV_BB_MODE_ENABLED is switched on.
@@ -1357,6 +1386,7 @@ const MODE_SECTION_TITLES = {
   gap_runaway: "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha",
   gap_runaway_stk: "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)",
   early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
+  ema9_cross: "EMA9_CROSS STRATEGY (5-min close crosses EMA9, exit + flip) — Zerodha",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
@@ -1375,7 +1405,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
 const _strategyRegistry = require("../config/strategyRegistry");
 const pairs = require("../config/pairs");
 // Strategies whose NIFTY engine reads the shared TRADE_EXPIRY_DAY_ONLY today.
-const _READS_TRADE_EXPIRY_DAY_ONLY = new Set(["emaRsiSt", "emaRsiStV2", "ema9vwap", "sailVwapSt", "pivotEmaSt", "stRsiPivBb"]);
+const _READS_TRADE_EXPIRY_DAY_ONLY = new Set(["emaRsiSt", "emaRsiStV2", "ema9vwap", "sailVwapSt", "pivotEmaSt", "stRsiPivBb", "ema9Cross"]);
 const TRADE_DAYS_OPTIONS = [{ value: "false", label: "Every day" }, { value: "true", label: "Expiry day only" }];
 function homeSectionOf(strategyId) {
   const s = _strategyRegistry.byId(strategyId);
@@ -1661,6 +1691,7 @@ _MODE_KEYS.pivot_ema_st = new Set();
 _MODE_KEYS.gap_runaway = new Set();
 _MODE_KEYS.gap_runaway_stk = new Set();
 _MODE_KEYS.itm20_scalp = new Set();
+_MODE_KEYS.ema9_cross = new Set();
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -2691,6 +2722,7 @@ router.get("/", (req, res) => {
   // GAP_RUNAWAY + its stock scanner — "true" by default (Start All starts them).
   const gapRunawayModeOn     = (envData["GAP_RUNAWAY_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const gapRunawayStkModeOn  = (envData["GAP_RUNAWAY_STK_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_STK_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const ema9CrossModeOn      = (envData["EMA9_CROSS_MODE_ENABLED"] ?? process.env.EMA9_CROSS_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -2714,6 +2746,7 @@ router.get("/", (req, res) => {
     "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)": gapRunawayStkModeOn,
     "ITM20 SCALP STRATEGY (15m range break + retest, 1 ITM, +20/−10 premium) — Zerodha": itm20ScalpModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
+    "EMA9_CROSS STRATEGY (5-min close crosses EMA9, exit + flip) — Zerodha": ema9CrossModeOn,
   };
 
   // Rail entries are collected while the sections render so the index and the

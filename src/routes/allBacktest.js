@@ -30,6 +30,7 @@ const sailVwapStStrategy = require("../strategies/sail_vwap_st");
 const emaRsiStV2Strategy = require("../strategies/ema_rsi_st_v2");
 const simple930Strategy  = require("../strategies/simple930");
 const earlyBirdStrategy  = require("../strategies/early_bird");
+const ema9CrossStrategy  = require("../strategies/ema9_cross");
 
 const EMA_RSI_ST_KEY = ACTIVE;
 const BB_RSI_KEY = "BB_RSI_BACKTEST";
@@ -48,6 +49,8 @@ const EMA_RSI_ST_V2_KEY = "EMA_RSI_ST_V2_BACKTEST";
 // MUST match the RESULT_KEY sailVwapStBacktest.js saves under.
 const SAIL_VWAP_ST_KEY = "SAIL_VWAP_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
+// MUST match the RESULT_KEY ema9CrossBacktest.js saves under.
+const EMA9_CROSS_KEY   = "EMA9_CROSS_BACKTEST";
 // MUST match the RESULT_KEY earlyBirdBacktest.js saves under.
 const EARLYBIRD_KEY    = "EARLY_BIRD_BACKTEST";
 
@@ -168,6 +171,7 @@ router.get("/", (req, res) => {
   const sailVwapStOn = String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() === "true";
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
   const earlyBirdOn  = _modeOn("EARLYBIRD_MODE_ENABLED");
+  const ema9CrossOn  = _modeOn("EMA9_CROSS_MODE_ENABLED");
 
   const emaRsiStResult    = emaRsiStOn    ? loadResult(EMA_RSI_ST_KEY)    : null;
   const bbRsiResult    = bbRsiOn    ? loadResult(BB_RSI_KEY)    : null;
@@ -183,6 +187,7 @@ router.get("/", (req, res) => {
   const sailVwapStResult = sailVwapStOn ? loadResult(SAIL_VWAP_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
   const earlyBirdResult  = earlyBirdOn  ? loadResult(EARLYBIRD_KEY)  : null;
+  const ema9CrossResult  = ema9CrossOn  ? loadResult(EMA9_CROSS_KEY) : null;
 
   const emaRsiStPanel = emaRsiStOn ? renderPanel(
     "EMA_RSI_ST", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
@@ -238,6 +243,11 @@ router.get("/", (req, res) => {
     "EMA_RSI_ST_V2", { bg: "rgba(56,189,248,0.12)", fg: "#38bdf8", border: "rgba(56,189,248,0.25)" },
     emaRsiStV2Strategy && emaRsiStV2Strategy.NAME ? emaRsiStV2Strategy.NAME : "EMA_RSI_ST_V2",
     EMA_RSI_ST_V2_KEY, "/ema_rsi_st_v2-backtest", emaRsiStV2Result
+  ) : "";
+  const ema9CrossPanel = ema9CrossOn ? renderPanel(
+    "EMA9_CROSS", { bg: "rgba(251,191,36,0.12)", fg: "#fbbf24", border: "rgba(251,191,36,0.25)" },
+    ema9CrossStrategy && ema9CrossStrategy.NAME ? ema9CrossStrategy.NAME : "EMA9_CROSS",
+    EMA9_CROSS_KEY, "/ema9_cross-backtest", ema9CrossResult
   ) : "";
   // SAIL STOCK options — the label says so; its P&L comes from a SAIL-scaled
   // simulated premium (SAIL_VWAP_ST_BT_*), not the NIFTY BACKTEST_* keys.
@@ -413,7 +423,8 @@ ${buildSidebar('allBacktest', false)}
   ${sailVwapStPanel}
   ${simple930Panel}
   ${earlyBirdPanel}
-  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !sailVwapStOn && !simple930On && !earlyBirdOn) ? `
+  ${ema9CrossPanel}
+  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !sailVwapStOn && !simple930On && !earlyBirdOn && !ema9CrossOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

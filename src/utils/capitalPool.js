@@ -90,6 +90,7 @@ const STRATEGIES = {
   ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },
   prev_orb_scalp: { broker: "zerodha", label: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
   itm20_scalp: { broker: "zerodha", label: "ITM20_SCALP", file: "itm20_scalp_paper_trades.json" },
+  ema9_cross: { broker: "zerodha", label: "EMA9_CROSS", file: "ema9_cross_paper_trades.json" },
   early_bird: { broker: "fyers",  label: "EARLYBIRD",   file: "early_bird_paper_trades.json" },
   // GAP_RUNAWAY — NIFTY options, Zerodha orders. Its stock scanner holds up to
   // three cash-equity positions at once, so it blocks additively like EarlyBird.

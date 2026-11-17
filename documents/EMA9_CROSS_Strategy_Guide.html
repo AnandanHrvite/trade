@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMA9_CROSS — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #1f1a0c 100%);
+    border-bottom: 3px solid #fbbf24;
+  }
+  header.hero .kicker { color: #fbbf24; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #fbbf24; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #fbbf24; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+  nav.toc { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px 22px; margin: 18px 0; }
+  nav.toc h2 { margin: 0 0 8px; border: 0; padding: 0; font-size: 1.05rem; color: #fbbf24; }
+  nav.toc ol { margin: 0; columns: 2; column-gap: 28px; }
+  nav.toc a { color: #c9d1d9; text-decoration: none; }
+  nav.toc a:hover { color: #fbbf24; }
+  .rule { display: flex; gap: 12px; align-items: flex-start; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+  @media (max-width: 768px) { nav.toc ol { columns: 1; } }
+  .rule .no { flex: 0 0 30px; height: 30px; border-radius: 50%; background: rgba(251,191,36,0.18); color: #fbbf24; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">EMA9_CROSS · NIFTY 50 options · Paper + Backtest only · Plain-English edition</div>
+  <h1>EMA9_CROSS</h1>
+  <p>When a 5-minute candle closes above the EMA9 line, buy a call. When a candle closes back below it, sell — and buy a put if that close is a fresh cross down. The first stop is the common premium stop every strategy uses.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-11-18 &nbsp;·&nbsp; rules checked against <code>src/strategies/ema9_cross.js</code>, <code>src/routes/ema9CrossPaper.js</code> and <code>src/routes/ema9CrossBacktest.js</code>. Every chart and number below comes from running that engine on recorded NIFTY candles (4 May 2026 – 31 Jul 2026).</p>
+</header>
+
+<nav class="toc">
+  <h2>What's inside</h2>
+  <ol>
+    <li><a href="#minute">In one minute</a></li>
+    <li><a href="#entry">The entry</a></li>
+    <li><a href="#exits">Every way a trade ends</a></li>
+    <li><a href="#flip">The flip</a></li>
+    <li><a href="#chop">Sideways days</a></li>
+    <li><a href="#data">What the backtest said</a></li>
+    <li><a href="#modes">Paper, Backtest &amp; Replay</a></li>
+    <li><a href="#settings">All the settings</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</nav>
+
+<h2 id="minute">1. In one minute</h2>
+<div class="card accent">
+  <ul>
+    <li>One line on the chart: <b>EMA9</b> of the 5-minute closes.</li>
+    <li><b>Buy CE</b> when a candle <b>closes above</b> EMA9 and the candle before it closed at or below it. <b>Buy PE</b> on the mirror.</li>
+    <li>Only on a finished candle — never in the middle of one. Strike: ATM. New entries 10:30–14:00 (10:00–14:00 while the Common Trade Window is on).</li>
+    <li><b>Exit</b> when a candle closes back on the other side of EMA9. If that close is a fresh cross, <b>flip</b> to the other side on the same close.</li>
+    <li>The <b>first stop</b> is the common premium stop (and the profit lock, if it is on) from <i>Settings → Common Rules</i>.</li>
+    <li>After a stop-out, no new trade until the next <b>fresh</b> cross.</li>
+  </ul>
+</div>
+<div class="flow">
+  <div class="step">Close crosses EMA9</div><div class="arrow">→</div>
+  <div class="step">Buy ATM CE / PE</div><div class="arrow">→</div>
+  <div class="step">Close back across EMA9</div><div class="arrow">→</div>
+  <div class="step">Exit (+ flip)</div>
+</div>
+<div class="card warn">
+  <b>Read this first.</b> This strategy has never traded &mdash; no paper sessions, no live orders, and there is no live mode for it. On the recorded data the backtest <b>lost money</b> (Section 6).
+</div>
+
+<!--LIVE_STATUS_PANEL-->
+
+<h2 id="entry">2. The entry</h2>
+<table>
+  <tr><th>Side</th><th>Previous candle</th><th>This candle</th></tr>
+  <tr><td>CE (call)</td><td>closed at or <b>below</b> EMA9</td><td>closes <b>above</b> EMA9</td></tr>
+  <tr><td>PE (put)</td><td>closed at or <b>above</b> EMA9</td><td>closes <b>below</b> EMA9</td></tr>
+</table>
+<ul>
+  <li>A candle that only <b>stays</b> above EMA9 is not a cross. The bot waits for a real cross.</li>
+  <li>A close exactly on EMA9 is neither an entry nor an exit.</li>
+  <li>EMA9 is warmed up on the last 5 calendar days of candles, so it matches the chart from the first candle of the day.</li>
+  <li>Paper buys at the first tick after the candle closes. The backtest buys at that candle's close &mdash; the same moment.</li>
+</ul>
+
+<h2 id="exits">3. Every way a trade ends</h2>
+<table>
+  <tr><th>Exit</th><th>When</th></tr>
+  <tr><td>EMA9 exit</td><td>A candle closes back across EMA9 (CE: close below, PE: close above). Checked only on candle close, at any time of day.</td></tr>
+  <tr><td>Premium stop</td><td>The common <code>PREMIUM_SL_*</code> rule: the option premium falls the set % below entry, then trails below the best premium. Checked on every tick.</td></tr>
+  <tr><td>Profit lock</td><td>The common <code>PROFIT_LOCK_*</code> rule, when it is on.</td></tr>
+  <tr><td>Session end</td><td>Anything still open is closed at <code>TRADE_STOP_TIME</code> (15:30).</td></tr>
+  <tr><td>Manual</td><td>The Exit button on the Paper page.</td></tr>
+</table>
+
+<h2 id="flip">4. The flip</h2>
+<p>On 25 Jun 2026 the 11:05 candle closed above EMA9 at <span class="num">24189.95</span> and the bot bought a CE. The 12:20 candle closed at <span class="num">24226.05</span>, below EMA9: the CE was sold (+&#8377;1,066.46) and, because that close was a fresh cross down, a PE was bought on the same close. The PE was sold when the 13:15 candle closed back above EMA9 at <span class="num">24196.8</span> (+&#8377;822.62).</p>
+<div class="tv-chart" id="e9-flip"></div>
+<p class="tv-cap"><b>Yellow line = EMA9.</b> Buy and exit marks sit on the candle whose close made the decision. This run had the common wait-after-exit switched <b>off</b>, so the flip could happen.</p>
+<div class="card warn"><b>The flip needs the common "Wait after any exit" rule off.</b> That rule (<code>EXIT_REENTRY_COOLDOWN_*</code>, on by default, 2 candles) blocks <i>every</i> new entry for a while after any exit &mdash; including the flip. With it on, the bot exits and then waits for the next fresh cross. To allow flips for this strategy only, turn on its <i>Own Common Rules</i> in Settings and switch the wait off there.</div>
+
+<h2 id="chop">5. Sideways days</h2>
+<p>An EMA9 cross happens all the time when the market goes sideways. On 1 Jul 2026 there were <b>15</b> trades and only <b>1</b> made money (&minus;&#8377;9,249 for the day, flips allowed).</p>
+<div class="tv-chart" id="e9-chop"></div>
+<p class="tv-cap">Each small cross buys, and the next small cross sells at a loss. This is the main weakness of the rule.</p>
+
+<h2 id="data">6. What the backtest said</h2>
+<p>4,725 recorded 5-minute NIFTY candles, 58 sessions (11 May 2026 – 31 Jul 2026), 1 lot, simulated option premium.</p>
+<table>
+  <tr><th></th><th>Common defaults<br>(wait 2 candles, stop 20%)</th><th>Flips allowed<br>(wait off, stop 20%)</th></tr>
+  <tr><td>Trades</td><td>222 (3.8 a day)</td><td>471 (8.1 a day)</td></tr>
+  <tr><td>Win rate</td><td>22.1%</td><td>20.6%</td></tr>
+  <tr><td>Net P&amp;L</td><td>&minus;&#8377;41,771</td><td>&minus;&#8377;81,370</td></tr>
+  <tr><td>Profit factor</td><td>0.62</td><td>0.65</td></tr>
+  <tr><td>Flips</td><td>0</td><td>410</td></tr>
+  <tr><td>Exits: EMA9 / stop / session end</td><td>218 / 3 / 1</td><td>465 / 3 / 3</td></tr>
+  <tr><td>Median time in a trade</td><td>3 candles</td><td>3 candles</td></tr>
+  <tr><td>Median NIFTY move per trade</td><td>-5.65 pts</td><td>-6.7 pts</td></tr>
+</table>
+<div class="card bad">
+  <b>Plain verdict: on this data the rule loses money either way.</b> A typical trade lasts 3 candles and loses a few points: price crosses EMA9 and crosses back before the option can gain. The premium stop almost never fires (3 times) because the EMA9 exit comes first. Allowing flips doubles the trades and the loss.
+</div>
+
+<h2 id="modes">7. Paper, Backtest &amp; Replay</h2>
+<table>
+  <tr><th>Mode</th><th>What it does</th></tr>
+  <tr><td>Paper</td><td>Live Fyers data, pretend orders, real option quotes for the premium. This is the official version of the rules; the other modes are made to match it. Starts from the dashboard's <b>Start All</b> too.</td></tr>
+  <tr><td>Backtest</td><td>Past 5-minute candles, the same engine, the same settings. The stop is checked inside the candle before the close. The premium is simulated. Also on the one <code>/backtest</code> page (NIFTY, BANKNIFTY, SENSEX, NIFTY futures).</td></tr>
+  <tr><td>Replay</td><td>Re-runs a recorded paper day tick by tick.</td></tr>
+  <tr><td>Live</td><td><b>Does not exist.</b></td></tr>
+</table>
+
+<h2 id="settings">8. All the settings</h2>
+<p>Its own keys (Settings → NIFTY → EMA9_CROSS). The stop, profit lock, wait-after-exit, max trades and lots are the <b>Common Rules</b>.</p>
+<table>
+  <tr><th>Key</th><th>Name</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>EMA9_CROSS_PAPER_ENABLED</code></td><td>EMA9_CROSS Paper Trading</td><td><code>true</code></td><td>Allow new EMA9_CROSS paper sessions to start (also from the dashboard's Start All). OFF blocks Start without hiding the strategy.</td></tr>
+  <tr><td><code>EMA9_CROSS_EMA_PERIOD</code></td><td>EMA Period</td><td><code>9</code></td><td>The EMA on 5-min closes. Entry when a candle closes across it (above → CE, below → PE); exit when a candle closes back across it. Example 9: previous close 24,480 under EMA 24,490, this close 24,520 over EMA 24,500 → buy CE.</td></tr>
+  <tr><td><code>EMA9_CROSS_ENTRY_START</code></td><td>Entry Window Start</td><td><code>10:30</code></td><td>No entry from a candle that starts before this time (IST). The Common Trade Window (10:00–14:00) replaces this while it is ON.</td></tr>
+  <tr><td><code>EMA9_CROSS_ENTRY_END</code></td><td>Entry Window End</td><td><code>14:00</code></td><td>No NEW entry (or flip) from a candle that starts at/after this time (IST). An open trade still exits on its EMA cross, the common stop or the session end.</td></tr>
+  <tr><td><code>EMA9_CROSS_WARMUP_DAYS</code></td><td>Warm-up Days</td><td><code>5</code></td><td>Calendar days of earlier candles loaded on Start (and before a backtest's start date) so the EMA matches the chart from the first candle.</td></tr>
+</table>
+
+<h2 id="missing">9. What's still missing</h2>
+<ul>
+  <li><b>It has never traded.</b> No paper session, no live order.</li>
+  <li><b>There is no live mode.</b></li>
+  <li><b>Backtest rupees are simulated.</b> Every trade starts at the same seed premium and moves 0.55 per NIFTY point.</li>
+  <li><b>On the data we have, the rules lose money.</b> Collect clean paper sessions and check them on <code>/replay</code> before trusting any number here.</li>
+</ul>
+<p class="muted">Engine: <code>src/strategies/ema9_cross.js</code> · Paper: <code>src/routes/ema9CrossPaper.js</code> · Backtest: <code>src/routes/ema9CrossBacktest.js</code>.</p>
+
+</div>
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+TVChart.render("e9-flip", {"title":"NIFTY 50 · 5 min","subtitle":"Real day · 2026-06-25 · CE on the cross up, exit + flip to PE on the cross down","lastPriceTag":false,"times":["10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30"],"candles":[[24184.1,24200.55,24181.7,24199.2],[24200.05,24200.05,24180.5,24180.8],[24181.6,24198.85,24177,24197.6],[24198.55,24200.35,24180.45,24180.65],[24183.55,24189.95,24175.3,24189.95],[24189.5,24197.65,24184.1,24196.05],[24197.75,24205.65,24192.85,24196.15],[24197.75,24201.7,24189.95,24192.45],[24191.7,24195.3,24186.5,24190.55],[24191.05,24193.9,24181.55,24190.8],[24191,24197.1,24181.05,24195.15],[24195.45,24200.25,24187.5,24195.6],[24197.1,24206.85,24193.3,24204.2],[24205.35,24210.7,24197.15,24208.4],[24209.25,24238.75,24205.9,24236.55],[24238.75,24251.35,24236.15,24247.2],[24247.85,24253.5,24242.85,24249.5],[24250.95,24261.6,24242.75,24243.5],[24243.5,24251.5,24239.7,24243.9],[24243.9,24248.1,24223.15,24226.05],[24227.65,24227.65,24199.3,24201.9],[24203.6,24210.6,24176.85,24189.85],[24190.55,24209.3,24186.65,24207.3],[24209.65,24209.65,24189.5,24192.85],[24193.3,24195.45,24181.65,24193.4],[24193.7,24201.7,24187.5,24198.9],[24199.35,24202.6,24187.8,24196.85],[24197.4,24214.5,24188.3,24203.05],[24205.05,24210.2,24190.4,24195.75],[24194.7,24200.6,24169.3,24172.8],[24172.45,24198.45,24170.6,24196.8],[24197.2,24198.7,24184.65,24189.05],[24190.65,24190.65,24176.45,24181.5],[24181.8,24192.6,24173.8,24191.95]],"overlays":[{"name":"EMA9","data":[24176.33,24177.22,24181.3,24181.17,24182.93,24185.55,24187.67,24188.63,24189.01,24189.37,24190.52,24191.54,24194.07,24196.94,24204.86,24213.33,24220.56,24225.15,24228.9,24228.33,24223.04,24216.41,24214.58,24210.24,24206.87,24205.28,24203.59,24203.48,24201.94,24196.11,24196.25,24194.81,24192.15,24192.11],"color":"#fbbf24","width":1.8}],"markers":[{"i":4,"price":24175.3,"type":"buy","text":"BUY CE 24189.95"},{"i":19,"price":24248.1,"type":"exit","text":"EXIT 24226.05","color":"#4ade80"},{"i":19,"price":24248.1,"type":"buy","text":"BUY PE 24226.05"},{"i":30,"price":24170.6,"type":"exit","text":"EXIT 24196.8","color":"#4ade80"}],"legend":[{"label":"EMA9 (yellow)","color":"#fbbf24"}]});
+TVChart.render("e9-chop", {"title":"NIFTY 50 · 5 min","subtitle":"Real day · 2026-07-01 · a sideways day: 15 crosses, 1 winners","lastPriceTag":false,"times":["10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30"],"candles":[[24005.5,24020.65,23999.8,24009.3],[24009,24012.6,23992.5,23997.2],[23996.25,24004.3,23981.7,23986.4],[23984.25,23993.6,23970.3,23975.1],[23975.5,23978.5,23947.35,23954.05],[23952.75,23977.9,23951.7,23973.85],[23973.45,23983.65,23960.45,23979.7],[23979.9,23983,23968.9,23976.4],[23975.8,23987.3,23975.2,23982.7],[23983.2,23994.3,23982,23994.05],[23992.9,24020.95,23991.75,24019.5],[24018.75,24026.85,24014.6,24020.8],[24021.7,24024.1,24007.05,24007.8],[24007.35,24011.75,23998.6,24008.8],[24008.35,24013.65,23993.2,23993.45],[23992.35,23998.45,23986,23997.4],[23997.05,24013.3,23994.4,24011.7],[24011.8,24021.45,24009.25,24019.35],[24018.85,24022.5,24001.65,24004.1],[24003.1,24028.6,23998.15,24026.5],[24026.1,24032.4,24021.45,24023.3],[24022.9,24049.9,24022.55,24045.05],[24043.85,24045.25,24020.15,24023.5],[24023.8,24033.65,24018.25,24028.6],[24027.9,24036.95,24013.5,24034.35],[24033.5,24036.2,23994.3,23997.55],[23997.5,24033.95,23997.5,24029.3],[24028.5,24043.25,24028.5,24037.95],[24037.65,24038.7,24016.35,24024.1],[24023.7,24029.6,24019.6,24024.85],[24024.2,24030.6,24019.55,24020.25],[24020.35,24027.05,24016.3,24022.9],[24022.4,24029.45,24007.15,24010.8],[24010.15,24019.35,24010.15,24015.15],[24014.85,24028.05,24014.05,24028.05],[24026.55,24033.35,24024.25,24030.05],[24030.05,24030.85,24014.95,24017.9],[24017.9,24024.8,24011.35,24012.75],[24012.75,24019.3,24002.05,24017.4],[24016.55,24047.65,24016.55,24040.5],[24039.8,24041.95,24021.1,24029.6],[24028.1,24032.65,24014.6,24024.95],[24024.15,24025.55,24018.45,24020.35],[24019.75,24025.45,24016,24018.35],[24018.1,24027.9,24011.15,24025.35],[24024.3,24035.8,24020.65,24034.45],[24034.3,24044.15,24032.05,24035.3],[24036.05,24040.7,24029.15,24030.55],[24030.05,24038.9,24029.3,24038],[24037.55,24041.65,24023.4,24028.55],[24027.2,24031.35,24016.3,24016.3]],"overlays":[{"name":"EMA9","data":[23978.24,23982.03,23982.91,23981.34,23975.89,23975.48,23976.32,23976.34,23977.61,23980.9,23988.62,23995.06,23997.6,23999.84,23998.56,23998.33,24001.01,24004.67,24004.56,24008.95,24011.82,24018.46,24019.47,24021.3,24023.91,24018.64,24020.77,24024.21,24024.18,24024.32,24023.5,24023.38,24020.87,24019.72,24021.39,24023.12,24022.08,24020.21,24019.65,24023.82,24024.98,24024.97,24024.05,24022.91,24023.4,24025.61,24027.55,24028.15,24030.12,24029.8,24027.1],"color":"#fbbf24","width":1.8}],"markers":[{"i":3,"price":23993.6,"type":"buy","text":"BUY PE 23975.1"},{"i":6,"price":23960.45,"type":"exit","text":"EXIT 23979.7","color":"#ef5350"},{"i":6,"price":23960.45,"type":"buy","text":"BUY CE 23979.7"},{"i":14,"price":24013.65,"type":"exit","text":"EXIT 23993.45","color":"#4ade80"},{"i":14,"price":24013.65,"type":"buy","text":"BUY PE 23993.45"},{"i":16,"price":23994.4,"type":"exit","text":"EXIT 24011.7","color":"#ef5350"},{"i":16,"price":23994.4,"type":"buy","text":"BUY CE 24011.7"},{"i":18,"price":24022.5,"type":"exit","text":"EXIT 24004.1","color":"#ef5350"},{"i":18,"price":24022.5,"type":"buy","text":"BUY PE 24004.1"},{"i":19,"price":23998.15,"type":"exit","text":"EXIT 24026.5","color":"#ef5350"},{"i":19,"price":23998.15,"type":"buy","text":"BUY CE 24026.5"},{"i":25,"price":24036.2,"type":"exit","text":"EXIT 23997.55","color":"#ef5350"},{"i":25,"price":24036.2,"type":"buy","text":"BUY PE 23997.55"},{"i":26,"price":23997.5,"type":"exit","text":"EXIT 24029.3","color":"#ef5350"},{"i":26,"price":23997.5,"type":"buy","text":"BUY CE 24029.3"},{"i":28,"price":24038.7,"type":"exit","text":"EXIT 24024.1","color":"#ef5350"},{"i":28,"price":24038.7,"type":"buy","text":"BUY PE 24024.1"},{"i":29,"price":24019.6,"type":"exit","text":"EXIT 24024.85","color":"#ef5350"},{"i":29,"price":24019.6,"type":"buy","text":"BUY CE 24024.85"},{"i":30,"price":24030.6,"type":"exit","text":"EXIT 24020.25","color":"#ef5350"},{"i":30,"price":24030.6,"type":"buy","text":"BUY PE 24020.25"},{"i":34,"price":24014.05,"type":"exit","text":"EXIT 24028.05","color":"#ef5350"},{"i":34,"price":24014.05,"type":"buy","text":"BUY CE 24028.05"},{"i":36,"price":24030.85,"type":"exit","text":"EXIT 24017.9","color":"#ef5350"},{"i":36,"price":24030.85,"type":"buy","text":"BUY PE 24017.9"},{"i":39,"price":24016.55,"type":"exit","text":"EXIT 24040.5","color":"#ef5350"},{"i":39,"price":24016.55,"type":"buy","text":"BUY CE 24040.5"},{"i":41,"price":24032.65,"type":"exit","text":"EXIT 24024.95","color":"#ef5350"},{"i":41,"price":24032.65,"type":"buy","text":"BUY PE 24024.95"},{"i":44,"price":24011.15,"type":"exit","text":"EXIT 24025.35","color":"#ef5350"}],"legend":[{"label":"EMA9 (yellow)","color":"#fbbf24"}]});
+</script>
+</body>
+</html>

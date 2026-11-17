@@ -1018,6 +1018,72 @@ function clearEmaRsiStV2Position() {
   console.log("[PERSIST] EMA_RSI_ST_V2 position file cleared.");
 }
 
+// ── EMA9_CROSS (5-min close crosses EMA9, common premium stop, NIFTY, Zerodha) ─
+// Its own file, written on entry and cleared on exit (like EMA_RSI_ST_V2's).
+// EMA9_CROSS has no spot stop level: its exits are the EMA9 close (recomputed
+// from candles) and the common premium stop / profit lock on the premium, so the
+// entry identity (plus the peak premium when known) is its whole exit state.
+
+const EMA9_CROSS_POS_FILE = path.join(DATA_DIR, ".active_ema9_cross_position.json");
+
+function saveEma9CrossPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(EMA9_CROSS_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entryPrice,
+        bestPrice:       position.bestPrice,
+        bestOptionLtp:   position.bestOptionLtp ?? null,
+        entryTime:       position.entryTime,
+        entryBarTime:    position.entryBarTime ?? null,
+        vixAtEntry:      position.vixAtEntry ?? null,
+        ema9AtEntry:     position.ema9AtEntry ?? null,
+        isFutures:       !!position.isFutures,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+        signalStrength:  position.signalStrength,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(EMA9_CROSS_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] EMA9_CROSS position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save EMA9_CROSS position: ${err.message}`);
+  }
+}
+
+function loadEma9CrossPosition() {
+  try {
+    if (!fs.existsSync(EMA9_CROSS_POS_FILE)) return null;
+    const data = _readSnapshot(EMA9_CROSS_POS_FILE);
+    if (!data) return null;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale EMA9_CROSS position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(EMA9_CROSS_POS_FILE, data);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] EMA9_CROSS position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load EMA9_CROSS position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearEma9CrossPosition() {
+  _persistAtomic(EMA9_CROSS_POS_FILE, null);
+  console.log("[PERSIST] EMA9_CROSS position file cleared.");
+}
+
 // ── ST_RSI_PIV_BB (SuperTrend + RSI + pivot R1/S1 + Bollinger, NIFTY, Zerodha) ─
 // Copied from the EMA_RSI_ST_V2 block above, on its OWN file. Like V2 it has
 // exactly ONE stop: the SuperTrend line, which is the initial stop AND the
@@ -1551,6 +1617,7 @@ module.exports = {
   saveEarlyBirdPositions, loadEarlyBirdPositions, clearEarlyBirdPositions,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveEmaRsiStV2Position, loadEmaRsiStV2Position, clearEmaRsiStV2Position,
+  saveEma9CrossPosition, loadEma9CrossPosition, clearEma9CrossPosition,
   saveStRsiPivBbPosition, loadStRsiPivBbPosition, clearStRsiPivBbPosition,
   saveSailVwapStPosition, loadSailVwapStPosition, clearSailVwapStPosition,
   savePivotEmaStPosition, loadPivotEmaStPosition, clearPivotEmaStPosition,

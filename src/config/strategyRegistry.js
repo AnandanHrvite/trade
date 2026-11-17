@@ -382,6 +382,24 @@ const ENTRIES = [
     tradesFile: "early_bird_paper_trades.json",
     replay: true,
   },
+  {
+    // 5-min close crossing EMA9 (entry + exit/flip); stop = common premium stop.
+    id: "ema9Cross", kind: "strategy", key: "EMA9_CROSS", label: "EMA9_CROSS",
+    modeKey: "ema9_cross", envPrefix: "EMA9_CROSS",
+    modeEnabled: { key: "EMA9_CROSS_MODE_ENABLED", default: "true" },
+    paperEnabled: { key: "EMA9_CROSS_PAPER_ENABLED", default: "true" },
+    paper:    { path: "/ema9_cross-paper",    module: "routes/ema9CrossPaper" },
+    backtest: { path: "/ema9_cross-backtest", module: "routes/ema9CrossBacktest" },
+    engine: "strategies/ema9_cross",
+    broker: "zerodha",
+    socket: { mode: "EMA9_CROSS_PAPER", set: "setEma9CrossMode", clear: "clearEma9CrossMode", isActive: "isEma9CrossActive", get: "getEma9CrossMode" },
+    needsIndexOpen: false,
+    telegram: { started: "TG_EMA9_CROSS_STARTED", entry: "TG_EMA9_CROSS_ENTRY", exit: "TG_EMA9_CROSS_EXIT", dayReport: "TG_EMA9_CROSS_DAYREPORT" },
+    nav: { order: 19, groupId: "nav-ema9_cross", rosterLabel: "EMA9_CROSS" },
+    commonWindow: { start: "EMA9_CROSS_ENTRY_START", end: "EMA9_CROSS_ENTRY_END" },
+    tradesFile: "ema9_cross_paper_trades.json",
+    replay: true,
+  },
 ];
 
 // Historic orders of lists that were derived from ENTRIES but never used the
@@ -391,18 +409,19 @@ const ORDERS = {
   logs: [
     "emaRsiSt", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp",
     "prevOrbScalp", "itm20Scalp", "earlyBird", "rsiPivotSt", "emaRsiStV2", "stRsiPivBb",
-    "sailVwapSt", "pivotEmaSt", "gapRunaway", "gapRunawayStk", "simple930",
+    "sailVwapSt", "pivotEmaSt", "gapRunaway", "gapRunawayStk", "simple930", "ema9Cross",
   ],
   // PAPER_SOURCES of edgeAnalytics / lossesAnalyzer / consolidationReport.
   reports: [
     "emaRsiSt", "emaRsiStV2", "stRsiPivBb", "sailVwapSt", "pivotEmaSt", "gapRunaway",
     "gapRunawayStk", "bbRsi", "pa", "orb", "ema9vwap", "trendPb", "trendDayScalp", "haScalp",
-    "prevOrbScalp", "itm20Scalp", "rsiPivotSt", "simple930", "earlyBird",
+    "prevOrbScalp", "itm20Scalp", "rsiPivotSt", "simple930", "earlyBird", "ema9Cross",
   ],
   // tickReplay MODE_TO_MODULE / _MODE_TO_CANONICAL_FILE (replayable routes only).
   replay: [
     "pa", "bbRsi", "emaRsiSt", "emaRsiStV2", "orb", "ema9vwap", "trendPb", "trendDayScalp",
     "haScalp", "prevOrbScalp", "itm20Scalp", "earlyBird", "rsiPivotSt", "sailVwapSt", "simple930",
+    "ema9Cross",
   ],
 };
 
