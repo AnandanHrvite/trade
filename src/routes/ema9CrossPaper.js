@@ -221,19 +221,12 @@ let ptState = {
   optionLtp:     null,
   optionSymbol:  null,
   optionChart:   null,
-  // Exit guard: block re-entry on the same candle where a profit-lock / manual exit happened
-  _slHitCandleTime: null,
   // Manual-exit pause: after a user-triggered exit, block re-entry for 1 candle.
   _manualPauseUntil: null,  // epoch ms — checked before every entry
   // NOTE: socket is now managed by socketManager — no ptState.socket needed
   // Pre-fetched option symbols (populated after each candle close, used at entry)
   _cachedCE: null,
   _cachedPE: null,
-  // Intra-candle entry throttle for 15-min: only re-run getSignal when bar high/low
-  // actually changes — avoids running the full indicator stack on every single tick.
-  _lastCheckedBarHigh: null,
-  _lastCheckedBarLow:  null,
-  _vixBlockLoggedCandle:  null, // throttle for VIX block log (once per candle)
   _entryPending:      false, // prevents double-entry on rapid ticks
   _expiryDayBlocked:  false, // blocks entries on non-expiry days
   _simMode:           false, // simulation mode (fake ticks, no broker)
@@ -1536,10 +1529,6 @@ function onTick(tick) {
     if (ptState.currentBar) {
       onCandleClose(ptState.currentBar).catch(console.error);
     }
-    // New candle — clear the same-candle exit block and intra-candle entry throttle
-    ptState._slHitCandleTime    = null;
-    ptState._lastCheckedBarHigh = null;
-    ptState._lastCheckedBarLow  = null;
     ptState.currentBar = {
       time:   Math.floor(bucket / 1000),
       open:   tick.ltp,
@@ -1592,7 +1581,6 @@ function onTick(tick) {
     );
     if (_plMsg) {
       log(`🔒 [PAPER] ${_plMsg}`);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
       simulateSell(ltp, _plMsg, ltp);
       return;
     }
@@ -1604,7 +1592,6 @@ function onTick(tick) {
     const _fsMsg = tradeGuards.checkFuturesStop(_fsPos.side, _fsPos.entryPrice, ltp, _fsPos.mfeSpotPts);
     if (_fsMsg) {
       log(`🔒 [PAPER] ${_fsMsg}`);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
       simulateSell(ltp, _fsMsg, ltp);
       return;
     }
@@ -1878,10 +1865,7 @@ router.get("/start", async (req, res) => {
   ptState._manualPauseUntil    = null;  // clear manual-exit pause from previous session
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
-  ptState._slHitCandleTime     = null;
   ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
-  ptState._lastCheckedBarHigh  = null;
-  ptState._lastCheckedBarLow   = null;
   ptState._sessionWins         = 0;
   ptState._sessionLosses       = 0;
   ptState._expiryDayBlocked    = false;
@@ -2177,7 +2161,6 @@ router.get("/exit", (req, res) => {
   log(`🖐️ [PAPER] MANUAL EXIT triggered by user | ${SPOT_LABEL} spot: ₹${exitSpot} | Option LTP: ${exitOption ? "₹" + exitOption : "N/A"}`);
 
   // ── Block re-entry for 1 full candle after manual exit ──────────────────────
-  ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
   const _manualPauseMs = TRADE_RES * 60 * 1000;
   ptState._manualPauseUntil = simNow() + _manualPauseMs;
   const _resumeTime = new Date(ptState._manualPauseUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
@@ -4168,10 +4151,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._manualPauseUntil    = null;
     ptState._cachedCE            = null;
     ptState._cachedPE            = null;
-    ptState._slHitCandleTime     = null;
     ptState._reentryBlockUntil   = 0;
-    ptState._lastCheckedBarHigh  = null;
-    ptState._lastCheckedBarLow   = null;
       ptState._sessionWins         = 0;
     ptState._sessionLosses       = 0;
     ptState._expiryDayBlocked    = false;
