@@ -48,11 +48,12 @@ const tradeGuards = require("../utils/tradeGuards");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
-function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
-function _futStopMsg(entry, px, peak) {
-  const lvl = _futStopLvl(entry, peak);
+// `g` = the run's guards (default: the common set).
+function _futStopLvl(entry, peak, g = tradeGuards) { return g.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak, g = tradeGuards) {
+  const lvl = _futStopLvl(entry, peak, g);
   if (lvl == null || px > lvl) return null;
-  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+  return g.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
 const backtestMarket = require("../services/backtestMarket");
@@ -92,7 +93,9 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
   const IS_FUT       = M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = M.lotQty;
+  // Own Common Rules (utils/commonRules.js): TDS's own values on a NIFTY run, else common.
+  const tradeGuards  = require("../utils/tradeGuards").forStrategy(M.key === "NIFTY" ? "TDS" : null);
+  const LOT_SIZE     = M.key === "NIFTY" ? require("../config/instrument").getLotQty(undefined, undefined, "TDS") : M.lotQty;
   const EXCHANGE     = M.exchange;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
@@ -206,7 +209,7 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
     /** The profit lock on one simulated premium. Futures: paper skips the lock but
      *  runs the common stop in index points — the "premium" IS the futures price. */
     function lockHit(prem) {
-      if (IS_FUT) return _futStopMsg(pos.optionEntryLtp, prem, pos.peak);
+      if (IS_FUT) return _futStopMsg(pos.optionEntryLtp, prem, pos.peak, tradeGuards);
       return tradeGuards.checkProfitLock(pos.optionEntryLtp, prem, pos.peak);
     }
     // `cooldownFrom`: the exit's clock time for the wait — a tick exit inside the
@@ -256,7 +259,7 @@ async function runTrendDayScalpBacktest(intraday, mkt) {
           const adv = isCE ? c.low : c.high;
           hit = lockHit(premiumAt(adv, barEnd));
           if (hit) {
-            const lvl = IS_FUT ? _futStopLvl(pos.optionEntryLtp, pos.peak) : tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak);
+            const lvl = IS_FUT ? _futStopLvl(pos.optionEntryLtp, pos.peak, tradeGuards) : tradeGuards.exitLevelLtp(pos.optionEntryLtp, pos.peak);
             const raw = spotForPrem(lvl, barEnd);
             // Never better than the open (the open did not trigger, so the level lies past it).
             const fill = isCE ? Math.min(c.open, raw) : Math.max(c.open, raw);

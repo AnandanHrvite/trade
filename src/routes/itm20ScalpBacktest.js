@@ -55,11 +55,12 @@ const backtestMarket = require("../services/backtestMarket");
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points in the trade's favour): tradeGuards.futuresStopLevel with
 // best move = peak − entry.
-function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
-function _futStopMsg(entry, px, peak) {
-  const lvl = _futStopLvl(entry, peak);
+// `g` = the run's guards (ITM20_SCALP's own Common Rules on a NIFTY run).
+function _futStopLvl(entry, peak, g = tradeGuards) { return g.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak, g = tradeGuards) {
+  const lvl = _futStopLvl(entry, peak, g);
   if (lvl == null || px > lvl) return null;
-  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+  return g.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 
 const ACCENT = "#22d3ee";
@@ -119,6 +120,8 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
   const cfg = o.cfg || strat.getConfig();
   const M    = o.mkt || backtestMarket.context("NIFTY");
   const home = M.key === "NIFTY";
+  // NIFTY run: ITM20_SCALP's own Common Rules (when its toggle is on); another market: the common set.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(home ? "ITM20_SCALP" : null);
   // Another market's expiry day is its paper pair's (BANKNIFTY monthly, SENSEX
   // weekly, NIFTY_FUT the month contract); <PAIR>_EXPIRY_DAY_ONLY (as its paper
   // pair reads it) trades only those days.
@@ -130,7 +133,7 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
   const IS_FUT       = !home && M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = home ? instrumentConfig.getLotQty() : M.lotQty;
+  const LOT_SIZE     = home ? instrumentConfig.getLotQty(undefined, undefined, "ITM20_SCALP") : M.lotQty;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   const SLIPPAGE_PTS = backtestCosts.slippagePts();
   const STEP         = home ? instrumentConfig.underlyingOf().strikeStep : M.strikeStep;
@@ -268,7 +271,7 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
       const pOpen = premAt(c.open, c.time);
       // Common guards' level (profit lock floor / premium SL) — null when both are off.
       // NIFTY_FUT: the common futures stop (the premium lock is defined on option premium).
-      const commonLvl = IS_FUT ? _futStopLvl(entry, pos.peakPrem) : tradeGuards.exitLevelLtp(entry, pos.peakPrem, lockOpts);
+      const commonLvl = IS_FUT ? _futStopLvl(entry, pos.peakPrem, tradeGuards) : tradeGuards.exitLevelLtp(entry, pos.peakPrem, lockOpts);
       const stopLvl = commonLvl != null && commonLvl > pos.stopPrem ? commonLvl : pos.stopPrem;
       const stopCode = commonLvl != null && commonLvl > pos.stopPrem ? "PROFIT_LOCK" : pos.stopKind;
       const stopTxt = stopCode === "PROFIT_LOCK" ? `Common profit lock / premium stop ₹${_r2(stopLvl)}`
@@ -286,7 +289,7 @@ async function runItm20ScalpBacktest(intraday, rangeFrom, opts) {
       if (pFav > pos.peakPrem) pos.peakPrem = pFav;
 
       const pClose = premAt(c.close, c.time);
-      const msg = IS_FUT ? _futStopMsg(entry, pClose, pos.peakPrem) : tradeGuards.checkProfitLock(entry, pClose, pos.peakPrem, lockOpts);
+      const msg = IS_FUT ? _futStopMsg(entry, pClose, pos.peakPrem, tradeGuards) : tradeGuards.checkProfitLock(entry, pClose, pos.peakPrem, lockOpts);
       if (msg) { close(pClose, c.time, `${msg} (given back inside the bar — filled at the close)`, "PROFIT_LOCK", true); return; }
 
       const closeMin = strat._utcSecToIstMins(c.time) + RES;

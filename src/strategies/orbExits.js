@@ -65,17 +65,19 @@ function trackExcursion(pos, spotPrice, optionLtp, nowMs) {
  *
  * @returns {{exit:boolean, reason:string|null}}
  */
-function evaluateTickExits(pos, { spotPrice, optionLtp }) {
+// guards: the caller's tradeGuards (ORB's own Common Rules when its toggle is ON); default = common.
+function evaluateTickExits(pos, { spotPrice, optionLtp, guards }) {
   if (!pos) return { exit: false, reason: null };
+  const tg = guards || require("../utils/tradeGuards");
   // Global profit lock (shared across every strategy — see tradeGuards). Options
   // only: it is defined on option premium, and in futures mode optionLtp mirrors
   // the SPOT, so leaving it on would test an 8% move in NIFTY itself.
   if (!pos.isFutures) {
-    const plMsg = require("../utils/tradeGuards").checkProfitLock(pos.optionEntryLtp, optionLtp, pos.peakPremium);
+    const plMsg = tg.checkProfitLock(pos.optionEntryLtp, optionLtp, pos.peakPremium);
     if (plMsg) return { exit: true, reason: plMsg };
   } else {
     // Futures: the same common stop mapped to index points (entry = fill spot).
-    const fsMsg = require("../utils/tradeGuards").checkFuturesStop(pos.side, pos.entrySpot, spotPrice, pos.mfeSpotPts);
+    const fsMsg = tg.checkFuturesStop(pos.side, pos.entrySpot, spotPrice, pos.mfeSpotPts);
     if (fsMsg) return { exit: true, reason: fsMsg };
   }
   return { exit: false, reason: null };

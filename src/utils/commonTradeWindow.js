@@ -21,18 +21,21 @@ const ENTRY_END   = "14:00";
 // earlier cut-off (ORB_ENTRY_END, default 10:15 — its late breakouts lost money
 // in the Jan–Nov 2026 backtest).
 const _REG = require("../config/strategyRegistry").all();
-const ENTRY_START_KEYS = _REG.map(s => s.commonWindow.start).filter(Boolean);
-const ENTRY_END_KEYS   = _REG.map(s => s.commonWindow.end).filter(Boolean);
+// [key, value, envPrefix] — the prefix lets a NIFTY strategy with Own Common
+// Rules ON switch the window on/off for itself (commonRules.js).
 const OVERRIDES = [
-  ...ENTRY_START_KEYS.map(k => [k, ENTRY_START]),
-  ...ENTRY_END_KEYS.map(k => [k, ENTRY_END]),
+  ..._REG.filter(s => s.commonWindow.start).map(s => [s.commonWindow.start, ENTRY_START, s.envPrefix]),
+  ..._REG.filter(s => s.commonWindow.end).map(s => [s.commonWindow.end, ENTRY_END, s.envPrefix]),
 ];
+const commonRules = require("./commonRules");
 
 function _mins(hhmm) { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; }
 
-// Unset = on, like the other Common Trade Rules.
-function enabled() {
-  return String(process.env.COMMON_TRADE_WINDOW_ENABLED ?? "true").toLowerCase() !== "false";
+// Unset = on, like the other Common Trade Rules. prefix (optional) = a NIFTY
+// strategy's env prefix: with its Own Common Rules ON it reads its own
+// <PREFIX>_COMMON_TRADE_WINDOW_ENABLED.
+function enabled(prefix) {
+  return String(commonRules.get(prefix || null, "COMMON_TRADE_WINDOW_ENABLED") ?? "true").toLowerCase() !== "false";
 }
 
 // Strategy's own value for each key while it is overridden (undefined = unset).
@@ -65,8 +68,8 @@ function apply(updates = {}, deletes = []) {
   for (const k of deletes) if (k in _own) _own[k] = undefined;
   for (const [k, v] of Object.entries(updates)) if (k in _own) _own[k] = v;
   const on = enabled();
-  for (const [k, v] of OVERRIDES) {
-    if (on) {
+  for (const [k, v, prefix] of OVERRIDES) {
+    if (enabled(prefix)) {
       if (!(k in _own)) _own[k] = process.env[k];
       process.env[k] = v;
     } else if (k in _own) {
@@ -88,6 +91,6 @@ function apply(updates = {}, deletes = []) {
 }
 
 // Earliest entry minute, for engines whose start is not a key of their own.
-function entryStartFloor(min) { return enabled() ? Math.max(min, _mins(ENTRY_START)) : min; }
+function entryStartFloor(min, prefix) { return enabled(prefix) ? Math.max(min, _mins(ENTRY_START)) : min; }
 
 module.exports = { apply, enabled, entryStartFloor, ENTRY_START, ENTRY_END };

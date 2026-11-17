@@ -48,11 +48,12 @@ const backtestMarket = require("../services/backtestMarket");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
-function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
-function _futStopMsg(entry, px, peak) {
-  const lvl = _futStopLvl(entry, peak);
+// `g` = the run's guards (default: the common set).
+function _futStopLvl(entry, peak, g = tradeGuards) { return g.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak, g = tradeGuards) {
+  const lvl = _futStopLvl(entry, peak, g);
   if (lvl == null || px > lvl) return null;
-  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+  return g.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
 
@@ -96,7 +97,9 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
   const IS_FUT       = M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = M.lotQty;
+  // Own Common Rules (utils/commonRules.js): TREND_PB's own values on a NIFTY run, else common.
+  const tradeGuards  = require("../utils/tradeGuards").forStrategy(M.key === "NIFTY" ? "TREND_PB" : null);
+  const LOT_SIZE     = M.key === "NIFTY" ? require("../config/instrument").getLotQty(undefined, undefined, "TREND_PB") : M.lotQty;
   const EXCHANGE     = M.exchange;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.     // slightly-ITM ≈ ATM + one strike intrinsic
@@ -213,8 +216,8 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
         const pos = position;
         // Futures: paper skips the lock but runs the common stop in index points.
         // The "premium" here IS the futures price (DELTA 1, no theta), same walk.
-        const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
-        const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
+        const lockAt  = IS_FUT ? (e, px, pk) => _futStopMsg(e, px, pk, tradeGuards) : tradeGuards.checkProfitLock;
+        const levelAt = IS_FUT ? (e, pk) => _futStopLvl(e, pk, tradeGuards) : tradeGuards.exitLevelLtp;
         walk: {
           const isCE = pos.side === "CE";
           const barEnd = c.time + 5 * 60;

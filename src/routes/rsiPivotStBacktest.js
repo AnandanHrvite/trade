@@ -56,11 +56,12 @@ const tradeGuards = require("../utils/tradeGuards");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
-function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
-function _futStopMsg(entry, px, peak) {
-  const lvl = _futStopLvl(entry, peak);
+// `g` = the run's guards (RSI_PIVOT_ST's own Common Rules on a NIFTY run).
+function _futStopLvl(entry, peak, g = tradeGuards) { return g.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak, g = tradeGuards) {
+  const lvl = _futStopLvl(entry, peak, g);
   if (lvl == null || px > lvl) return null;
-  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+  return g.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
 const backtestMarket = require("../services/backtestMarket");
@@ -108,6 +109,8 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
 
   const M    = mkt || backtestMarket.context("NIFTY");
   const HOME = M.key === "NIFTY";
+  // NIFTY run: RSI_PIVOT_ST's own Common Rules (when its toggle is on); another market: the common set.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(HOME ? "RSI_PIVOT_ST" : null);
   const cfg = rsiPivotStrategy.getConfig();
   // Another market's strike grid (100 on SENSEX / BANKNIFTY); NIFTY keeps 50.
   if (!HOME && M.strikeStep > 0) cfg.strikeStep = M.strikeStep;
@@ -118,7 +121,7 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
   const IS_FUT       = HOME ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = HOME ? instrumentConfig.getLotQty() : M.lotQty;
+  const LOT_SIZE     = HOME ? instrumentConfig.getLotQty(undefined, undefined, "RSI_PIVOT_ST") : M.lotQty;
   // Charges as the paper engine books them: NIFTY Zerodha, a pair Fyers on its exchange.
   const CHARGE_OPTS  = HOME ? { broker: "zerodha" } : { broker: "fyers", exchange: M.exchange };
   const SEED_PREMIUM = backtestCosts.seedPremium();
@@ -247,8 +250,8 @@ async function runRsiPivotStBacktest(intraday, daily, mkt) {
       // Futures: paper skips the profit lock but runs the common stop in index
       // points. The "premium" here IS the futures price (DELTA 1, no theta), so
       // the same walk applies with that stop alone.
-      const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
-      const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
+      const lockAt  = IS_FUT ? (e, px, pk) => _futStopMsg(e, px, pk, tradeGuards) : tradeGuards.checkProfitLock;
+      const levelAt = IS_FUT ? (e, pk) => _futStopLvl(e, pk, tradeGuards) : tradeGuards.exitLevelLtp;
       const isCE = pos.side === "CE";
       const entry = pos.optionEntryLtp;
       const pOpen = premiumAt(c.open, c.time);

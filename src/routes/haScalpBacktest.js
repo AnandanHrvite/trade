@@ -69,11 +69,12 @@ const tradeGuards = require("../utils/tradeGuards");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
-function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
-function _futStopMsg(entry, px, peak) {
-  const lvl = _futStopLvl(entry, peak);
+// `g` = the run's guards (HA_SCALP's own Common Rules on a NIFTY run).
+function _futStopLvl(entry, peak, g = tradeGuards) { return g.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak, g = tradeGuards) {
+  const lvl = _futStopLvl(entry, peak, g);
   if (lvl == null || px > lvl) return null;
-  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+  return g.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
 const backtestMarket = require("../services/backtestMarket");
@@ -158,6 +159,8 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
 
   const cfg = haStrategy.getConfig();
   const M = mkt || backtestMarket.context("NIFTY");
+  // NIFTY run: HA_SCALP's own Common Rules (when its toggle is on); another market: the common set.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(M.key === "NIFTY" ? "HA_SCALP" : null);
   // Another market: <PAIR>_EXPIRY_DAY_ONLY (as its paper pair reads it) trades only
   // that market's expiry days — paper's _expiryDayBlocked. NIFTY has no such rule.
   const _pairRt = M.key === "NIFTY" ? null : require("../utils/pairRuntime").forStrategy("haScalp", M.key);
@@ -168,7 +171,7 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
   const IS_FUT       = M.key === "NIFTY" ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = M.key === "NIFTY" ? instrumentConfig.getLotQty() : M.lotQty;
+  const LOT_SIZE     = M.key === "NIFTY" ? instrumentConfig.getLotQty(undefined, undefined, "HA_SCALP") : M.lotQty;
   const EXCHANGE     = M.exchange;
   const SEED_PREMIUM = backtestCosts.seedPremium();
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
@@ -306,8 +309,8 @@ async function runHaScalpBacktest(intraday, rangeFrom, mkt) {
       // Futures: paper skips the profit lock but runs the common stop in index
       // points. The "premium" here IS the futures price (DELTA 1, no theta), so
       // the same walk applies with that stop alone.
-      const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
-      const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
+      const lockAt  = IS_FUT ? (e, px, pk) => _futStopMsg(e, px, pk, tradeGuards) : tradeGuards.checkProfitLock;
+      const levelAt = IS_FUT ? (e, pk) => _futStopLvl(e, pk, tradeGuards) : tradeGuards.exitLevelLtp;
       const isCE = pos.side === "CE";
       const entry = pos.optionEntryLtp;
       const pOpen = premiumAt(c.open, c.time);

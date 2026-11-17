@@ -166,8 +166,12 @@ function forPair(pair) {
     underlyingKey,
     spotLabel: pair.marketKey === "NIFTY" ? "NIFTY" : M0.label,
     oiApplies: isNiftyHome,
+    // Own Common Rules (utils/commonRules.js) — NIFTY home runs only; null = common keys.
+    commonPrefix: isNiftyHome && require("./commonRules").STRATEGIES.includes(s.envPrefix) ? s.envPrefix : null,
     market, U,
   };
+  // This run's guards: the strategy's own Common Rules on NIFTY, else the common set.
+  rt.guards = () => require("./tradeGuards").forStrategy(rt.commonPrefix);
 
   // ── symbols ────────────────────────────────────────────────────────────────
   rt.spotSymbol = () => {
@@ -189,7 +193,7 @@ function forPair(pair) {
   // A pre-fetched symbol is reused while spot stays within half a strike (25 on NIFTY).
   rt.cacheTolerance = () => (isNiftyHome ? 25 : (rt.strikeStep() || 50) / 2);
   rt.lotQty = () => {
-    if (isNiftyHome) return instrument.getLotQty();
+    if (isNiftyHome) return instrument.getLotQty(undefined, undefined, rt.commonPrefix);
     if (kind === "futures") return instrument.getLotQty(underlyingKey, "NIFTY_FUTURES");
     if (kind === "mcx") return market().lotSize * _lotMultiplier();
     return instrument.getLotQty(underlyingKey);

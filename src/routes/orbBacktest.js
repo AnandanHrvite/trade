@@ -59,7 +59,7 @@ const RESULT_KEY = "ORB_BACKTEST";
  * fewer, never more. The OI gate in particular ships enabled and was invisible in
  * this disclosure until 2026-07-26.
  */
-function _paperOnlyGates() {
+function _paperOnlyGates(commonPrefix = null) {
   const on = (k, d) => (process.env[k] || d || "false").toLowerCase() === "true";
   const g = [];
   // Every default here MUST mirror the route's own read (orbPaper/orbLive
@@ -73,7 +73,7 @@ function _paperOnlyGates() {
   // MAX_BID_ASK_SPREAD_PTS and then 2pt; (2) a zero or non-numeric threshold, which
   // does not disable the gate — checkSpread returns `spread <= max`, false for every
   // real quote, so it rejects essentially every entry. Say so rather than hiding it.
-  const _rawSpread = process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2";
+  const _rawSpread = process.env.ORB_MAX_SPREAD_PTS || require("../utils/commonRules").get(commonPrefix, "MAX_BID_ASK_SPREAD_PTS") || "2";
   const _maxSpread = parseFloat(_rawSpread);
   g.push(Number.isFinite(_maxSpread) && _maxSpread > 0
     ? `bid-ask spread ≤ ${_maxSpread}pt`
@@ -81,8 +81,8 @@ function _paperOnlyGates() {
   if (on("OI_FILTER_ENABLED") && on("ORB_OI_ENABLED")) g.push("OI buildup filter");
   return g;
 }
-function _paperOnlyGatesNote() {
-  const g = _paperOnlyGates();
+function _paperOnlyGatesNote(commonPrefix = null) {
+  const g = _paperOnlyGates(commonPrefix);
   return g.length
     ? `⚠️ ${g.length} entry gate${g.length > 1 ? "s are" : " is"} active in paper/live but NOT modelled here (no option chain in historical spot candles): ${g.join(", ")}. Paper/live will take these trades or FEWER — never more.`
     : `No paper/live-only entry gates are currently enabled, so the trade count here should match paper.`;
@@ -125,7 +125,9 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
   // Use the same lot-qty helper as paper/live so LOT_MULTIPLIER and
   // NIFTY_LOT_SIZE flow through end-to-end (lot qty = NIFTY_LOT_SIZE × LOT_MULTIPLIER).
   const M          = market && market.key !== "NIFTY" ? market : null;
-  const LOT_SIZE   = M ? M.lotQty : instrumentConfig.getLotQty();
+  // Own Common Rules (utils/commonRules.js): ORB's own values on a NIFTY run, else common.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(M ? null : "ORB");
+  const LOT_SIZE   = M ? M.lotQty : instrumentConfig.getLotQty(undefined, undefined, "ORB");
   // Another market's charges are its own exchange's (BSE for SENSEX).
   const _chg       = (o) => getCharges(M ? Object.assign({ exchange: M.exchange }, o) : o);
   // EXIT (mirrors paper/live, 2026-11-07): the global profit lock is the ONLY
@@ -451,7 +453,7 @@ function _resultsView(from, to, trades, stats, market) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `${M ? `<b>MARKET: ${M.label}</b> — ${M.spotSymbol} candles, lot ${M.lotQty}, ${M.exchange} charges; the seeded premium and the OR / point thresholds are NIFTY-calibrated unless this market sets its own. ` : ""}${futMode ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "0"}×ATR15 (0 = off)${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "0"}×OR (0 = off)), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "10:15"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote()}`,
+    notes: `${M ? `<b>MARKET: ${M.label}</b> — ${M.spotSymbol} candles, lot ${M.lotQty}, ${M.exchange} charges; the seeded premium and the OR / point thresholds are NIFTY-calibrated unless this market sets its own. ` : ""}${futMode ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium profit lock is skipped, as in paper/live — trades are held to the session end unless the common stop, in index points, closes them). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${backtestCosts.seedPremium()}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "0"}×ATR15 (0 = off)${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "0"}×OR (0 = off)), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); cut-off ${process.env.ORB_ENTRY_END || "10:15"} IST. Exit: the global profit lock only (simulated on the δ-modelled premium); anything still open is closed at the day's last candle. ${_paperOnlyGatesNote(M ? null : "ORB")}`,
   };
 }
 

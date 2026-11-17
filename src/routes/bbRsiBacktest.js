@@ -80,7 +80,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   // Confirmation candle (cross & close): { side, armedBarTime, triggerLevel, result } | null.
   let _armed     = null;
   const _otherMkt = !!(mkt && mkt.key !== "NIFTY");
-  const LOT_SIZE  = _otherMkt ? mkt.lotQty : getLotQty();
+  // This run's guards: BB_RSI's own Common Rules on NIFTY, the common set elsewhere.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(_otherMkt ? null : "BB_RSI");
+  const LOT_SIZE  = _otherMkt ? mkt.lotQty : getLotQty(undefined, undefined, "BB_RSI");
   // Another market's exchange (BSE for SENSEX) on every charges call; NIFTY passes none.
   const EXCHANGE  = _otherMkt ? mkt.exchange : undefined;
   const getCharges = (o) => _getCharges(EXCHANGE ? Object.assign({}, o, { exchange: EXCHANGE }) : o);

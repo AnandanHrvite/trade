@@ -52,11 +52,11 @@ const tradeGuards = require("../utils/tradeGuards");
 
 // Futures stop on the long-equivalent futures "premium" (entry, price and peak
 // all in index points): tradeGuards.futuresStopLevel with best move = peak − entry.
-function _futStopLvl(entry, peak) { return tradeGuards.futuresStopLevel("CE", entry, peak - entry); }
-function _futStopMsg(entry, px, peak) {
-  const lvl = _futStopLvl(entry, peak);
+function _futStopLvl(entry, peak, g) { return g.futuresStopLevel("CE", entry, peak - entry); }
+function _futStopMsg(entry, px, peak, g) {
+  const lvl = _futStopLvl(entry, peak, g);
   if (lvl == null || px > lvl) return null;
-  return tradeGuards.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
+  return g.premiumStopSpotReason(Math.round((lvl - entry) * 100) / 100, peak - entry);
 }
 const backtestCosts = require("../config/backtestCosts");
 const backtestMarket = require("../services/backtestMarket");
@@ -118,11 +118,13 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   const cfg = o.cfg || strat.getConfig();
   const M = o.market || backtestMarket.context("NIFTY");
   const HOME = M.key === "NIFTY";
+  // This run's guards: PREV_ORB_SCALP's own Common Rules on NIFTY, the common set elsewhere.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(HOME ? "PREV_ORB_SCALP" : null);
   // NIFTY: the global instrument switch, as always; another market: its own kind.
   const IS_FUT       = HOME ? instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" : M.isFutures === true;
   const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE     = HOME ? instrumentConfig.getLotQty() : M.lotQty;
+  const LOT_SIZE     = HOME ? instrumentConfig.getLotQty(undefined, undefined, "PREV_ORB_SCALP") : M.lotQty;
   // NIFTY keeps its Zerodha book; another market's pair trades on the Fyers book.
   const BROKER       = HOME ? "zerodha" : "fyers";
   const EXCHANGE     = M.exchange;
@@ -237,8 +239,8 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
       // Futures: paper skips the profit lock but runs the common stop in index
       // points. The "premium" here IS the futures price (DELTA 1, no theta), so
       // the same walk applies with that stop alone.
-      const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
-      const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
+      const lockAt  = IS_FUT ? (e, px, pk) => _futStopMsg(e, px, pk, tradeGuards) : tradeGuards.checkProfitLock;
+      const levelAt = IS_FUT ? (e, pk) => _futStopLvl(e, pk, tradeGuards) : tradeGuards.exitLevelLtp;
       const isCE = pos.side === "CE";
       const entry = pos.optionEntryLtp;
       const pOpen = premAt(c.open, c.time);
@@ -416,7 +418,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Exit mix", value: exitMix },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${home ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${escHtml(M.exchange)} charges${M.isFutures ? "; FUTURES — P&L is index points × lot with futures charges, no δ/θ and no profit lock (the common stop in index points instead); a PE is a SHORT" : ""}. `}<b>Chart:</b> ${home ? "NIFTY 50" : escHtml(M.label)} INDEX spot (<code>${escHtml(home ? SPOT_SYMBOL : M.spotSymbol)}</code>) ${cfg.resolutionMins}-min. The ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle is built from those bars. <b>Setup:</b> it closes below yesterday's LOW → PE day, above yesterday's HIGH → CE day. <b>Entry:</b> the FIRST ${cfg.resolutionMins}-min close beyond that candle's low/high, filled at the NEXT bar's open (paper fills on the first tick after the close), until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> the global profit lock (${lockText()}) is the ONLY automatic exit — no stop, target, trail or early square-off — simulated on the δ premium, each bar walked open → adverse → favourable → close; a trade still open at the day's last candle is closed there. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) fetched before ${escHtml(from)} so day one has a yesterday. Premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}) seeded at ₹${escHtml(backtestCosts.seedPremium())} with ${escHtml(backtestCosts.slippagePts())}pt slippage each way — treat ₹ as directional. <b>Never traded live or on paper; nothing here is validated.</b>`,
+    notes: `${home ? "" : `<b>MARKET: ${escHtml(M.label)}</b> — ${escHtml(M.spotSymbol)} candles, lot ${M.lotQty}, ${escHtml(M.exchange)} charges${M.isFutures ? "; FUTURES — P&L is index points × lot with futures charges, no δ/θ and no profit lock (the common stop in index points instead); a PE is a SHORT" : ""}. `}<b>Chart:</b> ${home ? "NIFTY 50" : escHtml(M.label)} INDEX spot (<code>${escHtml(home ? SPOT_SYMBOL : M.spotSymbol)}</code>) ${cfg.resolutionMins}-min. The ${strat._fmtMins(cfg.sessionStartMin)} ${cfg.orMins}-min candle is built from those bars. <b>Setup:</b> it closes below yesterday's LOW → PE day, above yesterday's HIGH → CE day. <b>Entry:</b> the FIRST ${cfg.resolutionMins}-min close beyond that candle's low/high, filled at the NEXT bar's open (paper fills on the first tick after the close), until ${strat._fmtMins(cfg.entryEndMin)}. <b>Exit:</b> the global profit lock (${lockText(tradeGuards.forStrategy(home ? "PREV_ORB_SCALP" : null))}) is the ONLY automatic exit — no stop, target, trail or early square-off — simulated on the δ premium, each bar walked open → adverse → favourable → close; a trade still open at the day's last candle is closed there. Warm-up: ${escHtml(String(meta.warmupDays))} calendar day(s) fetched before ${escHtml(from)} so day one has a yesterday. Premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}) seeded at ₹${escHtml(backtestCosts.seedPremium())} with ${escHtml(backtestCosts.slippagePts())}pt slippage each way — treat ₹ as directional. <b>Never traded live or on paper; nothing here is validated.</b>`,
   };
 }
 
@@ -425,8 +427,8 @@ function _renderResults(res, from, to, trades, stats, meta) {
   res.send(html.replace("</body>", `${MOBILE_CSS}</body>`));
 }
 
-function lockText() {
-  return tradeGuards.PROFIT_LOCK_ENABLED ? `arm +${tradeGuards.PROFIT_LOCK_ARM_PCT}% / floor +${tradeGuards.PROFIT_LOCK_FLOOR_PCT}%` : "OFF";
+function lockText(g) {
+  return g.PROFIT_LOCK_ENABLED ? `arm +${g.PROFIT_LOCK_ARM_PCT}% / floor +${g.PROFIT_LOCK_FLOOR_PCT}%` : "OFF";
 }
 
 /**

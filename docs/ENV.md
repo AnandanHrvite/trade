@@ -85,7 +85,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `EXIT_REENTRY_COOLDOWN_CANDLES` | number | `2` | One rule for EVERY strategy: after a trade closes for any reason (stop, target, breakeven, profit lock, signal), take no new trade on either side for this many of the strategy's own candles. Example on 5-min candles with 2: exit at 10:48 → no new trade until 10:58. Manual entries are not blocked. 0 = off. |
 | `EXIT_REENTRY_COOLDOWN_ENABLED` | toggle | `true` | After a trade closes, take no new trade for the number of candles set in "Wait after any exit (candles)". Off = a new trade can start on the very next signal. |
 | `FYERS_INV_AMOUNT` | number | `100000` | Paper money pool shared by every Fyers strategy (₹). |
-| `LOT_MULTIPLIER` | number | `1` | Lots per trade for EVERY strategy on every market — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL keeps its own lots (a different contract). |
+| `LOT_MULTIPLIER` | number | — | Lots per trade for EVERY strategy on every market — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL keeps its own lots (a different contract). |
 | `MAX_BID_ASK_SPREAD_ENABLED` | toggle | `true` | Skip an entry when the option's bid-ask gap is wider than "Max Bid-Ask Spread (pts)". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap. |
 | `MAX_BID_ASK_SPREAD_PTS` | number | `2` | Reject entries when the spread is wider than this. |
 | `MAX_TRADES_PER_DAY` | number | `0` | One rule for EVERY strategy on every market: once a strategy has closed this many trades today, it takes no new trade until tomorrow — win or loss. Example 1: EMA_RSI_ST_V2 exits at 10:20 → no more EMA_RSI_ST_V2 trades today, while ORB can still take its own one. Counts from the app's start, so a server restart mid-day starts the count again. Manual entries are not blocked. Stock pages keep their own Max Trades. 0 = off. |
@@ -93,7 +93,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `PAPER_CAPITAL_GATE_ENABLED` | toggle | `true` | Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. An entry the pool cannot fund is REFUSED — logged as an error, skip-logged, and flagged on the Real-Time dashboard. Off = display only (every entry is taken). |
 | `PREMIUM_SL_ENABLED` | toggle | `false` | One trailing stop for EVERY strategy, on the option premium: sell if premium falls the first stop % below entry, then trail the trail gap % below the highest premium since entry. It only moves up. Example 20 / blank: buy 100 → stop 80; peak 150 → stop 120; peak 200 → stop 160. Futures use it as if the premium were ₹200 (20% → 40 index points at entry). Works next to the profit lock — whichever stop is higher wins. Off (the default) = no strategy uses it. |
 | `PREMIUM_SL_PCT` | number | `20` | At entry, sell if premium falls this % below the entry price. Example 5: buy 100 → stop 95. If "Trail gap" is blank, this % is also the trail gap. |
-| `PREMIUM_SL_TRAIL_PCT` | number | `` | As premium rises, the stop follows this % below the highest premium since entry. The stop is whichever is higher — the first stop or the trail — so it only moves up. Example first stop 5, trail 10: buy 100 → stop 95; peak 104 → still 95; peak 110 → stop 99; peak 150 → stop 135. Blank = same as the first stop %. |
+| `PREMIUM_SL_TRAIL_PCT` | number | — | As premium rises, the stop follows this % below the highest premium since entry. The stop is whichever is higher — the first stop or the trail — so it only moves up. Example first stop 5, trail 10: buy 100 → stop 95; peak 104 → still 95; peak 110 → stop 99; peak 150 → stop 135. Blank = same as the first stop %. |
 | `PROFIT_LOCK_ARM_PCT` | number | `8` | The lock arms once premium touches entry + this %. Must be greater than the floor %, or the lock stays inert. |
 | `PROFIT_LOCK_ENABLED` | toggle | `false` | One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail. Off (the default) = no strategy uses a profit lock. |
 | `PROFIT_LOCK_FLOOR_PCT` | number | `5` | Once armed, the trade is closed if premium falls back to entry + this %. Replaying 344 trades at arm 8 / floor 5 changed 72 exits and turned the active book from -Rs6,028 to +Rs32,110 — treat that as a hypothesis to confirm in paper, not a promise. |
@@ -501,7 +501,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `ORB_EXPIRY_DAY_ONLY` | toggle | `false` | Only trade on weekly expiry day. |
 | `ORB_GAP_OR_MULT` | number | `0` | Skip the day on an oversized overnight gap. |
 | `ORB_ITM_STEPS` | number | `1` | Strikes in-the-money to trade (0 = ATM). |
-| `ORB_MAX_SPREAD_PTS` | number | falls back to `MAX_BID_ASK_SPREAD_PTS` | Skip entry if the bid-ask spread is wider than this. |
+| `ORB_MAX_SPREAD_PTS` | number | — | Skip entry if the bid-ask spread is wider than this. |
 | `ORB_OR_ATR_MAX` | number | `0` | Skip the day if the opening range is too wide. |
 | `ORB_OR_MAX_PTS` | number | `0` | Skip the day when the opening range is wider than this many points. Measure with scripts/orbSweep.js before enabling. |
 | `ORB_PREMIUM_GATE_ENABLED` | toggle | `false` | Skip entries when the option price is out of range. |
@@ -821,7 +821,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `TREND_PB_ENTRY_END` | time | `14:30` | No new entries after this time (IST). |
 | `TREND_PB_ENTRY_START` | time | `09:45` | No entries before this time (IST). |
 | `TREND_PB_ITM_STEPS` | number | `1` | Strikes in-the-money to buy (0 = ATM). |
-| `TREND_PB_MAX_SPREAD_PTS` | number | falls back to `MAX_BID_ASK_SPREAD_PTS` | Skip entry if the bid-ask spread is wider than this. |
+| `TREND_PB_MAX_SPREAD_PTS` | number | — | Skip entry if the bid-ask spread is wider than this. |
 | `TREND_PB_MIN_PULLBACK_BARS` | number | `2` | Minimum against-trend candles for a real pause. |
 | `TREND_PB_OI_ENABLED` | toggle | `false` | Block entries fighting an OI buildup. |
 | `TREND_PB_PREMIUM_MAX` | number | `400` | Skip entry if the option price is above this (₹). |

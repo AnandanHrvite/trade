@@ -447,6 +447,9 @@ const _SETTINGS_KEY_MATCHERS = [
   /^PREMIUM_SL_/,
   //   STOCK_SL_* — the stop sizes for stock legs (same switch as PREMIUM_SL_ENABLED).
   /^STOCK_SL_/,
+  //   <PREFIX>_OWN_COMMON_RULES + <PREFIX>_<common key> — a NIFTY strategy's own
+  //   Common Rules (utils/commonRules.js); they change entries and exits.
+  (() => { const cr = require("./commonRules"); return new RegExp("^(" + cr.STRATEGIES.join("|") + ")_(OWN_COMMON_RULES|" + cr.KEYS.join("|") + ")$"); })(),
 ];
 
 function snapshotSettings() {
@@ -468,6 +471,11 @@ function snapshotSettings() {
   if (out.PROFIT_LOCK_TRAIL_TIERS === undefined) out.PROFIT_LOCK_TRAIL_TIERS = "20:85,40:80";
   if (out.PREMIUM_SL_ENABLED === undefined) out.PREMIUM_SL_ENABLED = "false";
   if (out.EXIT_REENTRY_COOLDOWN_CANDLES === undefined) out.EXIT_REENTRY_COOLDOWN_CANDLES = "2";
+  // Own Common Rules toggles (default OFF): always recorded, so a replay knows each was off.
+  for (const p of require("./commonRules").STRATEGIES) {
+    const k = `${p}_OWN_COMMON_RULES`;
+    if (out[k] === undefined) out[k] = "false";
+  }
   if (out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED === undefined) out.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED = "true";
   if (out.EMA_RSI_ST_FRESH_SIGNAL_ENABLED === undefined) out.EMA_RSI_ST_FRESH_SIGNAL_ENABLED = "true";
   return out;

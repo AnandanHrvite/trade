@@ -682,9 +682,10 @@ function mirrorPrice(side, entry, px) {
 
 // `opts` = checkProfitLock options; the routes pass tradeGuards.stockStopOpts for a
 // stock leg and futuresStopOpts for a futures leg, so the stop is sized for that price.
-function checkProfitLockExit(side, entry, price, best, opts) {
+// guards (optional): the route's tradeGuards (EarlyBird's own Common Rules when ON).
+function checkProfitLockExit(side, entry, price, best, opts, guards) {
   if (!_num(entry) || !_num(price) || !_num(best)) return null;
-  const msg = tradeGuards.checkProfitLock(entry, mirrorPrice(side, entry, price), mirrorPrice(side, entry, best), opts);
+  const msg = (guards || tradeGuards).checkProfitLock(entry, mirrorPrice(side, entry, price), mirrorPrice(side, entry, best), opts);
   if (!msg) return null;
   return {
     exit: true,

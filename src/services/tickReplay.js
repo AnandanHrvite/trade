@@ -2128,6 +2128,8 @@ function _resolveReplayLotEnv(lots, mode) {
   const n = parseInt(lots, 10);
   if (!Number.isFinite(n) || n < 1) return {};
   const env = { LOT_MULTIPLIER: String(n) };
+  // A strategy with Own Common Rules ON sizes off its own <PREFIX>_LOT_MULTIPLIER — pin that too.
+  for (const p of require("../utils/commonRules").STRATEGIES) env[`${p}_LOT_MULTIPLIER`] = String(n);
   const perStrategyKey = MODE_TO_LOT_MULT_KEY[mode];
   if (perStrategyKey) env[perStrategyKey] = (perStrategyKey === "EARLYBIRD_OPTION_LOTS") ? "1" : "0";
   return env;
@@ -2400,6 +2402,12 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       }
       if (!("EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED" in _snapSettings)) {
         _snapSettings.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED = "false";
+      }
+      // Own Common Rules (utils/commonRules.js, default OFF): an absent toggle is a
+      // recording made before it shipped — every strategy then ran on the common keys.
+      for (const _p of require("../utils/commonRules").STRATEGIES) {
+        const _k = `${_p}_OWN_COMMON_RULES`;
+        if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
       }
       // Snapshot mode is a PARTIAL override: _applySettingsOverride only SETS the
       // keys it is given, so a managed key present in today's env but absent from

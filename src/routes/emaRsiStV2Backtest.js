@@ -204,13 +204,15 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = nu
   const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
   const stratCfg = engine.getConfig();
   const M = mkt || backtestMarket.context("NIFTY");
+  // This run's guards: EMA_RSI_ST_V2's Own Common Rules on NIFTY, else the common set.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(M.key === "NIFTY" ? "EMA_RSI_ST_V2" : null);
 
   // FUTURES MODE (the NIFTY_FUT market only) — index points are rupees 1:1: no
   // delta, no theta, and the "premium" the sim carries IS the spot level.
   const IS_FUT    = M.isFutures === true;
   const DELTA     = IS_FUT ? 1.0 : _num("BACKTEST_DELTA", "0.55");
   const THETA_DAY = IS_FUT ? 0   : _num("BACKTEST_THETA_DAY", "8");
-  const LOT_SIZE  = M.lotQty;
+  const LOT_SIZE  = M.key === "NIFTY" ? require("../config/instrument").getLotQty(undefined, undefined, "EMA_RSI_ST_V2") : M.lotQty;
   const EXCHANGE  = M.exchange;
   const RES       = g.resolutionMins > 0 ? g.resolutionMins : 5;
   const SLIP      = g.slippagePts;
@@ -577,6 +579,7 @@ function _resultsView(from, to, trades, stats, meta) {
   const c   = engine.getConfig();
   const gs  = meta.gateStats || {};
   const wv  = meta.warmupViolations || 0;
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(M.key === "NIFTY" ? "EMA_RSI_ST_V2" : null); // the run's lock values
   const lockOn    = tradeGuards.PROFIT_LOCK_ENABLED;
   const lockArm   = tradeGuards.PROFIT_LOCK_ARM_PCT;
   const lockFloor = tradeGuards.PROFIT_LOCK_FLOOR_PCT;

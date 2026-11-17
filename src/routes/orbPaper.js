@@ -119,6 +119,8 @@ function _indexPricedMath(underlying) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const MODE   = rt.modeKey;                 // "orb" on NIFTY — logger / skip / capital key
 const PREFIX = rt.envPrefix;               // "ORB" on NIFTY
@@ -461,7 +463,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     }
     // Bid-ask spread gate — fails OPEN when the snapshot lacks depth (no-quote).
     // Another market has its own limit (<PAIR>_MAX_SPREAD_PTS → the common one).
-    const maxSpread = rt.home ? parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2") : rt.maxSpreadPts();
+    const maxSpread = rt.home ? parseFloat(process.env.ORB_MAX_SPREAD_PTS || tradeGuards.DEFAULT_MAX_SPREAD_PTS || "2") : rt.maxSpreadPts();
     const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
     if (!_sp.ok) {
       log(`⏸️ ${TAG} Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
@@ -793,7 +795,7 @@ function _checkExits(spotPrice) {
     }
   }
 
-  const d = orbExits.evaluateTickExits(pos, { spotPrice, optionLtp: optLtp });
+  const d = orbExits.evaluateTickExits(pos, { spotPrice, optionLtp: optLtp, guards: tradeGuards });
   if (d.exit) simulateSell(d.reason, pos.isFutures || /^Stop-loss/.test(d.reason) ? "sl" : "trail");
 }
 

@@ -1391,6 +1391,38 @@ for (const s of _strategyRegistry.strategies()) {
   });
 }
 
+// ── Own Common Rules — GENERATED per NIFTY strategy (utils/commonRules.js) ──
+// One toggle per strategy plus its own copy of every Common Rules key. Toggle
+// OFF (default) = the strategy follows Common Rules. ON = it reads its own copy;
+// a blank copy still falls back to the common value. NIFTY only — never
+// generated into other markets' pair panes (ownCommon is skipped there).
+{
+  const _cr = require("../utils/commonRules");
+  const _common = SETTINGS_SCHEMA.find(x => x.nav === "Common Rules");
+  for (const s of _strategyRegistry.strategies()) {
+    if (!_cr.STRATEGIES.includes(s.envPrefix)) continue;
+    const section = homeSectionOf(s.id);
+    const tKey = _cr.toggleKey(s.envPrefix);
+    if (!section || section.fields.some(f => f.key === tKey)) continue;
+    section.fields.push({
+      key: tKey, label: "Use own Common Rules", type: "toggle", effect: EFFECT.INSTANT, default: "false",
+      desc: `OFF = ${s.label} follows Settings → Common Rules. ON = ${s.label} (paper and backtest, NIFTY only) uses the values below instead; a blank box still uses the common value. Example: common Max trades/day 3, here 1 → only ${s.label} stops after 1 trade.`,
+      subheader: "Own Common Rules", generated: "ownCommon", ownCommon: true,
+    });
+    for (const k of _cr.KEYS) {
+      const cf = _common && _common.fields.find(f => f.key === k);
+      if (!cf) continue;
+      const { subheader, desc, default: _d, ...rest } = cf;
+      section.fields.push({
+        ...rest, key: _cr.ownKey(s.envPrefix, k), default: "",
+        label: `${cf.label.replace(/\s*\((all strategies|each strategy)\)/, "")} — ${s.label}`,
+        desc: `${s.label}'s own value for Common Rules "${cf.label}" (${k}). Used only while "Use own Common Rules" is ON; blank = the common value.`,
+        generated: "ownCommon", ownCommon: true, commonKey: k,
+      });
+    }
+  }
+}
+
 // ── (strategy, market) pair settings — GENERATED from the home section ──────
 // A non-home pair has no hand-written fields: its list is the strategy's home
 // section, each own key renamed to the pair's key (config/pairs.js), grouped
@@ -1418,6 +1450,7 @@ function pairFieldsFor(pair) {
     const key = pairs.pairKey(pair, f.key);
     if (!key) { shared.push(f.key); continue; }
     if (/_LIVE_|_POS_FILE$/.test(f.key)) continue;   // pairs are paper + backtest only
+    if (f.ownCommon) continue;                        // Own Common Rules are NIFTY only
     // A strategy with its own spread key (TREND_PB_MAX_SPREAD_PTS): a RUNNING
     // pair's spread limit is the generated pair-only row below (one row per key).
     if (pair.runs && !pair.home && key === `${pair.envPrefix}_MAX_SPREAD_PTS`) continue;

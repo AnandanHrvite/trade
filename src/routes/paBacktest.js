@@ -79,7 +79,9 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const trades   = [];
   let position   = null;
   const M         = mkt && mkt.key !== "NIFTY" ? mkt : null;
-  const LOT_SIZE  = M ? M.lotQty : getLotQty();
+  // Own Common Rules (utils/commonRules.js): PA's own values on a NIFTY run, else common.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(M ? null : "PA");
+  const LOT_SIZE  = M ? M.lotQty : getLotQty(undefined, undefined, "PA");
   // Another market's charges are its own exchange's (BSE for SENSEX).
   const _chgM     = (o) => (M ? getCharges(Object.assign({ exchange: M.exchange }, o)) : getCharges(o));
   // NIFTY_FUT: P&L in rupees (index points × lot − futures charges), as paper books it.

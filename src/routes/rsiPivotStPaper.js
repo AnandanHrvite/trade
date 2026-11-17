@@ -92,6 +92,8 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const MODE        = rt.modeKey;      // "rsi_pivot_st" on NIFTY: tradeLogger / skipLogger / capitalPool key
 const PREFIX      = rt.envPrefix;    // "RSI_PIVOT_ST" on NIFTY ("BN_PIVOT_RSI_ST" on BANKNIFTY)
@@ -153,7 +155,7 @@ function _startCap() {
 
 /** Position size — the one common Lot Multiplier (Settings → Common Rules), on this market's lot. */
 function _lotQty() {
-  return rt.home ? instrumentConfig.getLotQty() : rt.lotQty();
+  return rt.home ? instrumentConfig.getLotQty(undefined, undefined, rt.commonPrefix) : rt.lotQty();
 }
 
 // ── Instrument maths. NIFTY: instrumentMode exactly as before (options, or the

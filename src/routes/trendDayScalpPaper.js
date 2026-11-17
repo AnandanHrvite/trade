@@ -77,6 +77,8 @@ const tradeJournal = require("../utils/tradeJournal");
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const MODE        = rt.modeKey;      // "trend_day_scalp" on NIFTY: tradeLogger / skipLogger / capitalPool key
 const PREFIX      = rt.envPrefix;    // "TDS" on NIFTY

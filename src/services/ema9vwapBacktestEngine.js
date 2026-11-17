@@ -84,7 +84,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const _strat   = opts.prefix ? strategy.forPrefix(opts.prefix) : strategy;
   const _vixMode = opts.prefix ? String(opts.prefix).toLowerCase() : "ema9vwap";
   const LOT_SIZE = opts.lotQty > 0 ? opts.lotQty
-    : (opts.isFutures === true ? getLotQty("NIFTY", "NIFTY_FUTURES") : getLotQty());
+    : (opts.isFutures === true ? getLotQty("NIFTY", "NIFTY_FUTURES") : getLotQty(undefined, undefined, opts.commonPrefix));
   // Another market's exchange (BSE for SENSEX) on every charges call; NIFTY passes none.
   const getCharges = (o) => _getCharges(opts.exchange ? Object.assign({}, o, { exchange: opts.exchange }) : o);
 
@@ -103,7 +103,8 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // NOTE: the entry window is NOT parsed here on purpose. strategy.isEntryWindowOpen()
   // is the single authoritative rule shared with paper/live — duplicating it locally
   // is exactly how the candle-start vs candle-close off-by-one crept in.
-  const _tradeGuards   = require("../utils/tradeGuards");
+  // opts.commonPrefix (NIFTY runs: "EMA9VWAP") → that strategy's Own Common Rules; omitted = common set.
+  const _tradeGuards   = require("../utils/tradeGuards").forStrategy(opts.commonPrefix || null);
 
   // ── Guards mirrored from paper ───────────────────────────────────────────────
   // Candle resolution in minutes (from spacing) — drives the cooldown windows.

@@ -88,6 +88,8 @@ const RES_MIN = strat.RESOLUTION_MIN;
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const MODE               = rt.modeKey;          // "itm20_scalp" on NIFTY: tradeLogger / skipLogger / capitalPool key
 const PREFIX             = rt.envPrefix;        // "ITM20_SCALP" on NIFTY
@@ -129,7 +131,7 @@ function _historyLagMs() {
   const v = parseInt(PV("HISTORY_LAG_MS") || process.env.ITM20_SCALP_HISTORY_LAG_MS || "5000", 10);
   return Number.isFinite(v) && v >= 0 && v <= 60000 ? v : 5000;
 }
-function lotQty() { return rt.home ? instrumentConfig.getLotQty() : rt.lotQty(); }
+function lotQty() { return rt.home ? instrumentConfig.getLotQty(undefined, undefined, rt.commonPrefix) : rt.lotQty(); }
 function _strikeStep() { return rt.home ? instrumentConfig.underlyingOf().strikeStep : rt.strikeStep(); }
 
 // ── Instrument maths. NIFTY: option premium exactly as before. Another

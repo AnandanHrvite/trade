@@ -188,6 +188,8 @@ function barAtMinute(bars, mins) {
  */
 function simulateDay(day, cfg, qty, mkt) {
   const home = !mkt || mkt.key === "NIFTY";
+  // NIFTY run: SIMPLE930's own Common Rules (when its toggle is on); another market: the common set.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(home ? "SIMPLE930" : null);
   const slip  = _slippagePts();
   const audit = {
     date: day.dateStr,
@@ -434,8 +436,8 @@ function simulateDay(day, cfg, qty, mkt) {
 
 // ── Job body ─────────────────────────────────────────────────────────────────
 /** Position size — the one common Lot Multiplier (Settings → Common Rules). */
-function simpleLotQty() {
-  return instrumentConfig.getLotQty();
+function simpleLotQty(prefix) {
+  return instrumentConfig.getLotQty(undefined, undefined, prefix);
 }
 
 /** IST calendar days in [from, to], clamped to today, weekends dropped. */
@@ -473,7 +475,7 @@ async function runJob(id, from, to, mkt) {
   // The index the ATM comes from: NIFTY 50 as always, else the market's own.
   const SPOT = home ? SPOT_SYMBOL : M.spotSymbol;
   const IDX  = home ? "NIFTY" : M.shortLabel;
-  const qty = home ? simpleLotQty() : M.lotQty;
+  const qty = home ? simpleLotQty("SIMPLE930") : M.lotQty;
   const U = home ? null : instrumentConfig.underlyingOf(M.underlying);
   const todayStr = _todayStr();
   const days = tradingDaysIn(from, to, todayStr);

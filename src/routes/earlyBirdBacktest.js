@@ -271,7 +271,7 @@ function _optionModel() {
 /** Contracts per option trade — mirrors earlyBirdPaper's _optionQty exactly. */
 function optionQty(cfg) {
   const lots = (cfg && cfg.optionLots) || earlyBird.getConfig().optionLots;
-  const base = instrumentConfig.getLotQty();
+  const base = instrumentConfig.getLotQty(undefined, undefined, "EARLYBIRD");
   return Math.max(1, lots * base);
 }
 
@@ -742,13 +742,13 @@ function _lockSpace(side, entryFill, opt, cfg) {
 }
 
 /** The lock's live settings, read once per run (the Settings page edits them live). */
-function _lockOpts() {
+function _lockOpts(g) {
   return {
-    enabled:  tradeGuards.PROFIT_LOCK_ENABLED,
-    armPct:   tradeGuards.PROFIT_LOCK_ARM_PCT,
-    floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
-    trailPct: tradeGuards.PROFIT_LOCK_TRAIL_PCT,
-    tiers:    tradeGuards.PROFIT_LOCK_TRAIL_TIERS,
+    enabled:  g.PROFIT_LOCK_ENABLED,
+    armPct:   g.PROFIT_LOCK_ARM_PCT,
+    floorPct: g.PROFIT_LOCK_FLOOR_PCT,
+    trailPct: g.PROFIT_LOCK_TRAIL_PCT,
+    tiers:    g.PROFIT_LOCK_TRAIL_TIERS,
   };
 }
 
@@ -757,21 +757,21 @@ function _lockOpts() {
  * is raised here. Returns { price (raw bar units, before slippage), reason,
  * atClose } or null. Ordering: see the header (PROFIT LOCK ORDERING).
  */
-function _lockExitOnBar(ls, pos, bar, held, isEntryBar, lock) {
+function _lockExitOnBar(ls, pos, bar, held, isEntryBar, lock, g) {
   const L = (px) => Math.max(0.05, ls.toL(px, held));
   const fav = pos.side === "SHORT" ? bar.low  : bar.high;
   const adv = pos.side === "SHORT" ? bar.high : bar.low;
   if (!isEntryBar) {
-    let msg = tradeGuards.checkProfitLock(ls.E, L(bar.open), pos.best, lock);
+    let msg = g.checkProfitLock(ls.E, L(bar.open), pos.best, lock);
     if (msg) return { price: bar.open, reason: `${msg} — bar opened through the floor`, atClose: false };
-    msg = tradeGuards.checkProfitLock(ls.E, L(adv), pos.best, lock);
+    msg = g.checkProfitLock(ls.E, L(adv), pos.best, lock);
     if (msg) {
-      const floor = tradeGuards.exitLevelLtp(ls.E, pos.best, lock);
+      const floor = g.exitLevelLtp(ls.E, pos.best, lock);
       return { price: _r2(ls.toPx(floor, held)), reason: msg, atClose: false };
     }
   }
   if (L(fav) > pos.best) pos.best = L(fav);
-  const msg = tradeGuards.checkProfitLock(ls.E, L(bar.close), pos.best, lock);
+  const msg = g.checkProfitLock(ls.E, L(bar.close), pos.best, lock);
   if (msg) return { price: bar.close, reason: `${msg} (on the bar's close, after its peak)`, atClose: true };
   return null;
 }
@@ -812,7 +812,7 @@ function _walkLeg(setup, bars, cfg, ctx) {
       entryIdx = i;
     }
     const held = Math.max(1, Math.round((bar.time - pos.entryTime) / 60 / cfg.resolutionMins) + 1);
-    const hit = _lockExitOnBar(ls, pos, bar, held, i === entryIdx, ctx.lockFor ? ctx.lockFor(ls.E) : ctx.lock);
+    const hit = _lockExitOnBar(ls, pos, bar, held, i === entryIdx, ctx.lockFor ? ctx.lockFor(ls.E) : ctx.lock, ctx.g);
     if (hit && _num(hit.price)) {
       return { pos, exit: { bar, price: hit.price, type: "PROFIT_LOCK", reason: hit.reason, held, atClose: hit.atClose } };
     }
@@ -848,9 +848,9 @@ function _legTimes(setup, bars, cfg, ctx) {
 // book goes FLAT, so the day's count is the number of book-flat events, not of
 // closed legs. Once it reaches the cap the block runs to the end of the day.
 /** The setups (by reference) the cooldown / day cap drops on this day. */
-function _reentryDropSet(legs, cfg, cooldownSecs, ctxFor) {
+function _reentryDropSet(legs, cfg, cooldownSecs, ctxFor, g) {
   const dropped = new Set();
-  if (!(cooldownSecs > 0) && !(tradeGuards.MAX_TRADES_PER_DAY > 0)) return dropped;
+  if (!(cooldownSecs > 0) && !(g.MAX_TRADES_PER_DAY > 0)) return dropped;
   const timed = legs.map(l => ({ setup: l.setup, t: _legTimes(l.setup, l.bars, cfg, ctxFor) }))
     .filter(x => x.t).sort((a, b) => a.t.trig - b.t.trig);
   const accepted = [];
@@ -860,7 +860,7 @@ function _reentryDropSet(legs, cfg, cooldownSecs, ctxFor) {
     // all of them have exited, and went flat at the latest of those exits.
     const open = accepted.some(a => a.exitTs > x.t.trig);
     if (!open && accepted.length) {
-      if (tradeGuards.dayCapReached(flats + 1)) { dropped.add(x.setup); continue; }
+      if (g.dayCapReached(flats + 1)) { dropped.add(x.setup); continue; }
       if (x.t.trig < Math.max(...accepted.map(a => a.exitTs)) + cooldownSecs) { dropped.add(x.setup); continue; }
       flats += 1;   // that flat event is behind us; this leg opens a new book
     }
@@ -886,6 +886,8 @@ async function runEarlyBirdBacktest(data, onProgress) {
   // leg only, on that market's index. Absent / NIFTY = exactly as before.
   const MKT  = _pairMarket(data && data.market);
   const cfg  = MKT ? _btCfg(MKT) : earlyBird.getConfig();
+  // This run's guards: EARLYBIRD's own Common Rules on NIFTY, the common set elsewhere.
+  const tradeGuards = require("../utils/tradeGuards").forStrategy(MKT ? null : "EARLYBIRD");
   const SLIP = slippagePts();
   const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(cfg.resolutionMins) / 1000;
   // Another market's pair runtime — its EXPIRY_DAY_ONLY switch + expiry calendar.
@@ -898,7 +900,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
   // delta/theta model the other four strategies use. See optionSimCfg.
   const OPT = MKT ? _pairOptionSimCfg(MKT) : optionSimCfg();
   const optQty = MKT ? Math.max(1, cfg.optionLots * MKT.lotQty) : optionQty(cfg);
-  const LOCK = _lockOpts();
+  const LOCK = _lockOpts(tradeGuards);
   // Per-leg walk context: the option leg locks on its modelled premium, a stock
   // leg on its share price.
   // The stop is sized per leg, the same as paper: a stock leg uses the stock stop,
@@ -908,7 +910,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
     const lockFor = !opt ? (E) => Object.assign({}, LOCK, tradeGuards.stockStopOpts(E))
       : opt.isFutures ? (E) => Object.assign({}, LOCK, tradeGuards.futuresStopOpts(E))
       : null;
-    return { SLIP, lock: LOCK, lockFor, opt };
+    return { SLIP, lock: LOCK, lockFor, opt, g: tradeGuards };
   };
   if (earlyBird.tradesOption(cfg)) {
     console.log(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" — ${MKT ? MKT.shortLabel : "NIFTY"} ${MKT && MKT.isFutures ? "futures" : "option"} leg is simulated: ` +
@@ -1027,7 +1029,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
       plan.optionTradeable && plan.optionSetup && plan.optionSetup.ok ? [{ setup: plan.optionSetup, bars: niftyBars }] : [],
       plan.tradeable ? plan.candidates.slice(0, cfg.maxConcurrent).map(setup => ({
         setup, bars: (stockDefs.find(s => s.symbol === setup.symbol) || { byDay: new Map() }).byDay.get(dayKey) || [],
-      })) : []), cfg, REENTRY_COOLDOWN_SECS, ctxFor);
+      })) : []), cfg, REENTRY_COOLDOWN_SECS, ctxFor, tradeGuards);
 
     // ── OPTION LEG. Walked on the SAME NIFTY spot bars, with the SAME engine
     //    calls as a stock, before the stock-leg gate below — in option-only mode

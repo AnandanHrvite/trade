@@ -92,6 +92,8 @@ const NIFTY_INDEX_SYMBOL = 'NSE:NIFTY50-INDEX';
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 // The engine bound to this pair's keys. NIFTY: the module itself (ST_RSI_PIV_BB_*,
 // every call exactly as before); another market: forPrefix(<PAIR PREFIX>), which
@@ -949,7 +951,7 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, meta = {}) {
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    The premium at the fill is known for an automatic entry; otherwise the
   //    assumed premium is used and the block is trued up by the first poll.
-  const _estCost = qty * (_entryLtp != null ? _entryLtp : capitalPool.estimatedPremium());
+  const _estCost = qty * (_entryLtp != null ? _entryLtp : capitalPool.estimatedPremium(MODE));
   const _cap = capitalPool.gate(MODE, _estCost, { side, symbol, qty });
   if (!_cap.ok) {
     if (!_cap.muted) {

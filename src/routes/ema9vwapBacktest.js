@@ -174,7 +174,7 @@ async function _runJob(id, p) {
 
     backtestJobs.updateProgress(id, { phase: 'Running EMA9+VWAP backtest…', pct: 5, current: 0, total: _candles.length - 30 });
     const _result = await runEma9VwapBacktest(_candles, capital,
-      (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles, ...(home ? [] : [_mktOpts]));
+      (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles, home ? { commonPrefix: "EMA9VWAP" } : _mktOpts); // NIFTY: Own Common Rules
     _result.candleCount = _candles.length;
     // The legacy last-run slot (/all-backtest) is NIFTY's; other markets are kept
     // by the /backtest page's own saved runs.

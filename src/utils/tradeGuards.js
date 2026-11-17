@@ -3,6 +3,7 @@
 // cooldown after an exit. Keeps paper and backtest engines aligned.
 
 const tickRecorder = require("./tickRecorder");
+const commonRules  = require("./commonRules");
 
 // Read thresholds LIVE from process.env on each call — not frozen at require()
 // time. Previously these were module-load constants, so a Settings edit only
@@ -14,9 +15,23 @@ function _numOr(raw, def) {
   const n = typeof raw === "number" ? raw : parseFloat(raw);
   return Number.isFinite(n) ? n : def;
 }
-function liveMaxSpreadPts()      { return _numOr(parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2"), 2); }
+// Shared across every strategy's guards: the per-mode closed-trade count
+// (MAX_TRADES_PER_DAY) — keyed by mode, so one Map serves them all.
+const _IST_MS = 19800000, _DAY_MS = 86400000;
+let _dayTrades = new Map();   // "mode|istDay" → trades closed that day
+// Replay harness: run with its own empty count, then put the live one back.
+function _swapDayTradeCounts(next) { const prev = _dayTrades; _dayTrades = next || new Map(); return prev; }
+
+// Every rule below reads its settings through _env(key) = commonRules.get(prefix, key):
+// the common key, or — when this NIFTY strategy has Own Common Rules ON — its
+// own <PREFIX>_<KEY> copy. _build(null) is the common set (module.exports);
+// forStrategy("BB_RSI") gives BB_RSI's set with the same API.
+function _build(prefix) {
+const _env = (k) => commonRules.get(prefix, k);
+
+function liveMaxSpreadPts()      { return _numOr(parseFloat(_env("MAX_BID_ASK_SPREAD_PTS") || "2"), 2); }
 // Common Trade Rules on/off (Settings). Unset = on, so old .env files keep today's behaviour.
-function liveSpreadCheckEnabled() { return String(process.env.MAX_BID_ASK_SPREAD_ENABLED ?? "true").toLowerCase() !== "false"; }
+function liveSpreadCheckEnabled() { return String(_env("MAX_BID_ASK_SPREAD_ENABLED") ?? "true").toLowerCase() !== "false"; }
 
 async function fetchOptionQuote(fyers, symbol) {
   try {
@@ -103,16 +118,16 @@ const INDICATOR_HISTORY_CANDLES = 400;
 // premium seen so far (engines already track this as bestOptionLtp). Returns an
 // exit-reason string when the lock should fire, else null. Both prices must be
 // the option premium, never spot.
-function liveProfitLockArmPct()   { return parseFloat(process.env.PROFIT_LOCK_ARM_PCT   || "8"); }
-function liveProfitLockFloorPct() { return parseFloat(process.env.PROFIT_LOCK_FLOOR_PCT || "5"); }
+function liveProfitLockArmPct()   { return parseFloat(_env("PROFIT_LOCK_ARM_PCT")   || "8"); }
+function liveProfitLockFloorPct() { return parseFloat(_env("PROFIT_LOCK_FLOOR_PCT") || "5"); }
 // Default OFF: unset = no profit lock in any strategy. Turn it on from Settings → Common Rules.
-function liveProfitLockEnabled()  { return String(process.env.PROFIT_LOCK_ENABLED ?? "false").toLowerCase() === "true"; }
+function liveProfitLockEnabled()  { return String(_env("PROFIT_LOCK_ENABLED") ?? "false").toLowerCase() === "true"; }
 // TRAIL — once armed, the floor also follows the peak: it is never below
 // entry + TRAIL% of the best premium gain so far (0 = off, fixed floor only).
 // Added 2026-10-01 after a V2 PE ran 142.75 → 330 with the floor stuck at
 // 149.89. Example at 70: peak 330 → gain 187.25 → floor 142.75 + 131.07 = 273.82.
 // It only ever rises with the peak, so it never widens the fixed floor.
-function liveProfitLockTrailPct() { return parseFloat(process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"); }
+function liveProfitLockTrailPct() { return parseFloat(_env("PROFIT_LOCK_TRAIL_PCT") ?? "70"); }
 
 // TIERS — a tighter trail for small peaks. Live data (502 trades, Jul–Oct
 // 2026): 144 trades peaked ≥+10% premium, and a flat 70% trail still hands back
@@ -123,7 +138,7 @@ function liveProfitLockTrailPct() { return parseFloat(process.env.PROFIT_LOCK_TR
 // Example: entry 100, peak 110 → floor 108.5 (was 107); peak 150 → floor 135.
 // Blank = flat trail only. Peak-on-peak replay: +Rs27.9k vs +Rs21.5k for the
 // flat 70% since 21-Sep — an upper bound, it cannot see shake-outs.
-function liveProfitLockTrailTiers() { return process.env.PROFIT_LOCK_TRAIL_TIERS ?? "20:85,40:80"; }
+function liveProfitLockTrailTiers() { return _env("PROFIT_LOCK_TRAIL_TIERS") ?? "20:85,40:80"; }
 
 function parseTrailTiers(spec) {
   return String(spec || "").split(",").map(t => t.split(":").map(Number))
@@ -183,11 +198,11 @@ function _lockFloorLtp(entryLtp, bestLtp, { armPct, floorPct, enabled, trailPct,
 // Example (5 / 10): buy 100 → stop 95. Peak 104 → still 95 (93.6 is lower).
 //   Peak 110 → stop 99. Peak 150 → stop 135.
 // Default OFF: unset = no strategy uses it. Turn it on from Settings → Common Rules.
-function livePremiumSlEnabled()  { return String(process.env.PREMIUM_SL_ENABLED ?? "false").toLowerCase() === "true"; }
-function livePremiumSlPct()      { return parseFloat(process.env.PREMIUM_SL_PCT ?? "20"); }
+function livePremiumSlEnabled()  { return String(_env("PREMIUM_SL_ENABLED") ?? "false").toLowerCase() === "true"; }
+function livePremiumSlPct()      { return parseFloat(_env("PREMIUM_SL_PCT") ?? "20"); }
 function livePremiumSlTrailPct() {
   // Blank or bad (0, ≥100, not a number) = same as the first stop %.
-  const v = parseFloat(String(process.env.PREMIUM_SL_TRAIL_PCT ?? "").trim());
+  const v = parseFloat(String(_env("PREMIUM_SL_TRAIL_PCT") ?? "").trim());
   return Number.isFinite(v) && v > 0 && v < 100 ? v : livePremiumSlPct();
 }
 
@@ -292,9 +307,9 @@ function futuresStopOpts(_entryLevel) {
 // +STOCK_SL_BE_PCT %, then trail STOCK_SL_TRAIL_PCT % of entry behind the best.
 // Example (1 / 1 / 0.5): buy ₹1000 → stop 990; best 1010 → stop 1005.
 // Pass the result as checkProfitLock / exitLevelLtp options (prices mirrored for a short).
-function liveStockSlPct()      { return parseFloat(process.env.STOCK_SL_PCT ?? "1"); }
-function liveStockSlBePct()    { return parseFloat(process.env.STOCK_SL_BE_PCT ?? "1"); }
-function liveStockSlTrailPct() { return parseFloat(process.env.STOCK_SL_TRAIL_PCT ?? "0.5"); }
+function liveStockSlPct()      { return parseFloat(_env("STOCK_SL_PCT") ?? "1"); }
+function liveStockSlBePct()    { return parseFloat(_env("STOCK_SL_BE_PCT") ?? "1"); }
+function liveStockSlTrailPct() { return parseFloat(_env("STOCK_SL_TRAIL_PCT") ?? "0.5"); }
 function stockStopOpts(entryPrice) {
   const trailPct = liveStockSlTrailPct();
   return {
@@ -391,8 +406,8 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, opts = {}) {
 // and its close time for a candle-close exit.
 // Manual entries bypass it.
 function liveReentryCooldownCandles() {
-  if (String(process.env.EXIT_REENTRY_COOLDOWN_ENABLED ?? "true").toLowerCase() === "false") return 0;
-  const n = parseInt(process.env.EXIT_REENTRY_COOLDOWN_CANDLES ?? "2", 10);
+  if (String(_env("EXIT_REENTRY_COOLDOWN_ENABLED") ?? "true").toLowerCase() === "false") return 0;
+  const n = parseInt(_env("EXIT_REENTRY_COOLDOWN_CANDLES") ?? "2", 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 // Cooldown length in ms for a strategy running on `resMin`-minute candles.
@@ -407,10 +422,8 @@ function reentryCooldownMs(resMin) {
 // the end of that day. 0/blank = off. Counted in memory per process, by the
 // exit's own clock (so replay/sim days count on their replayed date); a PM2
 // restart starts the count again. Manual entries are not blocked, same as the wait.
-const _IST_MS = 19800000, _DAY_MS = 86400000;
-let _dayTrades = new Map();   // "mode|istDay" → trades closed that day
 function liveMaxTradesPerDay() {
-  const n = parseInt(process.env.MAX_TRADES_PER_DAY ?? "0", 10);
+  const n = parseInt(_env("MAX_TRADES_PER_DAY") ?? "0", 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 function _istDay(ms) { return Math.floor((ms + _IST_MS) / _DAY_MS); }
@@ -441,8 +454,6 @@ function dayCapReached(closedToday) {
   const cap = liveMaxTradesPerDay();
   return cap > 0 && Number.isFinite(closedToday) && closedToday >= cap;
 }
-// Replay harness: run with its own empty count, then put the live one back.
-function _swapDayTradeCounts(next) { const prev = _dayTrades; _dayTrades = next || new Map(); return prev; }
 
 // Epoch-ms until which entries stay blocked after an exit at `exitMs`; 0 = no block.
 // Pass the route's mode key so the exit also counts toward MAX_TRADES_PER_DAY.
@@ -452,7 +463,7 @@ function reentryCooldownUntil(exitMs, resMin, mode) {
   return Math.max(wait, _dayCapUntil(mode, exitMs));
 }
 
-module.exports = {
+return {
   fetchOptionQuote,
   checkSpread,
   checkProfitLock,
@@ -470,7 +481,6 @@ module.exports = {
   reentryCooldownUntil,
   dayCapUntil,
   dayCapReached,
-  _swapDayTradeCounts,
   INDICATOR_HISTORY_CANDLES,
   // Live getters (kept under the old names for callers that read them for display).
   get DEFAULT_MAX_SPREAD_PTS()     { return liveMaxSpreadPts(); },
@@ -485,3 +495,22 @@ module.exports = {
   get EXIT_REENTRY_COOLDOWN_CANDLES() { return liveReentryCooldownCandles(); },
   get MAX_TRADES_PER_DAY()         { return liveMaxTradesPerDay(); },
 };
+}
+
+const _base = _build(null);
+const _byPrefix = new Map();
+/** The guards for one NIFTY strategy (its env prefix); null/unknown = the common set. */
+function forStrategy(prefix) {
+  if (!prefix || !commonRules.STRATEGIES.includes(prefix)) return _base;
+  if (!_byPrefix.has(prefix)) {
+    const g = _build(prefix);
+    Object.defineProperty(g, "forStrategy", { value: forStrategy, enumerable: false });
+    Object.defineProperty(g, "_swapDayTradeCounts", { value: _swapDayTradeCounts, enumerable: false });
+    _byPrefix.set(prefix, g);
+  }
+  return _byPrefix.get(prefix);
+}
+Object.defineProperty(_base, "forStrategy", { value: forStrategy, enumerable: false });
+Object.defineProperty(_base, "_swapDayTradeCounts", { value: _swapDayTradeCounts, enumerable: false });
+
+module.exports = _base;

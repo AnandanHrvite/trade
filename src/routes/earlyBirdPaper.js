@@ -238,6 +238,8 @@ function _resetRateLimiter() { _reqLog.length = 0; _rateGate = Promise.resolve()
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const MODE_KEY    = rt.modeKey;     // "early_bird" on NIFTY: tradeLogger / skipLogger / capitalPool key
 const MODE        = MODE_KEY;       // the capitalPool key (the name the capital-gate test reads)
@@ -270,7 +272,7 @@ function _cfg() {
 }
 
 /** Contracts per lot: NIFTY's getLotQty() as always, else this market's. */
-function _lotQty() { return rt.home ? instrumentConfig.getLotQty() : rt.lotQty(); }
+function _lotQty() { return rt.home ? instrumentConfig.getLotQty(undefined, undefined, rt.commonPrefix) : rt.lotQty(); }
 
 // ── Instrument maths. NIFTY: instrumentMode exactly as before. Another market:
 //    its own instrument (NIFTY_FUT trades the month future at the index level)
@@ -1124,7 +1126,7 @@ async function _stepOptionLeg() {
           pos.isFutures ? tradeGuards.futuresStopOpts(pos.optionEntryLtp) : undefined), ltp, spot);
       }
       const ex = earlyBird.checkProfitLockExit(lockSide, pos.optionEntryLtp, ltp, pos.bestPremium,
-        pos.isFutures ? tradeGuards.futuresStopOpts(pos.optionEntryLtp) : undefined);
+        pos.isFutures ? tradeGuards.futuresStopOpts(pos.optionEntryLtp) : undefined, tradeGuards);
       if (ex) {
         // `price` is what _closeOptionPosition reads as the SPOT (the index level
         // itself for futures); the exit premium is fetched there.
@@ -2099,7 +2101,7 @@ function _checkExits() {
       tradeJournal.onTick(pos, { favPts: _fav, pnlRs: _r2(_fav * pos.qty), spot: price, ltp: price, nowMs: Date.now() });
       _journalStop(pos, _lockLevel(pos.side, pos.entryPrice, best, tradeGuards.stockStopOpts(pos.entryPrice)), price, price);
     }
-    const ex = earlyBird.checkProfitLockExit(pos.side, pos.entryPrice, price, best, tradeGuards.stockStopOpts(pos.entryPrice));
+    const ex = earlyBird.checkProfitLockExit(pos.side, pos.entryPrice, price, best, tradeGuards.stockStopOpts(pos.entryPrice), tradeGuards);
     if (ex) {
       log(`🔒 ${LOG_TAG} ${pos.symbol} ${ex.reason}`);
       _closePosition(pos, ex);

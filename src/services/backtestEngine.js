@@ -201,15 +201,18 @@ function getISTHHMM(unixSec) {
 //                      (ONE_TRADE_PER_MOVE_ENABLED, CONFIRM_CANDLE_ENABLED) under it
 //   lotQty:   the market's lot (backtestMarket.context().lotQty) instead of NIFTY's
 //   exchange: "BSE" → BSE exchange-txn charges (SENSEX); passed to getCharges
+//   commonPrefix: "EMA_RSI_ST" → that strategy's Own Common Rules (NIFTY runs only)
 // Omitted → exactly the original behaviour (EMA_RSI_ST_* keys, global instrument).
 async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress, activeFromTs = 0, btOpts) {
+  const _btCommonPfx = (btOpts && btOpts.commonPrefix) || null;
+  const tradeGuards  = require("../utils/tradeGuards").forStrategy(_btCommonPfx); // this run's guards (common set when omitted)
   const _btForceFut = !!(btOpts && btOpts.isFutures === true);
   const _btPrefix   = (btOpts && btOpts.prefix) || "EMA_RSI_ST";
   const _btDefPfx   = _btPrefix === "EMA_RSI_ST";
   const trades    = [];
   let position    = null;
   const _btLot     = btOpts && Number.isFinite(btOpts.lotQty) && btOpts.lotQty > 0 ? btOpts.lotQty : null;
-  const LOT_SIZE  = _btLot || (_btForceFut ? getLotQty(undefined, "NIFTY_FUTURES") : getLotQty());
+  const LOT_SIZE  = _btLot || (_btForceFut ? getLotQty(undefined, "NIFTY_FUTURES") : getLotQty(undefined, undefined, _btCommonPfx));
   // Another market's exchange (BSE for SENSEX) for the charges; NIFTY passes none.
   const _btExch   = btOpts && btOpts.exchange ? { exchange: btOpts.exchange } : {};
 

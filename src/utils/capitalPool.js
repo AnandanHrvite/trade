@@ -123,8 +123,12 @@ function _sumBlocks(s) {
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-function isEnabled() {
-  return (process.env.PAPER_CAPITAL_GATE_ENABLED || "true").toLowerCase() !== "false";
+// strategyKey (optional) = a mode key: a NIFTY strategy with Own Common Rules ON
+// reads its own <PREFIX>_PAPER_CAPITAL_GATE_ENABLED (utils/commonRules.js).
+function isEnabled(strategyKey) {
+  const cr = require("./commonRules");
+  const v = cr.get(cr.prefixForMode(strategyKey), "PAPER_CAPITAL_GATE_ENABLED");
+  return (v || "true").toLowerCase() !== "false";
 }
 
 /**
@@ -133,8 +137,9 @@ function isEnabled() {
  * callback and only stamp the real premium on the first option poll ~1s later —
  * they block this estimate up front and true it up via `updateBlock()`.
  */
-function estimatedPremium() {
-  const v = parseFloat(process.env.PAPER_CAPITAL_EST_PREMIUM || "200");
+function estimatedPremium(strategyKey) {
+  const cr = require("./commonRules");
+  const v = parseFloat(cr.get(cr.prefixForMode(strategyKey), "PAPER_CAPITAL_EST_PREMIUM") || "200");
   return Number.isFinite(v) && v > 0 ? v : 200;
 }
 
@@ -291,7 +296,7 @@ function check(strategyKey, cost, opts = {}) {
   const off = (reason) => ({ ok: true, disabled: true, cost: 0, available: 0, broker: brokerOf(strategyKey), reason });
   try {
     if (opts.sim || _inReplay(strategyKey)) return off("capital gate skipped (simulation)");
-    if (!isEnabled())            return off("capital gate disabled");
+    if (!isEnabled(strategyKey)) return off("capital gate disabled");
     const broker = brokerOf(strategyKey);
     if (!broker)                 return off(`capital gate: unknown strategy "${strategyKey}"`);
     const need = Number(cost);
@@ -411,7 +416,7 @@ function getAlerts(sinceMs) {
  */
 function block(strategyKey, cost, meta = {}, opts = {}) {
   try {
-    if (opts.sim || _inReplay(strategyKey) || !isEnabled() || !brokerOf(strategyKey)) return;
+    if (opts.sim || _inReplay(strategyKey) || !isEnabled(strategyKey) || !brokerOf(strategyKey)) return;
     const need = Number(cost);
     if (!Number.isFinite(need) || need <= 0) return;
     const s = _liveOf(strategyKey);

@@ -711,11 +711,13 @@ function getSymbolSync(side = "CE", underlying, instrument) {
   return `${u.exchange}:${u.optPrefix}${expiry}${strike}${side}`;
 }
 
-function getLotQty(underlying, instrument) {
+// commonPrefix (optional): a NIFTY strategy's env prefix — with its Own Common
+// Rules ON it sizes off its own <PREFIX>_LOT_MULTIPLIER (utils/commonRules.js).
+function getLotQty(underlying, instrument, commonPrefix) {
   // Clamp the lot multiplier to a sane ceiling so a fat-finger LOT_MULTIPLIER
   // (e.g. 50) can't silently size every order 50× on the live path. Ceiling is
   // configurable via MAX_LOT_MULTIPLIER (default 10); invalid/≤0 falls back to 1.
-  let multiplier = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
+  let multiplier = parseInt(require("../utils/commonRules").get(commonPrefix || null, "LOT_MULTIPLIER") || "1", 10);
   if (!Number.isFinite(multiplier) || multiplier <= 0) multiplier = 1;
   let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
   if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;   // garbage env must not disable the clamp

@@ -276,7 +276,8 @@ check("pair fields are generated from the home section (one per own key), groupe
     const fields = allFields.filter(f => !f.pairOnly);
     // A running pair's spread limit is its pair-only row, also when the strategy
     // has a spread key of its own (TREND_PB_MAX_SPREAD_PTS) — one row per key.
-    const own = sec.fields.filter(f => pairs.pairKey(p, f.key) && !/_LIVE_|_POS_FILE$/.test(f.key)
+    // Own Common Rules fields are NIFTY only — never generated into a pair pane.
+    const own = sec.fields.filter(f => pairs.pairKey(p, f.key) && !/_LIVE_|_POS_FILE$/.test(f.key) && !f.ownCommon
       && !(p.runs && pairs.pairKey(p, f.key) === `${p.envPrefix}_MAX_SPREAD_PTS`));
     assert.strictEqual(fields.length, own.length, p.id);
     const keys = allFields.map(f => f.key);
@@ -394,17 +395,19 @@ section("Settings page");
 
 const html = renderSettings();
 
-check("NIFTY / STOCKS strategy sections render as before — only the Trade days field is new", () => {
+check("NIFTY / STOCKS strategy sections render as before — only Trade days + Own Common Rules are new", () => {
   const now = settingsStructure(html);
+  const ownCommonKeys = new Set(require("../src/utils/commonRules").allOwnKeys());
   assert.deepStrictEqual(Object.keys(now).sort(), Object.keys(baseline.settings).sort(), "same sections on screen");
   for (const [id, was] of Object.entries(baseline.settings)) {
     const cur = now[id];
     const added = cur.keys.filter(k => !was.keys.includes(k));
-    for (const k of added) assert.ok(/_EXPIRY_DAY_ONLY$/.test(k), `${id}: unexpected new key ${k}`);
+    for (const k of added) assert.ok(/_EXPIRY_DAY_ONLY$/.test(k) || ownCommonKeys.has(k), `${id}: unexpected new key ${k}`);
     assert.deepStrictEqual(cur.keys.filter(k => !added.includes(k)), was.keys, `${id}: keys / order changed`);
     if (added.length) {
-      assert.deepStrictEqual(cur.keys.slice(-added.length), added, `${id}: Trade days is appended last`);
-      assert.deepStrictEqual(cur.tabs, [...was.tabs, "Trade days"], `${id}: tabs`);
+      assert.deepStrictEqual(cur.keys.slice(-added.length), added, `${id}: Trade days / Own Common Rules are appended last`);
+      const newTabs = [added.some(k => /_EXPIRY_DAY_ONLY$/.test(k)) && "Trade days", added.some(k => ownCommonKeys.has(k)) && "Own Common Rules"].filter(Boolean);
+      assert.deepStrictEqual(cur.tabs, [...was.tabs, ...newTabs], `${id}: tabs`);
     } else {
       assert.deepStrictEqual(cur.tabs, was.tabs, `${id}: tabs`);
     }

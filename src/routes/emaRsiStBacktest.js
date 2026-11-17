@@ -83,8 +83,8 @@ async function _runJob(id, p) {
   const M    = backtestMarket.context(p.market || "NIFTY");
   const home = M.key === "NIFTY";
   const symbol = home ? p.symbol : M.spotSymbol;
-  // NIFTY passes no options (the engine's original behaviour).
-  const btOpts = home ? undefined : { isFutures: M.isFutures, lotQty: M.lotQty, exchange: M.exchange };
+  // NIFTY passes only its Own Common Rules prefix (otherwise the engine's original behaviour).
+  const btOpts = home ? { commonPrefix: "EMA_RSI_ST" } : { isFutures: M.isFutures, lotQty: M.lotQty, exchange: M.exchange };
   try {
     backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
     const strategy = getActiveStrategy();

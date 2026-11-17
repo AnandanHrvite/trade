@@ -149,6 +149,8 @@ function getConfig(prefix) {
   const sessionStartMin = _parseHHMM(P ? _rawEnv("PREV_ORB_SCALP_SESSION_START", P) : process.env.PREV_ORB_SCALP_SESSION_START, 9 * 60 + 15);
   const orMins = _intEnv("PREV_ORB_SCALP_OR_MINS", 15, 3, 120, P);
   return {
+    // Own Common Rules prefix (utils/commonRules.js): NIFTY home only; a pair reads the common keys.
+    commonPrefix: P ? null : NAME,
     // The ENTRY chart. The 15-min analysis candle is aggregated from it.
     resolutionMins:   _intEnv("PREV_ORB_SCALP_RESOLUTION", 3, 1, 15, P),
     orMins,
@@ -358,7 +360,7 @@ function getSignal(candles, opts) {
   // before the window opens is still the day's first break, so it spends the setup
   // (refused below) instead of letting a stale break be chased when the window opens.
   const today = lv.day;
-  const floorMin = commonTradeWindow.entryStartFloor(cfg.entryStartMin);
+  const floorMin = commonTradeWindow.entryStartFloor(cfg.entryStartMin, cfg.commonPrefix);
   let first = null;
   for (const c of candles) {
     if (!_okBar(c) || _istDayOf(c.time) !== today) continue;

@@ -99,6 +99,8 @@ const DATA_DIR = path.join(_HOME, "trading-data");
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const MODE              = rt.modeKey;     // "simple930" on NIFTY: tradeLogger / skipLogger / capitalPool key
 const PREFIX            = rt.envPrefix;   // "SIMPLE930" on NIFTY
@@ -154,7 +156,7 @@ function _ltpStaleMs() {
 
 /** Position size — the one common Lot Multiplier (Settings → Common Rules), on this market's lot. */
 function simpleLotQty() {
-  return rt.home ? instrumentConfig.getLotQty() : rt.lotQty();
+  return rt.home ? instrumentConfig.getLotQty(undefined, undefined, rt.commonPrefix) : rt.lotQty();
 }
 
 function ensureDir() {

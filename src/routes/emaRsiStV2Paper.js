@@ -77,6 +77,8 @@ const pairRuntime   = require("../utils/pairRuntime");
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const ACTIVE = rt.tag;                    // "EMA_RSI_ST_V2" on NIFTY
 const MODE   = rt.modeKey;                // logger / capital / skip key
@@ -924,7 +926,7 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, isIntraCandl
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    The real premium is stamped by the first option poll (~1s from now), so
   //    the gate uses the assumed premium and the block is trued up there.
-  const _estCost = qty * capitalPool.estimatedPremium();
+  const _estCost = qty * capitalPool.estimatedPremium(MODE);
   const _cap = capitalPool.gate(MODE, _estCost, { side, symbol, qty }, { sim: (ptState._simMode || ptState._simSession) });
   if (!_cap.ok) {
     if (!_cap.muted) {
@@ -1773,7 +1775,7 @@ function onTick(tick) {
       // Capital pre-check — a refused entry must not pay for a symbol lookup and a
       // Fyers quote on every tick of the bar. Same gate simulateBuy runs; muted
       // repeats stay refused without re-logging.
-      const _capIntra = capitalPool.gate(MODE, rt.lotQty() * capitalPool.estimatedPremium(), { side, qty: rt.lotQty() }, { sim: (ptState._simMode || ptState._simSession) });
+      const _capIntra = capitalPool.gate(MODE, rt.lotQty() * capitalPool.estimatedPremium(MODE), { side, qty: rt.lotQty() }, { sim: (ptState._simMode || ptState._simSession) });
       if (!_capIntra.ok && !_capIntra.muted) {
         log(`❌ [PAPER] Intra-candle entry REFUSED — ${_capIntra.reason}`);
         skipLogger.appendSkipLog(MODE, { gate: "capital", reason: _capIntra.reason, spot: ltp, side, signal, path: "intra-candle", cost: _capIntra.cost, available: _capIntra.available });

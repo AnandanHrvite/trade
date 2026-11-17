@@ -63,6 +63,8 @@ const tradeJournal  = require("../utils/tradeJournal");
 // ═══════════════════════════════════════════════════════════════════════════════
 function create(pair) {
 const rt     = pairRuntime.forPair(pair);
+// Guards for THIS run: the strategy's own Common Rules on NIFTY when its toggle is ON, else the common set.
+const tradeGuards = rt.guards();
 const router = express.Router();
 const MODE   = rt.modeKey;                // "pa" on NIFTY — logger / skip / capital key
 const PREFIX = rt.envPrefix;              // "PA" on NIFTY — this pair's env prefix
@@ -437,7 +439,7 @@ function simulateBuy(symbol, side, qty, price, reason, spotAtEntry, entryMeta = 
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    The real premium is stamped by the first option poll (~1s from now), so
   //    the gate uses the assumed premium and the block is trued up there.
-  const _estCost = qty * capitalPool.estimatedPremium();
+  const _estCost = qty * capitalPool.estimatedPremium(MODE);
   const _cap = capitalPool.gate(MODE, _estCost, { side, symbol, qty }, { sim: (state._simMode || state._simSession) });
   if (!_cap.ok) {
     if (!_cap.muted) {
