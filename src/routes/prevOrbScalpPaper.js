@@ -272,7 +272,7 @@ function _freshState() {
     _lastEntryAttemptMs: null,
     _pendingEntry:  null,
     _incompleteLogged: false,
-    _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms), see simulateSell
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),  // wait-after-any-exit cooldown (epoch ms), see simulateSell
     optionQuote:    null,   // another market: latest bid/ask of the held contract (fill at the bid)
     _expiryDayBlocked: false, // another market: <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day
   };
@@ -794,7 +794,7 @@ function simulateSell(reason) {
   // Clear the position FIRST so a re-entrant tick can never double-sell it.
   state.position = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin(), MODE);
   // ...which means a throw anywhere below (trade log, persistence) would leave the
   // position cleared with NO notifyExit. The finally guarantees it.
   let _exitNotified = false;

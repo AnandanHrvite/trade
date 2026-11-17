@@ -803,7 +803,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   state.optionQuote = null;
   capitalPool.release(MODE, netPnl, { sim: (state._simMode || state._simSession) });
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), BB_RSI_RES);
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), BB_RSI_RES, MODE);
 
   if (!state._simMode) {
     notifyExit({
@@ -1371,7 +1371,7 @@ router.get("/start", async (req, res) => {
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
     optionLtp: null, optionSymbol: null, optionChart: null,
-    _reentryBlockUntil: 0,
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),
     _expiryDayBlocked: _expiryBlocked,
     _armedSignal: null, _entryInFlight: false,
     _simSession: false,   // a real session — persistence is live again
@@ -3303,7 +3303,7 @@ router.post("/simulate/start", async (req, res) => {
       log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
       sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
       optionLtp: null, optionSymbol: null, optionChart: null,
-      _reentryBlockUntil: 0,
+      _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),
       _expiryDayBlocked: false,
       _armedSignal: null, _entryInFlight: false,
       _simMode: true, _simScenario: label,

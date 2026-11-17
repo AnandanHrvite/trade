@@ -194,7 +194,7 @@ function _freshState() {
     optionLtpUpdatedAt: null,
     log:            [],
     _sessionId:     null,
-    _reentryBlockUntil: 0,     // wait-after-any-exit cooldown (epoch ms)
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),     // wait-after-any-exit cooldown (epoch ms)
     optionQuote:    null,      // latest bid/ask of the held contract (non-NIFTY fills)
     _expiryDayBlocked: false,  // <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day (non-NIFTY)
   };
@@ -684,7 +684,7 @@ function simulateSell(reason, kind) {
   capitalPool.release(MODE, pnl);
   try { rt.persist.clear(); } catch (_) {}
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN);
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN, MODE);
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();

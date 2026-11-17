@@ -1256,7 +1256,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // One trade per move — this side waits for a SuperTrend flip.
   ptState._moveLockSide = side;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
+  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution(), MODE);
 
   // Notify active strategy (optional callbacks for strategy-level state tracking)
   const activeStrat = _engine();
@@ -2203,7 +2203,7 @@ router.get("/start", async (req, res) => {
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
   ptState._slHitCandleTime     = null;
-  ptState._reentryBlockUntil   = 0;
+  ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
   ptState._moveLockSide        = null;
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
@@ -4625,7 +4625,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._cachedCE            = null;
     ptState._cachedPE            = null;
     ptState._slHitCandleTime     = null;
-    ptState._reentryBlockUntil   = 0;
+    ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
     ptState._moveLockSide        = null;
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;

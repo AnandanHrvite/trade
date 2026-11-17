@@ -259,7 +259,7 @@ function _freshState() {
     dayClosedReason: null,
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
-    _reentryBlockUntil: 0,   // wait-after-any-exit cooldown (epoch ms), see simulateSell
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),   // wait-after-any-exit cooldown (epoch ms), see simulateSell
     _sessionId:     null,
     _staleSession:  false,
     _staleSkipLoggedMs: null,
@@ -1033,7 +1033,7 @@ function simulateSell(reason, opts) {
   state.position = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles
   // (1-min: the premium-bar resolution, the one the backtest walks).
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), PREMIUM_BAR_MIN);
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), PREMIUM_BAR_MIN, MODE);
   capitalPool.release(MODE, pnl);
   try {
     if (rt.home) require("../utils/positionPersist").clearSimple930Position();

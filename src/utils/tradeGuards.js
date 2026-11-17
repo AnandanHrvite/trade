@@ -401,10 +401,49 @@ function reentryCooldownMs(resMin) {
   const r = parseFloat(resMin);
   return n > 0 && Number.isFinite(r) && r > 0 ? n * r * 60 * 1000 : 0;
 }
+// ── Max trades per day (all strategies) ─────────────────────────────────────
+// MAX_TRADES_PER_DAY = N: once a strategy (one mode key = one strategy on one
+// market) has CLOSED N trades in an IST day, the wait-after-exit block runs to
+// the end of that day. 0/blank = off. Counted in memory per process, by the
+// exit's own clock (so replay/sim days count on their replayed date); a PM2
+// restart starts the count again. Manual entries are not blocked, same as the wait.
+const _IST_MS = 19800000, _DAY_MS = 86400000;
+let _dayTrades = new Map();   // "mode|istDay" → trades closed that day
+function liveMaxTradesPerDay() {
+  const n = parseInt(process.env.MAX_TRADES_PER_DAY ?? "0", 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function _istDay(ms) { return Math.floor((ms + _IST_MS) / _DAY_MS); }
+// Count one closed trade; returns end-of-IST-day ms if the cap is now reached, else 0.
+function _dayCapUntil(mode, exitMs) {
+  if (!mode || !Number.isFinite(exitMs)) return 0;
+  const day = _istDay(exitMs);
+  for (const k of _dayTrades.keys()) if (Number(k.slice(k.lastIndexOf("|") + 1)) < day - 1) _dayTrades.delete(k);
+  const key = `${mode}|${day}`;
+  const n = (_dayTrades.get(key) || 0) + 1;
+  _dayTrades.set(key, n);
+  const cap = liveMaxTradesPerDay();
+  if (cap <= 0 || n < cap) return 0;
+  console.log(`🛑 [${mode}] Max trades per day reached (${n}/${cap}) — no new entries for the rest of today.`);
+  return (day + 1) * _DAY_MS - _IST_MS - 1;
+}
+// For a session (re)start: end of today if this mode already used its trades, else 0 —
+// so Stop/Start mid-day does not hand a capped strategy a fresh trade.
+function dayCapUntil(mode, nowMs = Date.now()) {
+  const cap = liveMaxTradesPerDay();
+  if (!mode || cap <= 0 || !Number.isFinite(nowMs)) return 0;
+  const day = _istDay(nowMs);
+  return (_dayTrades.get(`${mode}|${day}`) || 0) >= cap ? (day + 1) * _DAY_MS - _IST_MS - 1 : 0;
+}
+// Replay harness: run with its own empty count, then put the live one back.
+function _swapDayTradeCounts(next) { const prev = _dayTrades; _dayTrades = next || new Map(); return prev; }
+
 // Epoch-ms until which entries stay blocked after an exit at `exitMs`; 0 = no block.
-function reentryCooldownUntil(exitMs, resMin) {
+// Pass the route's mode key so the exit also counts toward MAX_TRADES_PER_DAY.
+function reentryCooldownUntil(exitMs, resMin, mode) {
   const ms = reentryCooldownMs(resMin);
-  return ms > 0 && Number.isFinite(exitMs) ? exitMs + ms : 0;
+  const wait = ms > 0 && Number.isFinite(exitMs) ? exitMs + ms : 0;
+  return Math.max(wait, _dayCapUntil(mode, exitMs));
 }
 
 module.exports = {
@@ -423,6 +462,8 @@ module.exports = {
   exitLevelLtp,
   reentryCooldownMs,
   reentryCooldownUntil,
+  dayCapUntil,
+  _swapDayTradeCounts,
   INDICATOR_HISTORY_CANDLES,
   // Live getters (kept under the old names for callers that read them for display).
   get DEFAULT_MAX_SPREAD_PTS()     { return liveMaxSpreadPts(); },
@@ -435,4 +476,5 @@ module.exports = {
   get PREMIUM_SL_PCT()             { return livePremiumSlPct(); },
   get PREMIUM_SL_TRAIL_PCT()       { return livePremiumSlTrailPct(); },
   get EXIT_REENTRY_COOLDOWN_CANDLES() { return liveReentryCooldownCandles(); },
+  get MAX_TRADES_PER_DAY()         { return liveMaxTradesPerDay(); },
 };

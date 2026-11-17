@@ -1449,7 +1449,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     return [bar];
   }
 
+  let _liveDayTrades = null;
   function install() {
+    // MAX_TRADES_PER_DAY: the run counts its own trades; the live count is put back in uninstall().
+    _liveDayTrades = require("../utils/tradeGuards")._swapDayTradeCounts(new Map());
     // Drop any bars a previous run left behind — the harness object is per-run,
     // but resetting here keeps install/uninstall symmetrical and makes a
     // re-install on the same harness safe.
@@ -1934,6 +1937,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   function disableDateShim() { if (_dateShimActive)  { _dateShimActive = false; global.Date = _OrigDate; } }
 
   function uninstall() {
+    if (_liveDayTrades) { try { require("../utils/tradeGuards")._swapDayTradeCounts(_liveDayTrades); } catch (_) {} _liveDayTrades = null; }
     // Defensive: never leave the Date constructor shim installed past a run.
     try { disableDateShim(); } catch (_) {}
     _base1m.clear();

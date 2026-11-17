@@ -423,7 +423,7 @@ function _freshState() {
     // holds) — the capital pool must then stop adding sessionPnl on top of it.
     _saved:         false,
     _entryLocks:    new Set(),   // symbols with an entry in flight
-    _reentryBlockUntil: 0,       // wait-after-exit cooldown (epoch ms) — see _reentryBlocked
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),       // wait-after-exit cooldown (epoch ms) — see _reentryBlocked
   };
 }
 
@@ -436,7 +436,7 @@ function _reentryBlocked() {
 }
 function _armReentryBlock(s) {
   if (s.positions.size || s.optionPosition) return;
-  s._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _cfg().resolutionMins);
+  s._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _cfg().resolutionMins, MODE);
 }
 
 function log(msg) {

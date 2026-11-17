@@ -280,7 +280,7 @@ function _freshState() {
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
     _pendingEntry:  null,
-    _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms), see simulateSell
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),  // wait-after-any-exit cooldown (epoch ms), see simulateSell
     // Another market only (never set on NIFTY):
     optionQuote:    null,   // last bid/ask of the held option — its exit fill at the bid
     _expiryDayBlocked: false, // <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day
@@ -912,7 +912,7 @@ function simulateSell(reason) {
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin(), MODE);
 }
 
 function _closeDay(reason) {

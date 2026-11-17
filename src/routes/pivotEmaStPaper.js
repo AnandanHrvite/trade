@@ -1272,7 +1272,7 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime) {
   if (!rt.home) ptState.optionQuote = null;
   try { rt.persist.clear(); } catch (_) {}
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), getTradeResolution());
+  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), getTradeResolution(), MODE);
   capitalPool.release(MODE, netPnl);
 }
 
@@ -1992,7 +1992,7 @@ router.get("/start", async (req, res) => {
   ptState.optionSymbol   = null;
   ptState.optionChart    = null;
   ptState._consecutiveLosses   = 0;
-  ptState._reentryBlockUntil   = 0;
+  ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
   _chartSeriesCache = { key: null, value: null };
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;

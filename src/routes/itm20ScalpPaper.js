@@ -223,7 +223,7 @@ function _freshState() {
     _pendingEntry:  null,
     _lastSkipNote:  null,
     _incompleteLogged: false,
-    _reentryBlockUntil: 0,
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),
     optionQuote:    null,   // another market: the held contract's last bid / ask (its exit fill)
     _expiryDayBlocked: false, // another market: <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day
   };
@@ -783,7 +783,7 @@ function simulateSell(reason, code) {
   // Clear the position FIRST so a re-entrant tick can never double-sell it.
   state.position = null;
   state.lastExitSec = Math.floor(Date.now() / 1000);
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN);
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN, MODE);
   let _exitNotified = false;
   let trade = null;
   try {

@@ -287,7 +287,7 @@ function _freshState() {
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
     _pendingEntry:  null,   // a signalled entry whose FILL failed — retried per poll
-    _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms), see simulateSell
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),  // wait-after-any-exit cooldown (epoch ms), see simulateSell
     optionQuote:    null,   // another market: latest bid/ask of the held contract (fill at the bid)
     _expiryDayBlocked: false, // another market: <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day
   };
@@ -1001,7 +1001,7 @@ function simulateSell(reason) {
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin(), MODE);
 }
 
 function _closeDay(reason) {

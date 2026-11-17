@@ -132,5 +132,37 @@ check("every strategy backtest", () => {
   assert.deepStrictEqual(missing, [], `backtests without the cooldown: ${missing.join(", ")}`);
 });
 
+section("MAX_TRADES_PER_DAY — per strategy, per IST day");
+check("cap 1: first exit blocks that mode to end of IST day; other modes untouched", () => {
+  const prev = process.env.MAX_TRADES_PER_DAY;
+  const saved = guards._swapDayTradeCounts(new Map());
+  try {
+    process.env.MAX_TRADES_PER_DAY = "1";
+    const exit = Date.parse("2026-11-17T10:20:00+05:30");
+    const eod  = Date.parse("2026-11-18T00:00:00+05:30") - 1;
+    assert.strictEqual(guards.dayCapUntil("t_a", exit), 0, "no trade yet → no block");
+    assert.strictEqual(guards.reentryCooldownUntil(exit, 5, "t_a"), eod);
+    assert.strictEqual(guards.dayCapUntil("t_a", exit + 60000), eod, "restart keeps the block");
+    assert.strictEqual(guards.dayCapUntil("t_b", exit), 0, "another strategy is free");
+    assert.strictEqual(guards.dayCapUntil("t_a", Date.parse("2026-11-18T10:00:00+05:30")), 0, "next day is free");
+    process.env.MAX_TRADES_PER_DAY = "2";
+    assert.strictEqual(guards.reentryCooldownUntil(exit, 5, "t_c"), exit + 10 * 60 * 1000, "1st of 2 → normal wait");
+    assert.strictEqual(guards.reentryCooldownUntil(exit, 5, "t_c"), eod, "2nd of 2 → day over");
+    process.env.MAX_TRADES_PER_DAY = "0";
+    assert.strictEqual(guards.reentryCooldownUntil(exit, 5, "t_d"), exit + 10 * 60 * 1000, "0 = off");
+    assert.strictEqual(guards.reentryCooldownUntil(exit, 5), exit + 10 * 60 * 1000, "no mode = old behaviour");
+  } finally {
+    guards._swapDayTradeCounts(saved);
+    if (prev === undefined) delete process.env.MAX_TRADES_PER_DAY; else process.env.MAX_TRADES_PER_DAY = prev;
+  }
+});
+check("every paper engine passes its MODE so its exits count", () => {
+  const dir = path.join(SRC, "routes");
+  const bad = fs.readdirSync(dir).filter(f => /Paper\.js$/.test(f) && f !== "gapRunawayStkPaper.js")
+    .filter(f => /reentryCooldownUntil\(/.test(read(`routes/${f}`)))
+    .filter(f => !/reentryCooldownUntil\([^\n]*, MODE\)/.test(read(`routes/${f}`)) || !/dayCapUntil\(MODE\)/.test(read(`routes/${f}`)));
+  assert.deepStrictEqual(bad, [], `paper engines not wired to MAX_TRADES_PER_DAY: ${bad.join(", ")}`);
+});
+
 console.log(`\n${fail ? "FAILURES" : "ALL PASS"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

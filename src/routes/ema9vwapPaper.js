@@ -1314,7 +1314,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
+  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution(), MODE);
 
   // Notify active strategy (optional callbacks for strategy-level state tracking)
   const activeStrat = _eng;
@@ -2252,7 +2252,7 @@ router.get("/start", async (req, res) => {
   ptState._cachedPE            = null;
   ptState._skipSignalCtx       = null; // per-candle skip-log writer (set in onCandleClose)
   ptState._slHitCandleTime     = null;
-  ptState._reentryBlockUntil   = 0;
+  ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._missedLoggedCandle  = null;
@@ -4665,7 +4665,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._cachedCE            = null;
     ptState._cachedPE            = null;
     ptState._slHitCandleTime     = null;
-    ptState._reentryBlockUntil   = 0;
+    ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;
     ptState._missedLoggedCandle  = null;

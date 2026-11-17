@@ -236,7 +236,7 @@ function _freshState() {
     _expiryDayBlocked: false, // another market: <PAIR>_EXPIRY_DAY_ONLY on a non-expiry day
     log:            [],
     _sessionId:     null,
-    _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms)
+    _reentryBlockUntil: tradeGuards.dayCapUntil(MODE),  // wait-after-any-exit cooldown (epoch ms)
     // TREND_DAY_SCALP specific
     dayGate:        null,   // FROZEN evaluateDayGate() result — decided once at 10:15
     gateLoggedAt:   null,
@@ -729,7 +729,7 @@ function simulateSell(reason) {
   capitalPool.release(MODE, pnl);
   try { rt.persist.clear(); } catch (_) {}
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin(), MODE);
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();

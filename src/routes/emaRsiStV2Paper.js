@@ -1290,7 +1290,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   capitalPool.release(MODE, netPnl, { sim: (ptState._simMode || ptState._simSession) });
 
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
-  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
+  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution(), MODE);
 
   // The V2 engine is stateless — it has no onTradeClosed / onStopLossHit hooks to
   // notify, and deliberately keeps none: everything about a trade lives here.
@@ -2192,7 +2192,7 @@ router.get("/start", async (req, res) => {
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
   ptState._slHitCandleTime     = null;
-  ptState._reentryBlockUntil   = 0;
+  ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._sessionWins         = 0;
@@ -4585,7 +4585,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._cachedCE            = null;
     ptState._cachedPE            = null;
     ptState._slHitCandleTime     = null;
-    ptState._reentryBlockUntil   = 0;
+    ptState._reentryBlockUntil   = tradeGuards.dayCapUntil(MODE);
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;
       ptState._sessionWins         = 0;
