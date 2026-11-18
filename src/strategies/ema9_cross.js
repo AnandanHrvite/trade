@@ -35,6 +35,11 @@
  *   EMA21 trail, no previous-candle stop, no red-candle exit, no target, no
  *   volume / ADX / VWAP / ATR filter.
  *
+ * MIN CROSS GAP (EMA9_CROSS_MIN_CROSS_PTS, default 0 = off, added 2026-11-18 on
+ * request): an ENTRY needs the cross candle to close at least that many spot
+ * points past EMA9. A smaller cross is skipped (and is not retried — the next
+ * candle is no longer a fresh cross). Exits and flips-as-exits are unchanged.
+ *
  * WARM-UP: refused below warmupBars() = max(3 × period, 30) + 2 candles (32 at
  * period 9) so the EMA has settled from its SMA seed. The paper route preloads
  * EMA9_CROSS_WARMUP_DAYS calendar days; the backtest fetches the same runway
@@ -84,9 +89,13 @@ function isInTradingWindow(unixSec, prefix) {
 function getConfig(prefix) {
   var P = prefix || DEFAULT_PREFIX;
   var p = parseInt(_env(P + "_EMA_PERIOD") || "9", 10);
+  var m = parseFloat(_env(P + "_MIN_CROSS_PTS") || "0");
   return {
     PREFIX: P,
     EMA_PERIOD: Number.isFinite(p) && p >= 2 ? p : 9,
+    // Entry only when the cross candle CLOSES at least this many spot points past
+    // the EMA. 0 = off (any cross). Exit and the "cross" field are NOT gated.
+    MIN_CROSS_PTS: Number.isFinite(m) && m > 0 ? m : 0,
   };
 }
 
@@ -200,6 +209,14 @@ function getSignal(candles, opts) {
   var crossTxt = cross === "UP"
     ? "C " + c + " crossed ABOVE " + L + " " + ema.toFixed(2) + " (prev C " + pc + " ≤ " + pEma.toFixed(2) + ")"
     : "C " + c + " crossed BELOW " + L + " " + ema.toFixed(2) + " (prev C " + pc + " ≥ " + pEma.toFixed(2) + ")";
+
+  var gap = Math.abs(c - ema);
+  if (cfg.MIN_CROSS_PTS > 0 && gap < cfg.MIN_CROSS_PTS) {
+    return Object.assign({}, base, {
+      signal: "NONE", skipReason: "minCross",
+      reason: crossTxt + " — close only " + gap.toFixed(2) + " pt past " + L + " (min " + cfg.MIN_CROSS_PTS + ")",
+    });
+  }
 
   var skipTimeCheck = !!(opts && opts.skipTimeCheck === true);
   var win = skipTimeCheck ? { ok: true } : isInTradingWindow(sig.time, prefix);
