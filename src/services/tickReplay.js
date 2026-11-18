@@ -2416,6 +2416,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       if (!("EMA9_CROSS_MIN_CROSS_PTS" in _snapSettings)) _snapSettings.EMA9_CROSS_MIN_CROSS_PTS = "0";
       // Same for EMA9_CROSS's own candle size: absent = it followed TRADE_RESOLUTION.
       if (!("EMA9_CROSS_RESOLUTION" in _snapSettings)) _snapSettings.EMA9_CROSS_RESOLUTION = "global";
+      // And its trend filter: absent = it did not exist yet (OFF).
+      if (!("EMA9_CROSS_HTF_TREND_ENABLED" in _snapSettings)) _snapSettings.EMA9_CROSS_HTF_TREND_ENABLED = "false";
       // Own Common Rules (utils/commonRules.js, default OFF): an absent toggle is a
       // recording made before it shipped — every strategy then ran on the common keys.
       for (const _p of require("../utils/commonRules").STRATEGIES) {

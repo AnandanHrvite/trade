@@ -149,7 +149,7 @@ async function runEma9CrossBacktest(candles, activeFromTs, mkt, vixCandles = nul
     trades: [], days: 0, warmupViolations: 0, warmupBars: 0,
     gateStats: { setups: 0, entries: 0, flips: 0, emaExits: 0,
                  blockedWarmup: 0, blockedWindow: 0, blockedExpiry: 0,
-                 blockedReentry: 0, blockedVix: 0, blockedMinCross: 0 },
+                 blockedReentry: 0, blockedVix: 0, blockedMinCross: 0, blockedHtf: 0 },
   };
   if (!Array.isArray(candles) || !candles.length) return empty;
 
@@ -349,6 +349,7 @@ async function runEma9CrossBacktest(candles, activeFromTs, mkt, vixCandles = nul
       // ── 5. Entry (and the flip) on a fresh cross at this bar's close ───────
       const sigSide = sig.signal === "BUY_CE" ? "CE" : sig.signal === "BUY_PE" ? "PE" : null;
       if (!pos && sig.skipReason === "minCross" && c.time >= activeFromTs) gateStats.blockedMinCross++;
+      if (!pos && sig.skipReason === "htfTrend" && c.time >= activeFromTs) gateStats.blockedHtf++;
       if (!pos && sigSide) {
         const barEnd = c.time + RES * 60;
         let blocked = null;
@@ -463,6 +464,7 @@ function _resultsView(from, to, trades, stats, meta) {
       { label: "Blocked — wait after exit / max trades", value: gs.blockedReentry || 0 },
       { label: "Blocked — VIX", value: gs.blockedVix || 0 },
       { label: "Blocked — cross too small", value: gs.blockedMinCross || 0 },
+      { label: "Blocked — against higher-timeframe trend", value: gs.blockedHtf || 0 },
       { label: "Blocked — not expiry day", value: gs.blockedExpiry || 0 },
       { label: "Warm-up bars fetched",    value: meta.warmupBars || 0 },
       {

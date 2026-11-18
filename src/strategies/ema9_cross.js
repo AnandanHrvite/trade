@@ -40,6 +40,11 @@
  * points past EMA9. A smaller cross is skipped (and is not retried — the next
  * candle is no longer a fresh cross). Exits and flips-as-exits are unchanged.
  *
+ * HTF TREND (EMA9_CROSS_HTF_TREND_ENABLED, default false, added 2026-11-18 on
+ * request): a CE needs the last FINISHED HTF candle (EMA9_CROSS_HTF_MINUTES, 15)
+ * to have closed above its EMA (EMA9_CROSS_HTF_EMA_PERIOD, 20); a PE needs below.
+ * Built from the same candles (see _htfSeries). Exits are unchanged.
+ *
  * WARM-UP: refused below warmupBars() = max(3 × period, 30) + 2 candles (32 at
  * period 9) so the EMA has settled from its SMA seed. The paper route preloads
  * EMA9_CROSS_WARMUP_DAYS calendar days; the backtest fetches the same runway
@@ -90,14 +95,23 @@ function getConfig(prefix) {
   var P = prefix || DEFAULT_PREFIX;
   var p = parseInt(_env(P + "_EMA_PERIOD") || "9", 10);
   var m = parseFloat(_env(P + "_MIN_CROSS_PTS") || "0");
+  var hm = parseInt(_env(P + "_HTF_MINUTES") || "15", 10);
+  var hp = parseInt(_env(P + "_HTF_EMA_PERIOD") || "20", 10);
   return {
     PREFIX: P,
     EMA_PERIOD: Number.isFinite(p) && p >= 2 ? p : 9,
     // Entry only when the cross candle CLOSES at least this many spot points past
     // the EMA. 0 = off (any cross). Exit and the "cross" field are NOT gated.
     MIN_CROSS_PTS: Number.isFinite(m) && m > 0 ? m : 0,
+    // Higher-timeframe trend filter (default OFF): CE only while the last FINISHED
+    // HTF candle closed above its EMA, PE only while it closed below. Exits unchanged.
+    HTF_ENABLED: String(_env(P + "_HTF_TREND_ENABLED") || "false").trim().toLowerCase() === "true",
+    HTF_MINUTES: HTF_CHOICES.indexOf(hm) !== -1 ? hm : 15,
+    HTF_EMA_PERIOD: Number.isFinite(hp) && hp >= 2 ? hp : 20,
+    RES: resolutionMin(P),
   };
 }
+var HTF_CHOICES = [15, 30, 60];
 
 /**
  * Candle size (minutes) for this strategy alone. EMA9_CROSS_RESOLUTION = 3/5/15;
@@ -133,11 +147,63 @@ function computeSeries(candles, cfg) {
   cfg = cfg || getConfig();
   var n = Array.isArray(candles) ? candles.length : 0;
   var ema = new Array(n).fill(null);
-  if (n < cfg.EMA_PERIOD) return { ema9: ema };
+  var htf = cfg.HTF_ENABLED ? _htfSeries(candles, cfg) : { htfClose: new Array(n).fill(null), htfEma: new Array(n).fill(null) };
+  if (n < cfg.EMA_PERIOD) return { ema9: ema, htfClose: htf.htfClose, htfEma: htf.htfEma };
   var closes = candles.map(function (c) { return c.close; });
   var out = EMA.calculate({ period: cfg.EMA_PERIOD, values: closes });
   for (var i = 0; i < out.length; i++) ema[i + cfg.EMA_PERIOD - 1] = out[i];
-  return { ema9: ema };
+  return { ema9: ema, htfClose: htf.htfClose, htfEma: htf.htfEma };
+}
+
+/**
+ * _htfSeries — the higher-timeframe trend, built from the SAME candles (no second
+ * fetch, so Paper / Backtest / Replay agree). HTF buckets start at 09:15 IST each
+ * day (exchange-aligned). For bar i, the value is the LAST FINISHED bucket as of
+ * bar i's CLOSE — the bucket bar i completes counts, a still-forming one does not
+ * (no look-ahead). EMA is over finished-bucket closes, so it is causal and a
+ * whole-array run equals the per-bar prefix read.
+ */
+var SESSION_START_MIN = 555; // 09:15 IST
+function _htfSeries(candles, cfg) {
+  var n = candles.length;
+  var hClose = new Array(n).fill(null), hEma = new Array(n).fill(null);
+  var H = cfg.HTF_MINUTES, RES = cfg.RES || 5;
+  var keys = new Array(n), ends = new Array(n);
+  for (var i = 0; i < n; i++) {
+    var t = candles[i].time, ist = t + 19800;
+    var day = Math.floor(ist / 86400), mod = Math.floor((ist % 86400) / 60) - SESSION_START_MIN;
+    var k = Math.floor(mod / H);
+    keys[i] = day * 1000 + k;
+    ends[i] = day * 86400 - 19800 + (SESSION_START_MIN + (k + 1) * H) * 60;
+  }
+  // Finished buckets in order: a bucket is finished at bar i when bar i closes at/after
+  // its end, or when bar i already belongs to a later bucket (a gap in the data).
+  var bucketCloses = [], bucketKeyAt = [];
+  var finishedIdx = new Array(n).fill(-1);
+  var lastKey = null, lastClose = null;
+  for (var j = 0; j < n; j++) {
+    var c = candles[j];
+    if (lastKey !== null && keys[j] !== lastKey) {
+      // previous bucket ended without a bar reaching its end time — close it now
+      if (bucketKeyAt[bucketKeyAt.length - 1] !== lastKey) { bucketCloses.push(lastClose); bucketKeyAt.push(lastKey); }
+    }
+    lastKey = keys[j]; lastClose = c.close;
+    if (c.time + RES * 60 >= ends[j] && bucketKeyAt[bucketKeyAt.length - 1] !== keys[j]) {
+      bucketCloses.push(c.close); bucketKeyAt.push(keys[j]);
+    }
+    finishedIdx[j] = bucketCloses.length - 1;
+  }
+  var P = cfg.HTF_EMA_PERIOD;
+  var bEma = new Array(bucketCloses.length).fill(null);
+  if (bucketCloses.length >= P) {
+    var out = EMA.calculate({ period: P, values: bucketCloses });
+    for (var q = 0; q < out.length; q++) bEma[q + P - 1] = out[q];
+  }
+  for (var r = 0; r < n; r++) {
+    var b = finishedIdx[r];
+    if (b >= 0) { hClose[r] = bucketCloses[b]; hEma[r] = bEma[b]; }
+  }
+  return { htfClose: hClose, htfEma: hEma };
 }
 
 function _empty(reason, extra) {
@@ -231,6 +297,23 @@ function getSignal(candles, opts) {
       signal: "NONE", skipReason: "minCross",
       reason: crossTxt + " — close only " + gap.toFixed(2) + " pt past " + L + " (min " + cfg.MIN_CROSS_PTS + ")",
     });
+  }
+
+  if (cfg.HTF_ENABLED) {
+    var hc = series.htfClose ? series.htfClose[nBars - 1] : null;
+    var he = series.htfEma ? series.htfEma[nBars - 1] : null;
+    var HL = cfg.HTF_MINUTES + "m EMA" + cfg.HTF_EMA_PERIOD;
+    if (!_num(hc) || !_num(he)) {
+      return Object.assign({}, base, { signal: "NONE", skipReason: "htfTrend", reason: crossTxt + " — " + HL + " trend not ready yet" });
+    }
+    var htfTrend = hc > he ? "UP" : hc < he ? "DOWN" : "FLAT";
+    if (htfTrend !== cross) {
+      return Object.assign({}, base, {
+        signal: "NONE", skipReason: "htfTrend", htfTrend: htfTrend,
+        reason: crossTxt + " — against the " + HL + " trend (" + cfg.HTF_MINUTES + "m close " + hc + " vs " + he.toFixed(2) + ")",
+      });
+    }
+    base.htfTrend = htfTrend;
   }
 
   var skipTimeCheck = !!(opts && opts.skipTimeCheck === true);
