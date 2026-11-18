@@ -562,6 +562,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9_CROSS_PAPER_ENABLED", label: "EMA9_CROSS Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EMA9_CROSS paper sessions to start (also from the dashboard's Start All). OFF blocks Start without hiding the strategy.", default: "true", subheader: "Mode" },
 
       { key: "EMA9_CROSS_EMA_PERIOD", label: "EMA Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.SESSION, desc: "The EMA on 5-min closes. Entry when a candle closes across it (above → CE, below → PE); exit when a candle closes back across it. Example 9: previous close 24,480 under EMA 24,490, this close 24,520 over EMA 24,500 → buy CE.", default: "9", subheader: "Signal" },
+      { key: "EMA9_CROSS_RESOLUTION", label: "Candle Resolution (EMA9_CROSS only)", type: "select", options: [{ value: "global", label: "Global (follow Instrument & Backtest)" }, { value: "3", label: "3 min" }, { value: "5", label: "5 min" }, { value: "15", label: "15 min" }], effect: EFFECT.SESSION, desc: "Candle size for EMA9_CROSS alone (paper + backtest), so you can test 3-min without moving every other strategy. Global = use the common Candle Resolution. Candle-counted rules (wait-after-exit) scale with it.", default: "global" },
       { key: "EMA9_CROSS_MIN_CROSS_PTS", label: "Min Cross Gap (pts)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "Skip an entry unless the cross candle closes at least this many NIFTY points past the EMA. 0 = off (any cross). Exits are not affected. Example 5: EMA 24,500, close 24,503 → skipped; close 24,506 → buy CE.", default: "0" },
 
       { key: "EMA9_CROSS_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entry from a candle that starts before this time (IST). The Common Trade Window (10:00–14:00) replaces this while it is ON.", default: "10:30", subheader: "Session window" },
@@ -1800,7 +1801,7 @@ const SESSION_RESTART_KEYS = new Set([
   
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
-  "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END", "BB_RSI_RESOLUTION",
+  "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END", "BB_RSI_RESOLUTION", "EMA9_CROSS_RESOLUTION",
   // BB_RSI settings — need session restart
   "BB_RSI_DIRECTION",
   "BB_RSI_BB_PERIOD", "BB_RSI_BB_STDDEV",

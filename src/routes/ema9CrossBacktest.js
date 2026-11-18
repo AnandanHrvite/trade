@@ -135,7 +135,7 @@ function getGuardConfig() {
     warmupDays:     _int("EMA9_CROSS_WARMUP_DAYS", "5"),
     slippagePts:    backtestCosts.slippagePts(),
     seedPremium:    backtestCosts.seedPremium(),
-    resolutionMins: _int("TRADE_RESOLUTION", "5"),
+    resolutionMins: engine.resolutionMin(),   // EMA9_CROSS_RESOLUTION, else TRADE_RESOLUTION
   };
 }
 
@@ -648,7 +648,7 @@ module.exports.runEma9CrossBacktest = runEma9CrossBacktest;
 // The unified /backtest page's hook (see services/backtestPage.js).
 module.exports.backtestPage = {
   markets: ["NIFTY", "BANKNIFTY", "SENSEX", "NIFTY_FUT"],
-  resolution: null,   // TRADE_RESOLUTION — the global candle size paper uses
+  resolution: null,   // EMA9_CROSS_RESOLUTION (else TRADE_RESOLUTION) — the candle size paper uses
   run: _runJob,
   view: (result) => _resultsView(result.from, result.to, result.trades, result.stats,
     result.meta || { days: 0, gateStats: {}, warmupViolations: 0, warmupBars: 0 }),

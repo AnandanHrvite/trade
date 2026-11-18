@@ -99,6 +99,21 @@ function getConfig(prefix) {
   };
 }
 
+/**
+ * Candle size (minutes) for this strategy alone. EMA9_CROSS_RESOLUTION = 3/5/15;
+ * "global" (default) or anything else follows TRADE_RESOLUTION, so an untouched
+ * .env behaves as before. Lives in the engine so paper and backtest cannot drift.
+ */
+var RESOLUTION_CHOICES = [3, 5, 15];
+function resolutionMin(prefix) {
+  var P = prefix || DEFAULT_PREFIX;
+  var raw = String(_env(P + "_RESOLUTION") || "global").trim();
+  var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
+  if (RESOLUTION_CHOICES.indexOf(v) !== -1) return v;
+  var g = parseInt(_env("TRADE_RESOLUTION") || "5", 10);
+  return Number.isFinite(g) && g > 0 ? g : 5;
+}
+
 /** Candles the engine refuses below. */
 function warmupBars(cfg) {
   if (typeof cfg === "string") cfg = getConfig(cfg);
@@ -247,6 +262,7 @@ module.exports = {
   DEFAULT_PREFIX: DEFAULT_PREFIX,
   DESCRIPTION: DESCRIPTION,
   getConfig: getConfig,
+  resolutionMin: resolutionMin,
   warmupBars: warmupBars,
   computeSeries: computeSeries,
   getSignal: getSignal,

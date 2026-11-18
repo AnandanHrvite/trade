@@ -121,7 +121,7 @@ let _ENTRY_STOP_MINS;
 let _mktHoursCache    = null;
 let _mktHoursCacheMin = -1;   // IST minute the cached verdict was computed for
 function _refreshConfig() {
-  TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
+  TRADE_RES                              = engine.resolutionMin(ENG_PREFIX);   // EMA9_CROSS_RESOLUTION, else TRADE_RESOLUTION
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
@@ -1890,7 +1890,7 @@ router.get("/start", async (req, res) => {
 
   log(`\n════════════════════════════════════════════════════════════════════`);
   log(`🟡 [PAPER] Paper trading started`);
-  log(`   Resolution : ${getTradeResolution()}-min candles (TRADE_RESOLUTION in .env)`);
+  log(`   Resolution : ${getTradeResolution()}-min candles (${PREFIX}_RESOLUTION, else TRADE_RESOLUTION)`);
   log(`   Strategy   : ${ACTIVE} — ${engine.NAME}`);
   log(`   Instrument : ${rt.instrumentName()}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);

@@ -2414,6 +2414,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // EMA9_CROSS min cross gap (default 0 = off): absent = unset when recorded, so
       // pin 0 — otherwise today's value would filter entries the session took.
       if (!("EMA9_CROSS_MIN_CROSS_PTS" in _snapSettings)) _snapSettings.EMA9_CROSS_MIN_CROSS_PTS = "0";
+      // Same for EMA9_CROSS's own candle size: absent = it followed TRADE_RESOLUTION.
+      if (!("EMA9_CROSS_RESOLUTION" in _snapSettings)) _snapSettings.EMA9_CROSS_RESOLUTION = "global";
       // Own Common Rules (utils/commonRules.js, default OFF): an absent toggle is a
       // recording made before it shipped — every strategy then ran on the common keys.
       for (const _p of require("../utils/commonRules").STRATEGIES) {
