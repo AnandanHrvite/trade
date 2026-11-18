@@ -111,6 +111,24 @@ check("entry window: a cross outside 10:30–14:00 is reported (cross) but not a
   withEnv({ EMA9_CROSS_ENTRY_END: "15:00" }, () => assert.strictEqual(engine.getSignal(late, { silent: true }).signal, "BUY_CE"));
   assert.strictEqual(engine.getSignal(late, { silent: true, skipTimeCheck: true }).signal, "BUY_CE");
 });
+check("late entry: a too-small cross is entered on the FIRST later close far enough past the EMA", () => {
+  const ce = bars([...Array(31).fill(100), 101, 120]);   // 101 = tiny cross up; 120 = far above
+  const pe = bars([...Array(31).fill(100), 99, 80]);
+  withEnv({ EMA9_CROSS_MIN_CROSS_PTS: "5", EMA9_CROSS_LATE_ENTRY_ENABLED: "true" }, () => {
+    assert.strictEqual(engine.getSignal(ce.slice(0, 32), { silent: true }).skipReason, "minCross", "the cross itself is too small");
+    const r = engine.getSignal(ce, { silent: true });
+    assert.strictEqual(r.signal, "BUY_CE", r.reason); assert.strictEqual(r.lateEntry, true); assert.strictEqual(r.cross, null);
+    assert.strictEqual(engine.getSignal(pe, { silent: true }).signal, "BUY_PE");
+    // only the FIRST far-enough close: the next one is not an entry
+    assert.strictEqual(engine.getSignal(bars([...Array(31).fill(100), 101, 120, 125]), { silent: true }).signal, "NONE");
+    // the run went back across the EMA in between → the old cross is gone
+    assert.strictEqual(engine.getSignal(bars([...Array(31).fill(100), 101, 99, 98, 120]), { silent: true }).lateEntry, undefined);
+  });
+  withEnv({ EMA9_CROSS_MIN_CROSS_PTS: "5", EMA9_CROSS_LATE_ENTRY_ENABLED: "false" }, () =>
+    assert.strictEqual(engine.getSignal(ce, { silent: true }).signal, "NONE", "OFF = unchanged"));
+  withEnv({ EMA9_CROSS_MIN_CROSS_PTS: "0.5", EMA9_CROSS_LATE_ENTRY_ENABLED: "true" }, () =>
+    assert.strictEqual(engine.getSignal(ce, { silent: true }).signal, "NONE", "the cross was big enough → it was the entry, no second one"));
+});
 check("bad data refuses: null / NaN / string close on the signal or previous bar", () => {
   for (const bad of [null, NaN, "", "110", undefined]) {
     const c = flatThen(36, 110); c[c.length - 1].close = bad;
@@ -218,11 +236,18 @@ check("the common premium stop exits intra-bar and the strategy waits for a fres
   const candles = twoDays(c);
   const b17 = candles[75 + 17];
   b17.low = 60;   // a deep wick through the premium stop
-  const r = await run(candles, { PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "10", PREMIUM_SL_TRAIL_PCT: "" });
+  const r = await run(candles, { EMA9_CROSS_COMMON_STOP_ENABLED: "true", PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "10", PREMIUM_SL_TRAIL_PCT: "" });
   assert.ok(/^Stop-loss/.test(r.trades[0].reason), r.trades[0].reason);
   assert.strictEqual(r.trades[0].exitTs, b17.time, "stopped inside bar 17");
   assert.strictEqual(r.trades[1].side, "PE", "next trade is the fresh PE cross at bar 20, not a CE re-entry");
   assert.strictEqual(r.trades[1].entryTs, candles[75 + 20].time + 300);
+});
+check("common stop OFF (default): the same deep wick does NOT exit — only the EMA close does", async () => {
+  const candles = twoDays(path1());
+  candles[75 + 17].low = 60;
+  const r = await run(candles, { PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "10", PREMIUM_SL_TRAIL_PCT: "" });
+  assert.ok(!/^Stop-loss|^Profit lock/.test(r.trades[0].reason), r.trades[0].reason);
+  assert.ok(r.trades[0].exitTs > candles[75 + 17].time, "held through bar 17");
 });
 check("no trade carries a stop level of its own; every PE/CE has a real entry and exit", () => {
   for (const t of r1.trades) {
@@ -265,6 +290,8 @@ check("paper's candle-close exit is engine.exitSignal, before the entry block (t
 check("paper's per-tick exits are the common premium stop / profit lock (tradeGuards.checkProfitLock)", () => {
   const onTick = paper.slice(paper.indexOf("function onTick(tick)"), paper.indexOf("function saveSession()"));
   assert.ok(/tradeGuards\.checkProfitLock\(/.test(onTick));
+  assert.ok(/_cmnStop && ptState\.position && ptState\.position\.optionEntryLtp/.test(onTick), "premium stop gated by EMA9_CROSS_COMMON_STOP_ENABLED");
+  assert.ok(/_cmnStop && ptState\.position && rt\.instrumentName\(\) === "NIFTY_FUTURES"/.test(onTick), "futures stop gated too");
 });
 check("backtest calls the same engine functions", () => {
   assert.ok(/engine\.getSignal\(sorted, \{ silent: true, precomputed: pre \}\)/.test(btSrc));

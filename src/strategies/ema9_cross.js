@@ -18,8 +18,9 @@
  *   route FLIPS — it buys the other side on the same close (if the window and the
  *   common rules allow it).
  *
- * STOP: none in this file. The initial stop and its trail are the COMMON premium
- * stop + profit lock (tradeGuards.checkProfitLock) the routes run per tick.
+ * STOP: none by default. EMA9_CROSS_COMMON_STOP_ENABLED (default false) turns on the
+ * COMMON premium stop + profit lock (tradeGuards.checkProfitLock) the routes run per
+ * tick; OFF = only the opposite candle close (or session end / manual) exits.
  *
  * RE-ENTRY: only on a FRESH cross. After the common stop closes a CE while price
  * is still above EMA9 there is no new CE until price closes below and crosses back
@@ -39,6 +40,14 @@
  * request): an ENTRY needs the cross candle to close at least that many spot
  * points past EMA9. A smaller cross is skipped (and is not retried — the next
  * candle is no longer a fresh cross). Exits and flips-as-exits are unchanged.
+ *
+ * LATE ENTRY (EMA9_CROSS_LATE_ENTRY_ENABLED, default false, added 2026-11-18 on
+ * request; needs MIN_CROSS_PTS > 0): a cross skipped only for being too small is
+ * entered on the FIRST later candle that closes at least MIN_CROSS_PTS past the EMA,
+ * provided every candle since the cross closed on that same side. One try per
+ * cross: if that candle is blocked (trend / window) there is no later retry.
+ * Example (gap 10): EMA 25,296, cross close 25,285 (11 pt — ok) → entry; cross close
+ * 25,290 (6 pt) → skipped, next close 25,266 (24 pt below EMA 25,290) → PE.
  *
  * HTF TREND (EMA9_CROSS_HTF_TREND_ENABLED, default false, added 2026-11-18 on
  * request): a CE needs the last FINISHED HTF candle (EMA9_CROSS_HTF_MINUTES, 15)
@@ -108,6 +117,14 @@ function getConfig(prefix) {
     HTF_ENABLED: String(_env(P + "_HTF_TREND_ENABLED") || "false").trim().toLowerCase() === "true",
     HTF_MINUTES: HTF_CHOICES.indexOf(hm) !== -1 ? hm : 15,
     HTF_EMA_PERIOD: Number.isFinite(hp) && hp >= 2 ? hp : 20,
+    // Common premium stop / profit lock / futures stop (default OFF, 2026-11-18 on
+    // request): OFF = the trade closes ONLY on a candle close across the EMA (plus
+    // session end, daily-loss and manual exits). ON = the shared stop also runs.
+    COMMON_STOP_ENABLED: String(_env(P + "_COMMON_STOP_ENABLED") || "false").trim().toLowerCase() === "true",
+    // Late entry (default OFF, 2026-11-18 on request): when the cross candle was too
+    // small for MIN_CROSS_PTS, enter on the FIRST later candle that closes far enough
+    // past the EMA — as long as every candle since the cross stayed on that side.
+    LATE_ENTRY_ENABLED: String(_env(P + "_LATE_ENTRY_ENABLED") || "false").trim().toLowerCase() === "true",
     RES: resolutionMin(P),
   };
 }
@@ -279,7 +296,30 @@ function getSignal(candles, opts) {
       " (prev C=" + pc + " " + L + "=" + pEma.toFixed(2) + ") → " + (cross ? "CROSS " + cross : "no cross, close " + closeVsEma));
   }
 
-  if (!cross) {
+  // Late entry: no cross on this candle, but the run since the last cross never got
+  // MIN_CROSS_PTS away from the EMA until now (see LATE ENTRY above).
+  var late = null;
+  if (!cross && cfg.LATE_ENTRY_ENABLED && cfg.MIN_CROSS_PTS > 0 && closeVsEma !== "ON" &&
+      Math.abs(c - ema) >= cfg.MIN_CROSS_PTS) {
+    var up = closeVsEma === "ABOVE";
+    for (var k = nBars - 2; k >= 1; k--) {
+      var kc = candles[k] && candles[k].close, ke = series.ema9[k];
+      if (!_num(kc) || !_num(ke)) break;                 // warm-up / bad data: no late entry
+      var onSide = up ? kc > ke : kc < ke;
+      if (!onSide) break;                                // run broken without a cross start
+      if (Math.abs(kc - ke) >= cfg.MIN_CROSS_PTS) break; // already far enough earlier — not the first
+      var jc = candles[k - 1] && candles[k - 1].close, je = series.ema9[k - 1];
+      if (!_num(jc) || !_num(je)) break;
+      if (up ? jc <= je : jc >= je) {                    // candle k was the (too small) cross
+        var _kt = new Date(candles[k].time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23", hour: "2-digit", minute: "2-digit" });
+        late = { dir: up ? "UP" : "DOWN", txt: "late entry — C " + c + " is " + Math.abs(c - ema).toFixed(2) + " pt " +
+                 (up ? "above " : "below ") + L + " " + ema.toFixed(2) + " (cross at " + _kt + " was only " + Math.abs(kc - ke).toFixed(2) + " pt)" };
+        break;
+      }
+    }
+  }
+
+  if (!cross && !late) {
     return Object.assign({}, base, {
       signal: "NONE",
       reason: "No " + L + " cross — close " + c + " " + closeVsEma.toLowerCase() + " " + L + " " + ema.toFixed(2) +
@@ -287,12 +327,14 @@ function getSignal(candles, opts) {
     });
   }
 
-  var crossTxt = cross === "UP"
+  var dir = cross || late.dir;
+  var crossTxt = late ? late.txt : cross === "UP"
     ? "C " + c + " crossed ABOVE " + L + " " + ema.toFixed(2) + " (prev C " + pc + " ≤ " + pEma.toFixed(2) + ")"
     : "C " + c + " crossed BELOW " + L + " " + ema.toFixed(2) + " (prev C " + pc + " ≥ " + pEma.toFixed(2) + ")";
+  if (late) base.lateEntry = true;
 
   var gap = Math.abs(c - ema);
-  if (cfg.MIN_CROSS_PTS > 0 && gap < cfg.MIN_CROSS_PTS) {
+  if (!late && cfg.MIN_CROSS_PTS > 0 && gap < cfg.MIN_CROSS_PTS) {
     return Object.assign({}, base, {
       signal: "NONE", skipReason: "minCross",
       reason: crossTxt + " — close only " + gap.toFixed(2) + " pt past " + L + " (min " + cfg.MIN_CROSS_PTS + ")",
@@ -307,7 +349,7 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, { signal: "NONE", skipReason: "htfTrend", reason: crossTxt + " — " + HL + " trend not ready yet" });
     }
     var htfTrend = hc > he ? "UP" : hc < he ? "DOWN" : "FLAT";
-    if (htfTrend !== cross) {
+    if (htfTrend !== dir) {
       return Object.assign({}, base, {
         signal: "NONE", skipReason: "htfTrend", htfTrend: htfTrend,
         reason: crossTxt + " — against the " + HL + " trend (" + cfg.HTF_MINUTES + "m close " + hc + " vs " + he.toFixed(2) + ")",
@@ -322,8 +364,8 @@ function getSignal(candles, opts) {
     return Object.assign({}, base, { signal: "NONE", skipReason: "window", reason: crossTxt + " — " + win.reason });
   }
   return Object.assign({}, base, {
-    signal: cross === "UP" ? "BUY_CE" : "BUY_PE",
-    reason: (cross === "UP" ? "CE: " : "PE: ") + crossTxt,
+    signal: dir === "UP" ? "BUY_CE" : "BUY_PE",
+    reason: (dir === "UP" ? "CE: " : "PE: ") + crossTxt,
   });
 }
 

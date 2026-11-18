@@ -1569,12 +1569,13 @@ function onTick(tick) {
     const _jRs  = _jFut ? _favPts * (_exPos.qty || 0)
                 : (_exPos.optionEntryLtp && _jLtp ? (_jLtp - _exPos.optionEntryLtp) * (_exPos.qty || 0) : null);
     tradeJournal.onTick(_exPos, { favPts: _favPts, pnlRs: _jRs, spot: ltp, ltp: _jLtp, nowMs: simNow() });
-    _jStop(_exPos, ltp, _jLtp);
+    if (engine.getConfig(ENG_PREFIX).COMMON_STOP_ENABLED) _jStop(_exPos, ltp, _jLtp);
   }
 
   // ── Global profit lock (shared across every strategy — see tradeGuards) ──
   // The common premium stop + profit lock — EMA9_CROSS's per-tick exit (the EMA9 exit runs at candle close).
-  if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp) {
+  const _cmnStop = engine.getConfig(ENG_PREFIX).COMMON_STOP_ENABLED;   // OFF = only the EMA close exits
+  if (_cmnStop && ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp) {
     const _plPos = ptState.position;
     const _plMsg = tradeGuards.checkProfitLock(
       _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
@@ -1587,7 +1588,7 @@ function onTick(tick) {
   }
   // Futures: no option premium, so the same stop runs on the index move
   // (tradeGuards.checkFuturesStop). Entry/exit are index levels (see simulateSell).
-  if (ptState.position && rt.instrumentName() === "NIFTY_FUTURES" && ltp > 0) {
+  if (_cmnStop && ptState.position && rt.instrumentName() === "NIFTY_FUTURES" && ltp > 0) {
     const _fsPos = ptState.position;
     const _fsMsg = tradeGuards.checkFuturesStop(_fsPos.side, _fsPos.entryPrice, ltp, _fsPos.mfeSpotPts);
     if (_fsMsg) {
@@ -1900,7 +1901,7 @@ router.get("/start", async (req, res) => {
     const _c = engine.getConfig(ENG_PREFIX);
     log(`   Entry       : candle close crosses EMA${_c.EMA_PERIOD} — above → CE, below → PE (candle close only)`);
     log(`   Window      : ${_env(`${PREFIX}_ENTRY_START`)||"10:30"} → ${_env(`${PREFIX}_ENTRY_END`)||"14:00"} IST`);
-    log(`   Exit        : close back across EMA${_c.EMA_PERIOD} (flips on a fresh opposite cross) + common premium stop / profit lock | session end ${process.env.TRADE_STOP_TIME||"15:30"}`);
+    log(`   Exit        : close back across EMA${_c.EMA_PERIOD} (flips on a fresh opposite cross)${_c.COMMON_STOP_ENABLED ? " + common premium stop / profit lock" : " only (common stop OFF)"} | session end ${process.env.TRADE_STOP_TIME||"15:30"}`);
   }
   log(`   Entry guards: VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
