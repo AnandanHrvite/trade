@@ -302,7 +302,7 @@ async function runEma9CrossBacktest(candles, activeFromTs, mkt, vixCandles = nul
 
       // ── 1. Common premium stop + profit lock on THIS bar (paper: per tick) ──
       // Only on bars after the entry bar — the entry fills at the entry bar's close.
-      if (pos && c.time >= pos.entryTime && (LOCK_ON || IS_FUT || tradeGuards.PREMIUM_SL_ENABLED)) {
+      if (stratCfg.COMMON_STOP_ENABLED && pos && c.time >= pos.entryTime && (LOCK_ON || IS_FUT || tradeGuards.PREMIUM_SL_ENABLED)) {
         const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
         const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
         const isCE = pos.side === "CE";
