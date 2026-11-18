@@ -397,6 +397,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "prevOrbScalpBacktest",
+    strategyId: "prevOrbScalp",
     extraTradeColumns: [
       { key: "prevHigh", label: "Yday H" },
       { key: "prevLow", label: "Yday L" },

@@ -3534,6 +3534,39 @@ function clearCacheButtonHTML() {
   </style><button type="button" class="clear-cache-btn" title="Delete the cached historical candles — the next run re-downloads them from Fyers">🧹 Clear Cache</button>`;
 }
 
+/* ── Settings shortcut — shared by every backtest page ───────────────────────
+ * Opens that strategy's own Settings section (new tab, so the results stay put
+ * for a Run Again). A non-home market opens its pair pane (#pair-<slug>).
+ * Keys are strategyRegistry ids; values are the Settings section ids
+ * (settings.js sectionSlug() of each section's `nav` label).
+ */
+const SETTINGS_SECTION_BY_STRATEGY = {
+  emaRsiSt: 'ema-rsi-st', bbRsi: 'bb-rsi', pa: 'price-action', orb: 'orb',
+  ema9vwap: 'ema9-vwap', trendPb: 'trend-pullback', trendDayScalp: 'trend-day-scalp',
+  haScalp: 'ha-scalp', prevOrbScalp: 'prev-orb-scalp', itm20Scalp: 'itm20-scalp',
+  rsiPivotSt: 'rsi-pivot-st', emaRsiStV2: 'ema-rsi-st-v2', stRsiPivBb: 'st-rsi-piv-bb',
+  sailVwapSt: 'sail-vwap-st', pivotEmaSt: 'pivot-ema-st', gapRunaway: 'gap-runaway',
+  simple930: 'simple-9-30', earlyBird: 'earlybird', ema9Cross: 'ema9-cross',
+};
+
+function strategySettingsHref(strategyId, marketKey) {
+  const p = marketKey ? pairs.get(strategyId, marketKey) : null;
+  if (p && !p.home) return `/settings#pair-${p.slug}`;
+  const id = SETTINGS_SECTION_BY_STRATEGY[strategyId];
+  return id ? `/settings#${id}` : '/settings';
+}
+
+function settingsButtonHTML(strategyId, marketKey) {
+  if (!strategyId) return '';
+  return `<style>
+  .bt-settings-btn{display:inline-flex;align-items:center;background:#0f1d33;color:#93c5fd;border:1px solid #1e3a8a;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;text-decoration:none;}
+  .bt-settings-btn:hover{background:#1e3a8a;color:#fff;}
+  @media (max-width:640px){.bt-settings-btn{min-height:44px;}}
+  :root[data-theme="light"] .bt-settings-btn{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;}
+  :root[data-theme="light"] .bt-settings-btn:hover{background:#dbeafe;color:#1e3a8a;}
+  </style><a class="bt-settings-btn" href="${strategySettingsHref(strategyId, marketKey)}" target="_blank" rel="noopener" title="Open this strategy's settings in a new tab">⚙️ Settings</a>`;
+}
+
 function clearCacheJS() {
   return `
 // ── Clear Cache ────────────────────────────────────────────────────────────
@@ -3592,4 +3625,4 @@ document.querySelectorAll('.clear-cache-btn').forEach(function(btn){
 `;
 }
 
-module.exports = { STRATEGY_MODES, noContextMenuJS, enabledStrategies, buildSidebar, sidebarCSS, themeJS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS, clearCacheButtonHTML, clearCacheJS };
+module.exports = { STRATEGY_MODES, noContextMenuJS, enabledStrategies, buildSidebar, sidebarCSS, themeJS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS, clearCacheButtonHTML, clearCacheJS, settingsButtonHTML, strategySettingsHref };

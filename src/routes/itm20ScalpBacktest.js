@@ -489,6 +489,7 @@ function _resultsView(from, to, trades, stats, meta, jobId) {
     summary: stats,
     trades,
     activePage: "itm20ScalpBacktest",
+    strategyId: "itm20Scalp",
     extraTradeColumns: [
       { key: "strike", label: "Strike" },
       { key: "eOpt", label: "Entry ₹" },

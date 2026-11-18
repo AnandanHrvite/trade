@@ -502,6 +502,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "haScalpBacktest",
+    strategyId: "haScalp",
     extraTradeColumns: [
       { key: "trend", label: "Trend" },
       { key: "ma", label: `MA${cfg.maPeriod}` },

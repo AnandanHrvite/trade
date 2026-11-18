@@ -361,6 +361,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "rsiPivotStBacktest",
+    strategyId: "rsiPivotSt",
     extraTradeColumns: [
       { key: "rsi", label: "RSI" },
       { key: "crossedLevel", label: "Level" },

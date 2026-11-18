@@ -298,7 +298,7 @@ router.get("/", (req, res) => {
   .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
   .run-btn:hover{background:#2563eb;color:#fff;}
   .run-btn:disabled{opacity:.5;cursor:not-allowed;}
-  .preset-btn{font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}
+  .preset-btn{flex:1 1 auto;text-align:center;font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}
   .preset-btn:hover{background:rgba(59,130,246,0.18);}
 
   .panel{background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:14px 16px;margin-bottom:14px;}

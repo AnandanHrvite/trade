@@ -5,7 +5,7 @@ const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngi
 const { runEma9VwapBacktest } = require("../services/ema9vwapBacktestEngine");
 const ACTIVE = "EMA9_VWAP";
 const { saveResult } = require("../utils/resultStore");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS, settingsButtonHTML } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const { isExpiryDate } = require("../utils/nseHolidays");
@@ -286,7 +286,7 @@ router.get("/", async (req, res) => {
     .run-bar{display:flex;align-items:flex-end;gap:10px;background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap;}
     .run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);display:block;margin-bottom:3px;}
     .run-bar input,.run-bar select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:5px 8px;border-radius:5px;font-size:0.75rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;color-scheme:light;}
-    .preset-btn{font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}.preset-btn:hover{background:rgba(59,130,246,0.18);}
+    .preset-btn{flex:1 1 auto;text-align:center;font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}.preset-btn:hover{background:rgba(59,130,246,0.18);}
 .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
     .run-btn:hover{background:#2563eb;}
     :root[data-theme="light"] .run-btn{background:#2563eb !important;color:#ffffff !important;border-color:#2563eb !important;}
@@ -368,6 +368,7 @@ ${buildSidebar('ema9vwapBacktest', false)}
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by months</label></div>
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/ema9vwap-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
     ${clearCacheButtonHTML()}
+    ${settingsButtonHTML("ema9vwap")}
     <span style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-left:auto;">Strategy: <strong style="color:#3b82f6;">${ACTIVE}</strong></span>
   </div>
   <!-- Quick date presets -->
@@ -1661,6 +1662,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg) {
         <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by months</label></div>
         <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/ema9vwap-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
     ${clearCacheButtonHTML()}
+    ${settingsButtonHTML("ema9vwap")}
       </div>
     </div>
   </div>

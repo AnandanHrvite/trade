@@ -441,6 +441,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "sailVwapStBacktest",
+    strategyId: "sailVwapSt",
     extraTradeColumns: [
       { key: "vwap", label: "VWAP" },
       { key: "crossLevel", label: "Cross lvl" },

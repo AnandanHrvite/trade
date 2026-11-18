@@ -24,7 +24,7 @@
  *   }));
  */
 
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("./sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS, settingsButtonHTML } = require("./sharedNav");
 const { resolveTheme } = require("./theme");
 const { aiExportButton, aiExportScriptTag } = require("./backtestAiExport");
 
@@ -112,6 +112,8 @@ function renderBacktestResults(opts) {
     preface = "",             // HTML shown above the run bar (strategy · market · settings used)
     mobileCards = false,      // ≤640px: trade rows become cards, 44px controls
     openPanels = false,       // open Day P&L + Analytics (equity curve) on load
+    strategyId = "",          // strategyRegistry id → "⚙️ Settings" shortcut in the run bar
+    market = "",              // non-home market → that pair's Settings pane
   } = opts;
 
   // Embed trades safely
@@ -160,7 +162,7 @@ body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-
 .run-bar input{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:5px 8px;border-radius:5px;font-size:0.75rem;font-family:inherit;cursor:pointer;color-scheme:light;}
 .run-btn{background:${accent};color:#040c18;border:1px solid ${accent};padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;}
 .run-btn:hover{filter:brightness(1.15);}
-.preset-btn{font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:inherit;transition:all 0.15s;}
+.preset-btn{flex:1 1 auto;text-align:center;font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:inherit;transition:all 0.15s;}
 .preset-btn:hover{background:rgba(59,130,246,0.18);}
 .preset-row{display:flex;gap:6px;margin:0 0 6px;flex-wrap:wrap;align-items:center;}
 
@@ -283,6 +285,7 @@ ${preface}<!-- Run-bar -->
   <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by months</label></div>
   <button class="run-btn" id="runBtn">🔄 Run Again</button>
   ${clearCacheButtonHTML()}
+  ${settingsButtonHTML(strategyId, market)}
   <span style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-left:auto;">Strategy: <strong style="color:${accent};">${strategyName}</strong></span>
 </div>
 
@@ -309,7 +312,6 @@ ${preface}<!-- Run-bar -->
   <span class="yr-now" style="font-size:0.6rem;color:#94a3b8;">${new Date().getFullYear()}</span>
   ${(() => { const mths = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]; const labels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; const curMonth = new Date().getMonth(); return mths.map((k, i) => i <= curMonth ? `<button class="preset-btn" onclick="setPreset('${k}')">${labels[i]}</button>` : `<button class="preset-btn" disabled style="opacity:0.3;cursor:not-allowed">${labels[i]}</button>`).join(""); })()}
 </div>
-${notes ? `<div style="background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:10px 16px;margin:10px 0 14px;font-size:0.72rem;color:#b8a040;">${notes}</div>` : ""}
 
 <!-- Stat grid row 1 -->
 <div class="stat-grid">

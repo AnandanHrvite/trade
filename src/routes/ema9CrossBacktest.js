@@ -445,6 +445,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "ema9CrossBacktest",
+    strategyId: "ema9Cross",
     extraTradeColumns: [
       { key: "ema9",    label: `EMA${c.EMA_PERIOD}` },
       { key: "peakPremium", label: "Peak prem" },

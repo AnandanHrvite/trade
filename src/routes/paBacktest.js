@@ -26,7 +26,7 @@ const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngi
 const paStrategy    = require("../strategies/price_action");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const { saveResult }   = require("../utils/resultStore");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS, settingsButtonHTML } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const instrumentConfig = require("../config/instrument");
@@ -701,7 +701,7 @@ router.get("/", async (req, res) => {
     .run-btn:hover{background:#2563eb;}
     :root[data-theme="light"] .run-btn{background:#2563eb !important;color:#ffffff !important;border-color:#2563eb !important;}
     :root[data-theme="light"] .run-btn:hover{background:#1d4ed8 !important;color:#ffffff !important;}
-    .preset-btn{font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}.preset-btn:hover{background:rgba(59,130,246,0.18);}
+    .preset-btn{flex:1 1 auto;text-align:center;font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}.preset-btn:hover{background:rgba(59,130,246,0.18);}
 
     .tbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
     .tbar input,.tbar select{background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:5px 9px;border-radius:6px;font-size:0.76rem;font-family:inherit;}
@@ -786,6 +786,7 @@ ${buildSidebar('paBacktest', false)}
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by months</label></div>
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'\u26a0\ufe0f',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/pa-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
     ${clearCacheButtonHTML()}
+    ${settingsButtonHTML("pa")}
     <span style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${paStrategy.NAME}</strong></span>
   </div>
   <!-- Quick date presets -->

@@ -113,7 +113,7 @@ const fyers     = require("../config/fyers");
 const universe  = require("../utils/stockUniverse");
 const { fyersErrText } = require("../utils/fyersErr");
 const { faviconLink, buildSidebar, sidebarCSS, modalCSS, modalJS,
-        clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
+        clearCacheButtonHTML, clearCacheJS, settingsButtonHTML } = require("../utils/sharedNav");
 const { saveResult } = require("../utils/resultStore");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const backtestJobs = require("../utils/backtestJobManager");
@@ -1448,7 +1448,7 @@ button:hover{background:#2563eb;}
    are the densest controls on the page and the ones most often hit on a phone. */
 .preset-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px;}
 .preset-row-label{font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;min-width:52px;}
-.preset-btn{font-size:0.65rem;padding:3px 10px;min-height:26px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:inherit;font-weight:600;transition:all 0.15s;}
+.preset-btn{flex:1 1 auto;text-align:center;font-size:0.65rem;padding:3px 10px;min-height:26px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:inherit;font-weight:600;transition:all 0.15s;}
 .preset-btn:hover:not([disabled]){background:rgba(59,130,246,0.2);}
 .preset-btn[disabled]{opacity:0.3;cursor:not-allowed;}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;}
@@ -1786,6 +1786,7 @@ ${modeExplainerHTML(cfg, cfg.tradeMode === "option" ? null : universeKey)}
   <div><button type="submit" id="eb-run">Run Backtest</button></div>
   <div><button type="button" id="eb-cancel" class="cancel-btn" style="display:none;">✕ Cancel</button></div>
   <div>${clearCacheButtonHTML()}</div>
+  <div>${settingsButtonHTML("earlyBird")}</div>
   <span class="run-bar-note">Range: <b id="eb-range-label">${escHtml(from)} → ${escHtml(to)}</b></span>
 </form>
 

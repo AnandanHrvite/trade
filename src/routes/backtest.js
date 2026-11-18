@@ -97,7 +97,7 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 .presets{margin-top:12px;display:flex;flex-direction:column;gap:6px;}
 .preset-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
 .preset-row .rl{font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted2);min-width:52px;}
-.preset-btn{font:inherit;font-size:0.65rem;padding:4px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:var(--accent2);border:0.5px solid rgba(59,130,246,0.22);cursor:pointer;min-height:28px;}
+.preset-btn{flex:1 1 auto;text-align:center;font:inherit;font-size:0.65rem;padding:4px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:var(--accent2);border:0.5px solid rgba(59,130,246,0.22);cursor:pointer;min-height:28px;}
 .preset-btn:hover{background:rgba(59,130,246,0.18);}
 .preset-btn.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 .preset-btn:disabled{opacity:0.3;cursor:not-allowed;}
@@ -658,6 +658,8 @@ function renderResult(rec) {
     extraStats: v.extraStats || [],
     notes: v.notes || "",
     activePage: "backtest",
+    strategyId: rec.strategyId,
+    market: rec.market,
     preface,
     mobileCards: true,
   });

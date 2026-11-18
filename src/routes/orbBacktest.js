@@ -495,6 +495,7 @@ function _resultsView(from, to, trades, stats, market) {
     summary: stats,
     trades,
     activePage: "orbBacktest",
+    strategyId: "orb",
     extraTradeColumns: [
       { key: "rangePts", label: "Range (pt)" },
       { key: "strength", label: "Sig" },

@@ -343,6 +343,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "trendDayScalpBacktest",
+    strategyId: "trendDayScalp",
     extraTradeColumns: [
       { key: "gateRangePct", label: "1h range %" },
       { key: "peakPrem", label: "Peak prem" },

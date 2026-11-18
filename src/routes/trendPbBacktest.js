@@ -344,6 +344,7 @@ function _resultsView(from, to, trades, stats, baselineStats, wf, market) {
     summary: stats,
     trades,
     activePage: "trendPbBacktest",
+    strategyId: "trendPb",
     extraTradeColumns: [
       { key: "trendBias", label: "Bias" },
       { key: "peakPremium", label: "Peak Prem" },

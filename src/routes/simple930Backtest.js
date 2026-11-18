@@ -648,6 +648,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "simple930Backtest",
+    strategyId: "simple930",
     extraTradeColumns: [
       { key: "strike",     label: "Strike" },
       { key: "moneyness",  label: "ITM/ATM" },

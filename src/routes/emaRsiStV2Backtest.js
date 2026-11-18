@@ -595,6 +595,7 @@ function _resultsView(from, to, trades, stats, meta) {
     summary: stats,
     trades,
     activePage: "emaRsiStV2Backtest",
+    strategyId: "emaRsiStV2",
     extraTradeColumns: [
       { key: "rsi",     label: "RSI" },
       { key: "ema20",   label: "EMA20" },
