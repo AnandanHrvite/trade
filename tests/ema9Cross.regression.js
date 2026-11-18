@@ -218,18 +218,11 @@ check("the common premium stop exits intra-bar and the strategy waits for a fres
   const candles = twoDays(c);
   const b17 = candles[75 + 17];
   b17.low = 60;   // a deep wick through the premium stop
-  const r = await run(candles, { EMA9_CROSS_COMMON_STOP_ENABLED: "true", PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "10", PREMIUM_SL_TRAIL_PCT: "" });
+  const r = await run(candles, { PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "10", PREMIUM_SL_TRAIL_PCT: "" });
   assert.ok(/^Stop-loss/.test(r.trades[0].reason), r.trades[0].reason);
   assert.strictEqual(r.trades[0].exitTs, b17.time, "stopped inside bar 17");
   assert.strictEqual(r.trades[1].side, "PE", "next trade is the fresh PE cross at bar 20, not a CE re-entry");
   assert.strictEqual(r.trades[1].entryTs, candles[75 + 20].time + 300);
-});
-check("common stop OFF (default): the same deep wick does NOT exit — only the EMA close does", async () => {
-  const candles = twoDays(path1());
-  candles[75 + 17].low = 60;
-  const r = await run(candles, { PREMIUM_SL_ENABLED: "true", PREMIUM_SL_PCT: "10", PREMIUM_SL_TRAIL_PCT: "" });
-  assert.ok(!/^Stop-loss|^Profit lock/.test(r.trades[0].reason), r.trades[0].reason);
-  assert.ok(r.trades[0].exitTs > candles[75 + 17].time, "held through bar 17");
 });
 check("no trade carries a stop level of its own; every PE/CE has a real entry and exit", () => {
   for (const t of r1.trades) {
@@ -272,8 +265,6 @@ check("paper's candle-close exit is engine.exitSignal, before the entry block (t
 check("paper's per-tick exits are the common premium stop / profit lock (tradeGuards.checkProfitLock)", () => {
   const onTick = paper.slice(paper.indexOf("function onTick(tick)"), paper.indexOf("function saveSession()"));
   assert.ok(/tradeGuards\.checkProfitLock\(/.test(onTick));
-  assert.ok(/_cmnStop && ptState\.position && ptState\.position\.optionEntryLtp/.test(onTick), "premium stop gated by EMA9_CROSS_COMMON_STOP_ENABLED");
-  assert.ok(/_cmnStop && ptState\.position && rt\.instrumentName\(\) === "NIFTY_FUTURES"/.test(onTick), "futures stop gated too");
 });
 check("backtest calls the same engine functions", () => {
   assert.ok(/engine\.getSignal\(sorted, \{ silent: true, precomputed: pre \}\)/.test(btSrc));

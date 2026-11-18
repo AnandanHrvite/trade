@@ -18,9 +18,8 @@
  *   route FLIPS — it buys the other side on the same close (if the window and the
  *   common rules allow it).
  *
- * STOP: none by default. EMA9_CROSS_COMMON_STOP_ENABLED (default false) turns on the
- * COMMON premium stop + profit lock (tradeGuards.checkProfitLock) the routes run per
- * tick; OFF = only the opposite candle close (or session end / manual) exits.
+ * STOP: none in this file. The initial stop and its trail are the COMMON premium
+ * stop + profit lock (tradeGuards.checkProfitLock) the routes run per tick.
  *
  * RE-ENTRY: only on a FRESH cross. After the common stop closes a CE while price
  * is still above EMA9 there is no new CE until price closes below and crosses back
@@ -109,10 +108,6 @@ function getConfig(prefix) {
     HTF_ENABLED: String(_env(P + "_HTF_TREND_ENABLED") || "false").trim().toLowerCase() === "true",
     HTF_MINUTES: HTF_CHOICES.indexOf(hm) !== -1 ? hm : 15,
     HTF_EMA_PERIOD: Number.isFinite(hp) && hp >= 2 ? hp : 20,
-    // Common premium stop / profit lock / futures stop (default OFF, 2026-11-18 on
-    // request): OFF = the trade closes ONLY on a candle close across the EMA (plus
-    // session end, daily-loss and manual exits). ON = the shared stop also runs.
-    COMMON_STOP_ENABLED: String(_env(P + "_COMMON_STOP_ENABLED") || "false").trim().toLowerCase() === "true",
     RES: resolutionMin(P),
   };
 }
