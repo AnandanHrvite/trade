@@ -276,7 +276,7 @@ one most often skipped — a strategy missing from it has invisible live trades 
 Most older strategies are still absent from it; add yours.
 
 **Docs** — `README.md` (routes table, strategy section — no env keys; run
-`npm run docs:env` to regenerate `docs/ENV.md`), no `CHANGELOG.md` entry,
+`npm run docs:env` to regenerate `docs/ENV.md`), no changelog file (CHANGELOG.md was removed — the commit log is the changelog),
 and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
 
 ---

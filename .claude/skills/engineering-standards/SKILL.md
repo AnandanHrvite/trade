@@ -353,7 +353,7 @@ There is no metrics backend — do not assume Prometheus, Grafana or an APM.
 
 Docs are CHEAP here by default — this is a solo repo and the commit log is the changelog. Do not write prose about your own change.
 
-Do NOT add a CHANGELOG.md entry unless asked. Put the explanation in the commit message.
+There is no CHANGELOG.md (removed 2026-11-18) — do not recreate it. Put the explanation in the commit message.
 
 README.md is orientation only (what strategies, modes and routes exist). Touch it only when one is added or removed. Do not document env keys there.
 

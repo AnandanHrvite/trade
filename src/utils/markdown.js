@@ -2,7 +2,7 @@
 
 /**
  * Markdown -> HTML for the two documents this app renders in a browser tab:
- * README.md and CHANGELOG.md on /docs. Deliberately a small CommonMark subset
+ * README.md and docs/ENV.md on /docs. Deliberately a small CommonMark subset
  * (no dependency is added for it) but a *block-level* one: fenced code, ATX
  * headings, pipe tables, nestable lists, blockquotes, thematic breaks and
  * paragraphs are each recognised BEFORE any inline rule runs.

@@ -80,7 +80,7 @@ JSONL day files include settings snapshots written by [settings.js](src/routes/s
 - **Tuning is OPEN (deadline lifted 2026-05-27).** The paper-data-collection no-tuning window was ended early by the user; strategy tuning and bug fixes are now in scope for all strategies. The per-strategy notes in `project_{bb_rsi,pa,swing}_post_window_observations.md` are still useful context (hypotheses + daily P&L track) — read them before tuning, but they are no longer a freeze. Caveat: trades generated *before* a bug fix were produced by buggy code — don't tune thresholds on pre-fix data; collect clean post-fix sessions first.
 - **Docs are cheap by default — do not write prose about your own change.** This is a solo repo; the
   commit log is the changelog (1,346 of 1,377 commits already use `type(scope):`). Concretely:
-  - **CHANGELOG.md** — do **not** add an entry unless the user asks. Kept for history only. Put the
+  - **CHANGELOG.md** — removed 2026-11-18 at the user's request; do **not** recreate it. Put the
     explanation in the commit message instead, where it costs one line and never rots.
   - **README.md** — orientation only (what strategies, modes, and routes exist). Do not document env
     keys here; `docs/ENV.md` is generated. Touch README only when a strategy, mode, or route is

@@ -254,7 +254,8 @@ router.post("/run", express.json(), async (req, res) => {
     // LTP unavailable)` branch — priced off the spot move 1:1. The day-wide
     // optionChainRecorder is supposed to make this impossible (ATM±5, always on);
     // why that strategy's symbol was still missing is UNRESOLVED, so the feature
-    // stays off until it is. See the CHANGELOG entry for the numbers.
+    // stays off until it is. The numbers were in the old CHANGELOG (file
+    // removed 2026-11-18): `git show 06a91ff4:CHANGELOG.md`.
     const result = await tickReplay.replaySession({
       date,
       mode,
