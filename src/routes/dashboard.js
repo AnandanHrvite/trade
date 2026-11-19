@@ -2009,7 +2009,7 @@ var _daRerender = null;
       title.textContent = 'Today so far';
     } else {
       badge.className = 'da-badge post'; badge.textContent = 'MARKET CLOSED';
-      title.textContent = 'Last session';
+      title.textContent = '';
     }
     subEl.textContent = sub || '';
   }

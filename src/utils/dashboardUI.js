@@ -251,7 +251,7 @@ function dhSummary(rows, markets, opts){
   var cols = closedOnly ? 5 : 7;
   var quietText = _dhEsc(opts.quietText || 'no trade yet today');
   var z = function(){ return { open:0, closed:0, trades:0, w:0, l:0, running:false, data:false, shown:0, quiet:0 }; };
-  var byMarket = {}, total = z(), body = '';
+  var byMarket = {}, total = z(), body = '', bare = [];
   var cell = function(label, inner, klass){ return '<td data-label="' + label + '"' + (klass ? ' class="' + klass + '"' : '') + '>' + inner + '</td>'; };
   var money = function(label, n, extra){ return cell(label, dhFmtINR(n), dhCls(n) + (extra ? ' ' + extra : '')); };
   var line = function(name, st, s, klass, accent){
@@ -291,7 +291,7 @@ function dhSummary(rows, markets, opts){
     // hideQuiet: a strategy that took no trade gets no line, and a market where
     // nothing traded gets no table at all — it still counts (as 0) in the totals.
     if (opts.hideQuiet) {
-      if (sub.shown) body += '<tbody data-market="' + _dhEsc(mk.key) + '">' + line(_dhEsc(mk.label), stOf(sub), sub, 'dh-mrow') + lines + '</tbody>';
+      if (sub.shown) { body += '<tbody data-market="' + _dhEsc(mk.key) + '">' + line(_dhEsc(mk.label), stOf(sub), sub, 'dh-mrow') + lines + '</tbody>'; bare.push(mk); }
       continue;
     }
     if (!sub.shown && sub.quiet) {
@@ -300,6 +300,7 @@ function dhSummary(rows, markets, opts){
       lines += '<tr class="dh-quiet"><td colspan="' + cols + '">+ ' + sub.quiet + ' more, ' + quietText + '</td></tr>';
     }
     body += '<tbody data-market="' + _dhEsc(mk.key) + '">' + line(_dhEsc(mk.label), stOf(sub), sub, 'dh-mrow') + lines + '</tbody>';
+    bare.push(mk);
   }
   if (!body) return { html:'', byMarket:byMarket, total:total };
   var head = '<thead><tr><th>Strategy</th>' + (closedOnly ? '' : '<th>Status</th><th>Open P&amp;L</th>')
@@ -310,8 +311,13 @@ function dhSummary(rows, markets, opts){
     // One table per market in a grid, TOTAL full-width below. A past day
     // (closedOnly) needs no column header — Net P&L · Trades · W/L read plainly.
     var tHead = closedOnly ? '' : head;
-    var tables = body.split('</tbody>').filter(function(t){ return t; })
-      .map(function(t){ return '<table class="dh-sum">' + tHead + t + '</tbody></table>'; }).join('');
+    var tables = body.split('</tbody>').filter(function(t){ return t; });
+    // Only one market table: its subtotal repeats the TOTAL below — show just the name.
+    if (tables.length === 1 && bare.length === 1) {
+      tables[0] = tables[0].replace(/<tr class="dh-mrow">[\\s\\S]*?<\\/tr>/,
+        '<tr class="dh-mrow"><td colspan="' + cols + '">' + _dhEsc(bare[0].label) + '</td></tr>');
+    }
+    tables = tables.map(function(t){ return '<table class="dh-sum">' + tHead + t + '</tbody></table>'; }).join('');
     return { html:'<div class="dh-sum-grid' + (closedOnly ? '' : ' dh-sum-grid-wide') + '">' + tables + '<table class="dh-sum dh-sum-total"><tbody class="dh-grand-body">' + line(grandLabel, stOf(total), total, 'dh-grand') + '</tbody></table></div>', byMarket:byMarket, total:total };
   }
   var grand = '<tbody class="dh-grand-body">' + line(grandLabel, stOf(total), total, 'dh-grand') + '</tbody>';
