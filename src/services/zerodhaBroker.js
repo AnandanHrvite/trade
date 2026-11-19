@@ -171,6 +171,9 @@ function setAccessToken(token) {
 
 /** Returns true ONLY if a validated token is present */
 function isAuthenticated() {
+  // getKite() restores today's validated disk token. It runs lazily, so without
+  // this a restart reads as "not logged in" until some other call touches Kite.
+  if (!process.env.ZERODHA_ACCESS_TOKEN) { try { getKite(); } catch (_) {} }
   return !!process.env.ZERODHA_ACCESS_TOKEN;
 }
 

@@ -67,12 +67,23 @@ function isEnabled() {
 
 // Saves a broker's failed sync for the Dashboard alert; a good sync (no message)
 // clears it. Called by the job below and by the Sync Now route.
+// A good sync after SYNC_HOUR:SYNC_MIN also marks the day done, so a Sync Now
+// stops the retry loop — otherwise a retry after the 16:00 token clear brings the
+// alert back. One during market hours doesn't: later fills still need the job.
 function recordSyncResult(name, errorMessage) {
-  const errors = { ...(readSyncState().errors || {}) };
+  const state = readSyncState();
+  const errors = { ...(state.errors || {}) };
+  const patch = {};
   if (errorMessage) errors[name] = { message: String(errorMessage), at: new Date().toISOString() };
-  else if (errors[name]) delete errors[name];
-  else return;
-  patchSyncState({ errors });
+  else {
+    const sync = BROKER_SYNCS.find((s) => s.name === name);
+    const now = istNow();
+    const afterClose = now.getHours() > SYNC_HOUR || (now.getHours() === SYNC_HOUR && now.getMinutes() >= SYNC_MIN);
+    if (sync && afterClose && state[sync.stateKey] !== istDateStr()) patch[sync.stateKey] = istDateStr();
+    if (errors[name]) delete errors[name];
+    else if (!Object.keys(patch).length) return;
+  }
+  patchSyncState({ ...patch, errors });
 }
 
 function getSyncErrors() {
