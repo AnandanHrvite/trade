@@ -643,7 +643,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `LOGIN_RATE_MAX` | number | — | Wrong-password attempts allowed before lockout. |
 | `LOGIN_RATE_WINDOW_MIN` | number | — | Lockout window length, in minutes. |
 | `LOGIN_SECRET` | password | _(secret — set in `.env`)_ | Page login password (blank = open access). |
-| `LOGIN_SESSION_MIN` | number | — | Idle minutes before login expires. |
+| `LOGIN_SESSION_MIN` | number | — | Idle minutes before login expires (43200 = 30 days). |
 | `WRITE_RATE_BURST` | number | — | Short-burst request allowance. |
 | `WRITE_RATE_PER_MIN` | number | — | Max state-changing requests per minute per IP (0 = off). |
 

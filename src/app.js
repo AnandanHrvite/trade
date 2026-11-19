@@ -90,7 +90,7 @@ const LOGIN_COOKIE = "__trade_login";
 // env so Settings edits to LOGIN_SESSION_MIN take effect on the next request.
 function loginMaxAge() {
   const m = Number(process.env.LOGIN_SESSION_MIN);
-  return Number.isFinite(m) && m >= 1 ? m * 60 : 900; // default 15 min
+  return Number.isFinite(m) && m >= 1 ? m * 60 : 30 * 24 * 3600; // default 30 days
 }
 // ── OTP unlock (locked-out escape hatch) ────────────────────────────────────
 // When an IP is rate-limited, the owner can prove identity by typing the mobile
@@ -699,7 +699,7 @@ app.use((req, res, next) => {
   }, {});
   const expectedToken = crypto.createHash("sha256").update(secret).digest("hex");
   if (cookies[LOGIN_COOKIE] === expectedToken) {
-    // Sliding expiry — refresh cookie on every request to reset the 15-min timer
+    // Sliding expiry — refresh cookie on every request to reset the idle timer
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${expectedToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
     return next();
   }

@@ -1332,7 +1332,7 @@ const SETTINGS_SCHEMA = [
       { key: "LOGIN_SECRET", label: "Login Password", type: "password", effect: EFFECT.INSTANT, desc: "Page login password (blank = open access)." },
 
       // ── Login / session ─────────────────────────────────────────────────────
-      { key: "LOGIN_SESSION_MIN",     label: "Login Idle Timeout (min)",      type: "number", min: 5,  max: 240, step: 5,  effect: EFFECT.INSTANT, desc: "Idle minutes before login expires.",                       default: "15", subheader: "Login & Session" },
+      { key: "LOGIN_SESSION_MIN",     label: "Login Idle Timeout (min)",      type: "number", min: 5,  max: 43200, step: 5,  effect: EFFECT.INSTANT, desc: "Idle minutes before login expires (43200 = 30 days).",     default: "43200", subheader: "Login & Session" },
       { key: "LOGIN_RATE_MAX",        label: "Login: Max Failed Attempts",    type: "number", min: 1,  max: 50,  step: 1,  effect: EFFECT.INSTANT, desc: "Wrong-password attempts allowed before lockout.", default: "5" },
       { key: "LOGIN_RATE_WINDOW_MIN", label: "Login: Lockout Window (min)",   type: "number", min: 1,  max: 1440, step: 1, effect: EFFECT.INSTANT, desc: "Lockout window length, in minutes.",                                          default: "15" },
       { key: "LOGIN_OTP_MOBILE",      label: "Login: OTP Mobile Number",      type: "text",   effect: EFFECT.INSTANT, desc: "Typing this number on a locked-out login page sends an OTP to Telegram that clears the lockout (blank = off).", default: "" },
