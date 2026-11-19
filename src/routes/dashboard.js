@@ -1994,6 +1994,7 @@ var _daRerender = null;
       return { key:t.key, label:t.label, market:t.market, accent:t.accent, href:tileHref(t),
                closed: b ? b.net : 0, trades: b ? b.t : 0, w: b ? b.w : 0, l: b ? b.l : 0, quiet: !(b && b.t > 0) };
     });
+    rows.sort(function(a, b){ return b.closed - a.closed; });   // best P&L first
     var out = dhSummary(rows, DASH_MARKETS, { market: dhMarket(), closedOnly: true, split: true, hideQuiet: true });
     var head = '<div class="da-day">' + (lastDay ? 'Last trading day · ' + lastDay + ' · WR ' + pctWR(out.total.w, out.total.l) + '%' : '') + '</div>';
     return head + (out.html || '<div class="da-empty">Nothing traded in this market that day.</div>');
