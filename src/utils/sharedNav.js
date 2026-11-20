@@ -2753,56 +2753,7 @@ function showPrompt(opts) {
   });
 }
 
-// ── Idle timeout — auto-logout after 15 min of no activity ──────────────────
-(function(){
-  if (!window.__LOGIN_GATE_ACTIVE) return;
-  var IDLE_MS = 15 * 60 * 1000;
-  var WARN_MS = 14 * 60 * 1000;
-  var _idleTimer = null;
-  var _warnTimer = null;
-  var _loggedOut = false;
-
-  function resetIdle() {
-    if (_loggedOut) return;
-    clearTimeout(_idleTimer);
-    clearTimeout(_warnTimer);
-    _warnTimer = setTimeout(onWarn, WARN_MS);
-    _idleTimer = setTimeout(onIdle, IDLE_MS);
-  }
-
-  function onWarn() {
-    if (_loggedOut) return;
-    showAlert({
-      icon: '⏰', title: 'Session Expiring',
-      message: 'You will be logged out in 1 minute due to inactivity.\\nMove your mouse or press a key to stay logged in.',
-      btnText: 'Stay Logged In', btnClass: 'modal-btn-success'
-    }).then(function() { resetIdle(); });
-  }
-
-  function onIdle() {
-    _loggedOut = true;
-    showAlert({
-      icon: '🔒', title: 'Session Expired',
-      message: 'Logged out due to 15 minutes of inactivity.',
-      btnText: 'Login Again', btnClass: 'modal-btn-primary'
-    }).then(function() { window.location.href = '/logout'; });
-    setTimeout(function() { window.location.href = '/logout'; }, 5000);
-  }
-
-  // Throttled activity tracker — resets idle timer at most once per 200ms
-  var _throttle = null;
-  function onActivity() {
-    if (_loggedOut || _throttle) return;
-    _throttle = setTimeout(function() { _throttle = null; }, 200);
-    resetIdle();
-  }
-
-  ['mousemove','mousedown','keydown','touchstart','scroll','click'].forEach(function(evt) {
-    document.addEventListener(evt, onActivity, { passive: true });
-  });
-
-  resetIdle();
-})();
+// (No idle auto-logout: the login stays until Logout is pressed.)
 
 } // end guard: typeof _showModal === 'undefined'
 
