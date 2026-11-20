@@ -92,6 +92,13 @@ function loginMaxAge() {
   const m = Number(process.env.LOGIN_SESSION_MIN);
   return Number.isFinite(m) && m >= 1 ? m * 60 : 30 * 24 * 3600; // default 30 days
 }
+// Login is also kept in this browser's localStorage, so a dropped cookie (idle
+// timeout, browser not keeping cookies on a self-signed cert) logs back in
+// silently on this browser only. A new browser has nothing saved → password.
+const LOGIN_LS_KEY = "__trade_login";
+function loginSavedPage(token) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#05080f}</style></head><body><script>try{localStorage.setItem(${JSON.stringify(LOGIN_LS_KEY)},${JSON.stringify(token)})}catch(e){}location.replace("/");</script></body></html>`;
+}
 // ── OTP unlock (locked-out escape hatch) ────────────────────────────────────
 // When an IP is rate-limited, the owner can prove identity by typing the mobile
 // number saved in Settings (LOGIN_OTP_MOBILE). A one-time code is then sent to
@@ -373,6 +380,18 @@ ${otpOffer ? `<div class="otp-box">
 <div class="legal">Authorized access only. Every attempt is logged.</div>
 </div>
 <script>
+// ── Saved login on this browser — log back in without the password ────────
+(function(){
+  var t; try { t = localStorage.getItem(${JSON.stringify(LOGIN_LS_KEY)}); } catch (e) {}
+  if (!t) return;
+  fetch('/login/restore', { method:'POST', credentials:'same-origin',
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+    body:'token=' + encodeURIComponent(t) })
+    .then(function(r){
+      if (r.ok) { location.replace('/'); return; }
+      if (r.status === 401) { try { localStorage.removeItem(${JSON.stringify(LOGIN_LS_KEY)}); } catch (e) {} }
+    }).catch(function(){});
+})();
 // ── IST clock ──────────────────────────────────────────────────────────────
 (function(){
   var el = document.getElementById('clock');
@@ -564,7 +583,8 @@ app.post("/login", (req, res) => {
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
     // '/' auto-swaps to Real-Time when any session is active (UI_SHOW_REALTIME),
     // so a single redirect target now covers both cases.
-    return res.redirect("/");
+    res.setHeader("Content-Type", "text/html");
+    return res.send(loginSavedPage(token));
   }
 
   // ── Demo password — same form, read-only session ───────────────────────────
@@ -575,7 +595,8 @@ app.post("/login", (req, res) => {
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${demoMode.token()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
     console.log(`👁 [LOGIN] Demo (read-only) session opened from ${ip}`);
     _recordLoginAttempt(req, ip, "demo", "(demo password)");
-    return res.redirect("/");
+    res.setHeader("Content-Type", "text/html");
+    return res.send(loginSavedPage(demoMode.token()));
   }
 
   // ── Failed attempt — increment rate limit counter ──────────────────────────
@@ -681,9 +702,25 @@ app.post("/login/otp/verify", (req, res) => {
   return res.json({ success: true });
 });
 
+// ── POST /login/restore — re-issue the cookie from this browser's saved login ─
+// Registered before the login gate. The token is a 64-hex SHA-256, so guessing
+// it is not a practical attack.
+app.post("/login/restore", (req, res) => {
+  const secret = process.env.LOGIN_SECRET;
+  if (!secret) return res.json({ success: true });
+  const t = String((req.body && req.body.token) || "");
+  const ownerToken = crypto.createHash("sha256").update(secret).digest("hex");
+  const ok = t === ownerToken || (demoMode.isEnabled() && t === demoMode.token());
+  if (!ok) return res.status(401).json({ success: false });
+  res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${t}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
+  return res.json({ success: true });
+});
+
 app.get("/logout", (req, res) => {
   res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=; Path=/; HttpOnly; Max-Age=0`);
-  res.redirect("/login");
+  // Forget the saved login too, or the login page would log straight back in.
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="background:#05080f"><script>try{localStorage.removeItem(${JSON.stringify(LOGIN_LS_KEY)})}catch(e){}location.replace("/login");</script></body></html>`);
 });
 
 // Login gate middleware — must come before all other routes
