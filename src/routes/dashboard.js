@@ -1520,7 +1520,7 @@ function _renderDashTotal(){
   _updateChartStats('dash-cum-stats', trades);
 }
 
-// The login cookie has a sliding 15-min expiry, so a tab left open outlives
+// The login cookie can lapse while a tab sits open (or a cached page is shown), so a tab outlives
 // its session: the page HTML is already rendered, but every later data fetch
 // comes back 401. Swallowing that into an empty array drew *blank charts on a
 // logged-out page*, which reads as "no trades today" — the one message it must
@@ -1529,6 +1529,24 @@ var _authBannerShown = false;
 function _authLost(){
   if (_authBannerShown) return;
   _authBannerShown = true;
+  // This browser may have a saved login (see app.js loginSavedPage) — use it
+  // to get the cookie back and reload, before telling the user anything.
+  var t = null, recent = false;
+  try {
+    t = localStorage.getItem('__trade_login');
+    // One try per 60 s — if the cookie still does not stick, show the banner
+    // rather than reloading forever.
+    recent = Date.now() - Number(sessionStorage.getItem('__trade_restore_at') || 0) < 60000;
+    if (t && !recent) sessionStorage.setItem('__trade_restore_at', String(Date.now()));
+  } catch (_) {}
+  if (!t || recent) { _showAuthBanner(); return; }
+  fetch('/login/restore', { method:'POST', credentials:'same-origin',
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+    body:'token=' + encodeURIComponent(t) })
+    .then(function(r){ if (r.ok) location.reload(); else _showAuthBanner(); })
+    .catch(_showAuthBanner);
+}
+function _showAuthBanner(){
   var bar = document.createElement('div');
   bar.id = 'sessionExpiredBar';
   bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#b91c1c;color:#fff;'
