@@ -307,16 +307,16 @@ function dhSummary(rows, markets, opts){
     + '<th>' + (closedOnly ? 'Net P&amp;L' : 'Closed P&amp;L') + '</th><th>Trades</th><th>W / L</th>'
     + (closedOnly ? '' : '<th>Today total</th>') + '</tr></thead>';
   var grandLabel = only ? 'TOTAL · ' + _dhEsc((markets.filter(function(m){ return m.key === only; })[0] || {}).label || only) : 'TOTAL';
+  // Only one market shown: its subtotal repeats the TOTAL below — show just the name.
+  if (bare.length === 1) {
+    body = body.replace(/<tr class="dh-mrow">[\\s\\S]*?<\\/tr>/,
+      '<tr class="dh-mrow"><td colspan="' + cols + '">' + _dhEsc(bare[0].label) + '</td></tr>');
+  }
   if (opts.split) {
     // One table per market in a grid, TOTAL full-width below. A past day
     // (closedOnly) needs no column header — Net P&L · Trades · W/L read plainly.
     var tHead = closedOnly ? '' : head;
     var tables = body.split('</tbody>').filter(function(t){ return t; });
-    // Only one market table: its subtotal repeats the TOTAL below — show just the name.
-    if (tables.length === 1 && bare.length === 1) {
-      tables[0] = tables[0].replace(/<tr class="dh-mrow">[\\s\\S]*?<\\/tr>/,
-        '<tr class="dh-mrow"><td colspan="' + cols + '">' + _dhEsc(bare[0].label) + '</td></tr>');
-    }
     tables = tables.map(function(t){ return '<table class="dh-sum">' + tHead + t + '</tbody></table>'; }).join('');
     return { html:'<div class="dh-sum-grid' + (closedOnly ? '' : ' dh-sum-grid-wide') + '">' + tables + '<table class="dh-sum dh-sum-total"><tbody class="dh-grand-body">' + line(grandLabel, stOf(total), total, 'dh-grand') + '</tbody></table></div>', byMarket:byMarket, total:total };
   }
