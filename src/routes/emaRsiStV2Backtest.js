@@ -21,6 +21,8 @@
  *   1. The global profit lock (tradeGuards.checkProfitLock) on the simulated
  *      option premium, with the peak premium tracked intra-bar — paper's only
  *      automatic exit.
+ *   1b. Optional SuperTrend candle-close exit (engine.stExit, <PREFIX>_ST_EXIT_ENABLED,
+ *      default OFF) — same call paper makes in onCandleClose, filled at the close.
  *   2. The session-end square-off — paper's TRADE_STOP_TIME teardown, or the
  *      day's last bar when the data ends first.
  * There is NO stop loss, NO trail, NO target, NO breakeven, NO time-stop, NO
@@ -444,6 +446,17 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = nu
         }
       }
 
+      // ── 1b. SuperTrend candle-close exit (engine.stExit, default OFF) ──────
+      // Paper runs it in onCandleClose, after the tick-level lock and before the
+      // session-end check, filling at the bar's close. Paper arms a new
+      // confirmation signal only when flat at the close, so an exit on this bar
+      // does not arm this bar's signal (step 5).
+      let stExitedThisBar = false;
+      if (pos) {
+        const stMsg = engine.stExit(sorted, pos.side, stratCfg, { series: fullSeries, endIdx: gIdx });
+        if (stMsg) { close(c.close, c.time, stMsg, gIdx, true); stExitedThisBar = true; }
+      }
+
       // ── 2. Session-end square-off — paper's TRADE_STOP_TIME teardown ───────
       if (pos && istMin + RES >= g.sessionStopMin) {
         close(c.close, c.time, `Session end — squared off at the close of the bar ending at/after ${_fmtMins(g.sessionStopMin)} IST`, gIdx, true);
@@ -484,7 +497,7 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs, mkt, vixCandles = nu
       }
 
       // ── 5. Look for a NEW setup on this bar's close ────────────────────────
-      if (!pos && sigSide) {
+      if (!pos && sigSide && !(stExitedThisBar && g.confirmEnabled)) {
         const blocked = entryBlockedReason(sigSide, gIdx, c.time);
         // Warm-up setups are not part of the requested range's funnel — counting
         // them under `setups` would inflate every ratio on the results page.
@@ -633,7 +646,8 @@ function _resultsView(from, to, trades, stats, meta) {
       `There is deliberately <b>no SuperTrend entry gate and no RSI cap</b> — a CE may fire while SuperTrend is red, and RSI 95 is a valid CE. ` +
       `<b>Confirmation candle is ${g.confirmEnabled ? "ON" : "OFF"}</b> (<code>EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED</code>)${g.confirmEnabled ? ": the signal bar never enters — its CLOSE is armed as the trigger and the fill is taken on the IMMEDIATELY-next bar, the same market moment paper fills at on its first tick past the trigger" : ": entry is the signal bar's close"}. ` +
       `<b>Exit:</b> the global profit lock is the ONLY automatic exit (arm +${lockArm}%, floor +${lockFloor}%, trail ${lockTrail}%${lockTiers ? `, tiers ${_escHtml(lockTiers)}` : ""} — the shared <code>PROFIT_LOCK_*</code> keys)${lockOn ? "" : " — <b>currently OFF</b>"}${futMode ? " — off in futures mode (it is defined on option premium)" : ""}, tested on the simulated premium with the peak tracked intra-bar. Anything still open is squared off at the session end (${_fmtMins(g.sessionStopMin)} IST, <code>TRADE_STOP_TIME</code>) or the day's last bar. ` +
-      `There is <b>no stop loss, no trail, no target</b>, no breakeven, no time-stop, no signal exit and no early square-off. ` +
+      (c.ST_EXIT_ENABLED ? `<b>SuperTrend exit ON:</b> a 5-min close through the SuperTrend line exits at that close. ` : "") +
+      `There is <b>no trail, no target</b>, no breakeven, no time-stop and no early square-off. ` +
       `<b>Guards (V2's own keys):</b> entries ${_fmtMins(g.entryStartMin)}–${_fmtMins(g.entryEndMin)}, plus the global wait-after-exit cooldown. No loss-based day limits. ` +
       `<b>Warm-up:</b> the engine refuses below ${engine.warmupBars(c)} candles — more than one session — so ${g.warmupDays} calendar days of runway are fetched BEFORE ${_escHtml(from)} purely to seed the indicators. ${meta.warmupBars || 0} such bars were loaded and ${wv === 0 ? "<b>none of them produced a trade</b> (asserted, not assumed)" : `<b>⚠ ${wv} produced a trade — this is a bug, do not trust these results</b>`}. ` +
       `<b>Intra-bar ordering is conservative:</b> each bar is walked open → adverse extreme → favourable extreme → close, so the lock is tested on the adverse leg before the favourable extreme can raise the peak, and a bar that opened through the locked floor fills at the OPEN. ` +

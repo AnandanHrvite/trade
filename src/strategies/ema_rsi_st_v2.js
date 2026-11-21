@@ -38,7 +38,8 @@
  * at the crossing price. Paper/Live fill at the first tick past the trigger;
  * Backtest fills at the same market moment via confirmCandle.barCrossFill.
  *
- * EXITS live in the execution layer, not here. The NIFTY / BANKNIFTY V2 paper and
+ * EXITS live in the execution layer, except stExit() below (the optional
+ * SuperTrend candle-close exit, <PREFIX>_ST_EXIT_ENABLED, default OFF). The NIFTY / BANKNIFTY V2 paper and
  * backtest routes exit ONLY on the global profit lock (tradeGuards.checkProfitLock)
  * plus the session teardown — they ignore `stopLoss` and never call trailStop().
  * getSignal() still returns the SuperTrend level as `stopLoss` / `slSpot`, and
@@ -136,6 +137,9 @@ function getConfig(prefix) {
     ST_MULT:    Number.isFinite(stMult)   && stMult   > 0 ? stMult    : 2,
     RSI_CE_MIN: Number.isFinite(rsiCeMin) ? rsiCeMin : 52,
     RSI_PE_MAX: Number.isFinite(rsiPeMax) ? rsiPeMax : 48,
+    // SuperTrend exit (2026-11-21, default OFF): exit on a 5-min CLOSE through
+    // the SuperTrend line. See stExit().
+    ST_EXIT_ENABLED: String(_env(P + "_ST_EXIT_ENABLED") || "false").trim().toLowerCase() === "true",
   };
 }
 
@@ -434,6 +438,36 @@ function trailStop(candles, side, currentStop, cfg, precomputed) {
   return unchanged;
 }
 
+/**
+ * stExit(candles, side, cfg, precomputed) — the SuperTrend candle-close exit.
+ *
+ * ONE implementation shared by paper and backtest. Reads the LAST candle, which
+ * must be fully closed. A CE exits when SuperTrend has turned BEARISH on that
+ * close (the close fell below the line); a PE exits when it turned BULLISH.
+ * Returns the exit reason, or null to hold (toggle off, warm-up, bad data).
+ *
+ * Example: CE bought at 25509 with SuperTrend at 25459. A 5-min candle closing at
+ * 25497 holds; only a close below the line (trend flips) exits.
+ *
+ * precomputed — BACKTEST ONLY: { series, endIdx } from computeSeries over the
+ * whole array. Causal, so identical to recomputing on the prefix.
+ */
+function stExit(candles, side, cfg, precomputed) {
+  if (typeof cfg === "string") cfg = getConfig(cfg);
+  cfg = cfg || getConfig();
+  if (!cfg.ST_EXIT_ENABLED || (side !== "CE" && side !== "PE")) return null;
+  var pre = precomputed || null;
+  var nBars = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
+  if (nBars < cfg.ST_PERIOD + 2) return null;
+  var st  = pre ? pre.series.supertrend : computeSuperTrend(candles, cfg.ST_PERIOD, cfg.ST_MULT);
+  var cur = st[nBars - 1];
+  var bar = candles[nBars - 1];
+  if (!cur || !_num(cur.value) || !bar || !_num(bar.close)) return null;
+  if (side === "CE" && cur.trend === -1) return "SuperTrend exit — 5-min close " + bar.close + " below SuperTrend (now " + cur.value + ")";
+  if (side === "PE" && cur.trend === 1)  return "SuperTrend exit — 5-min close " + bar.close + " above SuperTrend (now " + cur.value + ")";
+  return null;
+}
+
 module.exports = {
   NAME: NAME,
   DEFAULT_PREFIX: DEFAULT_PREFIX,
@@ -445,5 +479,6 @@ module.exports = {
   computeSeries: computeSeries,
   getSignal: getSignal,
   trailStop: trailStop,
+  stExit: stExit,
   isInTradingWindow: isInTradingWindow,
 };

@@ -4,6 +4,7 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-11-21 — V2: new `EMA_RSI_ST_V2_ST_EXIT_ENABLED` (default OFF, Settings toggle) — exit on a 5-min close through SuperTrend via shared `engine.stExit()`, used by `emaRsiStV2Paper.js` (onCandleClose) and `emaRsiStV2Backtest.js` (filled at the close; no same-bar re-arm, like paper). Lets a wide premium stop act as a crash guard only.
 - 2026-11-17 — Backtests follow Settings like paper: `backtestEngine.js` (EMA_RSI_ST) prices the simulated premium on `BACKTEST_SEED_PREMIUM` instead of a fixed ₹200 (moves the % stop/lock in spot points), and `emaRsiStV2Backtest.js` applies paper's VIX gate (`VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY`, prior-day India VIX close).
 - 2026-11-17 — `emaRsiStV2Backtest.js` honours `MAX_TRADES_PER_DAY` like paper: once N trades close in an IST day, every entry path (confirmation fill and candle-close) is blocked for the rest of that day (count resets per day).
 - 2026-11-14 — `emaRsiStV2Backtest.js` reads candles through the shared month cache (`fetchCandlesCachedBT`) like the other backtests, so every strategy reuses one download; the cache is never auto-deleted and is now in the Settings backup.

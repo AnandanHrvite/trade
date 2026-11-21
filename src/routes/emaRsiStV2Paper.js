@@ -14,7 +14,8 @@
  *            automatic exit. There is no stop loss, no trail, no target, no
  *            breakeven, no time stop, no signal exit and no early square-off —
  *            only the profit lock, the manual exit, /stop and the TRADE_STOP_TIME
- *            session auto-stop.
+ *            session auto-stop. Optional: <PREFIX>_ST_EXIT_ENABLED (default OFF)
+ *            adds a 5-min close-through-SuperTrend exit (engine.stExit).
  *   GUARDS : own keys — window 10:30–13:00. No loss-based
  *            day limits (no max trades / daily loss / consecutive-loss breaker).
  *
@@ -378,6 +379,7 @@ function _jExitKind(reason) {
   if (/^Profit lock/i.test(r) || /^Stop-loss trail/i.test(r)) return "trail";
   if (/^Stop-loss/i.test(r)) return "sl";
   if (/^Manual/i.test(r))    return "manual";
+  if (/^SuperTrend exit/i.test(r)) return "signal";   // engine.stExit — close through SuperTrend
   return "eod";   // EOD square-off, auto-stop, shutdown, simulation end
 }
 
@@ -1412,6 +1414,14 @@ async function onCandleClose(candle) {
       : "";
     log(`   Open ${_p.side} @ ₹${_p.spotAtEntry} | best=₹${_p.bestPrice||"—"} | est.PnL≈${_est}pt`);
     log(`   Option: entry=${_optEntry} now=${_optNow}${_optPnl}`);
+
+    // SuperTrend candle-close exit (<PREFIX>_ST_EXIT_ENABLED, default OFF). The
+    // engine owns the rule (stExit) so paper and backtest read the same thing.
+    const _stExitMsg = engine.stExit(ptState.candles, _p.side, ENG_PREFIX);
+    if (_stExitMsg) {
+      log(`🛑 [PAPER] ${_stExitMsg}`);
+      simulateSell(candle.close, _stExitMsg, candle.close);
+    }
   }
 
   // ── Session auto-stop at TRADE_STOP_TIME (closes any open position) ────────
