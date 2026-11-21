@@ -14,7 +14,8 @@
  * 2026-11-18 (owner order): the classic ORB spot exits are back as OPTIONS, both
  * shipping OFF — a stop on the opening range (ORB_STOP_MODE) and a reward:risk
  * target (ORB_TARGET_RR). Planned once at entry (planSpotExits), checked per tick
- * before the lock (spotExitAt). Paper and backtest both call these two functions.
+ * before the lock (spotExitAt). With ORB_STOP_ON_CLOSE (default on) the stop is
+ * checked on the 5-min candle close instead (spotExitAt(pos, close, true)). Paper and backtest both call these two functions.
  *
  * DECISIONS ARE RETURNED, NOT EXECUTED. Paper simulates a fill, Live places a
  * broker order. Those are execution concerns; this module only decides.
@@ -85,7 +86,7 @@ const _r2 = (x) => Math.round(x * 100) / 100;
  * @returns {{stopSpot:number|null, rrTargetSpot:number|null, riskPts:number|null, stopMode:string|null, targetRR:number|null}}
  */
 function planSpotExits({ side, entrySpot, orh, orl }, get = (k) => process.env[k]) {
-  const none = { stopSpot: null, rrTargetSpot: null, riskPts: null, stopMode: null, targetRR: null };
+  const none = { stopSpot: null, rrTargetSpot: null, riskPts: null, stopMode: null, targetRR: null, stopOnClose: false };
   const mode = String(get("ORB_STOP_MODE") || "off").trim().toLowerCase();
   if (!STOP_MODES[mode]) return none;
   if (![entrySpot, orh, orl].every(Number.isFinite) || !(orh > orl)) return none;
@@ -98,22 +99,32 @@ function planSpotExits({ side, entrySpot, orh, orl }, get = (k) => process.env[k
   const rr = parseFloat(get("ORB_TARGET_RR") || "0");
   const hasTarget = Number.isFinite(rr) && rr > 0;
   const target = hasTarget ? (isCE ? entrySpot + rr * risk : entrySpot - rr * risk) : null;
+  // ORB_STOP_ON_CLOSE (default on): the stop only counts when a 5-min candle
+  // CLOSES back past it, so a quick retest wick no longer kills the trade.
+  const onClose = String(get("ORB_STOP_ON_CLOSE") || "true").trim().toLowerCase() !== "false";
   return {
     stopSpot: _r2(stop), rrTargetSpot: target == null ? null : _r2(target),
     riskPts: _r2(risk), stopMode: mode, targetRR: hasTarget ? rr : null,
+    stopOnClose: onClose,
   };
 }
 
 /**
  * Does spot price `px` hit the position's ORB stop or target? Stop first.
+ * `atClose` = px is a 5-min candle CLOSE. A stop planned with stopOnClose is
+ * only judged then — ticks and intrabar highs/lows never trip it.
+ * Example (or_edge CE, ORH 24100): a tick at 24095 keeps the trade; the candle
+ * closing at 24095 exits it.
  * @returns {{kind:"stop"|"target", level:number, reason:string}|null}
  */
-function spotExitAt(pos, px) {
+function spotExitAt(pos, px, atClose = false) {
   if (!pos || !Number.isFinite(px)) return null;
   const isCE = pos.side === "CE";
-  if (pos.stopSpot != null && (isCE ? px <= pos.stopSpot : px >= pos.stopSpot)) {
+  const stopLive = pos.stopSpot != null && (atClose || !pos.stopOnClose);
+  if (stopLive && (isCE ? px <= pos.stopSpot : px >= pos.stopSpot)) {
+    const what = pos.stopOnClose ? `5-min candle closed at ${px}, past ${pos.stopSpot}` : `spot crossed ${pos.stopSpot}`;
     return { kind: "stop", level: pos.stopSpot,
-      reason: `Stop-loss (ORB ${STOP_MODES[pos.stopMode] || "stop"}) — spot crossed ${pos.stopSpot} (risk ${pos.riskPts}pt)` };
+      reason: `Stop-loss (ORB ${STOP_MODES[pos.stopMode] || "stop"}) — ${what} (risk ${pos.riskPts}pt)` };
   }
   if (pos.rrTargetSpot != null && (isCE ? px >= pos.rrTargetSpot : px <= pos.rrTargetSpot)) {
     return { kind: "target", level: pos.rrTargetSpot,

@@ -125,7 +125,16 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     assert.deepStrictEqual([o.stopSpot, o.rrTargetSpot], [24000, null], "RR 0 must mean no target");
     // An entry not beyond its own stop gets neither.
     assert.strictEqual(orbExits.planSpotExits({ ...ce, entrySpot: 24090 }, env({ ORB_STOP_MODE: "or_edge", ORB_TARGET_RR: "2" })).stopSpot, null);
-    const pos = { ...ce, ...e, isFutures: false, optionEntryLtp: 200, peakPremium: 200, qty: 65 };
+    assert.strictEqual(e.stopOnClose, true, "ORB_STOP_ON_CLOSE must default ON");
+    // Stop on a 5-min CLOSE (default): a tick / wick past the stop keeps the trade; the close exits it.
+    const pc = { ...ce, ...e, isFutures: false, optionEntryLtp: 200, peakPremium: 200, qty: 65 };
+    assert.strictEqual(orbExits.evaluateTickExits(pc, { spotPrice: 24095, optionLtp: 185 }).exit, false, "a tick past the stop exited a close-only stop");
+    assert.strictEqual(orbExits.spotExitAt(pc, 24105, true), null, "a close still beyond the edge exited");
+    const cl = orbExits.spotExitAt(pc, 24095, true);
+    assert.ok(cl && cl.kind === "stop" && /^Stop-loss/.test(cl.reason), `close-inside did not exit: ${JSON.stringify(cl)}`);
+    // ORB_STOP_ON_CLOSE=false: the old tick stop.
+    const t = orbExits.planSpotExits(ce, env({ ORB_STOP_MODE: "or_edge", ORB_TARGET_RR: "2", ORB_STOP_ON_CLOSE: "false" }));
+    const pos = { ...ce, ...t, isFutures: false, optionEntryLtp: 200, peakPremium: 200, qty: 65 };
     assert.strictEqual(orbExits.evaluateTickExits(pos, { spotPrice: 24110, optionLtp: 195 }).exit, false, "exited between stop and target");
     const st = orbExits.evaluateTickExits(pos, { spotPrice: 24099, optionLtp: 190 });
     assert.ok(st.exit && st.kind === "stop" && /^Stop-loss/.test(st.reason), `stop did not fire: ${JSON.stringify(st)}`);

@@ -815,13 +815,23 @@ function _checkExits(spotPrice) {
 // ── Candle close handler ────────────────────────────────────────────────────
 
 async function onCandleClose(bar) {
+  // ORB stop on a candle CLOSE (ORB_STOP_ON_CLOSE): a candle that closed back past
+  // the stop ends the trade. Ticks never trip this stop — see orbExits.spotExitAt.
+  if (state.position && state.position.stopOnClose && bar) {
+    const sx = orbExits.spotExitAt(state.position, bar.close, true);
+    if (sx && sx.kind === "stop") {
+      simulateSell(sx.reason, "sl", state.position.isFutures ? bar.close : null);
+      return;   // never re-enter on the very candle that just failed the breakout
+    }
+  }
+
   // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
   // the buildup series stays filled even on no-signal candles.
   // The OI gate reads NIFTY's option chain — NIFTY only (pairRuntime.oiApplies).
   if (rt.oiApplies) await oiFilter.recordOiSample(bar && bar.close);
 
-  // Already in position? Nothing to do on the close — the automatic exits (ORB's
-  // spot stop / target when set, then the profit lock) run per tick in _checkExits.
+  // Already in position? Nothing more to do on the close — the other automatic exits
+  // (ORB's target when set, the tick stop, the profit lock) run per tick in _checkExits.
   if (state.position) return;
 
   const _spot = bar && bar.close;

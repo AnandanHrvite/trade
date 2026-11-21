@@ -94,7 +94,8 @@ function _orbExitNote() {
   const mode = String(process.env.ORB_STOP_MODE || "off").trim().toLowerCase();
   if (!["or_edge", "or_mid", "or_opposite"].includes(mode)) return "";
   const rr = parseFloat(process.env.ORB_TARGET_RR || "0");
-  return `ORB spot stop at the ${mode === "or_edge" ? "range edge" : mode === "or_mid" ? "range middle" : "far side of the range"}${rr > 0 ? ` + target at 1:${rr}` : ""}, then `;
+  const onClose = String(process.env.ORB_STOP_ON_CLOSE || "true").trim().toLowerCase() !== "false";
+  return `ORB spot stop at the ${mode === "or_edge" ? "range edge" : mode === "or_mid" ? "range middle" : "far side of the range"}${onClose ? " (on a 5-min close)" : ""}${rr > 0 ? ` + target at 1:${rr}` : ""}, then `;
 }
 function _utcSecToIstMins(unixSec) { return Math.floor((unixSec + 19800) / 60) % 1440; }
 function _parseMin(envKey, fallback) {
@@ -278,6 +279,12 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
           closePos(position, c.close, c.time, `${_why(lvl)} (trailed and given back inside the bar — filled at the close)`);
           _book(position, c.time + 5 * 60 - 1); position = null; break futExit;
         }
+        // ORB stop judged on the candle close (ORB_STOP_ON_CLOSE) — fills at the close, like paper.
+        const sxClose = orbExits.spotExitAt(position, c.close, true);
+        if (sxClose && sxClose.kind === "stop") {
+          closePos(position, c.close, c.time, sxClose.reason);
+          _book(position, c.time + 5 * 60 - 1); position = null; break futExit;
+        }
       }
 
       // ── In-position: the global profit lock, simulated on the δ-modelled premium ──
@@ -332,6 +339,12 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = [], market = n
         hit = _lock(_premAt(position, c.close));
         if (hit) {
           closePos(position, c.close, c.time, hit);
+          _book(position, c.time + 5 * 60 - 1); position = null; break lockExit;
+        }
+        // e) ORB stop judged on the candle close (ORB_STOP_ON_CLOSE) — fills at the close, like paper.
+        const sxClose = orbExits.spotExitAt(position, c.close, true);
+        if (sxClose && sxClose.kind === "stop") {
+          closePos(position, c.close, c.time, sxClose.reason);
           _book(position, c.time + 5 * 60 - 1); position = null; break lockExit;
         }
       }
