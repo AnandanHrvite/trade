@@ -1341,6 +1341,8 @@ app.use("/trend-day-scalp-backtest", lazyRouter(() => require("./routes/trendDay
 // ── HA_SCALP routes (15-min Heikin Ashi trend scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/ha-scalp-paper",      require("./routes/haScalpPaper"));            // ← canonical engine
 app.use("/ha-scalp-backtest",   lazyRouter(() => require("./routes/haScalpBacktest")));         // ← same signal engine, paper's exits
+app.use("/ha-scalp-live",         lazyRouter(() => require("./routes/haScalpLive")));           // ← wraps paper: REAL Fyers orders
+app.use("/ha-scalp-live-harness", lazyRouter(() => require("./routes/haScalpLiveHarness")));    // ← wraps paper: simulated orders
 
 // ── PREV_ORB_SCALP routes (prev-day range + 15m/3m ORB scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/prev-orb-scalp-paper",    require("./routes/prevOrbScalpPaper"));        // ← canonical engine
@@ -1924,6 +1926,18 @@ server.listen(PORT, HOST, () => {
     for (const s of _persist.getStaleSnapshots()) _persist.clearStaleSnapshot(s.file);
   } catch (e) { console.error(`[STARTUP] snapshot cleanup failed: ${e.message}`); }
 
+  // ── Boot: real Live positions recorded before the restart ─────────────────
+  // Paper sessions do not survive a restart, so paper will never exit these.
+  // Alert only — the Live page shows them with a "Square off now" button.
+  try {
+    const open = require("./services/liveHarness").persistedRealPositions();
+    if (open.length) {
+      const list = open.map((r) => `${r.mode}: ${r.direction} ${r.qty}× ${r.symbol}${r.confirmed === false ? " (UNCONFIRMED)" : ""} [${r.savedDate || "?"}]`).join("\n");
+      console.error(`🚨 [STARTUP] ${open.length} real Live position(s) recorded before restart:\n${list}`);
+      sendTelegram(`🚨 BOT RESTARTED with real Live position(s) on record:\n${list}\n\nPaper will NOT exit these. Check Fyers, then use "Square off now" on the Live page (it checks Fyers first).`);
+    }
+  } catch (e) { console.error(`[STARTUP] live position check failed: ${e.message}`); }
+
   // ── Boot: resume post-exit watches a restart interrupted (observer only) ───
   try { require("./utils/postExitTracker").resume(); }
   catch (e) { console.error(`[STARTUP] post-exit resume failed: ${e.message}`); }
@@ -2030,6 +2044,21 @@ async function gracefulShutdown(signal) {
     }
 
 
+    // Live pages mirror paper's square-off above as REAL orders, fired async
+    // from the exit hook — wait (bounded, inside PM2's 20s kill_timeout) for
+    // them to finish before exiting.
+    let _liveNote = "(no real positions affected)";
+    try {
+      const _lh = require("./services/liveHarness");
+      if (_lh.hasRealInstalled() || _lh.persistedRealPositions().length) {
+        const drained = await _lh.drain(12000);
+        const left = _lh.persistedRealPositions();
+        _liveNote = left.length
+          ? `⚠️ ${left.length} REAL position(s) still on record: ${left.map((r) => r.symbol).join(", ")} — check Fyers NOW`
+          : `real Live positions squared off${drained ? "" : " (some orders unconfirmed — check Fyers)"}`;
+      }
+    } catch (e) { _liveNote = `live drain error: ${e.message} — check Fyers`; }
+
     // Send Telegram alert SYNCHRONOUSLY (curl-based) so the message is
     // flushed before process.exit fires in 3-8s. An async https.request
     // here gets abandoned on exit if the API round-trip is slow, which
@@ -2039,7 +2068,7 @@ async function gracefulShutdown(signal) {
       const mu = process.memoryUsage();
       const memLine = `RSS=${(mu.rss/1048576).toFixed(0)}MB heap=${(mu.heapUsed/1048576).toFixed(0)}/${(mu.heapTotal/1048576).toFixed(0)}MB ext=${(mu.external/1048576).toFixed(0)}MB`;
       const uptime  = `uptime=${Math.floor(process.uptime())}s`;
-      sendTelegramSync(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).\n${memLine} ${uptime}`);
+      sendTelegramSync(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} ${_liveNote}.\n${memLine} ${uptime}`);
     } catch (_) {}
 
     // Give the paper saves a moment to flush before exiting.

@@ -522,7 +522,38 @@ function _isFuturesAlert(p) {
   catch (_) { return false; }
 }
 
+// ── Live-order hooks ────────────────────────────────────────────────────────
+// services/liveHarness.js registers hooks here so a Live / Live Harness page can
+// mirror the SAME entry/exit/session-end calls paper already makes. They fire
+// from INSIDE these stable functions because paper routes destructure
+// `const { notifyEntry } = require("./notify")` at load time — swapping the
+// export would never reach them. Fired BEFORE any Telegram gate: a muted alert
+// must never mute a real order. A hook can never break paper: every call is
+// wrapped and an async rejection is caught here.
+const _orderHooks = new Map();   // id → { entry, exit, sessionEnd }
+
+/** Register live-order hooks under an id. Any of { entry, exit, sessionEnd } may be null. */
+function setOrderHooks(id, { entry = null, exit = null, sessionEnd = null } = {}) {
+  _orderHooks.set(id, { entry, exit, sessionEnd });
+}
+/** Remove the live-order hooks registered under an id. */
+function clearOrderHooks(id) {
+  _orderHooks.delete(id);
+}
+function _fireHooks(kind, p) {
+  // Copy first: a sessionEnd hook uninstalls itself while we iterate.
+  for (const h of [..._orderHooks.values()]) {
+    const fn = h[kind];
+    if (!fn) continue;
+    try {
+      const r = fn(p);
+      if (r && typeof r.catch === "function") r.catch((e) => console.error(`[notify] ${kind} hook rejection: ${e && e.message}`));
+    } catch (e) { console.error(`[notify] ${kind} hook error: ${e.message}`); }
+  }
+}
+
 function notifyEntry(p) {
+  _fireHooks("entry", p);
   const gate = _gate(p.mode);
   const group = gate.group;
   if (!gate.on) return;
@@ -575,6 +606,7 @@ function notifyEntry(p) {
  *   candlesHeld  — completed candles held; fallback when heldMs is absent
  */
 function notifyExit(p) {
+  _fireHooks("exit", p);
   const gate = _gate(p.mode);
   const group = gate.group;
   if (!gate.on) return;
@@ -652,6 +684,9 @@ function notifySignal({ mode, signal, reason, strength, spot, time }) {
  * Fires per-mode when that mode's session stops. Gated by TG_{group}_DAYREPORT.
  */
 function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessionEnd }) {
+  // Paper calls this at the END of stopSession, after its square-off exit —
+  // the live harness uses it to detach once paper's session is over.
+  _fireHooks("sessionEnd", { mode });
   const gate = _gate(mode);
   const group = gate.group;
   if (!gate.on) return;
@@ -851,4 +886,6 @@ module.exports = {
   notifyDayReport,
   notifyConsolidatedDayReport,
   notifyAuthError,
+  setOrderHooks,
+  clearOrderHooks,
 };

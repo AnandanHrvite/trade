@@ -231,6 +231,8 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const showHaScalpBacktest   = (process.env.UI_SHOW_HA_SCALP_BACKTEST      || 'false').toLowerCase()  === 'true';
   const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
   const showHaScalpHistory    = (process.env.UI_SHOW_HA_SCALP_HISTORY       || 'true').toLowerCase()  === 'true';
+  const showHaScalpLive        = (process.env.UI_SHOW_HA_SCALP_LIVE          || 'true').toLowerCase()  === 'true';
+  const showHaScalpLiveHarness = (process.env.UI_SHOW_HA_SCALP_LIVE_HARNESS  || 'true').toLowerCase()  === 'true';
   // PREV ORB Scalp.
   const showPrevOrbScalpBacktest = (process.env.UI_SHOW_PREV_ORB_SCALP_BACKTEST || 'false').toLowerCase() === 'true';
   const showPrevOrbScalpPaper    = (process.env.UI_SHOW_PREV_ORB_SCALP_PAPER    || 'true').toLowerCase() === 'true';
@@ -295,7 +297,7 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
   const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapHistory'];
   const trendPbKeys = ['trendPbBacktest', 'trendPbPaper', 'trendPbHistory'];
   const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpHistory'];
-  const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpHistory'];
+  const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpHistory', 'haScalpLiveHarness', 'haScalpLive'];
   const prevOrbScalpKeys = ['prevOrbScalpBacktest', 'prevOrbScalpPaper', 'prevOrbScalpHistory'];
   const itm20ScalpKeys = ['itm20ScalpBacktest', 'itm20ScalpPaper', 'itm20ScalpHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStHistory'];
@@ -404,6 +406,8 @@ function buildSidebar(activePage, _unused, isRunning = false, opts = {}) {
     ...(showHaScalpBacktest ? [{ key: 'haScalpBacktest', href: '/ha-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showHaScalpPaper    ? [{ key: 'haScalpPaper',    href: '/ha-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showHaScalpHistory  ? [{ key: 'haScalpHistory',  href: '/ha-scalp-paper/history', icon: '📜', label: 'History' }] : []),
+    ...(showHaScalpLiveHarness ? [{ key: 'haScalpLiveHarness', href: '/ha-scalp-live-harness', icon: '🧪', label: 'Live Harness' }] : []),
+    ...(showHaScalpLive        ? [{ key: 'haScalpLive',        href: '/ha-scalp-live',         icon: '🔴', label: 'Live'         }] : []),
   ];
 
   const prevOrbScalpItems = [

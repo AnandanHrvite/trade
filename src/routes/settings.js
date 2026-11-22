@@ -948,6 +948,17 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "LIVE TRADING — real Fyers orders",
+    icon: "🔴",
+    nav: "Live Trading",
+    group: "System",
+    fields: [
+      { key: "LIVE_TRADING_ENABLED", label: "Real Orders — Master Switch", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF = no Live page can place a real order. Turning it OFF mid-session stops new real entries at once; exits of open positions still go out. Live Harness pages never place real orders.", default: "false", subheader: "Master switch" },
+      { key: "LIVE_BROKER_TIMEOUT_MS", label: "Broker Call Timeout (ms)", type: "number", min: 1500, max: 30000, step: 500, effect: EFFECT.INSTANT, desc: "How long to wait for Fyers on each order and fill check. A timed-out entry is treated as UNKNOWN and blocks new entries until you check Fyers.", default: "8000" },
+      { key: "HA_SCALP_LIVE_ENABLED", label: "HA Scalp — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the HA Scalp Live page to send real Fyers orders. Needs the master switch ON too.", default: "false", subheader: "Per strategy (needs the master switch ON)" },
+    ],
+  },
+  {
     section: "Server & Broker",
     icon: "🖥️",
     nav: "Server & Broker",
@@ -1260,6 +1271,8 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_HA_SCALP_BACKTEST", label: "HA Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under HA Scalp.", default: "false", subheader: "HA Scalp sub-menus" },
       { key: "UI_SHOW_HA_SCALP_PAPER",    label: "HA Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_HISTORY",  label: "HA Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under HA Scalp.", default: "true" },
+      { key: "UI_SHOW_HA_SCALP_LIVE_HARNESS", label: "HA Scalp → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under HA Scalp.", default: "true" },
+      { key: "UI_SHOW_HA_SCALP_LIVE",         label: "HA Scalp → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under HA Scalp.", default: "true" },
       // ── Prev ORB Scalp submenu ──
       { key: "UI_SHOW_PREV_ORB_SCALP_BACKTEST", label: "Prev ORB Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Prev ORB Scalp.", default: "false", subheader: "Prev ORB Scalp sub-menus" },
       { key: "UI_SHOW_PREV_ORB_SCALP_PAPER",    label: "Prev ORB Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Prev ORB Scalp.", default: "true" },

@@ -638,6 +638,16 @@
        "/ha-scalp-paper/history",
        "History",
        false
+      ],
+      [
+       "/ha-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ha-scalp-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -946,6 +956,16 @@
       [
        "/ha-scalp-paper/history",
        "History",
+       false
+      ],
+      [
+       "/ha-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ha-scalp-live",
+       "Live",
        false
       ]
      ]
