@@ -443,7 +443,7 @@ function setConsSource(src){
 
 function consCard(label, accent, valHtml, valColor, breakdownHtml){
   return '<div class="sc" style="--accent:' + accent + ';"><div class="sc-label">' + label + '</div>'
-    + '<div class="sc-val" style="color:' + valColor + ';">' + valHtml + '</div>'
+    + '<div class="sc-val" style="color:' + valColor + ' !important;">' + valHtml + '</div>'
     + '<div class="sc-breakdown">' + breakdownHtml + '</div></div>';
 }
 
