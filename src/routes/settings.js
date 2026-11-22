@@ -955,7 +955,23 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "LIVE_TRADING_ENABLED", label: "Real Orders — Master Switch", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF = no Live page can place a real order. Turning it OFF mid-session stops new real entries at once; exits of open positions still go out. Live Harness pages never place real orders.", default: "false", subheader: "Master switch" },
       { key: "LIVE_BROKER_TIMEOUT_MS", label: "Broker Call Timeout (ms)", type: "number", min: 1500, max: 30000, step: 500, effect: EFFECT.INSTANT, desc: "How long to wait for Fyers on each order and fill check. A timed-out entry is treated as UNKNOWN and blocks new entries until you check Fyers.", default: "8000" },
-      { key: "HA_SCALP_LIVE_ENABLED", label: "HA Scalp — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the HA Scalp Live page to send real Fyers orders. Needs the master switch ON too.", default: "false", subheader: "Per strategy (needs the master switch ON)" },
+      { key: "EMA_RSI_ST_REAL_ORDERS_ENABLED", label: "EMA_RSI_ST — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the EMA_RSI_ST Live page to send real Fyers orders. Needs the master switch ON too.", default: "false", subheader: "Per strategy (needs the master switch ON)" },
+      { key: "BB_RSI_REAL_ORDERS_ENABLED", label: "BB_RSI — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the BB_RSI Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "PA_REAL_ORDERS_ENABLED", label: "Price Action — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the Price Action Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "ORB_REAL_ORDERS_ENABLED", label: "ORB — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the ORB Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "EMA9VWAP_REAL_ORDERS_ENABLED", label: "EMA9+VWAP — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the EMA9+VWAP Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "TREND_PB_REAL_ORDERS_ENABLED", label: "Trend Pullback — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the Trend Pullback Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "TDS_REAL_ORDERS_ENABLED", label: "Trend Day Scalp — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the Trend Day Scalp Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "HA_SCALP_REAL_ORDERS_ENABLED", label: "HA Scalp — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the HA Scalp Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "PREV_ORB_SCALP_REAL_ORDERS_ENABLED", label: "Prev ORB Scalp — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the Prev ORB Scalp Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "ITM20_SCALP_REAL_ORDERS_ENABLED", label: "ITM20 Scalp — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the ITM20 Scalp Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "RSI_PIVOT_ST_REAL_ORDERS_ENABLED", label: "RSI Pivot ST — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the RSI Pivot ST Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "EMA_RSI_ST_V2_REAL_ORDERS_ENABLED", label: "EMA_RSI_ST_V2 — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the EMA_RSI_ST_V2 Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "ST_RSI_PIV_BB_REAL_ORDERS_ENABLED", label: "ST_RSI_PIV_BB — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the ST_RSI_PIV_BB Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "PIVOT_EMA_ST_REAL_ORDERS_ENABLED", label: "PIVOT_EMA_ST — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the PIVOT_EMA_ST Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "GAP_RUNAWAY_REAL_ORDERS_ENABLED", label: "GAP_RUNAWAY — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the GAP_RUNAWAY Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "SIMPLE930_REAL_ORDERS_ENABLED", label: "SIMPLE_9:30 — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the SIMPLE_9:30 Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
+      { key: "EMA9_CROSS_REAL_ORDERS_ENABLED", label: "EMA9_CROSS — Real Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow the EMA9_CROSS Live page to send real Fyers orders. Needs the master switch ON too.", default: "false" },
     ],
   },
   {
@@ -1237,50 +1253,68 @@ const SETTINGS_SCHEMA = [
       // ── EMA_RSI_ST submenu ──
       { key: "UI_SHOW_EMA_RSI_ST_BACKTEST", label: "EMA_RSI_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA_RSI_ST.", default: "false", subheader: "EMA_RSI_ST sub-menus" },
       { key: "UI_SHOW_EMA_RSI_ST_PAPER",    label: "EMA_RSI_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA_RSI_ST.",    default: "true" },
+      { key: "UI_SHOW_EMA_RSI_ST_HARNESS_PAGE", label: "EMA_RSI_ST → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under EMA_RSI_ST.", default: "true" },
+      { key: "UI_SHOW_EMA_RSI_ST_LIVE_PAGE",    label: "EMA_RSI_ST → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under EMA_RSI_ST.", default: "true" },
 
       // ── BB_RSI submenu ──
       { key: "UI_SHOW_BB_RSI_BACKTEST", label: "BB_RSI → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BB_RSI.", default: "false", subheader: "BB_RSI sub-menus" },
       { key: "UI_SHOW_BB_RSI_PAPER",    label: "BB_RSI → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BB_RSI.",    default: "true" },
+      { key: "UI_SHOW_BB_RSI_HARNESS_PAGE", label: "BB_RSI → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under BB_RSI.", default: "true" },
+      { key: "UI_SHOW_BB_RSI_LIVE_PAGE",    label: "BB_RSI → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under BB_RSI.", default: "true" },
 
       // ── Price Action submenu ──
       { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Price Action.",     default: "false", subheader: "Price Action sub-menus" },
       { key: "UI_SHOW_PA_PATTERN_BACKTEST", label: "PA → Pattern Test",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Pattern Test under Price Action.", default: "false" },
       { key: "UI_SHOW_PA_PAPER",            label: "PA → Paper",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Price Action.",        default: "true" },
+      { key: "UI_SHOW_PA_HARNESS_PAGE", label: "Price Action → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under Price Action.", default: "true" },
+      { key: "UI_SHOW_PA_LIVE_PAGE",    label: "Price Action → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under Price Action.", default: "true" },
 
       // ── ORB submenu ──
       { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under ORB.", default: "false", subheader: "ORB sub-menus" },
       { key: "UI_SHOW_ORB_PAPER",    label: "ORB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ORB.", default: "true" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ORB.", default: "true" },
+      { key: "UI_SHOW_ORB_HARNESS_PAGE", label: "ORB → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under ORB.", default: "true" },
+      { key: "UI_SHOW_ORB_LIVE_PAGE",    label: "ORB → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under ORB.", default: "true" },
 
       // ── EMA9+VWAP submenu ──
       { key: "UI_SHOW_EMA9VWAP_BACKTEST", label: "EMA9+VWAP → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA9+VWAP.", default: "false", subheader: "EMA9+VWAP sub-menus" },
       { key: "UI_SHOW_EMA9VWAP_PAPER",    label: "EMA9+VWAP → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA9+VWAP.", default: "true" },
       { key: "UI_SHOW_EMA9VWAP_HISTORY",  label: "EMA9+VWAP → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA9+VWAP.", default: "true" },
+      { key: "UI_SHOW_EMA9VWAP_HARNESS_PAGE", label: "EMA9+VWAP → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under EMA9+VWAP.", default: "true" },
+      { key: "UI_SHOW_EMA9VWAP_LIVE_PAGE",    label: "EMA9+VWAP → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under EMA9+VWAP.", default: "true" },
 
       // ── Trend Pullback submenu ──
       { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Pullback.", default: "false", subheader: "Trend Pullback sub-menus" },
       { key: "UI_SHOW_TREND_PB_PAPER",    label: "Trend Pullback → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Pullback.", default: "true" },
       { key: "UI_SHOW_TREND_PB_HISTORY",  label: "Trend Pullback → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Pullback.", default: "true" },
+      { key: "UI_SHOW_TREND_PB_HARNESS_PAGE", label: "Trend Pullback → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under Trend Pullback.", default: "true" },
+      { key: "UI_SHOW_TREND_PB_LIVE_PAGE",    label: "Trend Pullback → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under Trend Pullback.", default: "true" },
 
       // ── Trend Day Scalp submenu ──
       { key: "UI_SHOW_TDS_BACKTEST", label: "Trend Day Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Day Scalp.", default: "false", subheader: "Trend Day Scalp sub-menus" },
       { key: "UI_SHOW_TDS_PAPER",    label: "Trend Day Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Day Scalp.", default: "true" },
       { key: "UI_SHOW_TDS_HISTORY",  label: "Trend Day Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Day Scalp.", default: "true" },
+      { key: "UI_SHOW_TDS_HARNESS_PAGE", label: "Trend Day Scalp → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under Trend Day Scalp.", default: "true" },
+      { key: "UI_SHOW_TDS_LIVE_PAGE",    label: "Trend Day Scalp → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under Trend Day Scalp.", default: "true" },
 
       // ── HA Scalp submenu ──
       { key: "UI_SHOW_HA_SCALP_BACKTEST", label: "HA Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under HA Scalp.", default: "false", subheader: "HA Scalp sub-menus" },
       { key: "UI_SHOW_HA_SCALP_PAPER",    label: "HA Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_HISTORY",  label: "HA Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under HA Scalp.", default: "true" },
-      { key: "UI_SHOW_HA_SCALP_LIVE_HARNESS", label: "HA Scalp → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under HA Scalp.", default: "true" },
-      { key: "UI_SHOW_HA_SCALP_LIVE",         label: "HA Scalp → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under HA Scalp.", default: "true" },
+      { key: "UI_SHOW_HA_SCALP_HARNESS_PAGE", label: "HA Scalp → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under HA Scalp.", default: "true" },
+      { key: "UI_SHOW_HA_SCALP_LIVE_PAGE",    label: "HA Scalp → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under HA Scalp.", default: "true" },
       // ── Prev ORB Scalp submenu ──
       { key: "UI_SHOW_PREV_ORB_SCALP_BACKTEST", label: "Prev ORB Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Prev ORB Scalp.", default: "false", subheader: "Prev ORB Scalp sub-menus" },
       { key: "UI_SHOW_PREV_ORB_SCALP_PAPER",    label: "Prev ORB Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_PREV_ORB_SCALP_HISTORY",  label: "Prev ORB Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Prev ORB Scalp.", default: "true" },
+      { key: "UI_SHOW_PREV_ORB_SCALP_HARNESS_PAGE", label: "Prev ORB Scalp → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under Prev ORB Scalp.", default: "true" },
+      { key: "UI_SHOW_PREV_ORB_SCALP_LIVE_PAGE",    label: "Prev ORB Scalp → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under Prev ORB Scalp.", default: "true" },
       // ── ITM20 Scalp submenu ──
       { key: "UI_SHOW_ITM20_SCALP_BACKTEST", label: "ITM20 Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under ITM20 Scalp.", default: "true", subheader: "ITM20 Scalp sub-menu" },
       { key: "UI_SHOW_ITM20_SCALP_PAPER",    label: "ITM20 Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ITM20 Scalp.", default: "true" },
       { key: "UI_SHOW_ITM20_SCALP_HISTORY",  label: "ITM20 Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ITM20 Scalp.", default: "true" },
+      { key: "UI_SHOW_ITM20_SCALP_HARNESS_PAGE", label: "ITM20 Scalp → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under ITM20 Scalp.", default: "true" },
+      { key: "UI_SHOW_ITM20_SCALP_LIVE_PAGE",    label: "ITM20 Scalp → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under ITM20 Scalp.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_BACKTEST", label: "EarlyBird → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EarlyBird.", default: "false", subheader: "EarlyBird sub-menus" },
       { key: "UI_SHOW_EARLYBIRD_PAPER",    label: "EarlyBird → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EarlyBird.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_HISTORY",  label: "EarlyBird → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EarlyBird.", default: "true" },
@@ -1289,12 +1323,16 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_SIMPLE930_BACKTEST", label: "SIMPLE_9:30 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SIMPLE_9:30.", default: "false", subheader: "SIMPLE_9:30 sub-menus" },
       { key: "UI_SHOW_SIMPLE930_PAPER",    label: "SIMPLE_9:30 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SIMPLE_9:30.", default: "true" },
       { key: "UI_SHOW_SIMPLE930_HISTORY",  label: "SIMPLE_9:30 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SIMPLE_9:30.", default: "true" },
+      { key: "UI_SHOW_SIMPLE930_HARNESS_PAGE", label: "SIMPLE_9:30 → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under SIMPLE_9:30.", default: "true" },
+      { key: "UI_SHOW_SIMPLE930_LIVE_PAGE",    label: "SIMPLE_9:30 → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under SIMPLE_9:30.", default: "true" },
 
 
       // ── RSI Pivot ST submenu ──
       { key: "UI_SHOW_RSI_PIVOT_ST_BACKTEST", label: "RSI Pivot ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under RSI Pivot ST.", default: "false", subheader: "RSI Pivot ST sub-menus" },
       { key: "UI_SHOW_RSI_PIVOT_ST_PAPER",    label: "RSI Pivot ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under RSI Pivot ST.", default: "true" },
       { key: "UI_SHOW_RSI_PIVOT_ST_HISTORY",  label: "RSI Pivot ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under RSI Pivot ST.", default: "true" },
+      { key: "UI_SHOW_RSI_PIVOT_ST_HARNESS_PAGE", label: "RSI Pivot ST → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under RSI Pivot ST.", default: "true" },
+      { key: "UI_SHOW_RSI_PIVOT_ST_LIVE_PAGE",    label: "RSI Pivot ST → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under RSI Pivot ST.", default: "true" },
 
 
       // ── EMA_RSI_ST_V2 submenu ── all OFF: V2 is unproven, so nothing appears
@@ -1302,15 +1340,21 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_EMA_RSI_ST_V2_BACKTEST", label: "EMA_RSI_ST_V2 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA_RSI_ST_V2.", default: "false", subheader: "EMA_RSI_ST_V2 sub-menus" },
       { key: "UI_SHOW_EMA_RSI_ST_V2_PAPER",    label: "EMA_RSI_ST_V2 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA_RSI_ST_V2.", default: "false" },
       { key: "UI_SHOW_EMA_RSI_ST_V2_HISTORY",  label: "EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA_RSI_ST_V2.", default: "false" },
+      { key: "UI_SHOW_EMA_RSI_ST_V2_HARNESS_PAGE", label: "EMA_RSI_ST_V2 → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under EMA_RSI_ST_V2.", default: "true" },
+      { key: "UI_SHOW_EMA_RSI_ST_V2_LIVE_PAGE",    label: "EMA_RSI_ST_V2 → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under EMA_RSI_ST_V2.", default: "true" },
       // ── EMA9_CROSS submenu ──
       { key: "UI_SHOW_EMA9_CROSS_BACKTEST", label: "EMA9_CROSS → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA9_CROSS.", default: "true", subheader: "EMA9_CROSS sub-menu" },
       { key: "UI_SHOW_EMA9_CROSS_PAPER",    label: "EMA9_CROSS → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA9_CROSS.", default: "true" },
       { key: "UI_SHOW_EMA9_CROSS_HISTORY",  label: "EMA9_CROSS → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA9_CROSS.", default: "true" },
+      { key: "UI_SHOW_EMA9_CROSS_HARNESS_PAGE", label: "EMA9_CROSS → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under EMA9_CROSS.", default: "true" },
+      { key: "UI_SHOW_EMA9_CROSS_LIVE_PAGE",    label: "EMA9_CROSS → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under EMA9_CROSS.", default: "true" },
       // ── ST_RSI_PIV_BB submenu ── defaults match what sharedNav falls back to
       // (Paper/History on); the whole group stays hidden
       // until ST_RSI_PIV_BB_MODE_ENABLED is switched on.
       { key: "UI_SHOW_ST_RSI_PIV_BB_PAPER",    label: "ST_RSI_PIV_BB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ST_RSI_PIV_BB.", default: "true" },
       { key: "UI_SHOW_ST_RSI_PIV_BB_HISTORY",  label: "ST_RSI_PIV_BB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ST_RSI_PIV_BB.", default: "true" },
+      { key: "UI_SHOW_ST_RSI_PIV_BB_HARNESS_PAGE", label: "ST_RSI_PIV_BB → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under ST_RSI_PIV_BB.", default: "true" },
+      { key: "UI_SHOW_ST_RSI_PIV_BB_LIVE_PAGE",    label: "ST_RSI_PIV_BB → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under ST_RSI_PIV_BB.", default: "true" },
       // ── SAIL_VWAP_ST submenu (STOCKS) ── defaults match what sharedNav falls
       // back to (Backtest/Paper/History on); the whole group stays
       // hidden until SAIL_VWAP_ST_MODE_ENABLED is switched on.
@@ -1321,10 +1365,14 @@ const SETTINGS_SCHEMA = [
       // Backtest (none exists); defaults match what sharedNav falls back to.
       { key: "UI_SHOW_PIVOT_EMA_ST_PAPER",    label: "PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under PIVOT_EMA_ST.", default: "true", subheader: "PIVOT_EMA_ST sub-menus" },
       { key: "UI_SHOW_PIVOT_EMA_ST_HISTORY",  label: "PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under PIVOT_EMA_ST.", default: "true" },
+      { key: "UI_SHOW_PIVOT_EMA_ST_HARNESS_PAGE", label: "PIVOT_EMA_ST → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under PIVOT_EMA_ST.", default: "true" },
+      { key: "UI_SHOW_PIVOT_EMA_ST_LIVE_PAGE",    label: "PIVOT_EMA_ST → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under PIVOT_EMA_ST.", default: "true" },
       // ── GAP_RUNAWAY submenus (NIFTY + STOCKS) ── no Backtest (none exists);
       // defaults match sharedNav's fall-backs.
       { key: "UI_SHOW_GAP_RUNAWAY_PAPER",        label: "GAP_RUNAWAY → Paper",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under GAP_RUNAWAY (NIFTY).", default: "true", subheader: "GAP_RUNAWAY sub-menus" },
       { key: "UI_SHOW_GAP_RUNAWAY_HISTORY",      label: "GAP_RUNAWAY → History",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under GAP_RUNAWAY (NIFTY).", default: "true" },
+      { key: "UI_SHOW_GAP_RUNAWAY_HARNESS_PAGE", label: "GAP_RUNAWAY → Live Harness", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live Harness (simulated orders) under GAP_RUNAWAY.", default: "true" },
+      { key: "UI_SHOW_GAP_RUNAWAY_LIVE_PAGE",    label: "GAP_RUNAWAY → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (real Fyers orders) under GAP_RUNAWAY.", default: "true" },
       { key: "UI_SHOW_GAP_RUNAWAY_STK_PAPER",    label: "GAP_RUNAWAY SCANNER → Paper", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's Paper page under STOCKS.", default: "true" },
       { key: "UI_SHOW_GAP_RUNAWAY_STK_HISTORY",  label: "GAP_RUNAWAY SCANNER → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's History under STOCKS.", default: "true" },
 

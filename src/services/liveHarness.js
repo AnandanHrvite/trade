@@ -22,7 +22,7 @@
  * either off in Settings stops new real entries at once; exits still go out —
  * an open position must always be closable):
  *   LIVE_TRADING_ENABLED=true        global master switch (default false)
- *   {PREFIX}_LIVE_ENABLED=true       this strategy (default false)
+ *   {PREFIX}_REAL_ORDERS_ENABLED=true       this strategy (default false)
  *
  * Safety invariants (each one is a past or obvious way to lose money):
  *   • A SELL only ever follows a proven BUY fill — `_realPositions` is the
@@ -69,7 +69,7 @@ function _istDate(ms = Date.now()) {
 // ── Switches (read live — Settings mutates process.env in-process) ───────────
 function _on(key) { return String(process.env[key] || "false").trim().toLowerCase() === "true"; }
 function globalLiveEnabled() { return _on("LIVE_TRADING_ENABLED"); }
-function strategyLiveEnabled(prefix) { return _on(`${prefix}_LIVE_ENABLED`); }
+function strategyLiveEnabled(prefix) { return _on(`${prefix}_REAL_ORDERS_ENABLED`); }
 /** True only when BOTH switches allow real orders for this strategy prefix. */
 function realOrdersAllowed(prefix) { return globalLiveEnabled() && strategyLiveEnabled(prefix); }
 
@@ -246,7 +246,7 @@ function _makeEntryHook(cfg) {
 
     if (!cfg.dryRun && !realOrdersAllowed(cfg.envPrefix)) {
       _logEvent({ mode: cfg.mode, event: "ENTRY_SKIPPED_SWITCH_OFF", symbol, qty, side: p.side });
-      console.warn(`⏸️ [${L}][${cfg.mode}] ${action} ${qty}× ${symbol} NOT placed — LIVE_TRADING_ENABLED / ${cfg.envPrefix}_LIVE_ENABLED is off. Exits still go out.`);
+      console.warn(`⏸️ [${L}][${cfg.mode}] ${action} ${qty}× ${symbol} NOT placed — LIVE_TRADING_ENABLED / ${cfg.envPrefix}_REAL_ORDERS_ENABLED is off. Exits still go out.`);
       _alert(cfg, `⏸️ ${cfg.mode} — paper entered ${symbol} but NO real order was placed: a live switch is OFF.`);
       return;
     }
@@ -451,7 +451,7 @@ async function _doExit(cfg, real, info) {
  * install({ mode, modeTag, envPrefix, dryRun, isFutures })
  *   mode      "HA_SCALP-LIVE" | "HA_SCALP-HARNESS"  (unique per page)
  *   modeTag   the paper route's notify `mode` field, e.g. "HA-SCALP-PAPER"
- *   envPrefix the strategy's env prefix (for {PREFIX}_LIVE_ENABLED)
+ *   envPrefix the strategy's env prefix (for {PREFIX}_REAL_ORDERS_ENABLED)
  *   dryRun    true → simulated broker (Harness); false → Fyers (Live)
  *   isFutures () => boolean, read per order when the payload doesn't say
  *   onSessionEnd optional callback when paper's session ends

@@ -522,6 +522,16 @@
        "/ema_rsi_st-paper/status",
        "Paper",
        false
+      ],
+      [
+       "/ema_rsi_st-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ema_rsi_st-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -535,6 +545,16 @@
        "/bb_rsi-paper/status",
        "Paper",
        false
+      ],
+      [
+       "/bb_rsi-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/bb_rsi-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -547,6 +567,16 @@
       [
        "/pa-paper/status",
        "Paper",
+       false
+      ],
+      [
+       "/pa-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/pa-live",
+       "Live",
        false
       ]
      ]
@@ -566,6 +596,16 @@
        "/orb-paper/history",
        "History",
        false
+      ],
+      [
+       "/orb-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/orb-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -583,6 +623,16 @@
       [
        "/ema9vwap-paper/history",
        "History",
+       false
+      ],
+      [
+       "/ema9vwap-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ema9vwap-live",
+       "Live",
        false
       ]
      ]
@@ -602,6 +652,16 @@
        "/trend-pb-paper/history",
        "History",
        false
+      ],
+      [
+       "/trend-pb-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/trend-pb-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -619,6 +679,16 @@
       [
        "/trend-day-scalp-paper/history",
        "History",
+       false
+      ],
+      [
+       "/trend-day-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/trend-day-scalp-live",
+       "Live",
        false
       ]
      ]
@@ -666,6 +736,16 @@
        "/prev-orb-scalp-paper/history",
        "History",
        false
+      ],
+      [
+       "/prev-orb-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/prev-orb-scalp-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -689,6 +769,16 @@
        "/itm20-scalp-paper/history",
        "History",
        false
+      ],
+      [
+       "/itm20-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/itm20-scalp-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -707,6 +797,16 @@
        "/rsi-pivot-st-paper/history",
        "History",
        false
+      ],
+      [
+       "/rsi-pivot-st-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/rsi-pivot-st-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -724,6 +824,16 @@
       [
        "/simple930-paper/history",
        "History",
+       false
+      ],
+      [
+       "/simple930-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/simple930-live",
+       "Live",
        false
       ]
      ]
@@ -761,6 +871,16 @@
        "/pivot_ema_st-paper/history",
        "History",
        false
+      ],
+      [
+       "/pivot_ema_st-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/pivot_ema_st-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -778,6 +898,16 @@
       [
        "/gap_runaway-paper/history",
        "History",
+       false
+      ],
+      [
+       "/gap_runaway-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/gap_runaway-live",
+       "Live",
        false
       ]
      ]
@@ -801,6 +931,16 @@
       [
        "/ema9_cross-paper/history",
        "History",
+       false
+      ],
+      [
+       "/ema9_cross-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ema9_cross-live",
+       "Live",
        false
       ]
      ]
@@ -841,6 +981,16 @@
        "/ema_rsi_st-paper/status",
        "Paper",
        false
+      ],
+      [
+       "/ema_rsi_st-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ema_rsi_st-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -854,6 +1004,16 @@
        "/bb_rsi-paper/status",
        "Paper",
        false
+      ],
+      [
+       "/bb_rsi-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/bb_rsi-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -866,6 +1026,16 @@
       [
        "/pa-paper/status",
        "Paper",
+       false
+      ],
+      [
+       "/pa-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/pa-live",
+       "Live",
        false
       ]
      ]
@@ -885,6 +1055,16 @@
        "/orb-paper/history",
        "History",
        false
+      ],
+      [
+       "/orb-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/orb-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -902,6 +1082,16 @@
       [
        "/ema9vwap-paper/history",
        "History",
+       false
+      ],
+      [
+       "/ema9vwap-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ema9vwap-live",
+       "Live",
        false
       ]
      ]
@@ -921,6 +1111,16 @@
        "/trend-pb-paper/history",
        "History",
        false
+      ],
+      [
+       "/trend-pb-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/trend-pb-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -938,6 +1138,16 @@
       [
        "/trend-day-scalp-paper/history",
        "History",
+       false
+      ],
+      [
+       "/trend-day-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/trend-day-scalp-live",
+       "Live",
        false
       ]
      ]
@@ -985,6 +1195,16 @@
        "/prev-orb-scalp-paper/history",
        "History",
        false
+      ],
+      [
+       "/prev-orb-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/prev-orb-scalp-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -1008,6 +1228,16 @@
        "/itm20-scalp-paper/history",
        "History",
        false
+      ],
+      [
+       "/itm20-scalp-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/itm20-scalp-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -1026,6 +1256,16 @@
        "/rsi-pivot-st-paper/history",
        "History",
        false
+      ],
+      [
+       "/rsi-pivot-st-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/rsi-pivot-st-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -1043,6 +1283,16 @@
       [
        "/simple930-paper/history",
        "History",
+       false
+      ],
+      [
+       "/simple930-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/simple930-live",
+       "Live",
        false
       ]
      ]
@@ -1080,6 +1330,16 @@
        "/pivot_ema_st-paper/history",
        "History",
        false
+      ],
+      [
+       "/pivot_ema_st-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/pivot_ema_st-live",
+       "Live",
+       false
       ]
      ]
     },
@@ -1097,6 +1357,16 @@
       [
        "/gap_runaway-paper/history",
        "History",
+       false
+      ],
+      [
+       "/gap_runaway-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/gap_runaway-live",
+       "Live",
        false
       ]
      ]
@@ -1120,6 +1390,16 @@
       [
        "/ema9_cross-paper/history",
        "History",
+       false
+      ],
+      [
+       "/ema9_cross-live-harness",
+       "Live Harness",
+       false
+      ],
+      [
+       "/ema9_cross-live",
+       "Live",
        false
       ]
      ]

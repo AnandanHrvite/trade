@@ -1341,8 +1341,42 @@ app.use("/trend-day-scalp-backtest", lazyRouter(() => require("./routes/trendDay
 // ── HA_SCALP routes (15-min Heikin Ashi trend scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/ha-scalp-paper",      require("./routes/haScalpPaper"));            // ← canonical engine
 app.use("/ha-scalp-backtest",   lazyRouter(() => require("./routes/haScalpBacktest")));         // ← same signal engine, paper's exits
-app.use("/ha-scalp-live",         lazyRouter(() => require("./routes/haScalpLive")));           // ← wraps paper: REAL Fyers orders
-app.use("/ha-scalp-live-harness", lazyRouter(() => require("./routes/haScalpLiveHarness")));    // ← wraps paper: simulated orders
+
+// ── Live / Live Harness — wrap each NIFTY paper engine (src/utils/liveRoute.js). Lazy: Start-All never sees them ─
+app.use("/ema_rsi_st-live", lazyRouter(() => require("./routes/emaRsiStLive")));
+app.use("/ema_rsi_st-live-harness", lazyRouter(() => require("./routes/emaRsiStLiveHarness")));
+app.use("/bb_rsi-live", lazyRouter(() => require("./routes/bbRsiLive")));
+app.use("/bb_rsi-live-harness", lazyRouter(() => require("./routes/bbRsiLiveHarness")));
+app.use("/pa-live", lazyRouter(() => require("./routes/paLive")));
+app.use("/pa-live-harness", lazyRouter(() => require("./routes/paLiveHarness")));
+app.use("/orb-live", lazyRouter(() => require("./routes/orbLive")));
+app.use("/orb-live-harness", lazyRouter(() => require("./routes/orbLiveHarness")));
+app.use("/ema9vwap-live", lazyRouter(() => require("./routes/ema9vwapLive")));
+app.use("/ema9vwap-live-harness", lazyRouter(() => require("./routes/ema9vwapLiveHarness")));
+app.use("/trend-pb-live", lazyRouter(() => require("./routes/trendPbLive")));
+app.use("/trend-pb-live-harness", lazyRouter(() => require("./routes/trendPbLiveHarness")));
+app.use("/trend-day-scalp-live", lazyRouter(() => require("./routes/trendDayScalpLive")));
+app.use("/trend-day-scalp-live-harness", lazyRouter(() => require("./routes/trendDayScalpLiveHarness")));
+app.use("/ha-scalp-live", lazyRouter(() => require("./routes/haScalpLive")));
+app.use("/ha-scalp-live-harness", lazyRouter(() => require("./routes/haScalpLiveHarness")));
+app.use("/prev-orb-scalp-live", lazyRouter(() => require("./routes/prevOrbScalpLive")));
+app.use("/prev-orb-scalp-live-harness", lazyRouter(() => require("./routes/prevOrbScalpLiveHarness")));
+app.use("/itm20-scalp-live", lazyRouter(() => require("./routes/itm20ScalpLive")));
+app.use("/itm20-scalp-live-harness", lazyRouter(() => require("./routes/itm20ScalpLiveHarness")));
+app.use("/rsi-pivot-st-live", lazyRouter(() => require("./routes/rsiPivotStLive")));
+app.use("/rsi-pivot-st-live-harness", lazyRouter(() => require("./routes/rsiPivotStLiveHarness")));
+app.use("/ema_rsi_st_v2-live", lazyRouter(() => require("./routes/emaRsiStV2Live")));
+app.use("/ema_rsi_st_v2-live-harness", lazyRouter(() => require("./routes/emaRsiStV2LiveHarness")));
+app.use("/st_rsi_piv_bb-live", lazyRouter(() => require("./routes/stRsiPivBbLive")));
+app.use("/st_rsi_piv_bb-live-harness", lazyRouter(() => require("./routes/stRsiPivBbLiveHarness")));
+app.use("/pivot_ema_st-live", lazyRouter(() => require("./routes/pivotEmaStLive")));
+app.use("/pivot_ema_st-live-harness", lazyRouter(() => require("./routes/pivotEmaStLiveHarness")));
+app.use("/gap_runaway-live", lazyRouter(() => require("./routes/gapRunawayLive")));
+app.use("/gap_runaway-live-harness", lazyRouter(() => require("./routes/gapRunawayLiveHarness")));
+app.use("/simple930-live", lazyRouter(() => require("./routes/simple930Live")));
+app.use("/simple930-live-harness", lazyRouter(() => require("./routes/simple930LiveHarness")));
+app.use("/ema9_cross-live", lazyRouter(() => require("./routes/ema9CrossLive")));
+app.use("/ema9_cross-live-harness", lazyRouter(() => require("./routes/ema9CrossLiveHarness")));
 
 // ── PREV_ORB_SCALP routes (prev-day range + 15m/3m ORB scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/prev-orb-scalp-paper",    require("./routes/prevOrbScalpPaper"));        // ← canonical engine

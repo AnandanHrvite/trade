@@ -10,7 +10,7 @@
  *   kind "harness" — the full order path against a SIMULATED broker. Nothing is
  *                    ever sent to Fyers. Needs no switch.
  *   kind "live"    — REAL Fyers orders. Start is refused unless
- *                    LIVE_TRADING_ENABLED=true AND {PREFIX}_LIVE_ENABLED=true and
+ *                    LIVE_TRADING_ENABLED=true AND {PREFIX}_REAL_ORDERS_ENABLED=true and
  *                    Fyers is logged in.
  *
  * Start attaches to the paper session (starting it if it is not running).
@@ -110,7 +110,7 @@ function create({ id, kind, modeTag, path, navKey, title, isFutures }) {
       if (!modeEnabled()) return res.status(403).json({ success: false, error: `${title} is turned off. Turn on ${reg.modeEnabled.key} in Settings.` });
       if (isLive) {
         if (!liveHarness.globalLiveEnabled()) return res.status(403).json({ success: false, error: "Real orders are off. Turn on LIVE_TRADING_ENABLED in Settings → Live Trading." });
-        if (!liveHarness.strategyLiveEnabled(PREFIX)) return res.status(403).json({ success: false, error: `Real orders for ${title} are off. Turn on ${PREFIX}_LIVE_ENABLED in Settings → Live Trading.` });
+        if (!liveHarness.strategyLiveEnabled(PREFIX)) return res.status(403).json({ success: false, error: `Real orders for ${title} are off. Turn on ${PREFIX}_REAL_ORDERS_ENABLED in Settings → Live Trading.` });
         if (!fyersBroker.isAuthenticated()) return res.status(401).json({ success: false, error: "Fyers is not logged in. Log in with Fyers first." });
       }
       liveHarness.install({ mode: MODE, modeTag, envPrefix: PREFIX, dryRun: !isLive, isFutures: futuresFn, onSessionEnd: _stopWatchdog });
@@ -188,7 +188,7 @@ function create({ id, kind, modeTag, path, navKey, title, isFutures }) {
 
 function _page({ isLive, PAGE, PAPER, PREFIX, path, navKey, running }) {
   const banner = isLive
-    ? `<div class="banner lv-red">🔴 REAL MONEY. Every paper entry and exit is sent to Fyers as a market order. Needs <code>LIVE_TRADING_ENABLED</code> and <code>${PREFIX}_LIVE_ENABLED</code> ON in Settings.</div>`
+    ? `<div class="banner lv-red">🔴 REAL MONEY. Every paper entry and exit is sent to Fyers as a market order. Needs <code>LIVE_TRADING_ENABLED</code> and <code>${PREFIX}_REAL_ORDERS_ENABLED</code> ON in Settings.</div>`
     : `<div class="banner lv-amber">🧪 DRY-RUN. Same order steps as Live, but the broker is simulated — nothing is ever sent to Fyers.</div>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -245,7 +245,7 @@ function render(d){
         + card('Paper engine', d.paperRunning ? 'Running' : 'Stopped', d.paperRunning ? 'lv-ok' : 'lv-warn');
   if (IS_LIVE) {
     s += card('LIVE_TRADING_ENABLED', d.switches.global ? 'ON' : 'OFF', d.switches.global ? 'lv-ok' : 'lv-bad')
-       + card(${JSON.stringify(PREFIX + "_LIVE_ENABLED")}, d.switches.strategy ? 'ON' : 'OFF', d.switches.strategy ? 'lv-ok' : 'lv-bad')
+       + card(${JSON.stringify(PREFIX + "_REAL_ORDERS_ENABLED")}, d.switches.strategy ? 'ON' : 'OFF', d.switches.strategy ? 'lv-ok' : 'lv-bad')
        + card('Fyers login', d.switches.fyers ? 'OK' : 'Not logged in', d.switches.fyers ? 'lv-ok' : 'lv-bad');
   }
   s += card('New entries', d.blocked ? 'BLOCKED — check Fyers' : 'Allowed', d.blocked ? 'lv-bad' : 'lv-ok');

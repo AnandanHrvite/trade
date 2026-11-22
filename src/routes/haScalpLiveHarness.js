@@ -1,7 +1,8 @@
 /**
- * HA SCALP — LIVE HARNESS (dry-run) — /ha-scalp-live-harness
- * Runs the exact Live order path against a simulated broker: nothing is sent
- * to Fyers. Decisions come from the HA Scalp PAPER engine unchanged.
+ * HA Scalp — LIVE HARNESS (simulated orders) — /ha-scalp-live-harness
+ * Mirrors the HA Scalp PAPER engine's entries and exits against a simulated broker.
+ * All rules live in the paper engine; see src/utils/liveRoute.js and
+ * src/services/liveHarness.js for the order path.
  */
 module.exports = require("../utils/liveRoute").create({
   id: "haScalp", kind: "harness", modeTag: "HA-SCALP-PAPER",

@@ -16,7 +16,7 @@ Fyers WebSocket (NIFTY50 spot ticks — single connection)
  Paper / Backtest / Replay (every strategy)
 ```
 
-All strategies run **in parallel** on the same WebSocket — different candle resolutions, independent risk controls. Every strategy has Paper, Backtest and Replay. Live is being rebuilt one strategy at a time: a **Live** page sends real Fyers orders and a **Live Harness** page runs the same order path against a simulated broker. Both attach to the strategy's paper engine, so the rules and Settings are shared. Real orders need `LIVE_TRADING_ENABLED` and `{STRATEGY}_LIVE_ENABLED` (Settings → Live Trading). So far: HA Scalp.
+All strategies run **in parallel** on the same WebSocket — different candle resolutions, independent risk controls. Every strategy has Paper, Backtest and Replay. Every NIFTY strategy also has a **Live** page (real Fyers orders) and a **Live Harness** page (same order path, simulated broker) at `/{strategy}-live` and `/{strategy}-live-harness`. Both attach to the strategy's paper engine, so the rules and Settings are shared. Real orders need `LIVE_TRADING_ENABLED` and `{STRATEGY}_REAL_ORDERS_ENABLED` (Settings → Live Trading). Not on the stock / SAIL strategies (EarlyBird, Gap scanner, SAIL VWAP+ST).
 
 ## Modes
 
@@ -39,8 +39,8 @@ All strategies run **in parallel** on the same WebSocket — different candle re
 | **Trend Day Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering) | 5-min historical | Historical | `/trend-day-scalp-backtest` |
 | **HA Scalp Paper** | A no-wick **Heikin Ashi** candle in the direction of the 50 MA, stopped at that candle's own raw high/low | 15-min (HA) | Simulated | `/ha-scalp-paper` |
 | **HA Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering) | 15-min historical | Historical | `/ha-scalp-backtest` |
-| **HA Scalp Live Harness** | Mirrors HA Scalp Paper's entries/exits through the full order path, simulated broker | 15-min (HA) | Simulated | `/ha-scalp-live-harness` |
-| **HA Scalp Live** | Mirrors HA Scalp Paper's entries/exits as real Fyers market orders | 15-min (HA) | **Real** | `/ha-scalp-live` |
+| **Live Harness** (every NIFTY strategy) | Mirrors that strategy's Paper entries/exits through the full order path, simulated broker | Paper's | Simulated | `/{strategy}-live-harness` |
+| **Live** (every NIFTY strategy) | Mirrors that strategy's Paper entries/exits as real Fyers market orders | Paper's | **Real** | `/{strategy}-live` |
 | **Prev ORB Scalp Paper** | The 09:15 15-min candle closes beyond yesterday's high/low; the first 3-min close beyond that candle is entered, stop at its other end, target = its size, then trailed | 15-min setup / 3-min entry | Simulated | `/prev-orb-scalp-paper` |
 | **Prev ORB Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering, profit lock simulated) | 3-min historical | Historical | `/prev-orb-scalp-backtest` |
 | **ITM20 Scalp Paper** | 09:15–09:30 range break (close beyond + VWAP + EMA9 agreeing) → retest within 3 candles → confirmation close; 1 strike ITM, +20 / −10 premium points, max 2 trades/day | 5-min | Simulated | `/itm20-scalp-paper` |

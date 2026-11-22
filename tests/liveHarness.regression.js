@@ -21,7 +21,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "live-harness-test-"));
 process.env.HOME = TMP;
 // Set (not deleted): modules loaded later call dotenv, which never overrides a
 // key that already exists — so the real .env can't arm Telegram or a switch here.
-for (const k of ["LIVE_TRADING_ENABLED", "HA_SCALP_LIVE_ENABLED", "TEST_LIVE_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]) process.env[k] = "";
+for (const k of ["LIVE_TRADING_ENABLED", "HA_SCALP_REAL_ORDERS_ENABLED", "TEST_REAL_ORDERS_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]) process.env[k] = "";
 process.env.LIVE_BROKER_TIMEOUT_MS = "1500";
 
 // ── Fake Fyers ───────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ const TAG = "TEST-PAPER";
 const entry = (o = {}) => notify.notifyEntry({ mode: TAG, side: "CE", symbol: "NSE:NIFTY25DEC24500CE", qty: 75, optionEntryLtp: 99, ...o });
 const exit  = (o = {}) => notify.notifyExit({ mode: TAG, side: "CE", symbol: "NSE:NIFTY25DEC24500CE", qty: 75, optionExitLtp: 111, pnl: 900, exitReason: "lock", ...o });
 const ev = (mode) => lh.recentEvents(mode, 500).map((e) => e.event);
-function arm(on) { process.env.LIVE_TRADING_ENABLED = on ? "true" : "false"; process.env.TEST_LIVE_ENABLED = on ? "true" : "false"; }
+function arm(on) { process.env.LIVE_TRADING_ENABLED = on ? "true" : "false"; process.env.TEST_REAL_ORDERS_ENABLED = on ? "true" : "false"; }
 function fresh(mode) { lh.uninstall(mode); fake.reset(); try { fs.unlinkSync(POS_FILE); } catch (_) {} }
 const LIVE = "TEST-LIVE", HARN = "TEST-HARNESS";
 const installLive = (extra = {}) => lh.install({ mode: LIVE, modeTag: TAG, envPrefix: "TEST", dryRun: false, isFutures: () => false, ...extra });
@@ -80,7 +80,7 @@ test("Harness: full entry→exit on the simulator, zero Fyers calls", async () =
 // ── Switches ────────────────────────────────────────────────────────────────
 test("Live: either switch OFF → no order placed", async () => {
   for (const [g, s] of [["false", "true"], ["true", "false"], ["false", "false"]]) {
-    fresh(LIVE); process.env.LIVE_TRADING_ENABLED = g; process.env.TEST_LIVE_ENABLED = s;
+    fresh(LIVE); process.env.LIVE_TRADING_ENABLED = g; process.env.TEST_REAL_ORDERS_ENABLED = s;
     installLive(); entry(); await tick(30); exit(); await tick(30);
     assert.strictEqual(fake.calls.length, 0, `global=${g} strategy=${s}`);
     assert.ok(ev(LIVE).includes("ENTRY_SKIPPED_SWITCH_OFF"));
@@ -262,12 +262,16 @@ test("Wiring: Live / Harness modeTag matches the paper route's NOTIFY_MODE", () 
     const e = reg.byId(id);
     assert.ok(e && tag, `${f}: id/modeTag`);
     const paper = read(`${e.paper.module}.js`);
-    assert.ok(paper.includes(`"${tag}"`) && /NOTIFY_MODE/.test(paper), `${f}: ${tag} not found in ${e.paper.module}`);
+    // The home (NIFTY) instance's notify tag: the literal before `: rt.notifyMode`, else rt.notifyMode itself.
+    const decl = paper.match(/const (?:NOTIFY_MODE|MODE_TAG)\s*=\s*(?:rt\.home \? "([^"]+)" : )?rt\.notifyMode/);
+    assert.ok(decl, `${f}: no NOTIFY_MODE / MODE_TAG declaration in ${e.paper.module}`);
+    const homeTag = decl[1] || require("../src/utils/pairRuntime").forStrategy(id).notifyMode;
+    assert.strictEqual(tag, homeTag, `${f}: modeTag ${tag} ≠ paper's ${homeTag}`);
     const app = read("app.js");
     assert.ok(app.includes(`require("./routes/${f.replace(/\.js$/, "")}")`), `${f} not mounted in app.js`);
     assert.ok(/lazyRouter\(\(\) => require\("\.\/routes\/\w+Live(Harness)?"\)\)/.test(app), "Live pages must be lazy (Start-All must never see them)");
     const prefix = e.envPrefix;
-    if (/kind:\s*"live"/.test(s)) assert.ok(read("routes/settings.js").includes(`"${prefix}_LIVE_ENABLED"`), `${prefix}_LIVE_ENABLED missing from Settings`);
+    if (/kind:\s*"live"/.test(s)) assert.ok(read("routes/settings.js").includes(`"${prefix}_REAL_ORDERS_ENABLED"`), `${prefix}_REAL_ORDERS_ENABLED missing from Settings`);
   }
 });
 
