@@ -828,10 +828,33 @@ function renderCapitalAlert(d) {
   box.hidden = false;
 }
 
+// A tab left in the background can lose its login cookie; every poll then
+// answers 401 and all cards read OFFLINE. Use this browser's saved login (see
+// app.js loginSavedPage) to get the cookie back and reload — once a minute at
+// most, so a cookie that will not stick cannot reload forever.
+let authRestoring = false;
+function restoreLogin() {
+  if (authRestoring) return;
+  let t = null, recent = false;
+  try {
+    t = localStorage.getItem('__trade_login');
+    recent = Date.now() - Number(sessionStorage.getItem('__trade_restore_at') || 0) < 60000;
+    if (t && !recent) sessionStorage.setItem('__trade_restore_at', String(Date.now()));
+  } catch (_) {}
+  if (!t) { authRestoring = true; location.replace('/login'); return; }
+  if (recent) return;
+  authRestoring = true;
+  fetch('/login/restore', { method:'POST', credentials:'same-origin',
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+    body:'token=' + encodeURIComponent(t) })
+    .then(r => { if (r.ok) location.reload(); else location.replace('/login'); })
+    .catch(() => { authRestoring = false; });
+}
+
 async function poll() {
   const eps = ENDPOINTS[mode];
   const fetchOne = url => fetch(url, { cache:'no-store' })
-    .then(r => r.ok ? r.json() : null)
+    .then(r => { if (r.status === 401) restoreLogin(); return r.ok ? r.json() : null; })
     .catch(() => null);
   // Capital rides along with the strategy fetches — one round trip, not two.
   const results = await Promise.all(

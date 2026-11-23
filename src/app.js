@@ -328,7 +328,7 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;}
 }
-</style></head><body>
+</style><script>try{if(localStorage.getItem(${JSON.stringify(LOGIN_LS_KEY)}))document.documentElement.style.visibility='hidden'}catch(e){}</script></head><body>
 <div class="shell">
 <div class="card">
 <div class="stat"><span><span class="dot"></span>System online</span><span id="clock">--:--:--&nbsp;IST</span></div>
@@ -384,13 +384,18 @@ ${otpOffer ? `<div class="otp-box">
 (function(){
   var t; try { t = localStorage.getItem(${JSON.stringify(LOGIN_LS_KEY)}); } catch (e) {}
   if (!t) return;
+  // Hide the form while the saved login is tried, so it does not flash up.
+  var root = document.documentElement;
+  function show(){ root.style.visibility = ''; }
+  setTimeout(show, 4000);
   fetch('/login/restore', { method:'POST', credentials:'same-origin',
     headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
     body:'token=' + encodeURIComponent(t) })
     .then(function(r){
       if (r.ok) { location.replace('/'); return; }
       if (r.status === 401) { try { localStorage.removeItem(${JSON.stringify(LOGIN_LS_KEY)}); } catch (e) {} }
-    }).catch(function(){});
+      show();
+    }).catch(show);
 })();
 // ── IST clock ──────────────────────────────────────────────────────────────
 (function(){
