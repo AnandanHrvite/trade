@@ -197,10 +197,13 @@ router.get("/", (req, res) => {
     past:   { kite: baselines.kite.pnl || 0, fyers: baselines.fyers.pnl || 0 },
     manual: { kite: 0, fyers: 0 },
     fy:     { label: currentFy, manual: { kite: 0, fyers: 0 } },
+    gross:  { kite: { profit: 0, loss: 0 }, fyers: { profit: 0, loss: 0 } },
   };
   for (const t of manualRoundTrips) {
     if (!(t.broker in consolidated.manual)) continue;
     consolidated.manual[t.broker] += t.pnl;
+    if (t.pnl > 0) consolidated.gross[t.broker].profit += t.pnl;
+    else if (t.pnl < 0) consolidated.gross[t.broker].loss -= t.pnl;
     if (toFy(t.exitDate) === currentFy) consolidated.fy.manual[t.broker] += t.pnl;
   }
 
@@ -236,6 +239,8 @@ router.get("/", (req, res) => {
 
     .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:1100px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
+    .stat-grid.sum-row{grid-template-columns:repeat(3,1fr);}
+    @media(max-width:900px){.stat-grid.sum-row{grid-template-columns:1fr;}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#3b82f6);}
     .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
@@ -360,6 +365,7 @@ router.get("/", (req, res) => {
       </span>
     </div>
     <div class="stat-grid" id="consCards"></div>
+    <div class="stat-grid sum-row" id="consGross"></div>
 
     <!-- Manual trading analytics — Kite / Fyers tabs -->
     <div class="panel">
@@ -475,6 +481,21 @@ function renderConsolidated(){
     + brokerCard('Kite (Zerodha)', '#f59e0b', ['kite'])
     + brokerCard('Fyers', '#3b82f6', ['fyers'])
     + fyCard;
+
+  // Kite + Fyers together. Past is one net figure per broker, so it counts as
+  // profit or loss by its sign, which keeps Remaining equal to Grand Total.
+  const gross = (src, b) => src === 'past'
+    ? { profit: Math.max(CONS.past[b], 0), loss: Math.max(-CONS.past[b], 0) }
+    : CONS.gross[b];
+  const side = (b, field) => shown.reduce((a, s) => a + gross(s.key, b)[field], 0);
+  const sideCard = (label, valueOf) => {
+    const k = valueOf('kite'), f = valueOf('fyers'), total = k + f;
+    return consCard(label, colR(total), fmtR(total), colR(total), 'Kite ' + fmtR(k) + ' · Fyers ' + fmtR(f));
+  };
+  document.getElementById('consGross').innerHTML =
+    sideCard('Total Loss', b => -side(b, 'loss'))
+    + sideCard('Total Profit', b => side(b, 'profit'))
+    + sideCard('Remaining (Profit − Loss)', b => side(b, 'profit') - side(b, 'loss'));
 }
 
 function switchBrokerTab(broker){
