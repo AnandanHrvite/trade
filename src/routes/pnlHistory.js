@@ -288,6 +288,8 @@ router.get("/", (req, res) => {
     .metric-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px;}
     @media(max-width:1100px){.metric-grid{grid-template-columns:repeat(3,1fr);}}
     @media(max-width:560px){.metric-grid{grid-template-columns:repeat(2,1fr);}}
+    .metric-grid.sum-row{grid-template-columns:repeat(3,1fr);}
+    @media(max-width:560px){.metric-grid.sum-row{grid-template-columns:1fr;}}
     .mc{background:#04090f;border:0.5px solid #0e1e36;border-radius:8px;padding:10px 12px;}
     .mc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
     .mc-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;}
@@ -554,7 +556,7 @@ function computeMetrics(trips){
   const profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? Infinity : 0);
   let maxDD = 0, peak = 0, running = 0;
   trips.forEach(t => { running += t.pnl; if (running > peak) peak = running; maxDD = Math.min(maxDD, running - peak); });
-  return { n, winRate, net, avgWin, avgLoss, expectancy, profitFactor, maxDD, wins: wins.length, losses: losses.length };
+  return { n, winRate, net, grossWin, grossLoss, avgWin, avgLoss, expectancy, profitFactor, maxDD, wins: wins.length, losses: losses.length };
 }
 
 // "Mistakes" — pattern flags a manual trader can actually act on:
@@ -645,6 +647,11 @@ function renderBroker(broker){
     + metricCard('Expectancy/Trade', fmtR(m.expectancy), colR(m.expectancy))
     + metricCard('Max Drawdown', fmtR(m.maxDD), '#ef4444')
     + metricCard('Wins / Losses', m.wins + ' / ' + m.losses, '#e0eaf8')
+    + '</div>'
+    + '<div class="metric-grid sum-row">'
+    + metricCard('Total Loss', fmtR(-m.grossLoss), '#ef4444')
+    + metricCard('Total Profit', fmtR(m.grossWin), '#10b981')
+    + metricCard('Remaining (Profit − Loss)', fmtR(m.net), colR(m.net))
     + '</div>';
 
   html += '<h3 style="margin:14px 0 8px;">Mistakes Found</h3>';
