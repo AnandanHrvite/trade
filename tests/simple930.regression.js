@@ -842,7 +842,9 @@ check("Settings exposes every SIMPLE930_ key the code reads", () => {
 check("the strategy appears in the sidebar, and vanishes when disabled", () => {
   const nav = require("../src/utils/sharedNav");
   const prev = process.env.SIMPLE930_MODE_ENABLED;
+  const prevBt = process.env.UI_SHOW_SIMPLE930_BACKTEST;
   process.env.SIMPLE930_MODE_ENABLED = "true";
+  process.env.UI_SHOW_SIMPLE930_BACKTEST = "true"; // the Backtest item is off by default
   const on = nav.buildSidebar("simple930Paper", false);
   assert.ok(/SIMPLE 9:30/.test(on));
   assert.ok(/\/simple930-paper\/status/.test(on));
@@ -850,6 +852,7 @@ check("the strategy appears in the sidebar, and vanishes when disabled", () => {
   process.env.SIMPLE930_MODE_ENABLED = "false";
   assert.ok(!/SIMPLE 9:30/.test(nav.buildSidebar("dashboard", false)));
   if (prev === undefined) delete process.env.SIMPLE930_MODE_ENABLED; else process.env.SIMPLE930_MODE_ENABLED = prev;
+  if (prevBt === undefined) delete process.env.UI_SHOW_SIMPLE930_BACKTEST; else process.env.UI_SHOW_SIMPLE930_BACKTEST = prevBt;
 });
 
 console.log(`\n${fail ? "FAILURES" : "ALL PASS"} — ${pass} passed, ${fail} failed`);
